@@ -1,0 +1,75 @@
+[
+  {
+    "tier": "fast",
+    "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Write 30–33 story pages, never fewer than 30. Extra pages are optional and must add meaningful progression. All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.",
+    "requirement": {
+      "kind": "content",
+      "text": "Meaningful progression on extra pages",
+      "quote": "Extra pages are optional and must add meaningful progression.",
+      "scope": {
+        "quote": "Extra pages are optional and must add meaningful progression.",
+        "extent": "whole_book"
+      },
+      "id": "brief-5",
+      "source": "brief",
+      "obligationId": "obligation-f1253b6cbd56aebd65e5b18f"
+    },
+    "verdict": {
+      "id": "brief-5",
+      "status": "fulfilled",
+      "reason": "The manuscript has exactly 30 pages, so there are no extra pages requiring additional progression.",
+      "evidence": [],
+      "scopeAssessment": {
+        "supported": true,
+        "authority": "brief",
+        "quote": "Extra pages are optional and must add meaningful progression.",
+        "explanation": "No pages exceed the requested 30-page length.",
+        "extent": "whole_book"
+      }
+    }
+  },
+  {
+    "tier": "balanced",
+    "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Write 30–33 story pages, never fewer than 30. Extra pages are optional and must add meaningful progression. All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.",
+    "requirement": {
+      "kind": "content",
+      "text": "Meaningful progression on extra pages",
+      "quote": "Extra pages are optional and must add meaningful progression.",
+      "scope": {
+        "quote": "Extra pages are optional and must add meaningful progression.",
+        "extent": "specified"
+      },
+      "id": "brief-5",
+      "source": "brief",
+      "obligationId": "obligation-f1253b6cbd56aebd65e5b18f"
+    },
+    "verdict": {
+      "id": "brief-5",
+      "status": "fulfilled",
+      "reason": "There are no optional pages beyond the requested base, so no extra-page progression condition is triggered.",
+      "evidence": []
+    }
+  },
+  {
+    "tier": "premium",
+    "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Write 30–33 story pages, never fewer than 30. Extra pages are optional and must add meaningful progression. All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.",
+    "requirement": {
+      "kind": "content",
+      "text": "Optional extra pages add meaningful progression",
+      "quote": "Extra pages are optional and must add meaningful progression.",
+      "scope": {
+        "quote": "Extra pages are optional and must add meaningful progression.",
+        "extent": "specified"
+      },
+      "id": "brief-39",
+      "source": "brief",
+      "obligationId": "obligation-705e01368591c609932ba229"
+    },
+    "verdict": {
+      "id": "brief-39",
+      "status": "fulfilled",
+      "reason": "There are 30 story pages, so no optional pages beyond the requested minimum require assessment.",
+      "evidence": []
+    }
+  }
+]

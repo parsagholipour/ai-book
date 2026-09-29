@@ -42,6 +42,7 @@ describe("coordinated final repair of the captured Quick book", () => {
     const calls: Array<GenerateJsonOptions<unknown>> = [];
     const text = new FakeTextModelAdapter();
     text.generateJson = async <T,>(options: GenerateJsonOptions<T>) => {
+      if (options.purpose === "review-picture-book-continuity") return { data: options.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
       calls.push(options);
       expect(mocks.prisma.page.update).not.toHaveBeenCalled();
       if (mode === "stop") throw new StopRequestedError();
@@ -89,7 +90,34 @@ describe("coordinated final repair of the captured Quick book", () => {
     expect(saved[0]!.title).toBe(pages[0]!.title);
   });
 
-  it("spends one repair and one complete review, and publishes no page before the whole candidate passes", async () => {
+  it.each(["finding", "unavailable"])("blocks publication after independent continuity returns %s despite grouped approval", async mode => {
+    const test = setup(), grouped = test.options.providers.text;
+    const continuity = new FakeTextModelAdapter();
+    const verify = vi.fn(async <T,>(request: GenerateJsonOptions<T>) => {
+      expect(request.purpose).toBe("review-picture-book-continuity");
+      expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+      if (mode === "unavailable") throw new Error("Continuity check unavailable");
+      const manuscript = JSON.parse(request.messages[1]!.content).pages;
+      const raw = { findings: [{ pageIndex: 21, domain: "prose", basis: "cross_page", category: "continuity", repairKind: "semantic",
+        requirementQuote: null, message: "A dependency of the edited lantern scene remains inconsistent.", guidance: "Reconcile the lighting sequence.",
+        quote: manuscript[20].markdown, relatedEvidence: [{ pageIndex: 8, quote: manuscript[7].markdown }] }] };
+      return { data: request.schema.parse(raw), text: JSON.stringify(raw), provider: "fixture", model: "independent-continuity" };
+    });
+    continuity.generateJson = async request => {
+      const result = await verify(request);
+      return { ...result, data: request.schema.parse(result.data) };
+    };
+    const bindForCall = vi.fn(async purpose => ({ adapter: purpose === "review-picture-book-continuity" ? continuity : grouped }));
+    test.options.providers.text = Object.assign(Object.create(grouped), { bindForCall });
+    await test.run();
+    expect(bindForCall.mock.calls).toEqual([["revise-page"], ["review-page"], ["review-picture-book-continuity"]]);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+    expect(test.unavailable).toHaveBeenCalled();
+    expect(saved).toEqual(pages);
+  });
+
+  it("spends one repair and one grouped review before continuity, and publishes only after verification", async () => {
     const { calls, run, claim } = setup();
     await run();
     expect(calls.map((call) => call.purpose)).toEqual(["revise-page", "review-page"]);
@@ -196,6 +224,40 @@ describe("coordinated final repair of the captured Quick book", () => {
     } } });
   });
 
+  it("offers unchanged checklist witnesses from the frozen snapshot and publishes canonical checks", async () => {
+    const test = setup();
+    const scopedInput = { ...input, prompt: input.prompt + " Each page must include an event." };
+    const scopedPlan = { ...plan, requirementInventory: { version: 1 as const, complete: true, status: "available" as const,
+      brief: scopedInput.prompt, requirements: [{ kind: "content" as const, quote: "an event", text: "an event",
+        scope: { extent: "each_page" as const, quote: "Each page must include an event." } }] } };
+    Object.assign(test.options, { input: scopedInput, plan: scopedPlan, generationJobId: "compile-g" });
+    const checks = { pageModelReview: true, storyExtractAudit: false, styleAuditor: false };
+    const initial = { fingerprint: pictureBookReviewFingerprint({ input: scopedInput, plan: scopedPlan, pages, checks }),
+      reviews: pages.map(page => ({ pageIndex: page.index, draftMarkdown: page.markdown, findings: [],
+        report: pageQualityReportSchema.parse({ approved: true, score: 95, issues: [], requiredRevisions: [], notes: "" }),
+        completedChecks: checks, storyExtract: null, styleAudit: null,
+        requirementChecks: [{ requirementIndex: 0, evidence: page.markdown.slice(0, 120) }] })) };
+    const job = { projectId: "project", type: "COMPILE_EXPORT", status: "ACTIVE", payload: { pictureBookReview: initial } };
+    mocks.prisma.generationJob.findUnique.mockResolvedValueOnce(job).mockResolvedValueOnce(job);
+    const generate = test.options.providers.text.generateJson.bind(test.options.providers.text);
+    test.options.providers.text.generateJson = async request => {
+      const response = await generate(request);
+      if (request.purpose !== "review-page") return response;
+      const payload = JSON.parse(request.messages[1]!.content);
+      const data = JSON.parse(response.text);
+      for (const row of data.pages) row.requirementChecks = payload.reusableRequirementCheckPageIndexes.includes(row.pageIndex)
+        ? "reuse" : [Object.keys(payload.pages.find((page: { index: number }) => page.index === row.pageIndex).spans)[0]];
+      return { ...response, data: request.schema.parse(data), text: JSON.stringify(data) };
+    };
+    await test.run();
+    const payload = JSON.parse(test.calls[1]!.messages[1]!.content);
+    expect(payload.reusableRequirementCheckPageIndexes).toEqual(pages.filter(page => !targets.includes(page.index)).map(page => page.index));
+    expect(test.calls.map(call => call.purpose)).toEqual(["revise-page", "review-page"]);
+    expect(saved[7]!.revision).toBe(2);
+    const publication = mocks.prisma.generationJob.update.mock.calls.find(([call]) => call.data.payload?.pictureBookFinalReview)?.[0];
+    expect(publication?.data.payload.pictureBookFinalReview.reviews[0].requirementChecks).toEqual(initial.reviews[0]!.requirementChecks);
+  });
+
   function setupPremium(mode: "safe" | "meaning" | "unresolved" | "missing" | "downstream" | "linked" | "metadata" | "extra-page" | "mixed" | "local" = "safe") {
     const test = setup("checks");
     const premiumInput = createProjectSchema.parse(premium.input);
@@ -209,6 +271,7 @@ describe("coordinated final repair of the captured Quick book", () => {
       quality: { enabled: (feature: string) => ["pageModelReview", "pageLocalQa", "storyExtractAudit", "styleAuditor", "styleExcerpts"].includes(feature) } });
     if (mode === "mixed") test.options.finalQa.issues.push("Page 13: Correct the lantern chronology.");
     test.options.providers.text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
       test.calls.push(request);
       expect(mocks.prisma.page.update).not.toHaveBeenCalled();
       const payload = JSON.parse(request.messages[1]!.content);

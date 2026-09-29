@@ -4,6 +4,11 @@
 export function pictureBookExactQuote(markdown: string, citation: string): string | undefined {
   if (markdown.includes(citation)) return citation;
   const fragments = [...citation.matchAll(/“([^“”]+)”|"([^"“”]+)"/gu)];
+  if (fragments.length === 1 && fragments[0]![0] === citation) {
+    const fragment = fragments[0]![1] ?? fragments[0]![2]!;
+    const offset = markdown.indexOf(fragment);
+    if (fragment.trim().length >= 12 && offset >= 0 && markdown.indexOf(fragment, offset + 1) < 0) return markdown.slice(offset, offset + fragment.length);
+  }
   if (fragments.length < 2 || fragments.length > 3) return undefined;
   let consumed = 0, start = -1, end = -1;
   for (const [index, match] of fragments.entries()) {

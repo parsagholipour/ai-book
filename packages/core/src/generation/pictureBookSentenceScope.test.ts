@@ -125,7 +125,7 @@ it.each(["no_violation", "cross_page", "wrong_quote", "short_sentence"] as const
 
 it("asks the model to distinguish measured syntax repairs from other language defects", () => {
   const { model } = scriptedDevelopmentModel([]);
-  const messages = pictureBookReviewMessages({ ...options(), textModel: model, chapterBriefs: [], checks }, [1], []);
+  const messages = pictureBookReviewMessages({ ...options(), textModel: model, chapterBriefs: [], continuityReview: false, checks }, [1], []);
   expect(messages[0]!.content).toContain("repairKind=sentence_length");
   expect(messages[0]!.content).toContain("repairKind=semantic");
   const finding = { ...typedOptions().originalReviews[0]!.findings![0]!, pageIndex: 1 };
@@ -141,7 +141,7 @@ it("preserves typed scope through narrow citation recovery without reopening the
     { findings: [{ ...finding, pageIndex: 1, quote: "An inexact quotation of the long lantern sentence." }], pages: [{ pageIndex: 1, score: 78 }] },
     { pages: [], corrections: [{ id: "1:0:page", supportsSameClaim: true, quote: finding.quote }] }
   ]);
-  const originalReviews = await reviewPictureBookManuscript({ ...test, pages: [test.pages[0]!], textModel: model, chapterBriefs: [], checks });
+  const originalReviews = await reviewPictureBookManuscript({ ...test, pages: [test.pages[0]!], textModel: model, chapterBriefs: [], continuityReview: false, checks });
   expect(originalReviews[0]!.findings![0]).toEqual(finding);
   expect(originalReviews[0]!.report.approved).toBe(false);
   expect(JSON.parse(calls[1]!.messages.find(m => m.role === "user")!.content).phase).toBe("picture_book_citation_recovery");

@@ -19,7 +19,7 @@ function setup() {
     quote: "This quotation does not occur in the page.", relatedEvidence: []
   }] });
   const options: PictureBookReviewOptions = { input, plan: makeFallbackPlan(input), pages, checks, repairContext: context,
-    chapterBriefs: [], textModel: new FakeTextModelAdapter() };
+    chapterBriefs: [], continuityReview: false, textModel: new FakeTextModelAdapter() };
   const checkpoint: PictureBookReviewCheckpoint = { version: 2, roundsStarted: 2, attemptsUsed: 2, outputWidened: false,
     unresolvedPageIndexes: [1], protocolIssues: [], validationIssues: [], citationRows: [row],
     reviews: pages.slice(1).map(page => pictureBookPageReview(pictureBookReviewRowSchema.parse({

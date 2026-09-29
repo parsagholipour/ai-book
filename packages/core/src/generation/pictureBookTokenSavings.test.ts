@@ -13,7 +13,7 @@ const plan = makeFallbackPlan(input);
 const pages = Array.from({ length: 5 }, (_, i) => ({ index: i + 1, title: `Page ${i + 1}`,
   markdown: `Rabbit carried lantern ${i + 1} across the bridge to Turtle.`, summary: "Redundant scene summary." }));
 const checks = { pageModelReview: true, storyExtractAudit: true, styleAuditor: false };
-const options = (model = scriptedDevelopmentModel([]).model) => ({ input, plan, pages, checks, chapterBriefs: [], textModel: model });
+const options = (model = scriptedDevelopmentModel([]).model) => ({ input, plan, pages, checks, chapterBriefs: [], continuityReview: false, textModel: model });
 const extract = storyExtractResultSchema.parse({ storyDelta: { unansweredAdded: ["Where is the lantern?"] } });
 const reviews = pages.map((page) => ({ pageIndex: page.index, draftMarkdown: page.markdown,
   report: pageQualityReportSchema.parse({ approved: true, score: 95, issues: [], requiredRevisions: [], notes: "" }), storyExtract: extract, styleAudit: null, completedChecks: checks }));

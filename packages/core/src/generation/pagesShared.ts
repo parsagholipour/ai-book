@@ -24,19 +24,24 @@ import { READER_NAMING_RULE } from "./readerNaming.js";
  */
 
 export function plannerToneRules(input: CreateProjectInput): string[] {
-  return [...kidsReadingGuidanceLines(input), ...plannerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings))];
+  return [FICTION_PROSE_RULE, ...kidsReadingGuidanceLines(input), ...plannerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings))];
 }
 
 export function writerToneRules(input: CreateProjectInput): string[] {
-  return [...kidsReadingGuidanceLines(input), ...writerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings))];
+  return [FICTION_PROSE_RULE, ...kidsReadingGuidanceLines(input), ...writerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings))];
 }
 
 export function reviewerStyleRules(input: CreateProjectInput): string[] {
   return [
+    FICTION_PROSE_RULE,
+    "When fictional narration labels its own scene, setting or dialogue as invented or fictional, reject that immersion-breaking commentary as a planning leak. Judge in context: character dialogue, deliberate metafiction requested by the reader and nonfiction discussion of fiction are not automatic defects.",
     ...kidsReadingGuidanceLines(input).map((line) => `Reject if the page violates this reading-level rule: ${line}`),
     ...reviewerStyleGuidance()
   ];
 }
+
+const FICTION_PROSE_RULE =
+  'For fiction, tell the story directly through scene, action and dialogue. Keep planning notes about fictionalization out of the narration: never add framing such as "In this invented scene", "in this fictional story", or "a fictional café" to explain the story\'s status. This also applies when a fictional story uses real people or researched settings. Fictional-status notes in the premise, brief, continuity notes or research context are internal context, not prose to copy or a requirement for an in-story disclaimer. Preserve factual accuracy for claims presented as real-world facts. Respect deliberate metafiction explicitly requested by the reader.';
 
 export const READER_FACING_PAGE_BRIEF_RULES = [
   "Treat pageBrief purpose, beat, requiredContinuity, and endingPressure as internal assignment notes; transform them into prose instead of echoing their wording.",

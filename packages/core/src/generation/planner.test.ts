@@ -409,6 +409,9 @@ describe("revisePlanningPackage", () => {
     expect(revisionPrompt).toContain('"multi" (up to 6 options)');
     // A revision that omits the hook keeps it, like every other plan field.
     expect(revisionPrompt).toContain("Preserve or improve openingHook");
+    expect(revisionPrompt).toContain("Target language: English");
+    expect(revisionPrompt).toContain("translate and re-emit ALL book-facing fields");
+    expect(userPayload.language).toEqual({ targetLanguage: "English" });
     expect(revised.openingHook).toBe(currentPlan.openingHook);
   });
 

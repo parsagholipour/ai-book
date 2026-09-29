@@ -229,11 +229,17 @@ const NEGATED_BLOCKING_FEEDBACK =
 const QUALIFIED_REPETITION_FEEDBACK =
   /\b(?:necessary .{0,100}does not stall|not (?:a )?semantic repetition|required ending pressure|which is the ending pressure)\b/i;
 
+// These are editorial findings about narration, not claims that a source is
+// fabricated. The actual reviewer may report them as styleNatural=false while
+// leaving promptLeakFree=true, so neither flag alone can preserve the feedback.
+const NARRATION_FRAMING_DEFECT = /\b(?:intrusive disclaimer|authorial disclaimer|fiction(?:al)?[- ]status disclaimer|immersion[- ]breaking|meta[- ](?:framing|commentary|opening)|reads (?:like|as) (?:an? )?(?:disclaimer|production note))\b/i;
+
 function isExplicitlyNonBlockingFeedback(feedback: string): boolean {
   return !isExplicitlyBlockingFeedback(feedback) && EXPLICITLY_NON_BLOCKING_FEEDBACK.test(feedback);
 }
 
 function isExplicitlyBlockingFeedback(feedback: string): boolean {
+  if (NARRATION_FRAMING_DEFECT.test(feedback)) return true;
   let normalized = feedback.replace(NEGATED_BLOCKING_FEEDBACK, "");
   if (QUALIFIED_REPETITION_FEEDBACK.test(normalized)) {
     normalized = normalized.replace(/\b(?:repeats?|repetit\w*)\b/gi, "");
@@ -266,6 +272,14 @@ function filterIgnoredReviewerComplaints(report: PageQualityReport): {
   onlyIgnoredRejection: boolean;
   hasRemainingDefectAfterStripping: boolean;
 } {
+  // A confirmed narration leak needs its diagnosis and repair, too. Filtering
+  // "remove In this invented scene" as a fabrication-only concern discarded
+  // the precise instruction that would have fixed the published opening.
+  if (!report.checks.promptLeakFree ||
+      (!report.approved && [...report.issues, ...report.requiredRevisions].some(feedback => NARRATION_FRAMING_DEFECT.test(feedback)))) {
+    return { issues: report.issues, requiredRevisions: report.requiredRevisions,
+      onlyIgnoredRejection: false, hasRemainingDefectAfterStripping: false };
+  }
   const isIgnored = (feedback: string): boolean =>
     isFabricationOnlyComplaint(feedback) ||
     isReviewerSourceContextOnlyComplaint(feedback) ||

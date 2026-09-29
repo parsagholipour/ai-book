@@ -20,7 +20,7 @@ const corrected = () => ({ ...structuredClone(original), score: 100, findings: [
   targetResolved: true, meaningPreserved: true, noNewRegressions: true,
   reason: "The apology and return remain clear; the requested sentence is shorter. No new defect is present on this page."
 } });
-const options = { input, plan, pages, chapterBriefs: [], checks, repairContext: captured.repairContext };
+const options = { input, plan, pages, chapterBriefs: [], continuityReview: false, checks, repairContext: captured.repairContext };
 const schema = () => validatedPictureBookReviewRow({ ...options, pages: new Map(pages.map(page => [page.index, page])) });
 
 it("rechecks the captured false count before it can become a prose-repair instruction", async () => {
@@ -123,8 +123,8 @@ it("uses the local-QA Unicode counters and omits titles and figure metadata", ()
 it("applies the measurement check to style-only assessments as well", async () => {
   const raw = { ...corrected(), repairAssessment: undefined, styleAudit: { styleOk: false,
     styleIssues: ["This page has 33 words, below the requested 35-word minimum."], evidence: [] } };
-  const { model, calls } = scriptedDevelopmentModel([{ pages: [raw] }, { pages: [{ ...raw, styleAudit: "clean" }] }]);
-  const reviews = await reviewPictureBookManuscript({ input, plan, pages: [page], chapterBriefs: [],
+  const { model, calls } = scriptedDevelopmentModel([{ pages: [raw] }, { pages: [], auxiliaryCorrections: [{ id: "page:5", styleAudit: "clean" }] }]);
+  const reviews = await reviewPictureBookManuscript({ input, plan, pages: [page], chapterBriefs: [], continuityReview: false,
     checks: { pageModelReview: false, storyExtractAudit: false, styleAuditor: true }, textModel: model });
   expect(calls).toHaveLength(2);
   expect(reviews[0]?.styleAudit?.styleOk).toBe(true);
@@ -151,7 +151,7 @@ it("preserves a stricter explicit user requirement even when the age-band limits
 
 it("does not add a measurement payload to story-extraction-only requests", async () => {
   const { model, calls } = scriptedDevelopmentModel([{ pages: [{ pageIndex: 5, score: 100, findings: [], storyExtract: "no_changes", styleAudit: null }] }]);
-  await reviewPictureBookManuscript({ input, plan, pages: [page], chapterBriefs: [], textModel: model,
+  await reviewPictureBookManuscript({ input, plan, pages: [page], chapterBriefs: [], continuityReview: false, textModel: model,
     checks: { pageModelReview: false, storyExtractAudit: true, styleAuditor: false } });
   const payload = JSON.parse(calls[0]!.messages.find(message => message.role === "user")!.content);
   expect(payload).not.toHaveProperty("proseMeasurements");

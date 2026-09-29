@@ -16,7 +16,7 @@ function setup(answers: unknown[]) {
   });
   const options = { input: { category: "KIDS", targetPages: 30, prompt: fixture.brief, language: "en", mediaSettings: {} },
     plan: { title: "The Lantern Path", premise: "A search", audience: "children", chapters: [], characters: [], promises: [], voiceGuide: [] },
-    pages: fixture.pages, chapterBriefs: [], checks: fixture.checks,
+    pages: fixture.pages, chapterBriefs: [], continuityReview: false, checks: fixture.checks,
     textModel: { generateJson } as unknown as TextModelAdapter } as unknown as Parameters<typeof reviewPictureBookManuscript>[0];
   return { options, generateJson };
 }
@@ -25,7 +25,9 @@ it("recovers Premium's malformed review tail while retaining the 28 completed re
   const original = fixture.response.pages[28];
   const repaired = { ...clean(29), score: original.score, findings: original.findings,
     storyExtract: { storyDelta: { ...original.storyExtract.storyDelta, promisesPaid: original.storyExtract.promisesPaid }, contradictions: [] } };
-  const { options, generateJson } = setup([fixture.response, { pages: [repaired, clean(30)] }]);
+  const { options, generateJson } = setup([fixture.response, { pages: [clean(30)], auxiliaryCorrections: [
+    { id: "page:29", storyExtract: repaired.storyExtract, styleAudit: repaired.styleAudit }
+  ] }]);
   const checkpoints: PictureBookReviewCheckpoint[] = [];
   options.onCheckpoint = async (checkpoint) => { checkpoints.push(structuredClone(checkpoint)); };
   const result = await reviewPictureBookManuscript(options);
@@ -35,7 +37,8 @@ it("recovers Premium's malformed review tail while retaining the 28 completed re
   expect(result.slice(0, 28)).toEqual(checkpoints[1]!.reviews);
   expect(result[28]).toMatchObject({ report: { approved: false, score: 88 }, findings: original.findings });
   const request = JSON.parse(generateJson.mock.calls[1]![0].messages.find((message) => message.role === "user")!.content);
-  expect(request.reviewPageIndexes).toEqual([29, 30]);
+  expect(request.reviewPageIndexes).toEqual([30]);
+  expect(request.auxiliaryRecovery.rows).toEqual([{ id: "page:29", pageIndex: 29, requiredFields: ["storyExtract", "styleAudit"], findings: original.findings }]);
   expect(checkpoints.at(-1)).toMatchObject({ unresolvedPageIndexes: [], protocolIssues: [], attemptsUsed: 2 });
 });
 
@@ -50,20 +53,24 @@ it.each([null, "malformed tail", { score: 90 }, { ...clean(2), pageIndex: "2" },
 );
 
 it("cannot turn Premium's valid page 29 finding into approval when completing its other checks", async () => {
-  const { options, generateJson } = setup([fixture.response, { pages: [clean(29), clean(30)] }]);
+  const { options, generateJson } = setup([fixture.response, { pages: [clean(30)], auxiliaryCorrections: [
+    { id: "page:29", storyExtract: "no_changes", styleAudit: "clean" }
+  ] }]);
   const result = await reviewPictureBookManuscript(options);
   expect(result[28]).toMatchObject({ report: { approved: false, score: 88 }, findings: fixture.response.pages[28].findings });
   const request = JSON.parse(generateJson.mock.calls[1]![0].messages.find((message) => message.role === "user")!.content);
-  expect(request.retainedEditorialAssessments).toEqual([{ pageIndex: 29, score: 88, findings: fixture.response.pages[28].findings }]);
+  expect(request.auxiliaryRecovery.rows).toEqual([{ id: "page:29", pageIndex: 29, requiredFields: ["storyExtract", "styleAudit"], findings: fixture.response.pages[28].findings }]);
   expect(request.priorProtocolIssues).toEqual(["Response contains a row without a valid page index."]);
 });
 
 it.each([
-  { pages: [clean(29)] },
-  { pages: [clean(29), clean(30), "another malformed fragment"] },
-  { pages: [clean(29), clean(30), clean(30)] }
+  { pages: [] },
+  { pages: [clean(30), "another malformed fragment"] },
+  { pages: [clean(30), clean(30)] }
 ])("still rejects an incomplete or malformed recovery without replenishing attempts: %j", async (recovery) => {
-  const { options, generateJson } = setup([fixture.response, recovery]);
+  const { options, generateJson } = setup([fixture.response, { ...recovery, auxiliaryCorrections: [
+    { id: "page:29", storyExtract: "no_changes", styleAudit: "clean" }
+  ] }]);
   let saved!: PictureBookReviewCheckpoint;
   options.onCheckpoint = async (checkpoint) => { saved = structuredClone(checkpoint); };
   await expect(reviewPictureBookManuscript(options)).rejects.toMatchObject({ name: "PictureBookReviewIncompleteError" });

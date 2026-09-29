@@ -143,6 +143,8 @@ export const mediaSettingsSchema = z.object({
   imageStyle: z.string().optional(),
   imageModel: imageModelSelectionSchema.optional(),
   generationStrategy: bookGenerationStrategySelectionSchema.optional(),
+  /** Saved generation choice; keeps the original customer minimum across resumes. */
+  generationPageCount: z.object({ requestedPages: z.number().int().positive(), selectedPages: z.number().int().positive() }).optional(),
   textModel: textModelSelectionSchema.optional(),
   /**
    * Quality tier used by the live operator-controlled text route. `textModel`

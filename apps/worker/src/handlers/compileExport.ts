@@ -256,7 +256,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     if (await exportPublicationSuperseded(projectId, queuedContentRevision)) return {};
   }
   const overlapCoverage = finalization && ownsOutcome && !skipFinalReview && shortPictureBookReaderChapters({ input, plan, strategy, pages });
-  if (overlapCoverage) inventoryWork = prepareFinalizationCoverageInventory(finalization!, input.prompt, providers.text)
+  if (overlapCoverage) inventoryWork = prepareFinalizationCoverageInventory(finalization!, input.prompt, providers.text, plan.requirementInventory)
     .then((value) => ({ status: "fulfilled" as const, value }), (reason: unknown) => ({ status: "rejected" as const, reason }));
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
@@ -567,7 +567,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   if (inventory?.status === "rejected") throw inventory.reason;
   const requirementTargets = !isImportedManuscript(input.mediaSettings) && usesShortPictureBookReview({ input, plan, strategy, pages })
     ? await loadPictureBookRequirementTargets({ projectId, planId, generationJobId, input, plan, pages, checks: shortPictureBookChecks(quality) }) : [];
-  const coverageOptions = { requirementTargets, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
+  const coverageOptions = { requirementTargets, inventory: plan.requirementInventory, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
     pages, chapters: chapterStructureForExport({ plan, pages: markdownPages, readerChapters }), textModel: providers.text,
     evidenceContext: buildManuscriptCoverageContext({ input, plan, pages, images: project.images,
       expectedIllustratedPageIndexes: pages.filter((page) => strategy.shouldIllustratePage(input, plan, page.index)).map((page) => page.index) }) };

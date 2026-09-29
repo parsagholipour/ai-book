@@ -1,6 +1,6 @@
 import {
   reviewPictureBookManuscript, reviewPictureBookSentenceRepair, validateStoryExtractEvidence, validateStyleAuditEvidence,
-  withStoryContradictions, withStyleAudit, unchangedPrefixStoryExtracts,
+  withStoryContradictions, withStyleAudit, unchangedPrefixStoryExtracts, pictureBookReviewFingerprint,
   PictureBookReviewIncompleteError, retainUnverifiedRepairPrefix,
   type PictureBookPageReview, type PictureBookRepairContext, type PictureBookRepairFeedback,
   type repairPictureBookManuscript, type TextModelAdapter, type TextAttemptBudget
@@ -18,7 +18,8 @@ export async function reviewShortBookRepairCandidate(
   options: Parameters<typeof repairPagesFromFinalQa>[0], candidate: Candidate,
   previous: { pages: Candidate["pages"]; reviews: PictureBookPageReview[] } | undefined, textModel: TextModelAdapter,
   textAttemptBudget: TextAttemptBudget, assertActive: () => Promise<void>,
-  baseline?: { pages: Candidate["pages"]; reviews: PictureBookPageReview[] }
+  baseline?: { pages: Candidate["pages"]; reviews: PictureBookPageReview[] },
+  continuityTextModel?: TextModelAdapter
 ): Promise<PictureBookPageReview[]> {
   const checks = shortPictureBookChecks(options.quality);
   let reviews: PictureBookPageReview[];
@@ -40,7 +41,11 @@ export async function reviewShortBookRepairCandidate(
   await assertActive();
   const reviewOptions = { input: options.input, plan: options.plan, pages: candidate.pages,
     chapterBriefs: [], repairContext: candidate.context, textModel, textAttemptBudget, projectId: options.projectId,
-    ...(previous ? { previousReview: previous,
+    ...(continuityTextModel ? { continuityTextModel } : {}),
+    // The baseline was loaded under this frozen context; later candidates were
+    // reviewed here under the same context. Bind the exact previous manuscript.
+    ...(previous ? { previousReview: { ...previous,
+      fingerprint: pictureBookReviewFingerprint({ input: options.input, plan: options.plan, checks, pages: previous.pages }) },
       reusableStoryExtracts: unchangedPrefixStoryExtracts(previous.pages, candidate.pages, previous.reviews) } : {}), checks };
   try { reviews = await reviewPictureBookSentenceRepair({ ...reviewOptions, baseline }) ?? await reviewPictureBookManuscript(reviewOptions); }
   catch (error) {

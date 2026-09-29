@@ -15,6 +15,16 @@ const recoverySchema = z.strictObject({ corrections: z.array(z.strictObject({
 type Entity = ProhibitionAssessment["entities"][number];
 type Pending = { id: string; entity: Entity; candidatePageIndexes: number[] };
 
+/** An absent alias cannot identify an observed actor. Keep every entity, its
+ * literal primary name, role, witnesses and permissions; never discard an
+ * observed alias or relabel an ungrounded primary identity. Permission checks
+ * run again after normalization, so a phantom alias cannot authorize a lead. */
+function withoutAbsentAliases(assessment: ProhibitionAssessment, pages: Context["pages"]): ProhibitionAssessment {
+  const observed = (name: string) => pages.some(page => namesProhibitionEntity(page.markdown, { name, aliases: [] }));
+  return { ...assessment, entities: assessment.entities.map(entity => observed(entity.name)
+    ? { ...entity, aliases: entity.aliases.filter(observed) } : entity) };
+}
+
 /** Recover identity anchors, never cast membership, roles, scope or permissions.
  * Only a complete fulfilled assessment with exact existing role evidence is
  * eligible. The model must confirm the anchor and original actions refer to the
@@ -31,7 +41,8 @@ export async function recoverProhibitionEvidence<T extends Verdict>(options: Con
       !options.requirements.some(requirement => requirement.id === answer.id && requirement.kind === "prohibition" &&
         requirement.prohibitionScope === "named_main_characters")) return answer;
     const parsed = prohibitionAssessmentSchema.safeParse(answer.prohibitionAssessment);
-    return parsed.success ? { ...answer, prohibitionAssessment: recoverCastCitationCoordinates(parsed.data, options.pages) } : answer;
+    return parsed.success ? { ...answer, prohibitionAssessment:
+      recoverCastCitationCoordinates(withoutAbsentAliases(parsed.data, options.pages), options.pages) } : answer;
   });
   for (const requirement of options.requirements) {
     if (requirement.kind !== "prohibition" || requirement.prohibitionScope !== "named_main_characters") continue;

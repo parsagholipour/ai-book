@@ -66,6 +66,7 @@ export const GENERATION_MODEL_STAGES = [
   { id: "polish-page", label: "Page polish", group: "Pages", role: "writer" },
   { id: "judge-page-drafts", label: "Page draft comparison", group: "Pages", role: "judgment" },
   { id: "review-page", label: "Page review", group: "Page review", role: "judgment" },
+  { id: "review-picture-book-continuity", label: "Picture-book continuity", group: "Page review", role: "judgment" },
   { id: "revise-page", label: "Page revision", group: "Page review", role: "writer" },
   { id: "patch-page", label: "Page patch", group: "Page review", role: "writer" },
   { id: "verify-page-claims", label: "Page claim verification", group: "Page review", role: "judgment" },
@@ -95,6 +96,7 @@ export function generationModelStage(purpose: string | undefined) {
 export function generationStageRoute(routing: GenerationTextModelRouting, tier: ModelTier, id: GenerationModelStageId): GenerationStageRoute {
   const saved = routing[tier].stages?.[id];
   if (saved) return saved;
+  if (id === "review-picture-book-continuity") return generationStageRoute(routing, tier, "review-page");
   // Splitting extraction must not silently change any saved model, effort or fallback.
   if (id === "inventory-brief-requirements") return generationStageRoute(routing, tier, "read-manuscript");
   // New mechanical extraction inherits the operator's existing extraction route until

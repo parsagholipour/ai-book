@@ -2,6 +2,12 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { uniqueStrings } from "../collections.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+
+export type ClaimVerificationBookContext = Pick<CreateProjectInput, "category" | "prompt"> & Pick<BookPlan, "premise">;
+
+export const FICTION_GROUNDING_RULE =
+  "Use book.category, book.prompt and book.premise to distinguish fictional narration from factual assertions. Fictional scenes and dialogue are not factual claims, including imagined encounters involving real people in a requested fictional story. Research notes may supply background without making the story nonfiction. Do not require fiction disclaimers in story prose or ask a scene to announce that it is invented. Still verify real-world background claims, purported historical events, studies, statistics, citations and quotations presented as documented fact; fiction is not permission to fabricate evidence. Book context establishes the narrative mode, never evidence for factual claims.";
 
 export const pageClaimVerificationSchema = z.object({
   groundedOk: z.boolean().default(true),
@@ -43,6 +49,7 @@ export async function verifyPageClaims(options: {
   pageIndex: number;
   markdown: string;
   researchNotes: string[];
+  book?: ClaimVerificationBookContext | undefined;
   /** Before/after context for a changed-candidate diagnostic. */
   original?: { title: string; markdown: string } | undefined;
   title?: string | undefined;
@@ -63,6 +70,7 @@ export async function verifyPageClaims(options: {
           "You check whether factual claims on one page are supported by the supplied research notes.",
           "Return groundedOk and unsupportedClaims.",
           "Treat qualified uncertainty as acceptable. Invented studies, journals, statistics, or citations are unsupported.",
+          ...(options.book ? [FICTION_GROUNDING_RULE] : []),
           ...(options.original
             ? [
                 "When original text is supplied, check the changed title and full page against the evidence, including new claims, attribution, contradictions, lost qualifications, and stronger certainty or uncertainty than the evidence supports.",
@@ -81,6 +89,7 @@ export async function verifyPageClaims(options: {
           {
             pageIndex: options.pageIndex,
             researchNotes: options.researchNotes,
+            ...(options.book ? { book: options.book } : {}),
             ...(options.userRequest ? { userRequest: options.userRequest } : {}),
             ...(options.original
               ? { original: options.original, candidate: { title: options.title, markdown: options.markdown } }

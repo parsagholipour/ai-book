@@ -20,6 +20,20 @@ function captureSystemPrompt() {
 }
 
 describe("verifyPageClaims system prompt", () => {
+  it("distinguishes researched fiction from claims presented as documented fact", async () => {
+    const { textModel, generate } = captureSystemPrompt();
+    const book = { category: "CUSTOM" as const, prompt: "A fictional romance using Neymar's real career as background.",
+      premise: "Neymar meets Camila at Café Maré in an imagined romance." };
+    await verifyPageClaims({ textModel, book, pageIndex: 1,
+      markdown: "Neymar stepped into Café Maré. ‘We came for the window,’ he said.",
+      researchNotes: ["Neymar made his Santos debut in 2009."] });
+    const messages = generate.mock.calls[0]![0].messages;
+    expect(JSON.parse(messages[1]!.content).book).toEqual(book);
+    expect(messages[0]!.content).toContain("Fictional scenes and dialogue are not factual claims");
+    expect(messages[0]!.content).toContain("Do not require fiction disclaimers in story prose");
+    expect(messages[0]!.content).toContain("Still verify real-world background claims");
+  });
+
   it("sends the base review instructions and JSON contract when original is absent", async () => {
     const { textModel, generate } = captureSystemPrompt();
     await verifyPageClaims({

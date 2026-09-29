@@ -14,7 +14,7 @@ const setup = (answer: unknown = response()) => {
   }));
   const options = { input: { category: "KIDS", targetPages: 30, prompt: "Recover all four lanterns before moonrise. Both Rabbit and Wise Turtle grow.", language: "en", mediaSettings: {} },
     plan: { title: "The Lantern Path", premise: "A lantern search.", audience: "children", chapters: [], characters: [], promises: [], voiceGuide: [] },
-    pages, chapterBriefs: [], checks, textModel: { generateJson } as unknown as TextModelAdapter } as unknown as Parameters<typeof reviewPictureBookManuscript>[0];
+    pages, chapterBriefs: [], continuityReview: false, checks, textModel: { generateJson } as unknown as TextModelAdapter } as unknown as Parameters<typeof reviewPictureBookManuscript>[0];
   return { options, generateJson };
 };
 

@@ -8,7 +8,10 @@ export type CoverageMediaInventory = { storyPagesWithArtwork?: number[]; coverAr
 /** Only complete, unconditional lists describe pure absence. An unknown term
  * (for example, 'images of frightening scenes') preserves semantic review. */
 export function mediaAbsenceScopes(quote: string): Exclude<MediaScope, "all">[] | undefined {
-  const match = /^(?:(?:with )?no|without|do not (?:create|generate|include|use))\s+(.+)$/iu.exec(quote.trim().replace(/\.$/u, ""));
+  // Only the complete delivery-only clause qualifies. Mixed prose obligations
+  // (e.g. text-only AND self-contained scenes) still need semantic review.
+  if (/^(?:(?:all|every) story pages? (?:are|must be)|each story page (?:is|must be)) text[- ]only[.!]?$/iu.test(quote.trim())) return ["story_pages"];
+  const match = /^(?:(?:(?:with|include) )?no|without|do not (?:create|generate|include|use))\s+(.+)$/iu.exec(quote.trim().replace(/\.$/u, ""));
   if (!match) return undefined;
   const scopes: Exclude<MediaScope, "all">[] = [];
   for (const raw of match[1]!.toLowerCase().split(/\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+/u)) {

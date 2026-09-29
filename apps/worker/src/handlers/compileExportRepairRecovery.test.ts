@@ -45,6 +45,7 @@ describe("bounded semantic recovery of the 22:14 repairs", () => {
     const text = new FakeTextModelAdapter(), calls: GenerateJsonOptions<unknown>[] = [];
     let repairs = 0;
     text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
       calls.push(request);
       expect(mocks.prisma.page.update).not.toHaveBeenCalled();
       const payload = JSON.parse(request.messages[1]!.content);
@@ -163,14 +164,14 @@ describe("bounded semantic recovery of the 22:14 repairs", () => {
     adapter.generateJson = async request => {
       const count = (counts.get(request.purpose) ?? 0) + 1;
       counts.set(request.purpose, count);
-      request.textAttemptBudget!.used += count === 1 ? 4 : 1;
+      request.textAttemptBudget!.used += request.purpose === "revise-page" && count === 1 ? 4 : request.purpose === "review-page" && count === 1 ? 3 : 1;
       expect(request.textAttemptBudget!.used).toBeLessThanOrEqual(5);
       return generate(request);
     };
     const bindForCall = vi.fn(async () => ({ adapter }));
     test.options.providers.text = Object.assign(Object.create(adapter), { bindForCall });
     await test.run();
-    expect(bindForCall.mock.calls).toEqual([["revise-page"], ["review-page"]]);
+    expect(bindForCall.mock.calls).toEqual([["revise-page"], ["review-page"], ["review-picture-book-continuity"]]);
     expect(test.calls).toHaveLength(4);
     expect(test.calls.every(call => call.textAttemptBudget!.used === 5)).toBe(true);
     expect(test.unavailable).not.toHaveBeenCalled();

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { BookPlan, ChapterPlan } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import { applyStoryRevision, pictureBookStoryRevisionSchema, storyRevisionIssues, PICTURE_BOOK_STORY_CRITIC_GUIDANCE } from "./pictureBookStoryCritic.js";
+import { applyStoryRevision, normalizeStoryRevisionEvidence, pictureBookStoryRevisionSchema, storyRevisionIssues, PICTURE_BOOK_STORY_CRITIC_GUIDANCE } from "./pictureBookStoryCritic.js";
 import {
   applyPlanStyleContract,
   matchesUserParallelIntent,
@@ -139,7 +139,8 @@ export async function critiquePlan(options: {
       }
     ]
   });
-  return planCriticPatchSchema.parse(result.data);
+  const patch = planCriticPatchSchema.parse(result.data);
+  return patch.storyRevision ? { ...patch, storyRevision: normalizeStoryRevisionEvidence(options.plan, patch.storyRevision) } : patch;
 }
 
 function planCriticSystemContent(userPrompt: string | undefined, storyFirst = false): string {

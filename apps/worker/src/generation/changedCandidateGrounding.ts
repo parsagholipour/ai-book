@@ -1,6 +1,6 @@
 import {
   checkChangedPageGrounding, figureFreeProse, hasResearchIntent, withClaimVerification,
-  type CreateProjectInput, type DecisionModelRoute, type GroundingPage,
+  type BookPlan, type CreateProjectInput, type DecisionModelRoute, type GroundingPage,
   type PageDraft, type PageGroundingResult, type PageQualityReport, type TextModelAdapter
 } from "@book-maker/core";
 import type { QualityGateContext } from "./qualityEnrichment.js";
@@ -8,6 +8,7 @@ import type { QualityGateContext } from "./qualityEnrichment.js";
 /** Page-local cache: source authorization/version, original and model are pinned by this call. */
 export function changedCandidateGrounding(options: {
   input: CreateProjectInput;
+  plan: BookPlan;
   quality: QualityGateContext;
   pageIndex: number;
   draft: PageDraft;
@@ -42,7 +43,8 @@ export function changedCandidateGrounding(options: {
     if (!pending) {
       pending = checkChangedPageGrounding({
         textModel: options.textModel, decisions: options.decisions,
-        pageIndex: options.pageIndex, original, candidate, researchNotes, userRequest: options.userRequest
+        pageIndex: options.pageIndex, original, candidate, researchNotes, userRequest: options.userRequest,
+        book: { category: options.input.category, prompt: options.input.prompt, premise: options.plan.premise }
       });
       cache.set(identity, pending);
     }

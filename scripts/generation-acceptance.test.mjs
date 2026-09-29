@@ -69,6 +69,39 @@ test("text-only acceptance keeps the saved cast while rejecting every image asse
   assert.equal(summarizeAcceptance({ ...sample, calls: [{ purpose: "image.generate" }] }).functionalPassed, false);
 });
 
+test("new benchmark prompts use the one-sided allowance without exact-30 or fixed illustration quotas", () => {
+  const source = { prompt: "Write an original 30-page illustrated storybook. Exactly 30 story pages.", targetPages: 30,
+    mediaSettings: { fullIllustrations: true } };
+  for (const cadence of ["none", "every-third-page", "every-page"]) {
+    const variant = prepareStorybookIllustrations(source, cadence, { minimumPages: 30, maximumPages: 33 });
+    assert.match(variant.input.prompt, /30–33 story pages, never fewer than 30/);
+    assert.doesNotMatch(variant.input.prompt, /exactly 30|Exactly 10 interior illustrations/i);
+    assert.equal(variant.policy.baselinePrompt, source.prompt);
+    if (cadence === "every-third-page") assert.match(variant.input.prompt, /through the selected last page/);
+  }
+  assert.match(source.prompt, /Exactly 30/);
+});
+
+test("acceptance honors 30–33 selected pages and retains strict historical manifests", () => {
+  const policy = { mode: "one-physical-page-per-story", expectedStoryPages: 30, pageCountBounds: { minimumPages: 30, maximumPages: 33 } };
+  for (const count of [29, 30, 31, 32, 33, 34]) {
+    const selectedPages = Array.from({ length: count }, (_, i) => ({ ...pages[0], id: `page-${i + 1}`, index: i + 1 }));
+    const sample = publishedSample({ project: { id: "book", status: "COMPLETE", targetPages: count }, pages: selectedPages,
+      illustrationCadence: "none", images: [], expectedIllustrationPageIndexes: [], pdfLayoutPolicy: policy,
+      artifacts: [{ format: "pdf", storyPageLayout: { mode: policy.mode, storySheets: count } }, 2, 3] });
+    assert.equal(summarizeAcceptance(sample).functionalPassed, count >= 30 && count <= 33);
+    assert.equal(summarizeAcceptance({ ...sample, pages: selectedPages.slice(1) }).functionalPassed, false);
+    assert.equal(summarizeAcceptance({ ...sample, pdfLayoutPolicy: { mode: policy.mode, expectedStoryPages: 30 } }).functionalPassed, count === 30);
+    if (count === 33) {
+      const expected = expectedStoryIllustrationIndexes("every-third-page", count);
+      const sparse = summarizeAcceptance({ ...sample, illustrationCadence: "every-third-page",
+        images: selectedPages.filter(page => expected.includes(page.index)).map(page => ({ type: "SCENE_ILLUSTRATION", pageId: page.id })) });
+      assert.equal(sparse.functionalPassed, true);
+      assert.equal(sparse.expectedIllustrationPageIndexes.at(-1), 33);
+    }
+  }
+});
+
 test("sparse acceptance requires exactly the configured ten scene slots and two separate portraits", () => {
   const expected = expectedStoryIllustrationIndexes("every-third-page", 30);
   const scenes = pages.filter((page) => expected.includes(page.index)).map((page) => ({ type: "SCENE_ILLUSTRATION", pageId: page.id }));
@@ -398,12 +431,13 @@ test("parseable archives with no readable story text are rejected", async () => 
   await verifyArchive("epub", await epub.generateAsync({ type: "nodebuffer" }));
 });
 
-test("publication capture requires three intact downloads tied to their exact revision", async () => {
+for (const targetPages of [30, 33]) test(`publication capture requires three intact downloads for ${targetPages} selected pages`, async () => {
+  const pages = Array.from({ length: targetPages }, (_, i) => ({ id: `page-${i + 1}`, index: i + 1, status: "COMPLETED", markdown: "Story." }));
   const dir = mkdtempSync(join(tmpdir(), "book-acceptance-"));
   const pdf = Buffer.from("%PDF-1.7\nfixture PDF parsed by injected test reader\n%%EOF");
   const bytes = { pdf, ...await archives() };
-  const project = { id: "book", targetPages: 30, contentRevision: 4, pdfPageMap: {
-    totalPdfPages: 32, contentRevision: 4, pdfDigest: sha256(pdf), hasCoverPage: true,
+  const project = { id: "book", targetPages, contentRevision: 4, pdfPageMap: {
+    totalPdfPages: targetPages + 2, contentRevision: 4, pdfDigest: sha256(pdf), hasCoverPage: true,
     pages: pages.map((p) => ({ index: p.index, startPdfPage: p.index + 2, endPdfPage: p.index + 2 }))
   } };
   const store = new Map();
@@ -412,17 +446,18 @@ test("publication capture requires three intact downloads tied to their exact re
     store.set(key, body);
     store.set(`${key}.provenance.json`, Buffer.from(JSON.stringify({ revision: 4, digest: sha256(body), byteSize: body.length })));
   }
-  const options = { project, pages, getObject: async (key) => store.get(key) ?? null, outputDir: dir, pdfInfo: () => "Pages: 32\n",
-    expectedIllustrationPageIndexes: expectedStoryIllustrationIndexes("every-third-page", 30),
-    pdfLayoutPolicy: { mode: "one-physical-page-per-story", expectedStoryPages: 30 } };
+  const options = { project, pages, getObject: async (key) => store.get(key) ?? null, outputDir: dir, pdfInfo: () => `Pages: ${targetPages + 2}\n`,
+    expectedIllustrationPageIndexes: expectedStoryIllustrationIndexes("every-third-page", targetPages),
+    pdfLayoutPolicy: { mode: "one-physical-page-per-story", expectedStoryPages: 30,
+      ...(targetPages === 33 ? { pageCountBounds: { minimumPages: 30, maximumPages: 33 } } : {}) } };
   try {
     const captured = await capturePublishedArtifacts(options);
     assert.equal(captured.length, 3);
-    assert.equal(captured[0].physicalPages, 32);
-    assert.equal(captured[0].storyPages, 30);
-    assert.equal(captured[0].mappedIllustratedStoryPageIndexes.length, 10);
-    assert.equal(captured[0].mappedTextOnlyStoryPageIndexes.length, 20);
-    assert.equal(captured[0].storyPageLayout.storySheets, 30);
+    assert.equal(captured[0].physicalPages, targetPages + 2);
+    assert.equal(captured[0].storyPages, targetPages);
+    assert.equal(captured[0].mappedIllustratedStoryPageIndexes.length, targetPages / 3);
+    assert.equal(captured[0].mappedTextOnlyStoryPageIndexes.length, targetPages * 2 / 3);
+    assert.equal(captured[0].storyPageLayout.storySheets, targetPages);
     assert.deepEqual(captured[0].storyPageLayout.frontMatterPhysicalPages, [1, 2]);
     const completeMap = project.pdfPageMap.pages;
     project.pdfPageMap.pages = completeMap.map((range) => ({ ...range, startPdfPage: Math.ceil(range.index / 3) + 3, endPdfPage: Math.ceil(range.index / 3) + 3 }));

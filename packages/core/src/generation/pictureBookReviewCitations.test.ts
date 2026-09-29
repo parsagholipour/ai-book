@@ -13,7 +13,7 @@ function setup(answers: unknown[]) {
   const fixture = scriptedDevelopmentModel(answers);
   const options: Parameters<typeof reviewPictureBookManuscript>[0] = {
     input: { ...developmentInput, category: "KIDS", targetPages: 30, prompt: captured.brief },
-    plan: originalDevelopmentPlan(), pages: captured.pages, chapterBriefs: [], checks: captured.checks, textModel: fixture.model
+    plan: originalDevelopmentPlan(), pages: captured.pages, chapterBriefs: [], continuityReview: false, checks: captured.checks, textModel: fixture.model
   };
   return { ...fixture, options };
 }
@@ -23,7 +23,7 @@ it.each([false, true])("cannot approve Quick's unchanged page 20 by dropping a f
   const pages = minimal ? captured.pages.filter((p: { index: number }) => [18, 20].includes(p.index)) : captured.pages;
   const { model, calls } = scriptedDevelopmentModel([response, captured.recoveryResponse]);
   const result = await reviewPictureBookManuscript({ input: { ...developmentInput, category: "KIDS", targetPages: 30, prompt: captured.brief },
-    plan: originalDevelopmentPlan(), pages, chapterBriefs: [], checks: captured.checks, textModel: model
+    plan: originalDevelopmentPlan(), pages, chapterBriefs: [], continuityReview: false, checks: captured.checks, textModel: model
   }).then(() => "unexpected approval", error => error);
   expect(result).toMatchObject({ name: "PictureBookReviewIncompleteError", checkpoint: { unresolvedPageIndexes: [20] } });
   expect(calls).toHaveLength(2);

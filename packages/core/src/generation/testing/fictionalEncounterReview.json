@@ -1,0 +1,664 @@
+{
+  "input": {
+    "prompt": "Create the best-fitting book from the user's creation chat. Decide the real book shape during planning; do not rely on the neutral project category.\nBook type choice: Auto - decide during planning\nCreation chat: Assistant: Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.\nUser: 10 page book about Neymar and a poor girl, she's a waitress. Neymar have a lot of polemics. being always a guy who don't care about others, the girl hate famous, a enemies to lovers\nAssistant: Got it — a 10-page enemies-to-lovers story: **Neymar**, the famous star tangled in scandals and used to not caring about anyone, and a poor waitress who can't stand famous people. I'll build it as a short romantic story where their clash slowly turns into something else.\n\nI'll take it from here and shape the plan around that.\nArtifact: Short illustrated romance story, 10 pages\nAudience or reader: Adult readers who enjoy celebrity romance and enemies-to-lovers stories\nPromise or story shape: A tense, slow-burn enemies-to-lovers romance in which a scandal-plagued football superstar and a proud young waitress who despises fame move from open hostility to unexpected love.\nTone or vibe: Emotional, sharp-edged banter, slow-burn romantic tension\nMain character: Neymar, a world-famous football star surrounded by scandals, used to getting his way and not caring about anyone else; and a poor young woman who works as a waitress, proud and hard-working, who hates famous people and everything they represent.\nConflict: Their first encounters are pure friction: she sees him as an arrogant celebrity who ruins everything he touches, he sees her as the only person who refuses to be impressed by him. His scandals and her contempt keep pushing them apart even as an unwilling attraction pulls them together.\nTheme: Real connection over fame and image; seeing the person behind the reputation.\nEnding feel: After a turning point where he shows genuine care for her and the people around her, her hatred softens into love, and they choose each other despite the gap between their worlds.\nMust include: Neymar as the male lead; a poor waitress as the female lead; Neymar's many scandals and his careless, self-centred attitude; her hatred of famous people; enemies-to-lovers arc; 10 pages\nPlanning instruction: choose the most appropriate shape directly, such as children's fable, short story, workbook, practical guide, client tool, offer guide, or lead magnet, based on the chat history.",
+    "category": "CUSTOM",
+    "language": "en",
+    "complexity": 4,
+    "subcategory": "Auto",
+    "targetPages": 10,
+    "temperature": 0.65,
+    "mediaSettings": {
+      "mobile": {
+        "brief": {
+          "tone": "Emotional, sharp-edged banter, slow-burn romantic tension",
+          "topic": "10 page book about Neymar and a poor girl, she's a waitress. Neymar have a lot of polemics. being always a guy who don't care about others, the girl hate famous, a enemies to lovers",
+          "intent": "collect_leads",
+          "audience": "Adult readers who enjoy celebrity romance and enemies-to-lovers stories",
+          "mustInclude": "Neymar as the male lead; a poor waitress as the female lead; Neymar's many scandals and his careless, self-centred attitude; her hatred of famous people; enemies-to-lovers arc; 10 pages",
+          "sourceNotes": "",
+          "readerProblem": "Their first encounters are pure friction: she sees him as an arrogant celebrity who ruins everything he touches, he sees her as the only person who refuses to be impressed by him. His scandals and her contempt keep pushing them apart even as an unwilling attraction pulls them together.",
+          "desiredOutcome": "A tense, slow-burn enemies-to-lovers romance in which a scandal-plagued football superstar and a proud young waitress who despises fame move from open hostility to unexpected love.",
+          "distributionUse": ""
+        },
+        "recipe": {
+          "lane": "auto",
+          "tone": "Emotional, sharp-edged banter, slow-burn romantic tension",
+          "theme": "Real connection over fame and image; seeing the person behind the reputation.",
+          "title": "",
+          "ending": "After a turning point where he shows genuine care for her and the people around her, her hatred softens into love, and they choose each other despite the gap between their worlds.",
+          "promise": "A tense, slow-burn enemies-to-lovers romance in which a scandal-plagued football superstar and a proud young waitress who despises fame move from open hostility to unexpected love.",
+          "artifact": "Short illustrated romance story, 10 pages",
+          "audience": "Adult readers who enjoy celebrity romance and enemies-to-lovers stories",
+          "conflict": "Their first encounters are pure friction: she sees him as an arrogant celebrity who ruins everything he touches, he sees her as the only person who refuses to be impressed by him. His scandals and her contempt keep pushing them apart even as an unwilling attraction pulls them together.",
+          "nextStep": "",
+          "exercises": "",
+          "mustInclude": "Neymar as the male lead; a poor waitress as the female lead; Neymar's many scandals and his careless, self-centred attitude; her hatred of famous people; enemies-to-lovers arc; 10 pages",
+          "mainCharacter": "Neymar, a world-famous football star surrounded by scandals, used to getting his way and not caring about anyone else; and a poor young woman who works as a waitress, proud and hard-working, who hates famous people and everything they represent."
+        },
+        "advisor": {
+          "recipe": {
+            "lane": "auto",
+            "tone": "Emotional, sharp-edged banter, slow-burn romantic tension",
+            "theme": "Real connection over fame and image; seeing the person behind the reputation.",
+            "title": "",
+            "ending": "After a turning point where he shows genuine care for her and the people around her, her hatred softens into love, and they choose each other despite the gap between their worlds.",
+            "promise": "A tense, slow-burn enemies-to-lovers romance in which a scandal-plagued football superstar and a proud young waitress who despises fame move from open hostility to unexpected love.",
+            "artifact": "Short illustrated romance story, 10 pages",
+            "audience": "Adult readers who enjoy celebrity romance and enemies-to-lovers stories",
+            "conflict": "Their first encounters are pure friction: she sees him as an arrogant celebrity who ruins everything he touches, he sees her as the only person who refuses to be impressed by him. His scandals and her contempt keep pushing them apart even as an unwilling attraction pulls them together.",
+            "nextStep": "",
+            "exercises": "",
+            "mustInclude": "Neymar as the male lead; a poor waitress as the female lead; Neymar's many scandals and his careless, self-centred attitude; her hatred of famous people; enemies-to-lovers arc; 10 pages",
+            "mainCharacter": "Neymar, a world-famous football star surrounded by scandals, used to getting his way and not caring about anyone else; and a poor young woman who works as a waitress, proud and hard-working, who hates famous people and everything they represent."
+          },
+          "warnings": [],
+          "rationale": "Auto is selected, so the planner will choose the best book shape from the full chat history.",
+          "briefScore": 88,
+          "detectedLane": "auto",
+          "missingFields": [],
+          "recommendation": {
+            "bookType": "lead_magnet",
+            "targetPages": 10,
+            "coverEnabled": true,
+            "lengthPreset": "short",
+            "imagesEnabled": true,
+            "pageCountMode": "custom",
+            "qualityPreset": "fast",
+            "bookTypeChoice": "auto",
+            "pageCountSource": "chat",
+            "illustrationsEnabled": true
+          },
+          "bookShapePreview": [
+            "Planner chooses the best book shape",
+            "Structure follows the chat history",
+            "Pages stay Auto until you choose or mention them",
+            "Tone and visuals follow your details"
+          ],
+          "titleSuggestions": [],
+          "followUpSuggestions": [
+            "Want to improve this? Add who it is for.",
+            "Want to sharpen it? Add the feeling or outcome you want."
+          ]
+        },
+        "rawIdea": "10 page book about Neymar and a poor girl, she's a waitress. Neymar have a lot of polemics. being always a guy who don't care about others, the girl hate famous, a enemies to lovers",
+        "bookType": "custom",
+        "messages": [
+          {
+            "id": "legacy-0",
+            "role": "assistant",
+            "turnUi": {
+              "question": null,
+              "quickReplies": [
+                "Bedtime story for 5 year olds",
+                "Lead magnet about pricing",
+                "Workbook for new coaches",
+                "Short story about a garden mystery"
+              ]
+            },
+            "content": "Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.",
+            "parentId": null,
+            "isActiveChild": true
+          },
+          {
+            "id": "legacy-1",
+            "role": "user",
+            "content": "10 page book about Neymar and a poor girl, she's a waitress. Neymar have a lot of polemics. being always a guy who don't care about others, the girl hate famous, a enemies to lovers",
+            "parentId": "legacy-0",
+            "isActiveChild": true
+          },
+          {
+            "id": "legacy-2",
+            "role": "assistant",
+            "turnUi": {
+              "question": null,
+              "quickReplies": []
+            },
+            "content": "Got it — a 10-page enemies-to-lovers story: **Neymar**, the famous star tangled in scandals and used to not caring about anyone, and a poor waitress who can't stand famous people. I'll build it as a short romantic story where their clash slowly turns into something else.\n\nI'll take it from here and shape the plan around that.",
+            "parentId": "legacy-1",
+            "isActiveChild": true
+          }
+        ],
+        "sourceRefs": [],
+        "attachments": [],
+        "sourceNotes": "",
+        "targetPages": 10,
+        "titleSource": "planner_pending",
+        "coverEnabled": true,
+        "detectedLane": "auto",
+        "lengthPreset": "custom",
+        "imagesEnabled": true,
+        "pageCountMode": "custom",
+        "qualityPreset": "fast",
+        "bookTypeChoice": "auto",
+        "payloadVersion": 2,
+        "optionalDetails": {
+          "tone": "",
+          "mustInclude": ""
+        },
+        "pageCountSource": "chat",
+        "selectedPresets": {
+          "bookType": "lead_magnet",
+          "targetPages": 10,
+          "coverEnabled": true,
+          "lengthPreset": "short",
+          "imagesEnabled": true,
+          "pageCountMode": "custom",
+          "qualityPreset": "fast",
+          "bookTypeChoice": "auto",
+          "pageCountSource": "chat",
+          "illustrationsEnabled": true
+        },
+        "illustrationsEnabled": true
+      },
+      "modelTier": "fast",
+      "finalReview": false,
+      "toneProfile": "neutral",
+      "includeCover": true,
+      "coverTemplate": "auto",
+      "coverArtSource": "ai",
+      "draftCandidates": 1,
+      "fullIllustrations": true,
+      "generationStrategy": "auto",
+      "generationPageCount": {
+        "selectedPages": 10,
+        "requestedPages": 10
+      },
+      "illustrationCadence": "template-driven",
+      "parallelPageGeneration": true
+    }
+  },
+  "plan": {
+    "title": "After the Cameras",
+    "bookArc": {
+      "turn": {
+        "repair": "He corrects the account without naming Isa or using her identity as proof of his good intentions.",
+        "trouble": "The fictional headline gives Neymar an easy opportunity to protect his image while leaving Isa exposed to unwanted attention.",
+        "chapterIndex": 4
+      },
+      "answer": "They can begin to build trust when Neymar takes responsibility without demanding gratitude and Isa freely chooses whether to let him closer.",
+      "chapters": [
+        {
+          "job": {
+            "adds": "Neymar is accustomed to special treatment, and Isa refuses to provide it.",
+            "does": "Establish the café, Isa's working pressures, and her first clash with Neymar.",
+            "leavesOpen": "Will their conflict stay a bad first impression, or will circumstances force them to deal with one another?",
+            "believesSoFar": "Isa expects a celebrity to treat ordinary workers as background."
+          },
+          "cast": [
+            "Neymar",
+            "Isa",
+            "Rosa"
+          ],
+          "kind": "case",
+          "index": 1,
+          "pages": 2,
+          "dispute": {
+            "sideA": {
+              "name": "Isa",
+              "claim": "The café and its workers should not be rearranged to satisfy a famous customer."
+            },
+            "sideB": {
+              "name": "Neymar",
+              "claim": "His expectations should be accommodated because attention follows him everywhere."
+            },
+            "atStake": "The first impression each forms of the other and the staff's control over their workplace."
+          }
+        },
+        {
+          "job": {
+            "adds": "Neymar can follow Isa's practical judgment when he stops centering himself.",
+            "does": "Bring unwanted attention to the café and make the leads cooperate to protect the staff and customers.",
+            "leavesOpen": "Will his cooperation continue once the crowd is gone and no one is watching?",
+            "believesSoFar": "Neymar expects the disruption to be handled around his need to leave."
+          },
+          "cast": [
+            "Neymar",
+            "Isa",
+            "Rosa"
+          ],
+          "kind": "complication",
+          "index": 2,
+          "pages": 2
+        },
+        {
+          "job": {
+            "adds": "Neymar offers discreet help and accepts that Isa does not owe him a performance of gratitude.",
+            "does": "Give the café a practical loss and make Isa specify what useful support would look like.",
+            "leavesOpen": "Can he protect Isa's privacy when public attention becomes more consequential?",
+            "believesSoFar": "Isa suspects any help Neymar offers may serve his reputation."
+          },
+          "cast": [
+            "Neymar",
+            "Isa",
+            "Rosa"
+          ],
+          "kind": "case",
+          "index": 3,
+          "pages": 2,
+          "dispute": {
+            "sideA": {
+              "name": "Isa",
+              "claim": "Support should meet the café's needs without turning its workers into publicity."
+            },
+            "sideB": {
+              "name": "Neymar",
+              "claim": "A visible gesture may be the quickest way to manage the damage."
+            },
+            "atStake": "Whether the café receives useful help on terms that respect its staff."
+          }
+        },
+        {
+          "job": {
+            "adds": "Neymar accepts a reputational cost to correct the account without exposing Isa.",
+            "does": "Make a fictional headline threaten Isa's privacy and test Neymar's priorities.",
+            "leavesOpen": "Will Isa want a relationship with him once the immediate problem has passed?",
+            "believesSoFar": "Neymar has helped in private, but Isa remains wary of how he handles attention."
+          },
+          "cast": [
+            "Neymar",
+            "Isa",
+            "Rosa"
+          ],
+          "kind": "complication",
+          "index": 4,
+          "pages": 2,
+          "dispute": {
+            "sideA": {
+              "name": "Isa",
+              "claim": "Her identity and privacy must stay out of a public story she did not choose."
+            },
+            "sideB": {
+              "name": "Neymar",
+              "claim": "A fast public response could protect his image, even if it uses the café to do so."
+            },
+            "atStake": "Isa's privacy and the kind of responsibility Neymar is willing to take."
+          }
+        },
+        {
+          "job": {
+            "adds": "They choose a first date built around mutual respect rather than status or spectacle.",
+            "does": "Let the leads speak privately and make their romantic choice at Isa's pace.",
+            "leavesOpen": "Their relationship begins with trust still being built, rather than with every difference erased.",
+            "believesSoFar": "Isa sees evidence of change but remains entitled to decide whether it is enough."
+          },
+          "cast": [
+            "Neymar",
+            "Isa"
+          ],
+          "kind": "resolution",
+          "index": 5,
+          "pages": 2
+        }
+      ],
+      "opponent": {
+        "name": "Public image",
+        "work": "The attention and expectations surrounding Neymar make private choices visible and tempt him to manage appearances instead of listening.",
+        "claim": "A polished public gesture can settle a problem without requiring a personal change.",
+        "whereRight": "Public attention can affect a small business and the people who work there, so appearances have practical consequences.",
+        "whereTheBookBreaks": "Image management alone cannot give Isa privacy, repair the café's losses, or earn her trust."
+      },
+      "proposal": "Structure the ten-page book as five two-page chapters. Keep the celebrity-romance premise, but treat every invented encounter and scandal-related detail as fictional rather than biographical.",
+      "question": "Can Isa and Neymar build trust when fame and money have taught them to expect very different things from other people?"
+    },
+    "premise": "In this clearly fictional romance, football superstar Neymar arrives at a small São Paulo café with a reputation shaped by headlines and a habit of expecting others to accommodate him. Isa, a proud waitress working to keep her family afloat, dislikes celebrities and refuses to flatter him. When a sudden media commotion threatens the café staff, Neymar must decide whether to protect his image or help the people caught in the disruption. Their sharp exchanges give way, slowly and unevenly, to trust and love.",
+    "audience": "Adult readers who enjoy concise, illustrated celebrity romance and enemies-to-lovers stories.",
+    "chapters": [
+      {
+        "index": 1,
+        "title": "A Table by the Window",
+        "summary": "Isa's shift at a modest neighborhood café is disrupted when Neymar arrives with an entourage and expects the room to bend around him. Their first exchange establishes her contempt for celebrity entitlement and his surprise at being treated like an ordinary difficult customer.",
+        "keyBeats": [
+          "Introduce Isa balancing a busy shift with concern about rent and her family's needs.",
+          "Introduce fictional Neymar arriving at the café, distracted by attention and impatient with ordinary service.",
+          "Isa refuses a special demand and tells him plainly that fame does not make him the only person in the room."
+        ],
+        "targetPages": 2
+      },
+      {
+        "index": 2,
+        "title": "The Café in the Headlines",
+        "summary": "A crowd gathers outside after Neymar is recognized, and phones turn the café into a spectacle. Isa and Neymar disagree over how to manage the interruption, then cooperate to get staff and customers safely through the rush.",
+        "keyBeats": [
+          "A fictional burst of online attention brings photographers and curious onlookers to the café entrance.",
+          "Neymar initially focuses on leaving without looking bad, while Isa prioritizes the staff and customers.",
+          "He follows Isa's practical plan, helping clear a safe route without asking for praise or a photograph."
+        ],
+        "targetPages": 2
+      },
+      {
+        "index": 3,
+        "title": "A Favor Without a Camera",
+        "summary": "After the crowd disperses, the café faces a costly mess and a lost evening's business. Neymar offers help in a way that initially sounds like a public-relations fix; Isa challenges him to make a useful choice without turning the staff into props.",
+        "keyBeats": [
+          "The café owner counts the disruption's concrete costs while Isa helps her coworkers clean and reopen.",
+          "Neymar proposes a conspicuous gesture, and Isa explains why the workers need practical support rather than publicity.",
+          "He arranges discreet, immediate help through the owner and accepts Isa's refusal to perform gratitude for him."
+        ],
+        "targetPages": 2
+      },
+      {
+        "index": 4,
+        "title": "The Story Everyone Wants",
+        "summary": "A misleading headline about the café fuels fresh attention and puts Isa's job and privacy at risk. Neymar can let the rumor run for convenience, but chooses to correct the public account without naming Isa or using her image.",
+        "keyBeats": [
+          "A fictional headline distorts the café incident and brings unwanted attention back to Isa's workplace.",
+          "Isa tells Neymar she will not be made into a supporting character in his public image.",
+          "Neymar issues a clear correction that takes responsibility for his part and keeps Isa's identity and private life out of it."
+        ],
+        "targetPages": 2
+      },
+      {
+        "index": 5,
+        "title": "A Quiet Table for Two",
+        "summary": "With the café back to its ordinary rhythm, Neymar returns without an entourage and asks Isa to speak with him after her shift. She names what she still distrusts; he listens without bargaining. Isa decides to give him a chance, and they leave together on terms she has chosen.",
+        "keyBeats": [
+          "Neymar returns alone and waits until Isa has finished her work before asking for her time.",
+          "Isa describes the limits she needs, and Neymar answers with listening and accountability rather than a grand promise.",
+          "Isa chooses a modest first date, and Neymar follows her lead as they step into the evening together."
+        ],
+        "targetPages": 2
+      }
+    ],
+    "promises": [
+      "The café disruption will have a practical cost for the workers, and the story will show how that cost is addressed.",
+      "The fictional media attention will test whether Neymar values public image over the privacy and well-being of the people around him.",
+      "Isa and Neymar will move from hostility to a mutual romantic choice through specific behavior, not an instant change of heart."
+    ],
+    "subtitle": "A fictional enemies-to-lovers romance",
+    "locations": [
+      {
+        "name": "Café Aurora",
+        "rules": [
+          "Keep the café intimate and working-class, with visible signs of everyday use rather than polished luxury.",
+          "The front entrance and window make the crowd's presence visible without depicting dangerous physical confrontation.",
+          "Maintain the same basic layout across illustrations: counter at the back, tables by the front window, kitchen behind the pass-through."
+        ],
+        "description": "A small neighborhood café in São Paulo, with a narrow front window, close-set tables, a worn wooden counter, and a kitchen pass-through."
+      },
+      {
+        "name": "The pavement outside Café Aurora",
+        "rules": [
+          "Keep the attention on the café workers' experience, not on sensationalized paparazzi behavior.",
+          "Do not use real news logos, headlines, or identifiable media brands."
+        ],
+        "description": "A busy city sidewalk where passersby and a small group of photographers can gather during the fictional media commotion."
+      }
+    ],
+    "questions": [],
+    "characters": [
+      {
+        "name": "Neymar",
+        "role": "Fictionalized male lead and internationally famous football star.",
+        "traits": [
+          "Charismatic",
+          "Impatient",
+          "Defensive about public image",
+          "Capable of self-correction",
+          "Attracted to Isa's candor"
+        ],
+        "description": "A fictional romance portrayal of the real public figure, shaped for this story rather than offered as biography. He begins accustomed to attention and impatient when the world does not accommodate him. He gradually recognizes that consideration means listening and acting without expecting applause.",
+        "visualRules": [
+          "Use the recognizable identity of Neymar, with a lean athletic footballer's build and short dark hair; keep facial features consistent across illustrations.",
+          "Use contemporary casual clothing in dark neutrals with occasional muted color, and a simple watch; avoid team crests, branded marks, or invented trophies.",
+          "Show his expressions changing from distracted confidence to attentive restraint without changing his basic silhouette.",
+          "Depict him as an adult and do not glamorize the café disruption or the photographers."
+        ]
+      },
+      {
+        "name": "Isa",
+        "role": "Waitress and female lead.",
+        "traits": [
+          "Proud",
+          "Practical",
+          "Quick-witted",
+          "Protective of coworkers",
+          "Cautious about trust"
+        ],
+        "description": "A hard-working young woman with limited money and a strong sense of dignity. She dislikes famous people because she has seen attention and privilege crowd out ordinary workers. Her arc is choosing to judge Neymar by sustained behavior without surrendering her own judgment or goals.",
+        "visualRules": [
+          "Keep Isa's silhouette slim and compact, with a dark curly bob, warm brown eyes, and a small beauty mark beside her left cheek.",
+          "In work scenes, dress her in a cream shirt, forest-green apron, dark trousers, and sturdy black shoes.",
+          "Use a palette of forest green, cream, faded denim, and warm brown; outside work, give her a simple denim jacket over practical clothes.",
+          "Keep her facial expressions direct and readable; her confidence should not be conveyed through glamour styling."
+        ]
+      },
+      {
+        "name": "Rosa",
+        "role": "Café owner and Isa's employer.",
+        "traits": [
+          "Observant",
+          "Firm",
+          "Fair-minded"
+        ],
+        "description": "A composed neighborhood business owner who cares about her staff and the café's survival. She keeps the conflict grounded in its real costs and makes the final decision about what support the business accepts.",
+        "visualRules": [
+          "Give Rosa a sturdy silhouette, silver-streaked dark hair tied in a low bun, and round glasses.",
+          "Dress her in a rust-red blouse, charcoal apron, and comfortable dark shoes.",
+          "Use a palette of rust, charcoal, and muted cream, with a small brass key ring at her waist as a consistent detail."
+        ]
+      }
+    ],
+    "voiceGuide": [
+      "Write as a compact romantic short story, using scene, dialogue, and physical action rather than explanatory commentary.",
+      "Let the banter stay sharp without making either lead cruel for sport.",
+      "Build attraction through small, observable choices; do not make one act of kindness erase a history of selfish behavior.",
+      "Keep the emotional tone grounded and let the characters earn their change."
+    ],
+    "antiAiRules": [
+      "Treat Neymar and the café encounter as fictionalized. Do not present invented private conduct, scandals, dialogue, motives, or romantic involvement as real-world fact.",
+      "Do not invent or repeat specific allegations about the real Neymar. Refer, when needed, to public headlines or a fictional media storm without claiming particular events happened.",
+      "Do not make Isa a prize Neymar wins through persistence; she sets boundaries and chooses whether to reciprocate.",
+      "Avoid instant forgiveness, instant intimacy, and declarations that substitute for changed behavior.",
+      "Avoid proof-leap transitions, including 'the truth is' or 'this is no coincidence,' unless a character says them naturally.",
+      "Do not stack contrast sentences that turn one incident into a sweeping judgment.",
+      "Avoid repeated 'not this, but that' constructions; state the intended meaning directly.",
+      "Use dashes sparingly and prefer clean punctuation.",
+      "Replace abstractions about fame or love with concrete details, choices, and reactions.",
+      "Do not include generic chapter-ending morals or summarize the story's theme for the reader.",
+      "Do not mention prompts, plans, AI, schemas, or production instructions in the story.",
+      "Keep every page focused on the particular scene and change assigned to it.",
+      "Frame the romance and café events as fiction; do not imply that invented scenes or private conduct are biographical fact.",
+      "Show Neymar's growth through repeated considerate actions, including one consequential choice that costs him convenience or control.",
+      "Give Isa her own practical goals and decisions; her attraction does not cancel her independence or boundaries.",
+      "Use dialogue, setting, and action to carry emotional information instead of explaining each character's feelings after every exchange.",
+      "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+      "Do not invent evidence, citations, studies, experts, or source identities.",
+      "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+      "Use uncertainty only where the evidence on this page requires it.",
+      "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+    ],
+    "openingHook": "Isa is carrying three coffees through Café Aurora when a man in sunglasses takes the window table and asks her to clear the room. She sets down the cups and tells Neymar that the tables are for customers, not reputations.",
+    "writingMode": "narrative",
+    "authorStance": {
+      "thesis": "Love between people separated by fame and money can grow when each person treats the other's needs as real.",
+      "refusals": [
+        "Refuse to make poverty a decorative hardship that exists only to inspire a wealthy love interest.",
+        "Refuse to treat one grand gesture as proof of lasting change.",
+        "Refuse to make the woman lead's skepticism disappear for the sake of a romantic ending."
+      ],
+      "positions": [
+        "A person's public image cannot substitute for the way they behave in an ordinary room.",
+        "Service workers deserve respect even when a famous customer is impatient.",
+        "Trust grows through consistent choices that make room for another person's boundaries.",
+        "Money can ease a practical burden without buying affection or forgiveness."
+      ],
+      "voiceSample": "At the Mercado Municipal de São Paulo, the fruit stalls begin to look different after the lunch rush, when bruised peaches sit beside immaculate pyramids of oranges. Dona Célia, who has sold produce there for twenty years, keeps a small knife under the counter and cuts samples only when a customer asks. Her hands move quickly, but she never hurries a child choosing between two slices of mango.\n\nOn Rua Avanhandava, a restaurant's back door opens onto a narrow lane where delivery crates collect before dawn. Paulo, the cook at the corner trattoria, knows which crate belongs to which supplier by the color of its twine. He writes the day's shortages on the back of a receipt and pins it beside the stove. At six, the owner reads the note while the espresso machine sputters awake.\n\nIn Recife, a bus driver named Lúcia keeps a folded paper timetable in her shirt pocket, though her route now appears on a screen above the dashboard. She checks the paper at the last stop, where a schoolboy named Davi often waits with a cello case nearly as tall as he is. One rainy Tuesday, Lúcia held the doors while he tucked the case under the seat. The bus left two minutes late, and Davi reached his music lesson with dry strings."
+    },
+    "researchNotes": [
+      {
+        "query": "10 page book about Neymar and a poor girl, she's a waitress. Neymar have a lot of polemics. being always a guy who don't care about others, the girl hate famous, a enemies to lovers",
+        "title": "Gemini grounded summary",
+        "summary": "The provided topic describes a fictional 10-page book featuring Neymar and a poor waitress in an \"enemies to lovers\" narrative, highlighting Neymar's controversies and the girl's dislike for famous people. As the core of the topic is a fictional plot, factual background can only be provided for the real-world elements mentioned, primarily Neymar da Silva Santos Júnior.\n**Neymar da Silva Santos Júnior: Factual Background**\nNeymar da Silva Santos Júnior, commonly known as Neymar, is a Brazilian professional footballer. He is widely regarded as one of the best players of his generation.\n*   **Career Highlights:**\n*   Neymar began his professional career at Santos FC in Brazil, where he played from 2009 to 2013.\n*   He then moved to FC Barcelona in 2013, forming a formidable attacking trio with Lionel Messi and Luis Suárez. During his time at Barcelona, he won numerous titles, including the UEFA Champions League in the 2014–2015 season.\n*   In 2017, Neymar transferred to Paris Saint-Germain (PSG) for a world-record fee of €222 million, making him the most expensive player in history. He played for PSG until 2023.\n*   In August 2023, he joined Saudi Professional League club Al Hilal.\n*   He is also a key player for the Brazil national team, having made his debut in 2010. He is Brazil's all-time leading goalscorer.\n*   **Public Image and Controversies (\"Polemics\"):**\nNeymar's career has been marked by significant media attention, both for his on-field brilliance and off-field controversies. These \"polemics\" often contribute to a public perception of him as a figure who sometimes faces criticism regarding his conduct or perceived lack of care for others, as suggested in the book topic.\n*   **Diving and Simulation:** Neymar has frequently been criticized for alleged diving and simulation on the field, particularly during the 2018 FIFA World Cup, which led to widespread media scrutiny and memes.\n*   **Tax Evasion Allegations:** He has faced legal issues related to alleged tax evasion concerning his transfer from Santos to Barcelona. In 2016, a Brazilian court froze some of his assets due to these allegations.\n*   **Off-Field Behavior and Lifestyle:** His lavish lifestyle, frequent parties, and perceived lack of discipline have often drawn criticism from fans and media, especially during periods of injury or poor team performance.\n*   **Contractual Disputes:** His transfers, particularly the one to PSG, have been surrounded by complex contractual details and legal disputes, including issues with his former club Barcelona.\n*   **Injury Proneness:** While not a \"polemic\" in the same vein as behavioral issues, his frequent and sometimes lengthy injuries have been a recurring theme in his career, often leading to frustration among fans and questions about his physical conditioning.\n**Fictional Elements:**\nThe characters of the \"poor girl, she's a waitress\" and the \"enemies to lovers\" narrative are fictional constructs for the described book. There is no factual background for these specific elements as they pertain to a fictional story."
+      }
+    ],
+    "styleContract": {
+      "localRules": [
+        {
+          "id": "treat-neymar-and-the-caf-encounter-as-fictionali",
+          "instruction": "Treat Neymar and the café encounter as fictionalized. Do not present invented private conduct, scandals, dialogue, motives, or romantic involvement as real-world fact."
+        },
+        {
+          "id": "do-not-invent-or-repeat-specific-allegations-abo",
+          "instruction": "Do not invent or repeat specific allegations about the real Neymar. Refer, when needed, to public headlines or a fictional media storm without claiming particular events happened."
+        },
+        {
+          "id": "do-not-make-isa-a-prize-neymar-wins-through-pers",
+          "instruction": "Do not make Isa a prize Neymar wins through persistence; she sets boundaries and chooses whether to reciprocate."
+        },
+        {
+          "id": "avoid-instant-forgiveness-instant-intimacy-and-d",
+          "instruction": "Avoid instant forgiveness, instant intimacy, and declarations that substitute for changed behavior."
+        },
+        {
+          "id": "avoid-proof-leap-transitions-including-the-truth",
+          "instruction": "Avoid proof-leap transitions, including 'the truth is' or 'this is no coincidence,' unless a character says them naturally."
+        },
+        {
+          "id": "do-not-stack-contrast-sentences-that-turn-one-in",
+          "instruction": "Do not stack contrast sentences that turn one incident into a sweeping judgment."
+        },
+        {
+          "id": "avoid-repeated-not-this-but-that-constructions-s",
+          "instruction": "Avoid repeated 'not this, but that' constructions; state the intended meaning directly."
+        },
+        {
+          "id": "use-dashes-sparingly-and-prefer-clean-punctuatio",
+          "instruction": "Use dashes sparingly and prefer clean punctuation."
+        },
+        {
+          "id": "replace-abstractions-about-fame-or-love-with-con",
+          "instruction": "Replace abstractions about fame or love with concrete details, choices, and reactions."
+        },
+        {
+          "id": "do-not-include-generic-chapter-ending-morals-or-",
+          "instruction": "Do not include generic chapter-ending morals or summarize the story's theme for the reader."
+        },
+        {
+          "id": "do-not-mention-prompts-plans-ai-schemas-or-produ",
+          "instruction": "Do not mention prompts, plans, AI, schemas, or production instructions in the story."
+        },
+        {
+          "id": "keep-every-page-focused-on-the-particular-scene-",
+          "instruction": "Keep every page focused on the particular scene and change assigned to it."
+        },
+        {
+          "id": "fictionalized-public-figure",
+          "instruction": "Frame the romance and café events as fiction; do not imply that invented scenes or private conduct are biographical fact."
+        },
+        {
+          "id": "earned-change",
+          "instruction": "Show Neymar's growth through repeated considerate actions, including one consequential choice that costs him convenience or control."
+        },
+        {
+          "id": "isa-agency",
+          "instruction": "Give Isa her own practical goals and decisions; her attraction does not cancel her independence or boundaries."
+        },
+        {
+          "id": "scene-first",
+          "instruction": "Use dialogue, setting, and action to carry emotional information instead of explaining each character's feelings after every exchange."
+        },
+        {
+          "id": "no-proof-leap",
+          "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+        },
+        {
+          "id": "no-invented-evidence",
+          "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+        },
+        {
+          "id": "no-generic-conclusion",
+          "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+        },
+        {
+          "id": "uncertainty-where-earned",
+          "instruction": "Use uncertainty only where the evidence on this page requires it."
+        },
+        {
+          "id": "prompt-leak-ban",
+          "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+        }
+      ],
+      "distributionRules": [
+        {
+          "id": "vary-romantic-beats",
+          "instruction": "Vary the movement of the romance across the chapters: friction, reluctant cooperation, rupture, repair, and chosen intimacy."
+        },
+        {
+          "id": "no-single-gesture-redemption",
+          "instruction": "Do not treat one helpful gesture as complete redemption; let trust follow the accumulated pattern of choices."
+        },
+        {
+          "id": "motif-may-return",
+          "instruction": "A motif or refrain may return when the later occurrence advances, complicates, or pays it off."
+        },
+        {
+          "id": "no-identical-scene-replay",
+          "instruction": "Do not restage an earlier scene with only wording changed."
+        }
+      ]
+    },
+    "continuityRules": [
+      "This is a fictional romance involving a real public figure; invented scenes, dialogue, actions, and relationships must remain clearly part of the fiction.",
+      "Isa is a waitress at Café Aurora, and Rosa owns the café.",
+      "Isa's limited finances and responsibility toward her family remain part of her circumstances; Neymar's money does not solve her life for her.",
+      "Neymar's change is shown through considerate behavior and accountability, not through claims that the story has revealed his real private character.",
+      "Isa retains the right to set boundaries and choose the pace of the relationship.",
+      "Keep recurring characters' appearance, clothing, and café layout consistent with their visual rules."
+    ],
+    "researchQueries": [],
+    "illustrationPlan": {
+      "cadence": "template-driven",
+      "pageRules": [
+        "Use the exact names Neymar, Isa, and Rosa whenever those recurring characters appear in illustration prompts.",
+        "Keep faces, clothing, colors, and café layout consistent with the character and location descriptions.",
+        "Favor one legible moment per illustration, with gestures that show who is listening, resisting, or choosing.",
+        "Do not depict photographers as physically threatening or use recognizable media logos.",
+        "Do not place legible text inside images."
+      ],
+      "coverPrompt": "Illustrate a fictional romance scene outside Café Aurora at dusk: Isa in her forest-green apron faces Neymar, who wears understated dark casual clothes, with the café window glowing behind them. Their expressions show irritation softening into curiosity. Keep the composition intimate, contemporary, and clearly fictional. Do not include text, logos, or a byline.",
+      "globalStyle": "Cinematic contemporary romance illustration with naturalistic expressions, warm café lighting, restrained colors, and clear staging. Keep the São Paulo café intimate and lived-in. Treat Neymar as a fictionalized character in a fictional scene; do not depict real scandals, real media brands, or documentary-style events.",
+      "characterReferencePrompts": [
+        "Character reference sheet for Isa: adult waitress with a compact slim silhouette, dark curly bob, warm brown eyes, and a small beauty mark beside her left cheek. Show her in a cream shirt, forest-green apron, dark trousers, and sturdy black shoes; include a simple denim jacket look for off-duty scenes. Preserve her direct, self-possessed expression and consistent features.",
+        "Character reference sheet for Neymar as a fictionalized romance character: adult Brazilian football star with a lean athletic build, short dark hair, and recognizable consistent facial features. Show understated dark casual clothing, a simple watch, and expressions ranging from distracted confidence to attentive restraint. Avoid team logos, brand marks, and invented trophies.",
+        "Character reference sheet for Rosa: café owner with a sturdy silhouette, silver-streaked dark hair in a low bun, round glasses, rust-red blouse, charcoal apron, dark comfortable shoes, and a small brass key ring at her waist."
+      ]
+    },
+    "writingComplexity": 4
+  },
+  "draft": {
+    "title": "A Tray Between Them",
+    "markdown": "Three coffees rocked on Isa’s tray as she threaded between the close-set tables at Café Aurora. At the front window, a man in dark sunglasses gestured toward the occupied seats. “Could you clear this area?” he asked. “I need some space.”\n\nIsa set the coffees down, steadying each cup. “Those tables are for customers,” she said. “Not reputations.”\n\nHe lowered his sunglasses. It was Neymar, the football star in this fictional encounter. His gaze moved over the crowded room. A couple at the next table whispered; around them, spoons tapped cups and Rosa called an order from the counter.\n\nIsa tucked the empty tray beneath her arm and turned back to her customers. Neymar’s hand, still lifted toward the window tables, dropped to his side. He stood amid the lunch-hour noise, with every seat still occupied.",
+    "summary": "Isa refuses Neymar’s request to clear the occupied window tables, then returns to serving as his gesture falls and the café carries on around him.",
+    "continuityNotes": [
+      "Isa works at Café Aurora, a modest neighborhood café in São Paulo, and wears her cream shirt and forest-green apron.",
+      "The café has close-set tables by its front window.",
+      "The encounter and dialogue are fictionalized."
+    ],
+    "imagePrompt": "Cinematic contemporary romance illustration inside the intimate, lived-in Café Aurora in São Paulo. Isa, with a dark curly bob, warm brown eyes, and a small beauty mark beside her left cheek, wears a cream shirt and forest-green apron and steadies a tray holding three coffees. Neymar, an adult lean athletic man with short dark hair and understated dark casual clothing, gestures toward the crowded window tables. Capture the moment of refusal through their expressions and posture, with close-set tables and warm natural café light. Clearly fictional scene; no logos, legible text, or dramatic paparazzi."
+  },
+  "review": {
+    "approved": false,
+    "score": 82,
+    "scoreBasis": "reviewer",
+    "issues": [
+      "“It was Neymar, the football star in this fictional encounter” reads as an intrusive disclaimer rather than natural story prose."
+    ],
+    "requiredRevisions": [
+      "Revise the identification sentence so it reads naturally while keeping the scene clearly fictionalized; avoid inserting an authorial disclaimer into the scene."
+    ],
+    "notes": "The page delivers its assigned clash with specific action and leaves the personal confrontation and outside attention for later pages. The hand dropping is a small immediate reaction, not a restaging of a reserved beat.",
+    "groundedOk": true,
+    "groundingStatus": "unverified_no_sources",
+    "groundingAvailability": "unverified_no_sources",
+    "unsupportedClaims": [],
+    "qualityAdvisories": [],
+    "checks": {
+      "placeholderFree": true,
+      "promptLeakFree": true,
+      "titleClean": true,
+      "repetitionOk": true,
+      "progressionOk": true,
+      "styleNatural": false
+    }
+  }
+}

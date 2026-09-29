@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     researchSource: { findMany: vi.fn(), createMany: vi.fn() },
     chapter: { findMany: vi.fn() },
     page: { findMany: vi.fn() },
-    planVersion: { findUnique: vi.fn() },
+    planVersion: { findUnique: vi.fn(), update: vi.fn() },
     $transaction: vi.fn()
   },
   getProjectOrThrow: vi.fn(),
@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   generateReplannedBook: vi.fn(),
   expandChapterResearch: vi.fn(),
   embedResearchSourcesForProject: vi.fn(),
-  updateJobProgress: vi.fn()
+  updateJobProgress: vi.fn(),
+  text: { generateJson: vi.fn() }
 }));
 
 vi.mock("@book-maker/db", async () => ({
@@ -34,7 +35,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   updateJobProgress: mocks.updateJobProgress
 }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
-vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({}), createLoggedJudgeTextModel: () => ({}) }));
+vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: mocks.text }), createLoggedJudgeTextModel: () => ({}) }));
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: mocks.getProjectOrThrow,
   strategyForInput: mocks.strategyForInput
@@ -73,7 +74,7 @@ import {
 } from "./generateBook.js";
 import { generateBookWholePass } from "../generation/bookPasses.js";
 import { prepareChapterSetups } from "../generation/bookState.js";
-import { seedStoryStateFromPromises } from "@book-maker/core";
+import { seedStoryStateFromPromises, createProjectSchema, makeFallbackPlan, type GenerateJsonOptions } from "@book-maker/core";
 
 const plan = {
   chapters: [],
@@ -101,6 +102,33 @@ beforeEach(() => {
   mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
     classifier: { replanStagedPlanId: "plan-2" }
   });
+});
+
+it("saves the brief contract before dispatching generation and reuses it on resume", async () => {
+  const input = createProjectSchema.parse({ prompt: "Use natural dialogue.", category: "KIDS", targetPages: 30, mediaSettings: { finalReview: true } });
+  const saved = { planningPackage: makeFallbackPlan(input), inputSnapshot: input };
+  const sequence: string[] = [];
+  mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1" });
+  mocks.inputForPlanVersion.mockReturnValue(input);
+  mocks.prisma.planVersion.findUnique.mockImplementation(async () => saved);
+  mocks.strategyForInput.mockReturnValue({ executionMode: "whole-book", researchDepth: 0 });
+  mocks.text.generateJson.mockImplementation(async (request: GenerateJsonOptions<unknown>) => {
+    sequence.push("inventory");
+    const data = { complete: true, requirements: [{ text: "Natural dialogue", quote: "natural dialogue", kind: "content",
+      scope: { extent: "whole_book", quote: input.prompt } }] };
+    return { data: request.schema.parse(data), text: JSON.stringify(data), model: "fixture", provider: "fixture" };
+  });
+  mocks.prisma.planVersion.update.mockImplementation(async ({ data }) => { sequence.push("persist"); saved.planningPackage = data.planningPackage; return saved; });
+  vi.mocked(generateBookWholePass).mockImplementation(async options => {
+    sequence.push("write");
+    expect(options.plan.requirementInventory).toEqual(saved.planningPackage.requirementInventory);
+    expect(options.plan.requirementInventory?.requirements[0]?.scope?.extent).toBe("whole_book");
+  });
+  const job = { data: { projectId: "project-1", planId: "plan-2", generationJobId: "job-generate" } } as never;
+  await generateBook(job);
+  await generateBook(job);
+  expect(sequence).toEqual(["inventory", "persist", "write", "write"]);
+  vi.mocked(generateBookWholePass).mockReset();
 });
 
 describe("generateBook replan recovery payload", () => {

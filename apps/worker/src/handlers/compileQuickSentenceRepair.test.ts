@@ -33,6 +33,7 @@ describe("Quick's September 27 sentence repair", () => {
     const text = new FakeTextModelAdapter(), calls: GenerateJsonOptions<unknown>[] = [];
     let reviews = 0, repairs = 0;
     text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
       calls.push(request);
       request.textAttemptBudget!.used += 1;
       expect(mocks.prisma.page.update).not.toHaveBeenCalled();

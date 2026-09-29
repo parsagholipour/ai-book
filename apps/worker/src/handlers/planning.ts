@@ -26,7 +26,7 @@ import { isStopRequestedError, type JobCompletion } from "../runtime/jobTypes.js
 import { jsonPayloadToRecord } from "../runtime/serialization.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualitySettings.js";
 import { seedProjectStoryState } from "../generation/storyStateStore.js";
-import { bookPlanSchema, createProviders, critiquePlan, mergePlanCriticPatch, mediaSettingsRowWriteback } from "@book-maker/core";
+import { bookPlanSchema, createProviders, critiquePlan, explicitLanguageRequest, mergePlanCriticPatch, mediaSettingsRowWriteback, normalizeProjectLanguage } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import type { PlanBookJob, RevisePlanJob } from "../runtime/jobPayloads.js";
 
@@ -252,6 +252,11 @@ export async function revisePlan(job: RevisePlanJob) {
     inputForPlanVersion(planVersion.project, planVersion.inputSnapshot),
     editInstruction
   );
+  const classifier = jsonPayloadToRecord(operation?.classifier);
+  const requestedLanguage = typeof classifier.targetLanguage === "string" && classifier.targetLanguage.trim()
+    ? classifier.targetLanguage
+    : explicitLanguageRequest(editInstruction);
+  if (requestedLanguage) input.language = normalizeProjectLanguage(requestedLanguage);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
@@ -310,6 +315,7 @@ export async function revisePlan(job: RevisePlanJob) {
         currentPlanId: newPlan.id,
         status: "PLAN_READY",
         title: revised.title,
+        language: input.language,
         mediaSettings: mediaSettingsRowWriteback(
           liveProject?.mediaSettings,
           planMediaSettingsSnapshot(input) as Record<string, unknown>

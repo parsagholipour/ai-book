@@ -1,0 +1,958 @@
+{
+  "input": {
+    "title": "The Lantern Path",
+    "prompt": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+    "category": "KIDS",
+    "language": "en",
+    "subtitle": "An original Rabbit and Wise Turtle story",
+    "complexity": 3,
+    "targetPages": 30,
+    "temperature": 0.8,
+    "mediaSettings": {
+      "mobile": {
+        "characters": [
+          {
+            "id": "cmtvyqhjn0018ark75508mxmt",
+            "name": "Rabbit",
+            "fields": [],
+            "description": "A very playful rabbit that appears to be very hasty.",
+            "portraitFile": "cmqejjndu000s1nqr1cla39or/cmtvyqhjn0018ark75508mxmt-portrait-10df3a57cc1e.jpg",
+            "portraitSource": "generated"
+          },
+          {
+            "id": "cmtvyr5pb001cark7zgkwug3g",
+            "name": "Wise Turtle",
+            "fields": [],
+            "description": "Slow but steady",
+            "portraitFile": "cmqejjndu000s1nqr1cla39or/cmtvyr5pb001cark7zgkwug3g-portrait-33d7c039c6b8.jpg",
+            "portraitSource": "generated"
+          }
+        ]
+      },
+      "modelTier": "fast",
+      "imageStyle": "Warm watercolor storybook illustration; match the saved character portraits.",
+      "finalReview": true,
+      "toneProfile": "narrative",
+      "includeCover": false,
+      "coverTemplate": "kids",
+      "coverArtSource": "none",
+      "audienceAgeRange": "6-8",
+      "fullIllustrations": false,
+      "generationStrategy": "auto",
+      "illustrationCadence": "manual"
+    }
+  },
+  "plan": {
+    "title": "The Lantern Path",
+    "premise": "After a storm blows three of four lanterns eastward from the woodland path, Rabbit’s hurried fix makes the way harder to follow. Wise Turtle spots a pattern in where the lanterns landed, and the friends combine careful noticing with playful energy to guide the neighbors from the woodland entrance to the night picnic before moonrise.",
+    "audience": "Children ages 6–8; early readers and read-aloud families.",
+    "chapters": [
+      {
+        "index": 1,
+        "title": "The Storm and the Wrong Turn",
+        "summary": "A storm scatters three lanterns, and Rabbit's solo attempt makes the path harder to follow.",
+        "keyBeats": [
+          "A gust scatters leaves as the first basket reaches the woodland entrance; only one of four path lanterns remains in place.",
+          "Rabbit darts ahead, promising to find every lantern before anyone can help.",
+          "At the bend, Rabbit spots a lantern among wet leaves in the ditch east of the path.",
+          "Rabbit carries the ditch lantern to the fork and sets it beside the wrong trail, where its glow points away from the meadow.",
+          "Calling the lantern fixed, Rabbit rushes onward without checking which trail the light marks.",
+          "Though Turtle wanted to check every place in order, Turtle follows Rabbit and studies the ground carefully."
+        ],
+        "targetPages": 6,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 2,
+        "title": "The Eastward Clue",
+        "summary": "Turtle compares two observed landing places, predicts where the last lantern went, and joins Rabbit in finding it.",
+        "keyBeats": [
+          "Beyond the fallen log, Turtle finds another lantern on its east side and recalls Rabbit carrying one from the east ditch.",
+          "Rabbit bounces back to the fork, pleased with the glowing lantern, but Turtle notices it points toward the wrong trail.",
+          "Turtle compares the ditch and log landing places: both displaced lanterns landed east of their original path positions.",
+          "Turtle infers that the wind carried the remaining lantern east and points toward the low stone wall.",
+          "Rabbit starts to sprint, stops, and asks Turtle to search together instead of racing ahead alone.",
+          "Turtle lets the empty places behind them go unchecked and follows the eastward prediction toward the wall.",
+          "Rabbit quickly scans the leaf litter while Turtle steadily checks the ground beside the stones.",
+          "Beyond the wall's east end, Rabbit sees a lantern handle peeking through the leaves and calls Turtle over.",
+          "Rabbit holds the lantern steady while Turtle eases it free from the leaves and stones."
+        ],
+        "targetPages": 9,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 3,
+        "title": "Restoring the Way",
+        "summary": "The friends return every lantern to its original place and check that the lights mark the proper route.",
+        "keyBeats": [
+          "Together they retrace their steps with the recovered lanterns, keeping each one in their care.",
+          "At the fork, Rabbit lifts the misplaced ditch lantern and carries it back to the bend beside the ditch.",
+          "Turtle carries the lantern from beyond the wall to its original place along the path.",
+          "Rabbit and Turtle set the lantern from the log back beside the fallen log, its original marker position.",
+          "Rabbit walks the route and checks each glow against the path instead of rushing past the turns.",
+          "Turtle checks that no lantern points toward the wrong trail; Rabbit waits and listens before moving on.",
+          "Rabbit and Turtle compare the full line of lights and agree the entrance-to-meadow path is clear."
+        ],
+        "targetPages": 7,
+        "illustrationPrompts": []
+      },
+      {
+        "index": 4,
+        "title": "Together to the Picnic",
+        "summary": "Rabbit and Turtle guide the neighbors to the meadow before moonrise and recognize how each has changed.",
+        "keyBeats": [
+          "The neighbors set out from the woodland entrance, following the restored lantern path toward the picnic meadow.",
+          "Rabbit bounds ahead to greet the neighbors, then waits beside the first turn instead of dashing onward.",
+          "When the last walkers reach the turn, Rabbit points out the next lantern and stays until they follow it.",
+          "Wise Turtle walks beside the last basket, watching the lantern-lit path behind the neighbors.",
+          "Through the trees, the neighbors glimpse the meadow blankets while lanterns continue to mark the way.",
+          "Rabbit and Turtle lead the neighbors into the meadow before moonrise, where the picnic blankets are ready.",
+          "As the neighbors unpack warm rolls and berries, Rabbit sits beside Turtle and says next time they will look before moving a light.",
+          "Turtle smiles, admitting that a strong clue can be enough to begin; together they watch lantern glow settle across the path."
+        ],
+        "targetPages": 8,
+        "illustrationPrompts": []
+      }
+    ],
+    "promises": [
+      "The finished book will contain exactly 30 distinct, text-only story pages, with no interior illustrations, cover image, or character reference images.",
+      "Rabbit’s playful energy and Wise Turtle’s steady observation each help solve the lantern problem.",
+      "Rabbit changes from rushing alone to pausing, cooperating, and checking the result.",
+      "Wise Turtle changes from requiring a complete step-by-step check to acting on a sound inference before every answer is known.",
+      "The neighbors reach the picnic before moonrise, and the story closes after the lantern path is restored."
+    ],
+    "subtitle": "An original Rabbit and Wise Turtle story",
+    "locations": [
+      {
+        "name": "Woodland path",
+        "rules": [
+          "The path leads from the woodland entrance to the picnic meadow.",
+          "One lantern remains in place; three are blown eastward: one into the ditch beside the bend, one to the east side of the fallen log, and one beyond the east end of the low stone wall.",
+          "Rabbit carries the lantern from the ditch to the wrong fork; the friends return all three displaced lanterns to their original places."
+        ],
+        "description": "A winding path from the woodland entrance to the picnic meadow, marked by four lanterns, with a bend beside a ditch, a fallen log, a fork, and a low stone wall along the way."
+      },
+      {
+        "name": "Picnic meadow",
+        "rules": [
+          "The neighbors begin at the woodland entrance and follow the lantern path here.",
+          "The neighbors reach the meadow and begin the picnic before moonrise."
+        ],
+        "description": "A quiet clearing at the end of the woodland path, where the neighbors’ night picnic is ready."
+      }
+    ],
+    "questions": [],
+    "characters": [
+      {
+        "name": "Rabbit",
+        "role": "A central character whose playful energy can help solve the problem once Rabbit stops rushing alone.",
+        "traits": [
+          "Playful",
+          "Hasty",
+          "Energetic"
+        ],
+        "description": "A very playful rabbit that appears to be very hasty.",
+        "visualRules": []
+      },
+      {
+        "name": "Wise Turtle",
+        "role": "A central character whose steady observation helps the friends find a way forward.",
+        "traits": [
+          "Wise",
+          "Steady",
+          "Patient"
+        ],
+        "description": "Slow but steady",
+        "visualRules": []
+      }
+    ],
+    "voiceGuide": [
+      "Use clear, early-reader words and mostly short sentences.",
+      "Let natural dialogue show what Rabbit and Wise Turtle are thinking.",
+      "Use concrete sounds, light, and weather details without overloading each moment.",
+      "Keep the humor gentle and let the characters’ actions carry the feeling."
+    ],
+    "antiAiRules": [
+      "Avoid repeating the same worry or summarizing a choice after showing it.",
+      "Do not end scenes with generic morals or lesson statements.",
+      "Avoid exaggerated peril; the storm’s consequences stay gentle.",
+      "Give each discovery or retrieval a distinct consequence or cooperation challenge.",
+      "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page.",
+      "Do not invent evidence, citations, studies, experts, or source identities.",
+      "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose.",
+      "Use uncertainty only where the evidence on this page requires it.",
+      "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+    ],
+    "openingHook": "A gust swept through the woods just as the first picnic basket reached the woodland entrance.",
+    "writingMode": "children-narrative",
+    "researchNotes": [],
+    "styleContract": {
+      "localRules": [
+        {
+          "id": "avoid-repeating-the-same-worry-or-summarizing-a-",
+          "instruction": "Avoid repeating the same worry or summarizing a choice after showing it."
+        },
+        {
+          "id": "do-not-end-scenes-with-generic-morals-or-lesson-",
+          "instruction": "Do not end scenes with generic morals or lesson statements."
+        },
+        {
+          "id": "avoid-exaggerated-peril-the-storm-s-consequences",
+          "instruction": "Avoid exaggerated peril; the storm’s consequences stay gentle."
+        },
+        {
+          "id": "give-each-discovery-or-retrieval-a-distinct-cons",
+          "instruction": "Give each discovery or retrieval a distinct consequence or cooperation challenge."
+        },
+        {
+          "id": "no-proof-leap",
+          "instruction": "Avoid unsupported proof-leap transitions; do not jump from a local fact to a sweeping conclusion without evidence on this page."
+        },
+        {
+          "id": "no-invented-evidence",
+          "instruction": "Do not invent evidence, citations, studies, experts, or source identities."
+        },
+        {
+          "id": "no-generic-conclusion",
+          "instruction": "Avoid generic conclusions and visible prompt scaffolding in reader-facing prose."
+        },
+        {
+          "id": "uncertainty-where-earned",
+          "instruction": "Use uncertainty only where the evidence on this page requires it."
+        },
+        {
+          "id": "prompt-leak-ban",
+          "instruction": "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages."
+        }
+      ],
+      "distributionRules": [
+        {
+          "id": "intentional-phrase-repeat",
+          "instruction": "A small repeated phrase is allowed when it is an intentional refrain, not a copied scene."
+        }
+      ]
+    },
+    "storyTreatment": "A gust swept through the woods just as the first picnic basket reached the woodland entrance. The storm had passed, but leaves still skittered across the path. Four lanterns had marked the way to the night picnic. Now only one remained in its place; three had blown eastward. The neighbors waited at the entrance with their baskets, hoping to follow the path to the meadow before moonrise.\n\nRabbit darted ahead. “I’ll find them all!” At the ditch just east of the bend, Rabbit spotted a lantern among wet leaves, lifted it, and hurried to the fork. Rabbit set it beside the wrong trail. From there, its warm light pointed away from the meadow. “One fixed!” Rabbit called, already running on.\n\nWise Turtle had wanted to check each lantern place in order. “We should look at every spot first,” Turtle said. But the neighbors were waiting, and Rabbit was already out of sight. Turtle followed slowly, looking closely. Beyond the fallen log, Turtle found another lantern on its east side. Rabbit’s lantern had come from the east ditch. Turtle remembered seeing Rabbit carry it from there.\n\nRabbit bounced back to the fork. “I found a third!” Turtle said. “Wait. The first was east of the path in the ditch. This one is east of the log. They both blew the same way.” Turtle looked toward the low stone wall farther along the path. “The last lantern may be beyond it.”\n\nRabbit started to sprint, then stopped. “Let’s look together.” Turtle agreed to follow the clue without checking every empty place first. They went toward the wall. Rabbit searched quickly among the leaves, while Turtle checked the ground beside the stones. There, beyond the wall’s east end, the last lantern’s handle peeked out. Rabbit reached it and held it steady while Turtle eased it free.\n\nThey carried the lanterns back together. At the fork, Rabbit lifted the misplaced light and returned it to the bend beside the ditch, where it had belonged. Turtle brought the lantern from beyond the wall back to its old place. The lantern from the log went beside the log again. Rabbit checked each glow against the path, and Turtle checked that no turn pointed toward the wrong trail. This time, neither hurried past the other’s check.\n\nThe neighbors followed the lights from the entrance. Rabbit bounced ahead to welcome them, then waited at each turn. Wise Turtle walked beside the last basket and watched the path behind them. They reached the meadow before moonrise. The lanterns shone along the woods, and the picnic blankets were ready. Rabbit sat beside Turtle as the neighbors unpacked warm rolls and berries. “Next time,” Rabbit said, “I’ll look before I move the light.” Turtle smiled. “And I’ll know when a good clue is enough to begin.” Together they watched the lantern glow settle across the path.",
+    "continuityRules": [
+      "Rabbit begins by rushing ahead and placing the lantern blown from the bend beside the ditch at the wrong fork, confusing the route. Rabbit chooses to pause and work with Wise Turtle, then checks the path and follows their shared plan.",
+      "Wise Turtle begins by insisting on checking every spot in order. Turtle chooses to trust the pattern in the eastward landing places and act on a sound prediction before every answer is known.",
+      "Prop contract: four lanterns begin marking the path. One remains in place; three blow eastward: one from the bend into the ditch, one to the east side of the fallen log, and one beyond the east end of the low stone wall. Rabbit carries the ditch lantern to the wrong fork. The friends return all three to their original places; all four finish marking the path.",
+      "Clue contract: Turtle observes the lantern east of the fallen log and knows Rabbit carried the ditch lantern from east of the path. They compare the two landing places, infer an eastward drift, and search beyond the east end of the wall for the third displaced lantern.",
+      "The neighbors begin at the woodland entrance and follow the restored lantern path to the picnic meadow, arriving before moonrise."
+    ],
+    "researchQueries": [],
+    "illustrationPlan": {
+      "cadence": "manual",
+      "pageRules": [
+        "When \"Rabbit\", \"Wise Turtle\" appear, the attached character reference images are the only authority on how they look: match their face, hair, skin tone, age, build, headwear and clothing exactly, and never follow a written description that contradicts them."
+      ],
+      "coverPrompt": "Cover illustration for The Lantern Path: Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+      "globalStyle": "Text-only book. Create no illustrations, cover art, or character reference images.",
+      "characterReferencePrompts": []
+    },
+    "writingComplexity": 3,
+    "requirementInventory": {
+      "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+      "status": "available",
+      "version": 1,
+      "complete": true,
+      "requirements": [
+        {
+          "kind": "title",
+          "text": "Book title",
+          "quote": "called The Lantern Path",
+          "scope": {
+            "quote": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path.",
+            "extent": "whole_book"
+          },
+          "expectedTitle": "The Lantern Path"
+        },
+        {
+          "kind": "content",
+          "text": "Audience ages 6–8",
+          "quote": "for children ages 6–8",
+          "scope": {
+            "quote": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Original storybook",
+          "quote": "Write an original 30-page storybook",
+          "scope": {
+            "quote": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "character",
+          "text": "Rabbit and Wise Turtle as central characters",
+          "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters",
+          "scope": {
+            "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "character",
+          "text": "Respect saved character profiles",
+          "quote": "respecting their saved character profiles",
+          "scope": {
+            "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "character",
+          "text": "Rabbit is playful and hasty",
+          "quote": "Rabbit is playful and hasty",
+          "scope": {
+            "quote": "Rabbit is playful and hasty; Wise Turtle is slow and steady.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "character",
+          "text": "Wise Turtle is slow and steady",
+          "quote": "Wise Turtle is slow and steady",
+          "scope": {
+            "quote": "Rabbit is playful and hasty; Wise Turtle is slow and steady.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Rabbit stays active across the story",
+          "quote": "Keep both active across the story",
+          "scope": {
+            "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Wise Turtle stays active across the story",
+          "quote": "Keep both active across the story",
+          "scope": {
+            "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Rabbit makes meaningful choices",
+          "quote": "with meaningful choices and growth for each",
+          "scope": {
+            "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Wise Turtle makes meaningful choices",
+          "quote": "with meaningful choices and growth for each",
+          "scope": {
+            "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Rabbit grows",
+          "quote": "with meaningful choices and growth for each",
+          "scope": {
+            "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Wise Turtle grows",
+          "quote": "with meaningful choices and growth for each",
+          "scope": {
+            "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Storm scatters the woodland-path lanterns",
+          "quote": "A storm scatters the lanterns marking the woodland path to a night picnic.",
+          "scope": {
+            "quote": "A storm scatters the lanterns marking the woodland path to a night picnic.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Rabbit rushes to fix everything alone",
+          "quote": "Rabbit rushes to fix everything alone",
+          "scope": {
+            "quote": "Rabbit rushes to fix everything alone and makes the path more confusing.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Rabbit makes the path more confusing",
+          "quote": "makes the path more confusing",
+          "scope": {
+            "quote": "Rabbit rushes to fix everything alone and makes the path more confusing.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Wise Turtle notices the lantern pattern",
+          "quote": "Wise Turtle notices a pattern in where the lanterns blew",
+          "scope": {
+            "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Together they follow clues",
+          "quote": "together they follow clues",
+          "scope": {
+            "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Together they return the lanterns",
+          "quote": "return the lanterns",
+          "scope": {
+            "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "They help neighbors find the picnic before moonrise",
+          "quote": "help their neighbors find the picnic before moonrise",
+          "scope": {
+            "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Fresh plot, not a race or retelling",
+          "quote": "Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare.",
+          "scope": {
+            "quote": "Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Clear beginning",
+          "quote": "a clear beginning",
+          "scope": {
+            "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Escalating middle",
+          "quote": "escalating middle",
+          "scope": {
+            "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Turning point",
+          "quote": "turning point",
+          "scope": {
+            "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Satisfying ending",
+          "quote": "satisfying ending",
+          "scope": {
+            "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Rabbit's energy helps solve part of the problem",
+          "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+          "scope": {
+            "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Wise Turtle's patience helps solve part of the problem",
+          "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+          "scope": {
+            "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Gentle stakes",
+          "quote": "Keep stakes gentle",
+          "scope": {
+            "quote": "Keep stakes gentle and child appropriate.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Child-appropriate story",
+          "quote": "child appropriate",
+          "scope": {
+            "quote": "Keep stakes gentle and child appropriate.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Distinct story scene on each page",
+          "quote": "a distinct story scene",
+          "scope": {
+            "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+            "extent": "each_page"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Concise read-aloud prose on each page",
+          "quote": "concise read-aloud prose",
+          "scope": {
+            "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+            "extent": "each_page"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Natural dialogue on each page",
+          "quote": "natural dialogue",
+          "scope": {
+            "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+            "extent": "each_page"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Concrete sensory details on each page",
+          "quote": "concrete sensory details",
+          "scope": {
+            "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+            "extent": "each_page"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Reason to turn the page on each page",
+          "quote": "a reason to turn the page",
+          "scope": {
+            "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+            "extent": "each_page"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Avoid repeated summaries",
+          "quote": "Avoid repeated summaries",
+          "scope": {
+            "quote": "Avoid repeated summaries, generic moralizing and extra named main characters.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "Avoid generic moralizing",
+          "quote": "generic moralizing",
+          "scope": {
+            "quote": "Avoid repeated summaries, generic moralizing and extra named main characters.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "content",
+          "text": "English language",
+          "quote": "English.",
+          "scope": {
+            "quote": "English.",
+            "extent": "whole_book"
+          }
+        },
+        {
+          "kind": "page_count",
+          "text": "Exactly 30 story pages",
+          "quote": "Exactly 30 story pages.",
+          "scope": {
+            "quote": "Exactly 30 story pages.",
+            "extent": "whole_book"
+          },
+          "expectedCount": 30
+        },
+        {
+          "kind": "media_absence",
+          "text": "No interior illustrations",
+          "quote": "Do not create interior illustrations",
+          "scope": {
+            "quote": "Do not create interior illustrations, a cover image, or character reference images.",
+            "extent": "whole_book"
+          },
+          "mediaScope": "story_pages"
+        },
+        {
+          "kind": "media_absence",
+          "text": "No cover image",
+          "quote": "a cover image",
+          "scope": {
+            "quote": "Do not create interior illustrations, a cover image, or character reference images.",
+            "extent": "whole_book"
+          },
+          "mediaScope": "cover"
+        },
+        {
+          "kind": "media_absence",
+          "text": "No character reference images",
+          "quote": "character reference images",
+          "scope": {
+            "quote": "Do not create interior illustrations, a cover image, or character reference images.",
+            "extent": "whole_book"
+          },
+          "mediaScope": "character_references"
+        },
+        {
+          "kind": "prohibition",
+          "text": "No extra named main characters",
+          "quote": "extra named main characters",
+          "scope": {
+            "quote": "Avoid repeated summaries, generic moralizing and extra named main characters.",
+            "extent": "whole_book"
+          },
+          "prohibitionScope": "named_main_characters"
+        }
+      ]
+    }
+  },
+  "pages": [
+    {
+      "index": 1,
+      "title": "A Gust at the Gate",
+      "markdown": "Rabbit rolled a picnic apple beneath one paw as the first basket reached the woodland entrance. A gust shoved leaves across the path. Rain tapped the basket lid, then stopped. Only the entrance lantern still glowed; three markers had blown away. “We must follow the lights before moonrise,” said a neighbor. Rabbit looked into the dark trees.",
+      "summary": "A storm has scattered three path lanterns, and the neighbors need to reach the picnic before moonrise."
+    },
+    {
+      "index": 2,
+      "title": "Rabbit Dashes Off",
+      "markdown": "“I’ll find every lantern!” Rabbit cried. Before anyone could answer, Rabbit sprang down the winding path. Damp leaves stuck to Rabbit’s paws. Wise Turtle stayed beside the baskets, looking toward the trees. “Wait for me,” Turtle called. Rabbit’s ears bobbed once, then vanished around the bend.",
+      "summary": "Rabbit rushes off alone while Wise Turtle remains with the neighbors."
+    },
+    {
+      "index": 3,
+      "title": "A Glow in the Ditch",
+      "markdown": "At the bend, Rabbit heard a soft clink. A lantern lay in the ditch east of the path, half covered by wet leaves. Its glass held a tiny golden glow. “Found you!” Rabbit said, reaching down. Mud squished between Rabbit’s toes. The empty hook at the bend swayed in the breeze.",
+      "summary": "Rabbit finds the lantern that blew from the bend into the ditch."
+    },
+    {
+      "index": 4,
+      "title": "The Wrong Fork",
+      "markdown": "Rabbit carried the lantern to a fork in the path. Two trails split beneath the trees. Without stopping to check, Rabbit set the light beside the narrower trail, away from the meadow. “There! Fixed,” Rabbit said. Its glow fell across brambles, while the meadow trail stayed dim. A breeze stirred the leaves ahead.",
+      "summary": "Rabbit’s quick fix places the bend lantern at the wrong fork, making the route confusing."
+    },
+    {
+      "index": 5,
+      "title": "A Light That Misleads",
+      "markdown": "Rabbit bounded onward, pleased with the bright spot behind. “One lantern down, two to go!” Rabbit called to the empty path. The wrong fork lantern still shone toward the brambles. Rabbit did not look back. Ahead, a fallen log lay dark beneath dripping branches, and something glimmered beyond it.",
+      "summary": "Rabbit keeps searching without checking whether the lantern marks the right trail."
+    },
+    {
+      "index": 6,
+      "title": "Turtle Follows the Prints",
+      "markdown": "Wise Turtle left the neighbors at the entrance and followed Rabbit’s pawprints. Turtle paused at each turn, checking the ground in order. “One place at a time,” Turtle murmured. Rainwater trickled beside the path. Rabbit’s prints hurried past the bend and toward the fallen log. Turtle followed, steady and sure.",
+      "summary": "Wise Turtle leaves the entrance and follows Rabbit, still wanting to check each place in order."
+    },
+    {
+      "index": 7,
+      "title": "The Lantern by the Log",
+      "markdown": "Beyond the fallen log, Turtle spotted a lantern on its east side. Wet leaves clung to its handle. Turtle remembered Rabbit carrying another lantern from the ditch east of the path. “This one blew east, too,” Turtle said. The lantern’s glow flickered beside the log, while Rabbit’s quick prints led onward.",
+      "summary": "Wise Turtle finds the second displaced lantern and recalls Rabbit carrying the ditch lantern."
+    },
+    {
+      "index": 8,
+      "title": "Light at the Fork",
+      "markdown": "Rabbit bounced back to the fork, cheeks puffed from running. “My lantern is shining!” Rabbit said. Wise Turtle arrived and studied the two trails. The light pointed toward brambles, not the meadow. “That glow sends walkers the wrong way,” Turtle said. Rabbit’s smile faded as the leaves rustled around the fork.",
+      "summary": "Rabbit and Wise Turtle meet at the wrong fork, where Turtle sees the lantern misdirecting travelers."
+    },
+    {
+      "index": 9,
+      "title": "Two Places, One Direction",
+      "markdown": "Turtle looked from the fork toward the bend, then toward the log. “Your lantern landed east of the path,” Turtle said. “This one landed east of the log.” Turtle traced the two places in the damp soil. Both were on the east side of where their lanterns belonged. Rabbit leaned close and followed the marks.",
+      "summary": "Turtle compares the observed landing places and sees that both lanterns blew eastward."
+    },
+    {
+      "index": 10,
+      "title": "Beyond the Stone Wall",
+      "markdown": "“The wind pushed them east,” Turtle said. “The last lantern may be east of the low stone wall.” The wall stood farther along the path, its stones dark with rain. Turtle pointed beyond its east end. Rabbit peered that way. A few leaves still skittered across the ground.",
+      "summary": "Turtle predicts the third displaced lantern lies beyond the east end of the low stone wall."
+    },
+    {
+      "index": 11,
+      "title": "A Pause Before the Sprint",
+      "markdown": "Rabbit crouched to spring toward the wall, then stopped. Rabbit looked at Turtle instead. “Come with me? I keep making a muddle alone.” Turtle nodded. Together they turned toward the wall. Rabbit’s paws still twitched to run, but this time Rabbit matched Turtle’s steps through the wet leaves.",
+      "summary": "Rabbit chooses to pause and search with Turtle rather than dash ahead alone."
+    },
+    {
+      "index": 12,
+      "title": "Turtle Trusts the Clue",
+      "markdown": "At the path’s edge, Turtle glanced back at places they had not checked. The old habit tugged at Turtle: inspect every spot, in order. Then Turtle looked east, toward the wall. “Our two clues point this way,” Turtle said. Turtle turned forward and walked on. Rabbit followed, quiet for once.",
+      "summary": "Turtle acts on the eastward pattern without checking every empty spot first."
+    },
+    {
+      "index": 13,
+      "title": "Two Ways to Search",
+      "markdown": "Beyond the wall, Rabbit swept through leaf litter with quick paws. Turtle checked beside the stones, one careful glance at a time. Leaves crackled under Rabbit, and cool stone brushed Turtle’s shell. “I’ll search the open leaves,” Rabbit said. “I’ll check the edges,” Turtle replied. Their search paths met near the wall’s east end.",
+      "summary": "Rabbit scans the leaves quickly while Turtle carefully checks along the wall."
+    },
+    {
+      "index": 14,
+      "title": "A Handle in the Leaves",
+      "markdown": "Rabbit froze. A curved lantern handle peeked through leaves beyond the wall’s east end. “Turtle, here!” Rabbit called. Turtle came close, careful not to step on the hidden lantern. A small stone pinned the leaves beside it. The handle trembled when the breeze slipped through the trees.",
+      "summary": "Rabbit spots the third lantern beyond the east end of the wall, but it is trapped beneath leaves and a stone."
+    },
+    {
+      "index": 15,
+      "title": "Freeing the Hidden Light",
+      "markdown": "“Hold the handle steady,” Turtle said. Rabbit braced both paws around it. Turtle eased the small stone aside, then brushed leaves away. The lantern slid free with a scrape. Its glass was whole, and its light glowed warm against their paws. “We found it together,” Rabbit said.",
+      "summary": "Rabbit steadies the lantern while Turtle carefully frees it from leaves and stones."
+    },
+    {
+      "index": 16,
+      "title": "Lanterns in Careful Hands",
+      "markdown": "The friends turned back along the path. Turtle carried the lantern from beyond the wall. Rabbit lifted the lantern from the east side of the fallen log. They kept each glass pane upright as they walked. At the fork, the misplaced light still shone toward the brambles. Rabbit slowed and reached for it.",
+      "summary": "Rabbit and Turtle carry the recovered wall and log lanterns back toward the fork."
+    },
+    {
+      "index": 17,
+      "title": "Back to the Bend",
+      "markdown": "Rabbit lifted the lantern from beside the wrong trail. “I’ll put this one where it belongs,” Rabbit said. Rabbit carried it back to the bend and set it beside the ditch, on its old marker spot. The familiar glow touched the wet path. Turtle watched as Rabbit checked which way the trail curved.",
+      "summary": "Rabbit corrects the solo mistake and returns the ditch lantern to the bend."
+    },
+    {
+      "index": 18,
+      "title": "The Wall Finds Its Light",
+      "markdown": "Turtle carried the lantern from beyond the wall to its original place along the path. Turtle set it down gently, away from the stones and leaves. Its glow made a round pool on the damp ground. Rabbit waited beside Turtle, watching the light settle before they turned back toward the log.",
+      "summary": "Turtle returns the wall lantern to its original place along the path."
+    },
+    {
+      "index": 19,
+      "title": "Home Beside the Log",
+      "markdown": "At the fallen log, Rabbit and Turtle set the last lantern back beside its marker spot. Rabbit turned it until its glow fell across the path. Turtle checked the ground around its base. Now the lanterns stood at the entrance, bend, log, and wall. Their warm lights joined through the trees.",
+      "summary": "The log lantern returns to its original place, restoring all four path markers."
+    },
+    {
+      "index": 20,
+      "title": "Rabbit Checks the Turns",
+      "markdown": "Rabbit walked from the entrance lantern toward the meadow, checking each glow against the winding path. At the fork, Rabbit looked before stepping. The light now showed the meadow trail clearly. “This way,” Rabbit called, pointing down the right path. A leaf brushed Rabbit’s ear, but Rabbit kept the steady pace.",
+      "summary": "Rabbit checks the restored route and confirms the fork points toward the meadow."
+    },
+    {
+      "index": 21,
+      "title": "Turtle Takes a Second Look",
+      "markdown": "Wise Turtle followed Rabbit’s route and checked each turn. The lanterns shone toward the path, not the brambles. Rabbit waited nearby, listening to the soft tap of Turtle’s feet. “The turns are clear,” Turtle said at last. Rabbit nodded. Together they looked back toward the neighbors at the entrance.",
+      "summary": "Turtle verifies the lantern directions while Rabbit waits for the check."
+    },
+    {
+      "index": 22,
+      "title": "A Clear Line of Lights",
+      "markdown": "From the entrance, Rabbit and Turtle could see the lanterns leading toward the meadow. One light marked each turn. The neighbors gathered their baskets behind them. “The path is ready,” Turtle said. Rabbit glanced at every glow once more, then stepped aside so the first walkers could come forward.",
+      "summary": "Both friends confirm the entrance-to-meadow path and prepare to guide the waiting neighbors."
+    },
+    {
+      "index": 23,
+      "title": "The Neighbors Set Out",
+      "markdown": "The neighbors started down the woodland path, carrying baskets that rustled and clinked. Rabbit guided them from the front, and Wise Turtle stayed near the group. The entrance lantern glowed behind their backs. Ahead, the next light showed where the path bent through the trees. No one hurried past it.",
+      "summary": "The neighbors begin following the restored lantern path with Rabbit and Turtle guiding them."
+    },
+    {
+      "index": 24,
+      "title": "Rabbit Waits at the Turn",
+      "markdown": "Rabbit bounded to the first turn and stopped beside its lantern. The others came along at their own pace, baskets bumping knees. Rabbit wanted to race toward the next glow. Instead, Rabbit waved from the turn. “This way!” Rabbit called. The first walkers followed the light and found Rabbit waiting.",
+      "summary": "Rabbit reaches the first turn, then waits there for the neighbors to follow."
+    },
+    {
+      "index": 25,
+      "title": "One Turn at a Time",
+      "markdown": "When the last walkers reached the turn, Rabbit pointed toward the next lantern. “That glow leads to the log,” Rabbit said. Rabbit stayed until every basket passed, then went on to the next turn. The neighbors could see Rabbit’s ears ahead and the lantern beside the path. Their group kept together.",
+      "summary": "Rabbit guides the neighbors one turn at a time and waits for the last walkers."
+    },
+    {
+      "index": 26,
+      "title": "Turtle Beside the Last Basket",
+      "markdown": "Wise Turtle walked beside the last basket. Its handle squeaked with each step. Turtle kept an eye on the lantern behind the group, then looked ahead to the warm glow near the wall. “We’re all here,” Turtle called. The neighbor carrying the basket smiled and walked on beside Turtle.",
+      "summary": "Turtle accompanies the last basket and keeps the neighbors together on the path."
+    },
+    {
+      "index": 27,
+      "title": "Blankets Through the Trees",
+      "markdown": "The trees opened just enough to show the picnic meadow. Blankets lay beneath the darkening sky, and baskets waited in the grass. “I can see the rolls!” Rabbit said. Lantern light still marked the path behind them. The neighbors kept walking together. The moon had not yet risen above the trees.",
+      "summary": "The group glimpses the meadow and continues along the lantern path before moonrise."
+    },
+    {
+      "index": 28,
+      "title": "Before the Moon Rises",
+      "markdown": "Rabbit and Turtle led the neighbors into the meadow before moonrise. Baskets settled onto the blankets with soft thumps. Warm rolls smelled of butter, and berries shone in a bowl. Behind them, the four lanterns marked the woodland path. “We made it,” Rabbit said, breathing in the sweet evening air.",
+      "summary": "The neighbors reach the picnic meadow before moonrise and begin settling in."
+    },
+    {
+      "index": 29,
+      "title": "Rabbit Looks Before Moving",
+      "markdown": "Rabbit sat beside Wise Turtle and broke a warm roll in two. “Next time, I’ll look before I move a lantern,” Rabbit said. A crumb stuck to Rabbit’s nose. Turtle smiled as Rabbit brushed it away. Then Rabbit set the shared roll between them and waited while Turtle chose the first bite.",
+      "summary": "At the picnic, Rabbit names a new habit and shows it by waiting instead of acting first."
+    },
+    {
+      "index": 30,
+      "title": "A Clue Worth Trusting",
+      "markdown": "Wise Turtle took a bite of roll and watched the lanterns glow through the trees. “I can begin with a strong clue,” Turtle said. “I don’t need to check every spot first.” Rabbit leaned against Turtle’s shell. Around them, neighbors shared berries and quiet laughter beneath the rising moon.",
+      "summary": "Turtle accepts acting on sound evidence, and the friends share a calm picnic with their neighbors."
+    }
+  ],
+  "sceneReview": {
+    "report": {
+      "notes": "Reviewed against the complete frozen picture-book manuscript.",
+      "score": 86,
+      "checks": {
+        "titleClean": true,
+        "repetitionOk": false,
+        "styleNatural": true,
+        "progressionOk": true,
+        "promptLeakFree": true,
+        "placeholderFree": true
+      },
+      "issues": [
+        "Pages 20–22 repeat the same completed-path verification and readiness beat across three scenes, slowing the handoff to the neighbors. Evidence on page 20: “Rabbit walked from the entrance lantern toward the meadow, checking each glow against the winding path.” Related page 21: “Wise Turtle followed Rabbit’s route and checked each turn. The lanterns shone toward the path, not the brambles.” Related page 22: “From the entrance, Rabbit and Turtle could see the lanterns leading toward the meadow. One light marked each turn.”"
+      ],
+      "approved": false,
+      "groundedOk": true,
+      "groundingStatus": "not_applicable",
+      "requiredRevisions": [
+        "Combine pages 20–22 into the smallest scene that shows Rabbit checking the restored turns, Turtle confirming the route, and the neighbors beginning their walk. Preserve those distinct actions without restaging the same clear-path confirmation."
+      ],
+      "unsupportedClaims": []
+    },
+    "findings": [
+      {
+        "basis": "cross_page",
+        "quote": "Rabbit walked from the entrance lantern toward the meadow, checking each glow against the winding path.",
+        "domain": "prose",
+        "message": "Pages 20–22 repeat the same completed-path verification and readiness beat across three scenes, slowing the handoff to the neighbors.",
+        "category": "repetition",
+        "guidance": "Combine pages 20–22 into the smallest scene that shows Rabbit checking the restored turns, Turtle confirming the route, and the neighbors beginning their walk. Preserve those distinct actions without restaging the same clear-path confirmation.",
+        "repairKind": "semantic",
+        "relatedEvidence": [
+          {
+            "quote": "Wise Turtle followed Rabbit’s route and checked each turn. The lanterns shone toward the path, not the brambles.",
+            "pageIndex": 21
+          },
+          {
+            "quote": "From the entrance, Rabbit and Turtle could see the lanterns leading toward the meadow. One light marked each turn.",
+            "pageIndex": 22
+          }
+        ],
+        "requirementQuote": null,
+        "repairPageIndexes": [
+          20,
+          21,
+          22
+        ]
+      }
+    ],
+    "pageIndex": 20,
+    "styleAudit": null,
+    "storyExtract": {
+      "storyDelta": {
+        "entities": {
+          "Rabbit": {
+            "goal": "Verify that the restored lights show the way to the meadow.",
+            "status": "Checks the route and identifies the meadow trail.",
+            "location": "On the path near the fork"
+          }
+        },
+        "factsAdded": [
+          "Rabbit checks each lantern against the winding path and confirms that the meadow trail is now clear at the fork."
+        ],
+        "promisesPaid": [],
+        "promisesBroken": [],
+        "promisesOpened": [],
+        "unansweredAdded": [],
+        "unansweredResolved": []
+      },
+      "contradictions": []
+    },
+    "draftMarkdown": "Rabbit walked from the entrance lantern toward the meadow, checking each glow against the winding path. At the fork, Rabbit looked before stepping. The light now showed the meadow trail clearly. “This way,” Rabbit called, pointing down the right path. A leaf brushed Rabbit’s ear, but Rabbit kept the steady pace.",
+    "completedChecks": {
+      "styleAuditor": false,
+      "pageModelReview": true,
+      "storyExtractAudit": true
+    }
+  },
+  "patch": {
+    "pages": [
+      {
+        "pageIndex": 18,
+        "reason": "Shorten the two eligible sentences for early-reader clarity while preserving Turtle’s return of the lantern and Rabbit’s choice to wait.",
+        "patches": [
+          {
+            "find": "Turtle carried the lantern from beyond the wall to its original place along the path.",
+            "replace": "Turtle carried the lantern from beyond the wall to its place along the path."
+          },
+          {
+            "find": "Rabbit waited beside Turtle, watching the light settle before they turned back toward the log.",
+            "replace": "Rabbit watched the light settle. Then they turned back toward the log."
+          }
+        ],
+        "summary": null
+      }
+    ],
+    "sceneRevisions": [
+      {
+        "reason": "Combine the repeated route checks and readiness beats into Rabbit’s check, Turtle’s confirmation, and the neighbors’ start. Revise page 23 as well because the rejected candidate moved the neighbors’ departure there, making it repeat page 22; give page 23 a distinct transition into the walk without taking over page 24’s arrival at the first turn.",
+        "pages": [
+          {
+            "pageIndex": 20,
+            "markdown": "Rabbit walked from the entrance lantern toward the meadow. At each turn, Rabbit looked before stepping. At the fork, the light showed the meadow trail, not the brambles. “This way,” Rabbit called, pointing down the right path. A leaf brushed Rabbit’s ear, but Rabbit kept a steady pace.",
+            "title": "Rabbit Checks the Turns",
+            "summary": "Rabbit checks the restored turns and confirms the fork points toward the meadow."
+          },
+          {
+            "pageIndex": 21,
+            "markdown": "Wise Turtle followed Rabbit’s route and checked each turn. The lanterns shone toward the path, not the brambles. Rabbit waited nearby, listening to the soft tap of Turtle’s feet. “The turns are clear,” Turtle said. Then Turtle looked back toward the neighbors at the entrance. “You can start!”",
+            "title": "Turtle Confirms the Route",
+            "summary": "Turtle confirms the route and calls to the neighbors, while Rabbit waits."
+          },
+          {
+            "pageIndex": 22,
+            "markdown": "The neighbors gathered their baskets and started down the woodland path. Rabbit guided them from the front, while Wise Turtle stayed near the group. Baskets rustled and clinked as the entrance lantern faded behind them. Ahead, the next light showed where the path bent through the trees. No one hurried past it.",
+            "title": "The Neighbors Set Out",
+            "summary": "The neighbors begin following the restored lantern path with Rabbit and Turtle guiding them."
+          },
+          {
+            "pageIndex": 23,
+            "markdown": "The path ran beneath dripping branches. Basket handles squeaked, and damp leaves brushed the neighbors’ shoes. Rabbit kept the next lantern in sight but did not race ahead. Wise Turtle stayed beside the last walkers. Between the trees, the lantern’s warm glow showed the way forward.",
+            "title": "A Walk Through the Trees",
+            "summary": "The group continues together beneath the trees, with Rabbit keeping pace and Turtle beside the last walkers."
+          }
+        ]
+      }
+    ]
+  }
+}

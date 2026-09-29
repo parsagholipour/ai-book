@@ -125,6 +125,7 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
+    generationTimings: status.generationTimings ?? { planningMs: null, bookMs: null },
     ...imageSettings,
     // The live phrase leads whenever there is one: it is the only part of this
     // payload that says what is happening right now rather than what stage it is.

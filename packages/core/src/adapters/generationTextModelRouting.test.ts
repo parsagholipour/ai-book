@@ -11,6 +11,7 @@ import {
 import { ProviderHttpError } from "./retry.js";
 import {
   compiledGenerationTextModelRouting,
+  generationStageRoute,
   generationTextModelOptionKey,
   isJevSelection,
   JEV_SELECTION,
@@ -25,6 +26,19 @@ import type {
   TextModelAdapter,
   TextResult
 } from "./types.js";
+
+it("inherits continuity routing from the saved page review until explicitly configured", () => {
+  const config = testConfig({});
+  const routing = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
+  const saved = { primary: { provider: "openai", model: "gpt-6-luna", thinkingEffort: "low" },
+    fallback: { provider: "openai", model: "gpt-6-sol", thinkingEffort: "medium" } } as const;
+  routing.balanced.stages = { "review-page": saved };
+  expect(generationStageRoute(routing, "balanced", "review-picture-book-continuity")).toEqual(saved);
+  const explicit = { primary: { provider: "openai", model: "gpt-6-sol", thinkingEffort: "high" }, fallback: saved.fallback } as const;
+  routing.balanced.stages["review-picture-book-continuity"] = explicit;
+  expect(generationStageRoute(routing, "balanced", "review-picture-book-continuity")).toEqual(explicit);
+  expect(generationStageRoute(routing, "balanced", "review-page")).toEqual(saved);
+});
 
 describe("generation text model routing", () => {
   it("sends the admin-selected Ultra effort to the chapter adapter unchanged", async () => {

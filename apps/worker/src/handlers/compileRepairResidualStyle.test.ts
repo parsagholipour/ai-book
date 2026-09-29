@@ -11,6 +11,7 @@ async function replay() {
   let sawPreviousReview = false;
   const text = new FakeTextModelAdapter();
   text.generateJson = async request => {
+    if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
     const payload = JSON.parse(request.messages.find(message => message.role === "user")!.content);
     if (payload.previousEditorialReview) {
       sawPreviousReview = true;
@@ -22,7 +23,15 @@ async function replay() {
     }
     const raw = live.responses[calls++];
     if (!raw) throw new Error("Unexpected extra review");
-    return { data: request.schema.parse(raw), text: JSON.stringify(raw), provider: "captured", model: "captured" };
+    // Translate the captured page-8 auxiliary repair to the correction contract;
+    // pages 9–30 still need their first editorial verdicts.
+    const corrected = live.responses[1]!.pages[0]!;
+    if (typeof corrected !== "object") throw new Error("Missing captured auxiliary correction");
+    if (calls === 2) expect(payload.auxiliaryRecovery.rows.map((row: { id: string }) => row.id)).toEqual(["page:8"]);
+    const response = calls === 2 ? { pages: raw.pages.filter(row => typeof row !== "object" || row.pageIndex !== 8),
+      auxiliaryCorrections: [{ id: "page:8", storyExtract: corrected.storyExtract, styleAudit: corrected.styleAudit,
+        continuityFindingLinks: corrected.continuityFindingLinks }] } : raw;
+    return { data: request.schema.parse(response), text: JSON.stringify(response), provider: "captured", model: "captured" };
   };
   const fixture = captured.premium;
   const options = { input: createProjectSchema.parse(fixture.input), plan: bookPlanSchema.parse(fixture.plan),

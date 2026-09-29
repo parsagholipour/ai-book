@@ -24,7 +24,7 @@ export function isInheritedRepairFinding(finding: Finding, pageIndex: number, co
  * No quoted text is promoted to evidence and no page becomes approved. */
 export function retainUnverifiedRepairPrefix(options: PictureBookReviewOptions, checkpoint: PictureBookReviewCheckpoint): PictureBookPageReview[] | undefined {
   const context = options.repairContext;
-  if (!context?.changes.length || checkpoint.protocolIssues.length || checkpoint.editorialRows?.length ||
+  if (!context?.changes.length || checkpoint.protocolIssues.length || checkpoint.editorialRows?.length || checkpoint.metadataRows?.length ||
     !checkpoint.unresolvedPageIndexes.length || checkpoint.roundsStarted < 2) return undefined;
   const pages = new Map(options.pages.map(page => [page.index, page]));
   const reviews = new Map(checkpoint.reviews.map(review => [review.pageIndex, review]));

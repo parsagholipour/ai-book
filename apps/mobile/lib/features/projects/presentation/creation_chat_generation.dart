@@ -203,6 +203,9 @@ class _GenerationProgressBubbleState
             : status.generationProgress?.detail ??
                   status.editProgress?.detail ??
                   status.currentAction;
+        final generationTime = formatGenerationDuration(
+          status.bookGenerationDurationMs,
+        );
         // The icon works while the book does. Once it has settled — finished,
         // failed, or waiting on a person — it lands on a still glyph.
         final Widget icon = isFailed || reviewRequired
@@ -274,6 +277,10 @@ class _GenerationProgressBubbleState
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: colors.onSurfaceVariant),
                         ),
+                        if (status.isSettled && generationTime != null) ...[
+                          const SizedBox(height: 4),
+                          Text('Book generation took $generationTime'),
+                        ],
                       ],
                     ),
                   ),

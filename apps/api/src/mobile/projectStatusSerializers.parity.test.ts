@@ -105,7 +105,7 @@ describe("status serializer parity", () => {
     expect(serializeProjectStatusFromFacade).toBe(serializeProjectStatus);
     expect(facade).toEqual(owned);
     expect(Object.keys(owned).sort()).toEqual([
-      "coverArtSource", "coverEnabled", "currentAction", "editProgress", "exports", "failureMessage", "generationProgress",
+      "coverArtSource", "coverEnabled", "currentAction", "editProgress", "exports", "failureMessage", "generationProgress", "generationTimings",
       "hasCoverPage", "illustrationsEnabled", "imageCount", "imagesEnabled", "pageProgress", "pdfPageNumbering", "planningProgress",
       "progressPercent", "projectId", "quality", "recoveryQuote", "retryAvailable", "status", "statusLabel", "steps",
       "updatedAt"

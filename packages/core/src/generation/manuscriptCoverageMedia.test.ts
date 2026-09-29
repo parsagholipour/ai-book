@@ -23,6 +23,17 @@ it("verifies the recorded no-artwork content constraint without requiring prose 
   expect(calls).toHaveLength(2);
 });
 
+it.each([{ storyPagesWithArtwork: [] }, { storyPagesWithArtwork: [1] }])("checks pure text-only pages against actual artwork inventory: %j", async ({ storyPagesWithArtwork }) => {
+  const text = "All story pages are text-only.";
+  const { model } = scriptedDevelopmentModel([
+    { complete: true, requirements: [{ text, quote: text, kind: "content" }] }, verdict
+  ]);
+  const result = await reviewManuscriptCoverage({ brief: text, promises: [], pages: [], textModel: model,
+    evidenceContext: { ...context, mediaInventory: { storyPagesWithArtwork, coverArtworkCount: 1 } } });
+  expect(result.requirements[0]).toMatchObject({ kind: "media_absence", mediaScope: "story_pages",
+    status: storyPagesWithArtwork.length ? "missing" : "fulfilled" });
+});
+
 it.each([
   { storyPagesWithArtwork: [1], coverArtworkCount: 0 },
   { storyPagesWithArtwork: [], coverArtworkCount: 1 }

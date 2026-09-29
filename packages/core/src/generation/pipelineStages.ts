@@ -58,8 +58,8 @@ export const PER_PAGE_STAGES: readonly PipelineStage[] = [
   {
     id: "page-review",
     label: "Page review and rewrite",
-    summary: "Local checks, then the model reviewer, then up to the tier's rewrite budget per page.",
-    purposes: ["review-page", "revise-page", "repair-page-brief", "verify-page-claims", "screen-changed-page-grounding", "audit-page-style"],
+    summary: "Local checks, model review and bounded rewrites. Short picture books also receive a focused continuity check before clean approval or repair acceptance.",
+    purposes: ["review-page", "review-picture-book-continuity", "revise-page", "repair-page-brief", "verify-page-claims", "screen-changed-page-grounding", "audit-page-style"],
     lane: "mixed",
     calls: "1 review per page, plus 2 to 10 rewrites per failing page by tier",
     gates: ["pageLocalQa", "smartUnslop", "pageModelReview", "pageQaRewrite", "claimVerifier", "changedCandidateGrounding", "styleAuditor", "claimRetrieve", "storyExtractAudit"]

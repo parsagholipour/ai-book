@@ -523,6 +523,8 @@ export type MobileProjectStatusDto = {
   statusLabel: string;
   progressPercent: number;
   currentAction: string;
+  /** Measured active time for the current plan and its full-book attempt. */
+  generationTimings: { planningMs: number | null; bookMs: number | null };
   planningProgress: {
     percent: number;
     steps: Array<{

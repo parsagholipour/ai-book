@@ -18,8 +18,10 @@ describe("captured Premium requirement repair", () => {
 
   async function setup(mode: Mode = "historic") {
     const text = new FakeTextModelAdapter();
-    text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => ({ data: request.schema.parse(captured.initialReview),
-      text: JSON.stringify(captured.initialReview), provider: "fixture", model: "fixture" });
+    text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      const raw = request.purpose === "review-picture-book-continuity" ? { findings: [] } : captured.initialReview;
+      return { data: request.schema.parse(raw), text: JSON.stringify(raw), provider: "fixture", model: "fixture" };
+    };
     const pages = captured.pages.map(p => ({ ...p, summary: "" }));
     const reviews = await reviewPictureBookManuscript({ input, plan, pages, checks: captured.checks, chapterBriefs: [], textModel: text });
     const originals: ExportPageForRepair[] = pages.map(p => ({ ...p, id: `p${p.index}`, revision: 1, imagePrompt: null,
@@ -37,6 +39,7 @@ describe("captured Premium requirement repair", () => {
     });
     const calls: GenerateJsonOptions<unknown>[] = [];
     text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
       calls.push(request);
       const payload = JSON.parse(request.messages[1]!.content);
       const target: PictureBookRequirementTarget | undefined = payload.repairContext?.requirementTargets?.[0];
@@ -116,6 +119,7 @@ describe("captured Premium requirement repair", () => {
     const text = new FakeTextModelAdapter();
     const reviewCalls: GenerateJsonOptions<unknown>[] = [];
     text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
       reviewCalls.push(request);
       const raw = { complete: true, requirements: requirements.map((r, index) => ({ ...r, id: `brief-${index + 1}` })) };
       return { data: request.schema.parse(raw), text: JSON.stringify(raw), provider: "fixture", model: "fixture" };

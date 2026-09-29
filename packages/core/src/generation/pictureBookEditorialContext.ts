@@ -4,6 +4,8 @@ import type { PictureBookPageReview } from "./pictureBookReviewValidation.js";
 export type PictureBookPreviousReview = {
   pages: readonly PriorPageContext[];
   reviews: readonly PictureBookPageReview[];
+  /** The caller binds these reviews to their exact manuscript and review context. */
+  fingerprint?: string;
 };
 
 /** Prior judgments explain a recheck; they never supply the current verdict.

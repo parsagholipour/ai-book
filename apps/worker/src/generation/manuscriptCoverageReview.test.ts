@@ -25,6 +25,14 @@ it("reuses a completed review only for the identical brief and manuscript", asyn
   expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ projectId: "project-1", qualityReport: { path: ["briefCoverage", "fingerprint"], equals: fingerprint } }) }));
 });
 
+it("rereads coverage cached before dialogue counterevidence and text-only delivery checks", async () => {
+  const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 19, brief: options.brief,
+    promises: options.promises, requirementTargets: [], evidenceContext: null, chapters: null, pages })).digest("hex");
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review } } });
+  await manuscriptCoverageForCompile(options);
+  expect(mocks.review).toHaveBeenCalledOnce();
+});
+
 it("does not reuse pre-fix coverage that could have discarded ungrounded brief entries", async () => {
   const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 6, brief: options.brief,
     promises: options.promises, evidenceContext: null, chapters: null, pages })).digest("hex");
@@ -54,6 +62,26 @@ it("invalidates coverage from before exact cast-coordinate and short-dialogue re
   const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 13, brief: options.brief,
     promises: options.promises, requirementTargets: [], evidenceContext: null, chapters: null, pages })).digest("hex");
   expect(oldFingerprint).not.toBe(fingerprint);
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review } } });
+  await manuscriptCoverageForCompile(options);
+  expect(mocks.review).toHaveBeenCalledOnce();
+});
+
+it("does not reuse a transcription warning from before source-span citation recovery", async () => {
+  const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 16, brief: options.brief,
+    promises: options.promises, requirementTargets: [], evidenceContext: null, chapters: null, pages })).digest("hex");
+  const staleReview = { ...review, status: "incomplete", requirements: review.requirements.map(item => ({
+    ...item, status: "unverified", reason: "The model's quote did not exactly match the source passage.", evidence: []
+  })) };
+  mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review: staleReview } } });
+  const result = await manuscriptCoverageForCompile(options);
+  expect(mocks.review).toHaveBeenCalledOnce();
+  expect(result.issues).toEqual([]);
+});
+
+it("rereads coverage cached before the shared final-page convention", async () => {
+  const oldFingerprint = createHash("sha256").update(JSON.stringify({ version: 17, brief: options.brief,
+    promises: options.promises, requirementTargets: [], evidenceContext: null, chapters: null, pages })).digest("hex");
   mocks.findFirst.mockResolvedValue({ qualityReport: { briefCoverage: { fingerprint: oldFingerprint, review } } });
   await manuscriptCoverageForCompile(options);
   expect(mocks.review).toHaveBeenCalledOnce();

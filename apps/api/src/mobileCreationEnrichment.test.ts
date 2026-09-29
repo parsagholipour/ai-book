@@ -19,7 +19,7 @@ type ScriptedToolTurn =
 
 type ScriptedToolModel = TextModelAdapter & { calls: GenerateWithToolsOptions[] };
 
-function toolModel(turns: ScriptedToolTurn[]): ScriptedToolModel {
+function toolModel(turns: ScriptedToolTurn[], detectedLanguage = "en"): ScriptedToolModel {
   const calls: GenerateWithToolsOptions[] = [];
   let index = 0;
   return {
@@ -57,7 +57,10 @@ function toolModel(turns: ScriptedToolTurn[]): ScriptedToolModel {
       };
     },
     generateText: () => Promise.reject(new Error("not used")),
-    generateJson: () => Promise.reject(new Error("not used")),
+    async generateJson(options) {
+      const data = options.schema.parse({ language: detectedLanguage });
+      return { data, text: JSON.stringify(data), model: "fake", provider: "fake" };
+    },
     // eslint-disable-next-line require-yield
     streamText: async function* () {
       throw new Error("not used");
@@ -69,6 +72,36 @@ describe("creation turn enrichment", () => {
   const autoRequest: MobileCreationTurnRequest = {
     messages: [{ role: "user", content: "Bedtime story for 5 year olds" }]
   };
+
+  it("does not let the storyteller choose Portuguese from an English Neymar request", async () => {
+    const request: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "10 page book about Neymar and a poor girl, she's a waitress. An enemies to lovers story." }]
+    };
+    const model = toolModel([
+      { toolCalls: [{ name: "update_settings", arguments: { language: "pt" } }] },
+      { finish: { assistantMessage: "I'll write the story in English.", question: null, language: "en" } }
+    ]);
+
+    const turn = await runCreationTurn(request, {
+      enrich: (input, base) => enrichCreationTurnWithSearch({ textModel: model, research: neverSearchAdapter() }, input, base)
+    });
+
+    expect(turn.language).toBe("en");
+    expect(turn.assistantMessage).toBe("I'll write the story in English.");
+    expect(JSON.stringify(model.calls[1]?.messages)).toContain("English");
+  });
+
+  it("rejects a finish_turn that contradicts the independently resolved language", async () => {
+    const model = toolModel([
+      { finish: { assistantMessage: "I'll write it in Portuguese.", question: null, language: "pt" } },
+      { finish: { assistantMessage: "I'll write it in English.", question: null, language: "en" } }
+    ]);
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: neverSearchAdapter() }, autoRequest, deterministicCreationTurn(autoRequest)
+    );
+    expect(patch.language).toBe("en");
+    expect(patch.assistantMessage).toBe("I'll write it in English.");
+  });
 
   it("throws when enrichment exhausts without a usable finish_turn patch", async () => {
     const request: MobileCreationTurnRequest = {
@@ -103,7 +136,7 @@ describe("creation turn enrichment", () => {
             options: ["A hero", "An animal"],
             allowCustom: true
           },
-          bookLanguage: "fa",
+          bookLanguage: "en",
           extraneous: "ignored",
           brief: null,
           buildRequested: false
@@ -119,7 +152,7 @@ describe("creation turn enrichment", () => {
 
     expect(patch.assistantMessage).toContain("bedtime story");
     expect(patch.question?.prompt).toBe("What should the bedtime story be about?");
-    expect(patch.language).toBe("fa");
+    expect(patch.language).toBe("en");
     expect(patch.brief).toBeUndefined();
   });
 });

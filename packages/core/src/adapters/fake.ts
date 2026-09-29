@@ -287,7 +287,8 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       return { ...makeFallbackPlan(this.input), storyTreatment: "[MOCK_AI placeholder story] A traveler loses the path while hurrying to meet a friend. The traveler stops to notice familiar tracks, tries the quieter route and asks for help at the crossing. Together the friends reach home and share what they found along the way." };
     }
 
-    if (options.purpose === "generate-chapter-brief" && (Array.isArray(extractUserPayload(options).storyOutline) || typeof extractUserPayload(options).storyTreatment === "string")) {
+    if ((options.purpose === "generate-chapter-brief" || options.purpose === "generate-page-map") &&
+      (Array.isArray(extractUserPayload(options).storyOutline) || typeof extractUserPayload(options).storyTreatment === "string")) {
       const targetPages = extractTargetPages(options);
       return {
         pages: Array.from({ length: targetPages }, (_, index) => {
@@ -393,6 +394,8 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         notes: "Fake final QA approved the deterministic dry-run book."
       };
     }
+
+    if (options.purpose === "review-picture-book-continuity") return { findings: [] };
 
     if (options.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
       return { clusters: [] };

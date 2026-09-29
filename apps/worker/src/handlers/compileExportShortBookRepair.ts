@@ -18,6 +18,7 @@ import { FinalizationLeaseLostError } from "./compileFinalization.js";
 import type { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { RepairRejectedError } from "./compileRepairOutcome.js";
 import { checkedShortBookRepairCandidate } from "./compileShortBookRepairCandidate.js";
+import { independentSentenceCandidate, retainRestoredSceneFindings } from "./compileIndependentSentenceRepair.js";
 import { reviewShortBookRepairCandidate, shortBookRepairRejection, shortBookRepairFeedback } from "./compileShortBookRepairReview.js";
 
 type Options = Parameters<typeof repairPagesFromFinalQa>[0];
@@ -67,6 +68,7 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
   let candidate: Awaited<ReturnType<typeof repairPictureBookManuscript>>;
   let reviews: PictureBookPageReview[] = [];
   let reviewModel: TextModelAdapter | undefined;
+  let continuityModel: TextModelAdapter | undefined;
   const checks = shortPictureBookChecks(options.quality);
   try {
     const previousReviews = await loadPictureBookReviewSnapshot({ ...options, pages: originals, checks });
@@ -78,9 +80,15 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
     // candidate's verified chronological prefix can still supply state deltas.
     const baseline = previousReviews ? { pages: originals, reviews: previousReviews } : undefined;
     let previous = baseline;
+    let independent = false;
     candidate = await checkedShortBookRepairCandidate({ input: options.input, plan: options.plan, pages: originals,
       ...(previousReviews ? { originalReviews: previousReviews } : {}),
       issues, requirementTargets, sceneRepairTargets, textModel: options.providers.text, projectId: options.projectId, assertActive: active,
+      selectIndependent: proposed => {
+        const selected = independentSentenceCandidate(originals, proposed, reviews, previousReviews ?? []);
+        independent = Boolean(selected);
+        return selected;
+      },
       check: async (proposed) => {
         if (!usesShortPictureBookReview({ ...options, pages: proposed.pages }))
           throw new Error("Coordinated repair exceeded the short manuscript budget.");
@@ -97,7 +105,9 @@ export async function repairShortBookFromFinalQa(options: Options, targets: Expo
       },
       verify: async (proposed, budget) => {
         reviewModel ??= (await bindTextModelCall(options.providers.text, "review-page")).adapter;
-        reviews = await reviewShortBookRepairCandidate(options, proposed, previous, reviewModel, budget, active, baseline);
+        if (checks.pageModelReview) continuityModel ??= (await bindTextModelCall(options.providers.text, "review-picture-book-continuity")).adapter;
+        reviews = await reviewShortBookRepairCandidate(options, proposed, independent ? baseline : previous, reviewModel, budget, active, baseline, continuityModel);
+        if (independent) retainRestoredSceneFindings(reviews, previousReviews ?? [], proposed.context);
         previous = { pages: proposed.pages, reviews };
         const rejection = shortBookRepairRejection(proposed.context, reviews);
         return rejection ? { rejection, failures: shortBookRepairFeedback(reviews, rejection) } : undefined;

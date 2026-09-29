@@ -61,6 +61,7 @@ import 'plan_build_progress.dart';
 import 'plan_revision_retry.dart';
 import 'progress_step_row.dart';
 import 'generation_retry_confirmation.dart';
+import 'generation_duration.dart';
 import 'project_chat_bubbles.dart';
 import 'project_chat_operations.dart';
 import 'project_export_actions.dart';

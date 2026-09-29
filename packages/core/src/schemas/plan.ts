@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { manuscriptRequirementInventorySchema } from "./manuscriptRequirements.js";
 import {
   booleanField,
   coerceStringArray,
@@ -648,6 +649,8 @@ const bookPlanObjectSchema = z.object({
   researchQueries: z.array(z.string()).default([]),
   researchNotes: z.array(researchSourceSchema).default([]),
   promises: z.array(z.string()).default([]),
+  /** Server-owned brief interpretation, prepared before scene allocation and drafting. */
+  requirementInventory: manuscriptRequirementInventorySchema.optional(),
   openingHook: z.string().optional(),
   /** Complete causal story, authored before page allocation. Persisted for resume. */
   storyTreatment: z.string().trim().min(200).max(16_000).optional(),
@@ -665,7 +668,7 @@ const bookPlanObjectSchema = z.object({
 export const bookPlanSchema = z.preprocess((value) => normalizeBookPlan(value, undefined), bookPlanObjectSchema);
 
 export function bookPlanSchemaWithFallback(fallback: BookPlan) {
-  return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema);
+  return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema.omit({ requirementInventory: true }));
 }
 
 /**
@@ -677,7 +680,7 @@ export function bookPlanSchemaWithFallback(fallback: BookPlan) {
 export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compactStory = false): z.ZodType<Omit<BookPlan, "researchNotes">> {
   return z.preprocess(
     normalizeBookPlanWithFallback(fallback, true),
-    bookPlanObjectSchema.omit({ researchNotes: true, bookDevelopment: true, episodes: true, dossier: true, storyTreatment: true,
+    bookPlanObjectSchema.omit({ researchNotes: true, requirementInventory: true, bookDevelopment: true, episodes: true, dossier: true, storyTreatment: true,
       ...(compactStory ? { authorStance: true as const, styleContract: true as const } : {}) })
   );
 }
@@ -685,7 +688,7 @@ export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compac
 /** The initial compact story call authors narrative, not chapter/page quotas. */
 export function pictureBookStoryPlanSchema(fallback: BookPlan) {
   return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema.omit({
-    chapters: true, researchNotes: true, bookDevelopment: true, episodes: true, dossier: true,
+    chapters: true, researchNotes: true, requirementInventory: true, bookDevelopment: true, episodes: true, dossier: true,
     authorStance: true, styleContract: true, bookArc: true
   }).extend({ storyTreatment: z.string().trim().min(200).max(16_000) }));
 }

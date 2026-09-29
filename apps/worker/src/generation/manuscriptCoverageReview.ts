@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
-  buildCoverageMediaInventory, coverageStoryPageWordCounts, libraryCharactersFromMediaSettings, manuscriptCoverageIssues, manuscriptCoverageSchema, refreshManuscriptCoverageFacts, reviewManuscriptCoverage,
+  buildCoverageMediaInventory, coverageStoryPageWordCounts, libraryCharactersFromMediaSettings, manuscriptCoverageIssues, manuscriptCoverageSchema, refreshManuscriptCoverageFacts, reviewManuscriptCoverage, matchingRequirementInventory,
+  type ManuscriptRequirementInventory,
+  generationPageCountBounds, requestedGenerationPages, resolveBookGenerationStrategy,
   type PictureBookRequirementTarget, type BookPlan, type CreateProjectInput, type CoverageEvidenceContext, type CoveragePage, type CoverageChapter, type ManuscriptCoverage, type ManuscriptQualityIssue, type TextModelAdapter
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -8,8 +10,8 @@ import { isStopRequestedError } from "../runtime/jobTypes.js";
 
 export type StoredManuscriptCoverage = { fingerprint: string; review: ManuscriptCoverage };
 
-export function manuscriptCoverageFingerprint(brief: string, promises: readonly string[], pages: readonly CoveragePage[], chapters?: readonly CoverageChapter[], evidenceContext?: CoverageEvidenceContext, requirementTargets: readonly PictureBookRequirementTarget[] = []): string {
-  return createHash("sha256").update(JSON.stringify({ version: 15, brief, promises, requirementTargets, evidenceContext: evidenceContext ?? null, chapters: chapters === undefined ? null : [...chapters]
+export function manuscriptCoverageFingerprint(brief: string, promises: readonly string[], pages: readonly CoveragePage[], chapters?: readonly CoverageChapter[], evidenceContext?: CoverageEvidenceContext, requirementTargets: readonly PictureBookRequirementTarget[] = [], inventory?: ManuscriptRequirementInventory): string {
+  return createHash("sha256").update(JSON.stringify({ version: 21, brief, promises, inventory: matchingRequirementInventory(inventory, brief), requirementTargets, evidenceContext: evidenceContext ?? null, chapters: chapters === undefined ? null : [...chapters]
     .sort((a, b) => a.index - b.index).map(({ index, title, startPageIndex, endPageIndex }) => ({ index, title, startPageIndex, endPageIndex })), pages: [...pages]
     .sort((a, b) => a.index - b.index).map(({ index, markdown }) => ({ index, markdown })) })).digest("hex");
 }
@@ -18,10 +20,12 @@ export function manuscriptCoverageFingerprint(brief: string, promises: readonly 
 export async function manuscriptCoverageForCompile(options: {
   projectId: string; brief: string; promises: readonly string[]; pages: readonly CoveragePage[];
   requirementTargets?: readonly PictureBookRequirementTarget[] | undefined;
+  inventory?: ManuscriptRequirementInventory | undefined;
   textModel: TextModelAdapter; allowModelReview: boolean; chapters?: readonly CoverageChapter[] | undefined; evidenceContext?: CoverageEvidenceContext | undefined;
 }): Promise<{ issues: ManuscriptQualityIssue[]; stored: StoredManuscriptCoverage }> {
   const promises = [...new Set(options.promises)].sort();
-  const fingerprint = manuscriptCoverageFingerprint(options.brief, promises, options.pages, options.chapters, options.evidenceContext, options.requirementTargets);
+  const inventory = matchingRequirementInventory(options.inventory, options.brief);
+  const fingerprint = manuscriptCoverageFingerprint(options.brief, promises, options.pages, options.chapters, options.evidenceContext, options.requirementTargets, inventory);
   try {
     const cached = await prisma.generationJob.findFirst({
       where: { projectId: options.projectId, type: "COMPILE_EXPORT", qualityReport: { path: ["briefCoverage", "fingerprint"], equals: fingerprint } },
@@ -33,7 +37,7 @@ export async function manuscriptCoverageForCompile(options: {
     if (stored && typeof stored === "object" && !Array.isArray(stored) && stored.fingerprint === fingerprint && review.success && (review.data.status === "reviewed" || (review.data.status === "incomplete" && review.data.requirements.length > 0))) {
       // Reuse the prose assessment, but let current deterministic checks settle
       // recognized delivery wording in older cached judgments too.
-      const refreshed = options.evidenceContext ? refreshManuscriptCoverageFacts(review.data, options.evidenceContext) : review.data;
+      const refreshed = options.evidenceContext ? refreshManuscriptCoverageFacts(review.data, options.evidenceContext, options.pages, options.brief) : review.data;
       return { stored: { fingerprint, review: refreshed }, issues: manuscriptCoverageIssues(refreshed) };
     }
   } catch (error) {
@@ -41,7 +45,7 @@ export async function manuscriptCoverageForCompile(options: {
     // A cache miss never prevents the review or grants an unverified pass.
   }
   const result = options.allowModelReview
-    ? await reviewManuscriptCoverage({ brief: options.brief, promises, pages: options.pages, chapters: options.chapters, evidenceContext: options.evidenceContext, requirementTargets: options.requirementTargets, textModel: options.textModel })
+    ? await reviewManuscriptCoverage({ brief: options.brief, promises, inventory, pages: options.pages, chapters: options.chapters, evidenceContext: options.evidenceContext, requirementTargets: options.requirementTargets, textModel: options.textModel })
     : { status: "unavailable" as const, unavailableReason: "Model coverage review was not enabled for this compile.", requirements: [] };
   const review: ManuscriptCoverage = { status: result.status, requirements: result.requirements,
     ...("assessmentComplete" in result && result.assessmentComplete !== undefined ? { assessmentComplete: result.assessmentComplete } : {}),
@@ -56,9 +60,15 @@ export function buildManuscriptCoverageContext(options: {
   expectedIllustratedPageIndexes?: number[];
 }): CoverageEvidenceContext {
   const saved = libraryCharactersFromMediaSettings(options.input.mediaSettings);
+  const { strategy } = resolveBookGenerationStrategy(options.input);
+  const allowsExtraPages = strategy.executionMode === "whole-book" ||
+    (strategy.executionMode === "draft-then-polish" && Boolean(strategy.generateWholeBookDraft));
   return {
     title: options.plan.title,
     targetStoryPages: options.input.targetPages,
+    requestedStoryPages: requestedGenerationPages(options.input),
+    storyPageCountBounds: allowsExtraPages ? generationPageCountBounds(options.input)
+      : { minimumPages: options.input.targetPages, maximumPages: options.input.targetPages },
     storyPageIndexes: options.pages.map((page) => page.index).sort((a, b) => a - b),
     storyPageWordCounts: coverageStoryPageWordCounts(options.pages),
     illustratedPageIndexes: options.pages.filter((page) => page.images?.some((image) =>

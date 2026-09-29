@@ -16,7 +16,7 @@ function setup(answers: unknown[]) {
   });
   const options = { input: { category: "KIDS", targetPages: 30, prompt: fixture.brief, language: "en", mediaSettings: {} },
     plan: { title: "Lanterns", premise: "A search", audience: "children", chapters: [], characters: [], promises: [], voiceGuide: [] },
-    pages: fixture.pages, chapterBriefs: [], checks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false },
+    pages: fixture.pages, chapterBriefs: [], continuityReview: false, checks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false },
     textModel: { generateJson } as unknown as TextModelAdapter } as unknown as Parameters<typeof reviewPictureBookManuscript>[0];
   return { options, generateJson };
 }
@@ -40,7 +40,8 @@ it.each(["missing", "duplicate", "unknownField", "missingEnabledAssessment"])("r
   if (kind === "duplicate") rows.push(clean(30));
   if (kind === "unknownField") Object.assign(rows[29]!, { invented: true });
   if (kind === "missingEnabledAssessment") Object.assign(rows[29]!, { score: undefined });
-  const { options, generateJson } = setup([{ pages: rows }, { pages: [clean(30)] }]);
+  const { options, generateJson } = setup([{ pages: rows }, kind === "unknownField"
+    ? { pages: [], auxiliaryCorrections: [{ id: "page:30" }] } : { pages: [clean(30)] }]);
   const snapshots: PictureBookReviewCheckpoint[] = [];
   options.onCheckpoint = async (checkpoint) => { snapshots.push(structuredClone(checkpoint)); };
   await expect(reviewPictureBookManuscript(options)).resolves.toHaveLength(30);

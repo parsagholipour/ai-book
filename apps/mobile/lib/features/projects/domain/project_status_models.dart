@@ -12,6 +12,8 @@ class MobileProjectStatus {
     required this.currentAction,
     this.planningProgress,
     this.generationProgress,
+    this.planningDurationMs,
+    this.bookGenerationDurationMs,
     this.editProgress,
     required this.retryAvailable,
     required this.steps,
@@ -46,6 +48,8 @@ class MobileProjectStatus {
   final String currentAction;
   final MobilePlanningProgress? planningProgress;
   final MobileGenerationProgress? generationProgress;
+  final int? planningDurationMs;
+  final int? bookGenerationDurationMs;
 
   /// Milestones for an edit to a finished book. Same shape as
   /// [generationProgress] but a separate field: editing and writing are
@@ -127,6 +131,10 @@ class MobileProjectStatus {
               (json['generationProgress'] as Map).cast<String, dynamic>(),
             )
           : null,
+      planningDurationMs:
+          (json['generationTimings'] as Map?)?['planningMs'] as int?,
+      bookGenerationDurationMs:
+          (json['generationTimings'] as Map?)?['bookMs'] as int?,
       editProgress: json['editProgress'] is Map
           ? MobileGenerationProgress.fromJson(
               (json['editProgress'] as Map).cast<String, dynamic>(),

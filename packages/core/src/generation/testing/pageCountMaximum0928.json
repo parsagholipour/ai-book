@@ -1,0 +1,210 @@
+{
+  "brief": "Write an original 30-page storybook for children ages 6\u20138, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Write 30\u201333 story pages, never fewer than 30. Extra pages are optional and must add meaningful progression. All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.",
+  "requirement": {
+    "kind": "page_count",
+    "text": "Story-page maximum",
+    "quote": "Write 30\u201333 story pages",
+    "scope": {
+      "quote": "Write 30\u201333 story pages, never fewer than 30.",
+      "extent": "whole_book"
+    },
+    "expectedCount": 33
+  },
+  "evidenceContext": {
+    "title": "The Lantern Path",
+    "targetStoryPages": 30,
+    "requestedStoryPages": 30,
+    "storyPageCountBounds": {
+      "minimumPages": 30,
+      "maximumPages": 30
+    },
+    "storyPageIndexes": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30
+    ],
+    "storyPageWordCounts": [
+      {
+        "index": 1,
+        "words": 47
+      },
+      {
+        "index": 2,
+        "words": 51
+      },
+      {
+        "index": 3,
+        "words": 53
+      },
+      {
+        "index": 4,
+        "words": 50
+      },
+      {
+        "index": 5,
+        "words": 57
+      },
+      {
+        "index": 6,
+        "words": 62
+      },
+      {
+        "index": 7,
+        "words": 60
+      },
+      {
+        "index": 8,
+        "words": 56
+      },
+      {
+        "index": 9,
+        "words": 64
+      },
+      {
+        "index": 10,
+        "words": 56
+      },
+      {
+        "index": 11,
+        "words": 57
+      },
+      {
+        "index": 12,
+        "words": 55
+      },
+      {
+        "index": 13,
+        "words": 55
+      },
+      {
+        "index": 14,
+        "words": 54
+      },
+      {
+        "index": 15,
+        "words": 46
+      },
+      {
+        "index": 16,
+        "words": 57
+      },
+      {
+        "index": 17,
+        "words": 53
+      },
+      {
+        "index": 18,
+        "words": 58
+      },
+      {
+        "index": 19,
+        "words": 58
+      },
+      {
+        "index": 20,
+        "words": 55
+      },
+      {
+        "index": 21,
+        "words": 49
+      },
+      {
+        "index": 22,
+        "words": 52
+      },
+      {
+        "index": 23,
+        "words": 51
+      },
+      {
+        "index": 24,
+        "words": 57
+      },
+      {
+        "index": 25,
+        "words": 55
+      },
+      {
+        "index": 26,
+        "words": 57
+      },
+      {
+        "index": 27,
+        "words": 51
+      },
+      {
+        "index": 28,
+        "words": 54
+      },
+      {
+        "index": 29,
+        "words": 50
+      },
+      {
+        "index": 30,
+        "words": 66
+      }
+    ],
+    "illustratedPageIndexes": [],
+    "expectedIllustratedPageIndexes": [],
+    "selectedCharacterNames": [
+      "Rabbit",
+      "Wise Turtle"
+    ],
+    "mediaInventory": {},
+    "characters": [
+      {
+        "name": "Rabbit",
+        "description": "A very playful rabbit that appears to be very hasty.",
+        "traits": [
+          "playful",
+          "hasty",
+          "energetic"
+        ],
+        "visualRules": [],
+        "fields": [],
+        "referenceVersion": "cmqejjndu000s1nqr1cla39or/cmtvyqhjn0018ark75508mxmt-portrait-10df3a57cc1e.jpg"
+      },
+      {
+        "name": "Wise Turtle",
+        "description": "Slow but steady",
+        "traits": [
+          "slow",
+          "steady",
+          "wise"
+        ],
+        "visualRules": [],
+        "fields": [],
+        "referenceVersion": "cmqejjndu000s1nqr1cla39or/cmtvyr5pb001cark7zgkwug3g-portrait-33d7c039c6b8.jpg"
+      }
+    ],
+    "referenceProvenance": []
+  }
+}

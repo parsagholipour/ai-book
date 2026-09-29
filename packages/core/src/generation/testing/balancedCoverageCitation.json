@@ -1,0 +1,56 @@
+{
+  "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Exactly 30 story pages. Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.",
+  "requirement": {
+    "text": "Not a retelling of The Tortoise and the Hare",
+    "quote": "or a retelling of The Tortoise and the Hare",
+    "kind": "content",
+    "id": "brief-23",
+    "source": "brief",
+    "obligationId": "obligation-5d0b2a559a0300a518c098fe"
+  },
+  "verdict": {
+    "id": "brief-23",
+    "status": "fulfilled",
+    "reason": "The plot uses a storm, a directional clue, and a group journey to a picnic; it does not retell the tortoise-and-hare race.",
+    "evidence": [
+      {
+        "pageIndex": 11,
+        "quote": "They compared the two places: both lanterns had come to rest on the eastern side of their posts."
+      },
+      {
+        "pageIndex": 27,
+        "quote": "Rabbit and Wise Turtle came in together, just as they had walked the path together."
+      }
+    ]
+  },
+  "pages": [
+    {
+      "index": 11,
+      "markdown": "“The stump lantern landed east,” Rabbit said. “And this one landed east of the stones,” Wise Turtle replied. They compared the two places: both lanterns had come to rest on the eastern side of their posts. “The wind pushed them east,” Turtle said. Rabbit lifted the stepping-stone lantern and hung it on its post. Now two lanterns were home."
+    },
+    {
+      "index": 27,
+      "markdown": "Rabbit and Wise Turtle led the neighbors into the fern clearing. The picnic blankets and baskets waited in the grass. The sky still held the last blue of evening; the moon had not risen. Neighbors smiled and settled near the food. Rabbit and Turtle came in together, just as they had walked the path together."
+    }
+  ],
+  "declinedCorrection": {
+    "corrections": [
+      {
+        "id": "citation-1",
+        "supportsSameClaim": false,
+        "quote": null
+      }
+    ]
+  },
+  "exactQuote": "Rabbit and Turtle came in together, just as they had walked the path together.",
+  "recoveredCorrection": {
+    "corrections": [
+      {
+        "id": "citation-1",
+        "supportsSameClaim": true,
+        "quote": null,
+        "sourceSpanId": "page-27:231-309"
+      }
+    ]
+  }
+}

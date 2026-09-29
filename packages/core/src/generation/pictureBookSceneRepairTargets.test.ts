@@ -33,7 +33,7 @@ it("preserves explicit repair intervals through model review, scope selection, r
   const { model, calls } = scriptedDevelopmentModel([{ findings: [{ ...finding, pageIndex: 3, repairPageIndexes: [2, 3] }],
     pages: pages.map(page => ({ pageIndex: page.index, score: 85, storyExtract: null, styleAudit: null })) },
   { pages: [], sceneRevisions: [scene] }]);
-  const reviews = await reviewPictureBookManuscript({ input, plan, pages, checks, chapterBriefs: [], textModel: model });
+  const reviews = await reviewPictureBookManuscript({ input, plan, pages, checks, chapterBriefs: [], continuityReview: false, textModel: model });
   expect(reviews[2]!.findings?.[0]?.repairPageIndexes).toEqual([2, 3]);
   const sceneRepairTargets = pictureBookSceneRepairTargets(pages, reviews);
   expect(sceneRepairTargets).toEqual([{ pageIndex: 3, pageIndexes: [2, 3] }]);

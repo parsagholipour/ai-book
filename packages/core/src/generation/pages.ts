@@ -1,15 +1,16 @@
+import { pictureBookRequirementContract, WRITER_REQUIREMENT_SCOPE_GUIDANCE } from "./pictureBookRequirementContract.js";
 import { writerArtworkContext } from "./writerArtworkContext.js";
 import { PICTURE_BOOK_STORY_OBLIGATIONS, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
+import { generationPageCountBounds } from "./pageCountAllowance.js";
 import { z } from "zod";
 import type { ImageAdapter, ImageCopyrightRewrite, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
-import { isDiagramFriendlyBookCategory } from "../categories.js";
 import { range } from "../collections.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload
 } from "../prompting/language.js";
-import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
+import { targetWordsPerPage, wholeBookMaxTokens } from "./pagesOutputBudget.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import {
   pageDraftSchema,
@@ -260,6 +261,9 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
 }
 
 export async function generateWholeBookDraft(options: GenerateWholeBookOptions): Promise<WholeBookDraft> {
+  const bounds = options.chapterBriefs?.length
+    ? { minimumPages: options.input.targetPages, maximumPages: options.input.targetPages }
+    : generationPageCountBounds(options.input);
   // This pass always writes page 1, so it always owes page 1's opening contract
   // — including the hook the page map's first brief is written against.
   const opening = openingContractFields(options, "multiPageWriter", 1, options.input.targetPages);
@@ -275,9 +279,10 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
         content: [
           "Write the complete Markdown book in one pass as a human author would.",
           ...(usesCompactPictureBookPlanning(options.input) ? [
+            WRITER_REQUIREMENT_SCOPE_GUIDANCE,
             ...PICTURE_BOOK_STORY_OBLIGATIONS,
-            "Enact the arc and prop-state contracts in continuityRules through scenes. The page map's endingPressure is an author note, not text to copy or paraphrase into a narrator question. Let the scene's action, discovery or consequence carry the turn; avoid a recurring narrator question used only to announce the next page. Preserve intentional dialogue, refrains and quiet closure.",
-            "Track current location/holder separately from remembered origin; never describe a moved object as still visible at its old location. A damaged prop stays damaged until an action repairs, replaces or bypasses it. Show agreements before relying on them, and distinguish intention/permission from completed action. Do not turn metadata into narrator summaries or print state keys. Let a necessary choice and its execution share a scene; add consequences or changed behavior rather than stretching readiness over several pages.",
+            "Realize each mapped purpose through its beat: show the action and the character's response or consequence within the page's reading budget. Keep accepted page indexes and event order; develop the assigned moment without borrowing the next page's discovery or reallocating scenes. Let dialogue change an action or reveal a relationship, and make sensory detail part of the experience instead of appending compliance sentences. Vary paragraph length with action and pauses; start a new paragraph when the speaker changes. A quiet or funny page can deepen attachment without a new obstacle or a stated moral.",
+            "Enact continuityRules through scenes. endingPressure is an author note, as is requiredContinuity; neither belongs in narration or recurring questions announcing the next page. Distinguish intentions from completed actions and remembered origins from current locations; convey needed state through action, not repeated inventory or assurances that nothing changed. Preserve intentional refrains and quiet closure.",
             "For every imagePrompt, spell out the exact visible characters and their positions, current visible prop count and ownership, and time of day from that page's prose. Ground spatial relationships in the prose, including whether each character is on a bank, in water, inside, or outside. Exclude items recovered only on later pages; do not invent a transfer, arrival, departure or time change in the illustration prompt."
           ] : []),
           "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions in reader-facing pages.",
@@ -285,6 +290,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           GROUNDED_FACTUALITY_RULE,
           ...citation.rules,
           "Return exactly one root JSON object with a pages array.",
+          `Return ${bounds.minimumPages}–${bounds.maximumPages} story pages. Never return fewer than the minimum. Extra pages are optional and must add meaningful progression, never padding.`,
           ...multiPageImagePromptGuidance(options.input, 1, options.input.targetPages),
           ...READER_FACING_PAGE_BRIEF_RULES,
           "Every page must add distinct progression; do not repeat the same scene, explanation, decision, or emotional beat across pages.",
@@ -299,6 +305,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
         role: "user",
         content: JSON.stringify(
           {
+            ...pictureBookRequirementContract(options.input, options.plan, bounds),
             userPrompt: options.input.prompt,
             language: targetLanguagePayload(options.input.language),
             book: {
@@ -306,6 +313,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
               premise: options.plan.premise,
               audience: options.plan.audience,
               targetPages: options.input.targetPages,
+              pageCountBounds: bounds,
               category: options.input.category,
               subcategory: options.input.subcategory,
               writingComplexity: options.plan.writingComplexity,
@@ -331,7 +339,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
               targetWordsPerPage: targetWordsPerPage(options.input),
               instruction: options.chapterBriefs
                 ? "Use pageMap as the authoritative page-by-page production structure. Return exactly the requested page indexes from 1 through targetPages. Write finished page prose, not outline notes. Give each page a distinct page-specific title without a Page N prefix, and do not duplicate adjacent page titles. Do not put page titles or headings inside markdown."
-                : "Return exactly the requested page indexes from 1 through targetPages. Write finished page prose, not outline notes. Give each page a distinct page-specific title without a Page N prefix, and do not duplicate adjacent page titles. Do not put page titles or headings inside markdown."
+                : "Choose a page count within book.pageCountBounds and number pages consecutively from 1. Deliver the requested ending on the chosen last page. Write finished page prose, not outline notes. Give each page a distinct page-specific title without a Page N prefix, and do not duplicate adjacent page titles. Do not put page titles or headings inside markdown."
             }
           },
           null,
@@ -342,7 +350,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
   });
 
   const draft = wholeBookDraftSchema.parse(result.data);
-  const normalized = normalizeWholeBookPageSet(figureFreePages(draft.pages), options.input.targetPages);
+  const normalized = normalizeWholeBookPageSet(figureFreePages(draft.pages), options.input.targetPages, bounds);
   return {
     pages: normalized.pages,
     pageSetDiagnostics: normalized.diagnostics
@@ -759,11 +767,10 @@ function normalizeWholeBookPage(value: unknown, fallbackIndex: number): unknown 
 
 function normalizeWholeBookPageSet(
   pages: WholeBookPageDraft[],
-  targetPages: number
+  targetPages: number,
+  { minimumPages, maximumPages }: { minimumPages: number; maximumPages: number }
 ): { pages: WholeBookPageDraft[]; diagnostics: WholeBookPageSetDiagnostics } {
   const pageCount = pages.length;
-  const minimumPages = Math.ceil(targetPages * 0.5);
-  const maximumPages = Math.floor(targetPages * 1.5);
   const byIndex = new Map<number, WholeBookPageDraft>();
   const duplicates = new Set<number>();
   for (const page of pages) {
@@ -864,36 +871,4 @@ function remapLocalDraftPageIndexes(pages: WholeBookPageDraft[], expectedPages: 
   }
 
   return pages.map((page, index) => ({ ...page, index: expectedPages[index]! }));
-}
-
-function targetWordsPerPage(input: CreateProjectInput): { min: number; max: number } {
-  const kidsGuidance = kidsReadingGuidanceForInput(input);
-  if (kidsGuidance) {
-    return kidsGuidance.targetWordsPerPage;
-  }
-  if (isDiagramFriendlyBookCategory(input.category)) {
-    return { min: 140, max: 360 };
-  }
-  return { min: 160, max: 420 };
-}
-
-const WHOLE_BOOK_MIN_OUTPUT_SAFETY_TOKENS = 16_000;
-const WHOLE_BOOK_MAX_OUTPUT_SAFETY_TOKENS = 64_000;
-const WHOLE_BOOK_VISIBLE_TEXT_TOKENS_PER_WORD = 3;
-const WHOLE_BOOK_METADATA_TOKENS_PER_PAGE = 600;
-
-function wholeBookMaxTokens(input: CreateProjectInput): number {
-  const maxWordsPerPage = targetWordsPerPage(input).max;
-  const generousTokensPerPage =
-    maxWordsPerPage * WHOLE_BOOK_VISIBLE_TEXT_TOKENS_PER_WORD + WHOLE_BOOK_METADATA_TOKENS_PER_PAGE;
-
-  // maxTokens is a runaway-output fuse, not the expected response size. The
-  // visible-text multiplier is deliberately conservative for token-dense
-  // languages, while the per-page allowance covers JSON, summaries,
-  // continuity notes, and image prompts. Short books receive extra headroom so
-  // a normal five-page draft cannot collide with the safety limit again.
-  return Math.min(
-    WHOLE_BOOK_MAX_OUTPUT_SAFETY_TOKENS,
-    Math.max(WHOLE_BOOK_MIN_OUTPUT_SAFETY_TOKENS, input.targetPages * generousTokensPerPage)
-  );
 }

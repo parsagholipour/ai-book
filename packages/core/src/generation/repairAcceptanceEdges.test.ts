@@ -19,10 +19,10 @@ it("keeps Quick's saved candidate blocked after the readability relaxation faile
 });
 
 it("recovers Premium's composite evidence literally without buying a citation-recovery call or dropping its warning", async () => {
-  const { model, calls } = scriptedDevelopmentModel([{ pages: [captured.premiumReview] }]);
+  const { model, calls } = scriptedDevelopmentModel([{ pages: [captured.premiumReview] }, { findings: [] }]);
   const reviews = await reviewPictureBookManuscript({ input, plan: originalDevelopmentPlan(), pages: [captured.premiumPage],
     chapterBriefs: [], checks: { pageModelReview: true, storyExtractAudit: true, styleAuditor: true }, textModel: model });
-  expect(calls).toHaveLength(1);
+  expect(calls.map(call => call.purpose)).toEqual(["review-page", "review-picture-book-continuity"]);
   const review = reviews[0]!;
   const expected = captured.premiumPage.markdown.slice(captured.premiumPage.markdown.indexOf("He slowed them"));
   expect(review.findings?.[0]?.quote).toBe(expected);

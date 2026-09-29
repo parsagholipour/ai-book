@@ -42,6 +42,7 @@ it.each(["legacy", "explicit"])("repairs Balanced's %s 14–15 interval without 
   // Scripted prose and acceptance isolate the scope contract; this is not a
   // fresh editorial evaluation of the captured book.
   text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
     calls.push(request);
     expect(mocks.prisma.page.update).not.toHaveBeenCalled();
     const payload = JSON.parse(request.messages[1]!.content);

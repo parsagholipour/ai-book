@@ -131,7 +131,7 @@ const wholeBookPageMapSchema = z.object({
 });
 
 export async function generateWholeBookPageMap(options: GeneratePageMapOptions): Promise<ChapterBrief[]> {
-  if (options.input.targetPages > CHUNKED_PAGE_MAP_THRESHOLD && usesCompactPictureBookPlanning(options.input)) return generateCompactPictureBookMap({ ...options, chapterRanges: chapterRangesForPlan(options.plan, options.input.targetPages) });
+  if (usesCompactPictureBookPlanning(options.input)) return generateCompactPictureBookMap({ ...options, chapterRanges: chapterRangesForPlan(options.plan, options.input.targetPages) });
   if (options.input.targetPages > CHUNKED_PAGE_MAP_THRESHOLD) {
     return generateChunkedPageMap(options);
   }

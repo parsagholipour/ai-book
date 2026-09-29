@@ -18,7 +18,8 @@ const inventory = { status: "available" as const, brief, complete: true, require
   { text: "Rabbit's growth", quote: brief, kind: "content" as const },
   { text: "Wise Turtle's growth", quote: brief, kind: "content" as const }
 ] };
-const verdict = (id: string, extra = {}) => ({ id, status: "missing", reason: `${id} lacks a changed consequential choice.`, evidence: [], ...extra });
+const verdict = (id: string, extra = {}) => ({ id, status: "missing", reason: `${id} lacks a changed consequential choice.`, evidence: [],
+  scopeAssessment: { supported: true, authority: "brief" as const, quote: brief, explanation: "The brief requests consequential growth for both named characters." }, ...extra });
 
 it("counts one Turtle failure across prose, an atomic requirement and the failed part of a compound promise", async () => {
   const fixture = scriptedDevelopmentModel([{ complete: true, requirements: [

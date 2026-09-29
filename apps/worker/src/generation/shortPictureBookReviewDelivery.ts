@@ -1,4 +1,4 @@
-import { pageQualityReportSchema, pictureBookPageReview, validatedPictureBookReviewRow,
+import { pictureBookChecklistCounterevidence, pageQualityReportSchema, pictureBookPageReview, validatedPictureBookReviewRow,
   type CreateProjectInput, type PictureBookPageReview, type PictureBookReviewCheckpoint,
   type PictureBookReviewChecks, type PriorPageContext } from "@book-maker/core";
 
@@ -16,13 +16,23 @@ export function pictureBookDeliveryReviews(options: {
   return options.pages.map(page => {
     const candidates = checkpoint.reviews.filter(review => review.pageIndex === page.index);
     const accepted = candidates.length === 1 ? candidates[0] : undefined;
-    const valid = accepted && accepted.draftMarkdown === page.markdown &&
+    const metadata = checkpoint.metadataRows?.find(row => row.pageIndex === page.index);
+    const valid = !metadata && accepted && accepted.draftMarkdown === page.markdown &&
       Object.entries(checks).every(([key, enabled]) => accepted.completedChecks[key as keyof PictureBookReviewChecks] === enabled) &&
       checks.storyExtractAudit === (accepted.storyExtract !== null) && checks.styleAuditor === (accepted.styleAudit !== null) &&
       (!accepted.unverifiedFindings?.length || !accepted.report.approved) ? accepted : undefined;
     if (valid && !checkpoint.protocolIssues.length) return valid;
     const retained = checkpoint.editorialRows?.find(row => row.pageIndex === page.index);
-    const editorial = retained ? editorialSchema.safeParse({ ...retained, storyExtract: null, styleAudit: null }) : undefined;
+    // Validate retained prose independently of the unfinished auxiliary checklist.
+    // Delivery keeps its grounded findings, but cannot certify checklist completion.
+    const challenged = new Set(pictureBookChecklistCounterevidence(page, retained?.findings ?? []).map(item => item.findingIndex));
+    const unverified = retained?.findings.filter((_, index) => challenged.has(index)) ?? [];
+    const { requirementChecks: _unfinishedChecklist, ...editorialRow } = retained ? {
+      ...retained, findings: retained.findings.filter((_, index) => !challenged.has(index)),
+      // Removing challenged entries invalidates links into the original order.
+      ...(challenged.size ? { continuityFindingLinks: undefined } : {})
+    } : {};
+    const editorial = retained ? editorialSchema.safeParse({ ...editorialRow, storyExtract: null, styleAudit: null }) : undefined;
     const review = valid ?? (editorial?.success ? pictureBookPageReview(editorial.data, page, editorialChecks, options.input.prompt) : {
       pageIndex: page.index, draftMarkdown: page.markdown,
       report: pageQualityReportSchema.parse({ approved: false, score: 100, scoreBasis: "screened_unscored" }),
@@ -31,12 +41,13 @@ export function pictureBookDeliveryReviews(options: {
       ...(checkpoint.citationRows?.find(row => row.pageIndex === page.index)?.findings.length
         ? { unverifiedFindings: checkpoint.citationRows.find(row => row.pageIndex === page.index)!.findings } : {})
     });
-    return { ...review, reviewUnavailable: true,
+    return { ...review, ...(unverified.length ? { unverifiedFindings: [...(review.unverifiedFindings ?? []), ...unverified] } : {}), reviewUnavailable: true,
       report: { ...review.report, approved: false,
         // No actionable finding means there is no measured quality score or rewrite target.
         ...(!review.report.issues.length && !review.report.requiredRevisions.length ? { scoreBasis: "screened_unscored" as const } : {}),
         notes: [review.report.notes, "Manuscript review incomplete after bounded attempts; the saved draft remains unverified.",
           ...checkpoint.validationIssues.filter(issue => issue.pageIndex === page.index).map(issue => issue.message),
+          ...(metadata?.findings.map(finding => `Unresolved editorial concern (invalid repair metadata): ${finding.message} ${finding.guidance}`) ?? []),
           ...checkpoint.protocolIssues].filter(Boolean).join("\n") }
     };
   });

@@ -5,6 +5,7 @@ import { scriptedDevelopmentModel } from "./testing/bookDevelopmentFixtures.js";
 
 const quote = "Wise Turtle notices a pattern in where the lanterns blew";
 const brief = `${quote}. Rabbit is playful and hasty.`;
+const scoped = (quote: string) => ({ supported: true, authority: "brief", quote, explanation: "The brief explicitly requires this substantive outcome across the story." });
 const pages = [{ index: 10, markdown: "Wise Turtle bent low beside the path. Grass near post one leaned toward the fern spur, all its blades pointing the same way. “The wind pushed the lantern that way,” he said." }];
 const target = { id: "finding-10", requirementId: manuscriptRequirementId(brief, quote), requirementQuote: quote,
   pageIndex: 10, problem: "Only one displaced lantern's direction is established.",
@@ -17,7 +18,7 @@ describe("coverage disagreement with an outstanding full-prose requirement findi
   it("retains both assessments as an actionable uncertainty instead of claiming fulfillment", async () => {
     const fixture = scriptedDevelopmentModel([{ complete: true, requirements: [
       { id: "brief-1", status: "fulfilled", reason: "Turtle reads the bent grass as a clue to where the wind pushed the lantern.", evidence: target.evidence },
-      { id: "brief-2", status: "missing", reason: "Rabbit's playfulness is not established.", evidence: [] }
+      { id: "brief-2", status: "missing", reason: "Rabbit's playfulness is not established.", evidence: [], scopeAssessment: scoped("Rabbit is playful and hasty") }
     ] }]);
     const options = { brief, pages, promises: [], inventory, textModel: fixture.model, requirementTargets: [target] };
     const reviewed = await reviewManuscriptCoverage(options);
@@ -37,8 +38,8 @@ describe("coverage disagreement with an outstanding full-prose requirement findi
 
 it.each(["missing", "unverified"] as const)("keeps a coverage verdict of %s without claiming the target was resolved", async status => {
   const fixture = scriptedDevelopmentModel([{ complete: true, requirements: [
-    { id: "brief-1", status, reason: "The comparison remains absent or uncertain.", evidence: [] },
-    { id: "brief-2", status: "missing", reason: "Rabbit's playfulness is not established.", evidence: [] }
+    { id: "brief-1", status, reason: "The comparison remains absent or uncertain.", evidence: [], scopeAssessment: scoped(quote) },
+    { id: "brief-2", status: "missing", reason: "Rabbit's playfulness is not established.", evidence: [], scopeAssessment: scoped("Rabbit is playful and hasty") }
   ] }]);
   const reviewed = await reviewManuscriptCoverage({ brief, pages, promises: [], inventory, textModel: fixture.model, requirementTargets: [target] });
   expect(reviewed.requirements[0]).toMatchObject({ status, reason: "The comparison remains absent or uncertain." });
@@ -61,7 +62,7 @@ it("retains a finding when coverage chose a different source clause instead of s
 it("keeps distinct obligations quoted from one shared clause separate", async () => {
   const fixture = scriptedDevelopmentModel([{ complete: true, requirements: [
     { id: "brief-1", status: "fulfilled", reason: "Turtle observes the grass.", evidence: target.evidence },
-    { id: "brief-2", status: "missing", reason: "No relationship between locations is established.", evidence: [] }
+    { id: "brief-2", status: "missing", reason: "No relationship between locations is established.", evidence: [], scopeAssessment: scoped(quote) }
   ] }]);
   const reviewed = await reviewManuscriptCoverage({ brief, pages, promises: [],
     inventory: { ...inventory, requirements: [{ text: "Turtle makes an observation", quote, kind: "content" },

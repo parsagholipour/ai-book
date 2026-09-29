@@ -1,12 +1,13 @@
 import { chapterAnchorMarkup, type CompiledBookMarkdown, type PageAnchorPlan } from "./markdown.js";
 import { isImportedManuscript, type CreateProjectInput } from "../schemas/book.js";
+import { requestedGenerationPages } from "./pageCountAllowance.js";
 
 export type StoryPagePlan = Pick<CompiledBookMarkdown, "pageAnchors" | "sourcesOffset" | "storyPageLayout">;
 
 /** Scene pagination is independent of image frequency and model-review switches. */
 export function shortKidsStoryPageLayout(input: Pick<CreateProjectInput, "category" | "targetPages"> & { mediaSettings: unknown },
   pages: readonly { index: number; markdown: string }[]): "separate" | undefined {
-  return input.category === "KIDS" && input.targetPages >= 5 && input.targetPages <= 40 &&
+  return input.category === "KIDS" && requestedGenerationPages(input) >= 5 && requestedGenerationPages(input) <= 40 &&
     !isImportedManuscript(input.mediaSettings) && pages.length === input.targetPages &&
     pages.every((page, index) => page.index === index + 1 && page.markdown.trim().length > 0)
     ? "separate" : undefined;

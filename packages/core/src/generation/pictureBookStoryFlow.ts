@@ -1,9 +1,10 @@
+import { MAX_PICTURE_BOOK_PAGES } from "./pageCountAllowance.js";
 import { z } from "zod";
 
 const checkSchema = z.strictObject({
-  pageIndexes: z.array(z.number().int().positive()).min(1).max(40),
+  pageIndexes: z.array(z.number().int().positive()).min(1).max(MAX_PICTURE_BOOK_PAGES),
   assessment: z.string().trim().min(12).max(600),
-  repairPageIndexes: z.array(z.number().int().positive()).max(40)
+  repairPageIndexes: z.array(z.number().int().positive()).max(MAX_PICTURE_BOOK_PAGES)
 });
 
 /** Editorial checks stay in this call. Only the corrected assignments reach the writer. */
@@ -15,7 +16,7 @@ export const pictureBookFlowAuditSchema = z.strictObject({
       pageIndex: z.number().int().positive(),
       actionQuote: z.string().min(8).max(400),
       change: z.string().trim().min(8).max(200)
-    })).min(1).max(40)
+    })).min(1).max(MAX_PICTURE_BOOK_PAGES)
   })).max(20)
 });
 export type PictureBookFlowAudit = z.infer<typeof pictureBookFlowAuditSchema>;

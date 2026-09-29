@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { seedStoryStateFromPromises } from "@book-maker/core";
+import { seedStoryStateFromPromises, createProjectSchema, makeFallbackPlan } from "@book-maker/core";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 import type { ChapterSetup } from "../runtime/jobTypes.js";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
+    project: { update: vi.fn() },
+    planVersion: { update: vi.fn() },
     $transaction: vi.fn()
   },
   loadQualityContext: vi.fn(),
@@ -39,7 +41,41 @@ vi.mock("@book-maker/core", async () => {
   };
 });
 
-import { prepareChapterSetups, resetBookForDirectGeneration } from "./bookState.js";
+import { prepareChapterSetups, resetBookForDirectGeneration, effectiveWholeBookDraftContext, persistAcceptedWholeBookTarget } from "./bookState.js";
+
+it("persists the chosen page count and original minimum while preserving the complete map", async () => {
+  const input = createProjectSchema.parse({ prompt: "Rabbit follows the lantern path home.", category: "KIDS", targetPages: 30 });
+  const base = makeFallbackPlan(input);
+  const plan = { ...base, chapters: [{ ...base.chapters[0]!, index: 1, targetPages: 33 }] };
+  const draft = { pages: Array.from({ length: 33 }, (_, i) => ({ index: i + 1, title: `Turn ${i + 1}`,
+    markdown: `A new discovery ${i + 1}.`, summary: "A discovery.", continuityNotes: [] })) };
+  const setups = [{ chapter: plan.chapters[0]!, startPage: 1, endPage: 33 }];
+  const effective = effectiveWholeBookDraftContext(input, plan, draft, setups);
+  expect(effective.plan).toBe(plan);
+  expect(effective.chapterSetups).toBe(setups);
+  expect(effective.input).toMatchObject({ targetPages: 33, mediaSettings: { generationPageCount: { requestedPages: 30, selectedPages: 33 } } });
+  mocks.prisma.$transaction.mockResolvedValue([]);
+  await persistAcceptedWholeBookTarget({ projectId: "p", planId: "plan", ...effective, draft, originalTargetPages: 30 });
+  expect(mocks.prisma.project.update).toHaveBeenCalledWith({ where: { id: "p" }, data: { targetPages: 33 } });
+  expect(mocks.prisma.planVersion.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    inputSnapshot: expect.objectContaining({ targetPages: 33, mediaSettings: expect.objectContaining({ generationPageCount: { requestedPages: 30, selectedPages: 33 } }) })
+  }) }));
+  for (const count of [0, 29, 34]) expect(() => effectiveWholeBookDraftContext(input, plan,
+    { pages: Array.from({ length: count }, () => draft.pages[0]!) })).toThrow();
+});
+
+it("persists the fixed selection when the draft uses exactly the original minimum", async () => {
+  const input = createProjectSchema.parse({ prompt: "Rabbit follows the lantern path home.", category: "KIDS", targetPages: 30 });
+  const draft = { pages: Array.from({ length: 30 }, (_, i) => ({ index: i + 1, title: `Turn ${i + 1}`,
+    markdown: `A new discovery ${i + 1}.`, summary: "A discovery.", continuityNotes: [] })) };
+  const effective = effectiveWholeBookDraftContext(input, makeFallbackPlan(input), draft);
+  mocks.prisma.planVersion.update.mockClear();
+  mocks.prisma.$transaction.mockResolvedValue([]);
+  await persistAcceptedWholeBookTarget({ projectId: "p", planId: "plan", ...effective, draft });
+  expect(mocks.prisma.planVersion.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    inputSnapshot: expect.objectContaining({ mediaSettings: expect.objectContaining({ generationPageCount: { requestedPages: 30, selectedPages: 30 } }) })
+  }) }));
+});
 
 const chapterSetups: ChapterSetup[] = [
   {

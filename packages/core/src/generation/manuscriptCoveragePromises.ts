@@ -1,7 +1,9 @@
 import { mediaAbsenceScopes, type CoverageMediaScope } from "./manuscriptCoverageMedia.js";
+import type { PageCountConstraint, RequirementScope } from "../schemas/manuscriptRequirements.js";
 
 export type DeliveryObligation =
-  | { kind: "page_count"; quote: string; expectedCount: number; requireNonempty?: true }
+  | { kind: "page_count"; quote: string; expectedCount: number; requireNonempty?: true;
+    pageCountConstraint?: PageCountConstraint; scope?: RequirementScope }
   | { kind: "word_range"; quote: string; minWords: number; maxWords: number }
   | { kind: "media_absence"; quote: string; mediaScope: CoverageMediaScope };
 
@@ -16,7 +18,7 @@ const chapterClause = new RegExp(`^(?:planned|organized|arranged|divided) (?:as|
  */
 export function deliveryPromiseFacts(text: string): DeliveryObligation[] | undefined {
   const source = text.trim().replace(/\.$/u, "");
-  const head = /^(?:(?:plan|deliver|provide|create|write|produce) )?(?:exactly )?([1-9]\d*) (complete )?(text-only )?(?:story )?pages(?=$|[,;]| (?:with no|without) )/iu.exec(source);
+  const head = /^(?:(?:plan|deliver|provide|create|write|produce|preserve) )?(?:exactly )?([1-9]\d*) (complete )?(text-only )?(?:story )?pages(?=$|[,;]| (?:with no|without) )/iu.exec(source);
   if (!head || !Number.isSafeInteger(Number(head[1]))) return undefined;
   // "Complete pages" requires populated slots, not just numbered rows. This
   // never consumes a promise of a complete story/ending or any unknown qualifier.

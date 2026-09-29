@@ -395,6 +395,9 @@ describe("enrichPageQualityReport claim grounding", () => {
     });
 
     expect(mocks.verifyPageClaims).toHaveBeenCalledOnce();
+    expect(mocks.verifyPageClaims).toHaveBeenCalledWith(expect.objectContaining({
+      book: { category: factualInput.category, prompt: factualInput.prompt, premise: plan.premise }
+    }));
     const verified = mocks.verifyPageClaims.mock.calls[0]![0] as { markdown: string };
     expect(verified.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
     expect(verified.markdown).not.toContain("```figure");

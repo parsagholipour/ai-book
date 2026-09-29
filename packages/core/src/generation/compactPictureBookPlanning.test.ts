@@ -135,8 +135,8 @@ describe("compact picture-book planning", () => {
     for (const capture of [planning, map]) {
       expect(capture.calls).toHaveBeenCalledTimes(1);
       const prompt = capture.calls.mock.calls[0]![0].messages.map((message) => message.content).join("\n");
-      expect(prompt).toContain("Plan 10 interior illustrations, only on story pages 3, 6, 9, 12, 15, 18, 21, 24, 27, 30.");
-      expect(prompt).toContain("Keep all 30 story pages");
+      expect(prompt).toContain("Illustrate story pages 3, 6, 9, 12, 15, 18, 21, 24, 27, 30.");
+      expect(prompt).toContain("Preserve the complete narrative progression");
     }
     const draft = model({ pages: Array.from({ length: 30 }, (_, i) => ({ index: i + 1, title: `Scene ${i + 1}`, markdown: `Rabbit follows clue ${i + 1}.`, summary: `Clue ${i + 1}`, continuityNotes: [] })) });
     const result = await generateWholeBookDraft({ input: sparseInput, plan: plan(), textModel: draft.textModel, chapterBriefs: [], researchNotes: [] });

@@ -30,6 +30,8 @@ import { planLibraryCharacterGuidance, reconcilePlanLibraryCharacters } from "./
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { maxComposedChapterPages } from "./composedChapter.js";
 import { composesByChapter } from "./compositionUnit.js";
+import { modelTierForInput } from "../adapters/modelTiers.js";
+import { QUICK_PLAN_GUIDANCE, quickPlanMessages } from "./quickPlanning.js";
 
 /** Small counts in the planner's prose, so "from five to eight pages" reads like the rest of the rule. */
 const NUMBER_WORDS: Record<number, string> = {
@@ -93,7 +95,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
   }
 
   const compactStory = usesCompactPictureBookPlanning(options.input);
-  const planningSchema = bookPlanModelOutputSchemaWithFallback({ ...fallback, researchNotes }, compactStory);
+  const quick = modelTierForInput(options.input) === "fast";
+  const planningSchema = bookPlanModelOutputSchemaWithFallback({ ...fallback, researchNotes }, compactStory || quick);
   let result: JsonResult<Omit<BookPlan, "researchNotes">>;
   try {
     result = compactStory && options.input.targetPages > 24
@@ -107,7 +110,10 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
       // while DeepSeek finished the same shape in ~3400 visible tokens. The
       // model's own output ceiling is the bound.
       schema: planningSchema,
-      messages: compactStory ? compactPictureBookPlanMessages(options.input) : [
+      messages: compactStory ? compactPictureBookPlanMessages(options.input) : quick ? quickPlanMessages(options.input, {
+        autoGuidance: mobileAutoPlanningGuidance(options.input),
+        ...chapterCeilingFor(options.input, options.input.targetPages)
+      }) : [
         {
           role: "system",
           content: [
@@ -261,6 +267,7 @@ function appendUniqueRules(current: string[], additions: string[]): string[] {
 export async function revisePlanningPackage(options: RevisePlanOptions): Promise<BookPlan> {
   const targetPages = options.targetPages ?? sumChapterTargetPages(options.currentPlan.chapters);
   const toneProfile = options.toneProfile ?? "neutral";
+  const quick = options.input && modelTierForInput(options.input) === "fast";
   // A revision is a patch whose arrays replace wholesale, so `characters` is
   // re-decided in full by a model that used to be told nothing about the
   // library at all: "make it shorter" after approval was enough to rewrite the
@@ -287,11 +294,12 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               "Preserve or improve openingHook: one or two sentences committing to the concrete scene, claim, image, or question page 1 opens with - never meta framing like 'This book will...'.",
               ...(options.currentPlan.storyTreatment ? ["storyTreatment is the complete causal story used by later page allocation. Revise it coherently whenever the request changes events, characters, setting, tone or ending; do not update only chapter summaries while leaving an obsolete treatment. Keep it unpaginated and preserve unchanged story decisions."] : []),
               "Preserve authorStance unless the requested changes alter what the book argues or how it sounds; then revise it as a whole.",
-              ...PLANNER_AUTHOR_STANCE_GUIDANCE,
-              ...targetLanguageGenerationGuidance(options.language),
+              ...(quick ? QUICK_PLAN_GUIDANCE : PLANNER_AUTHOR_STANCE_GUIDANCE),
+              ...targetLanguageGenerationGuidance(options.language ?? options.input?.language),
+              "When the current plan is in a different language from the target language, translate and re-emit ALL book-facing fields, including title, premise, openingHook, chapter titles and summaries, storyTreatment, character descriptions, questions and style guidance. For a language change, those fields are changed even when their meaning stays the same; do not omit them as unchanged or preserve their old language. Preserve user-supplied proper names and the story's decisions.",
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
               ...plannerToneGuidance(toneProfile),
-              ...PLANNER_STYLE_CONTRACT_GUIDANCE,
+              ...(quick ? [] : PLANNER_STYLE_CONTRACT_GUIDANCE),
               // Last for the same reason as in initial planning: the rules it
               // has to outrank are all above it.
               ...planLibraryCharacterGuidance(librarySnapshots)
@@ -307,7 +315,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
                 ? options.respondedQuestionPrompts
                 : undefined,
               toneProfile,
-              language: targetLanguagePayload(options.language),
+              language: targetLanguagePayload(options.language ?? options.input?.language),
               readingGuidance: options.input ? kidsReadingGuidancePayload(options.input) : undefined,
               libraryCharacters: librarySnapshots.length > 0 ? librarySnapshots : undefined,
               pageBudget: {
@@ -330,6 +338,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
         ensurePlanStyleContract(
           {
             ...revised,
+            ...(options.currentPlan.requirementInventory ? { requirementInventory: options.currentPlan.requirementInventory } : {}),
             questions,
             researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
           },
@@ -369,7 +378,7 @@ function compactPlanForRevisionPrompt(plan: BookPlan): Omit<BookPlan, "researchN
   }>;
   researchNoteCount: number;
 } {
-  const { researchNotes: _researchNotes, ...rest } = plan;
+  const { researchNotes: _researchNotes, requirementInventory: _requirementInventory, ...rest } = plan;
   return {
     ...rest,
     researchNoteCount: plan.researchNotes.length,
@@ -667,6 +676,9 @@ async function researchForPlan(
   fallbackQueries: string[],
   adapter: ResearchAdapter
 ): Promise<ResearchSource[]> {
+  // Quick Draft deliberately spends no web-search calls on planning, including
+  // factual topics and templates that normally always research.
+  if (modelTierForInput(input) === "fast") return [];
   const needsResearch =
     template.defaultConfig.researchPolicy === "always" ||
     /\b(current|recent|latest|today|real|scientific|historical|medicine|law|finance)\b/i.test(input.prompt);

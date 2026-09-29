@@ -2,7 +2,7 @@ import type { DecisionModelRoute } from "../adapters/decisions.js";
 import { isCancellationError } from "../adapters/retry.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { GroundingStatus } from "../schemas/book.js";
-import { verifyPageClaims, type PageClaimVerification } from "./claimVerifier.js";
+import { FICTION_GROUNDING_RULE, verifyPageClaims, type ClaimVerificationBookContext, type PageClaimVerification } from "./claimVerifier.js";
 import { passesDecisionScreen } from "./decisionScreen.js";
 
 export type PageGroundingResult = PageClaimVerification & { groundingStatus: GroundingStatus };
@@ -16,6 +16,7 @@ export async function checkChangedPageGrounding(options: {
   original: GroundingPage;
   candidate: GroundingPage;
   researchNotes: string[];
+  book?: ClaimVerificationBookContext | undefined;
   userRequest?: string | undefined;
   signal?: AbortSignal | undefined;
 }): Promise<PageGroundingResult> {
@@ -24,6 +25,7 @@ export async function checkChangedPageGrounding(options: {
     const context = {
       pageIndex: options.pageIndex, original: options.original, candidate: options.candidate,
       researchNotes: options.researchNotes,
+      ...(options.book ? { book: options.book } : {}),
       ...(options.userRequest ? { userRequest: options.userRequest } : {})
     };
     const messages = [{ role: "user" as const, content: JSON.stringify(context) }];
@@ -43,6 +45,7 @@ export async function checkChangedPageGrounding(options: {
         context: JSON.stringify({ reviewerContext: prepared?.messages ?? messages }),
         instructions: [
           "Judge the changed factual page against the actual supplied research/source passages, with the full original and candidate for context.",
+          ...(options.book ? [FICTION_GROUNDING_RULE] : []),
           "Check new statistics, studies and other unsupported claims; changed attribution or quotations; contradictions; lost scope or qualifications; and stronger certainty OR stronger uncertainty than the evidence warrants.",
           "Choose supported only when the changed claims are supported AND no unsupported claim remains anywhere in the candidate title or prose. An unchanged unsupported claim is still a defect.",
           "Removing an unsupported claim or correcting it to match the evidence is valid: do not require the original mistake to survive.",
@@ -62,7 +65,8 @@ export async function checkChangedPageGrounding(options: {
       textModel: prepared?.textModel ?? options.textModel,
       pageIndex: options.pageIndex, original: options.original,
       title: options.candidate.title, markdown: options.candidate.markdown,
-      researchNotes: options.researchNotes, userRequest: options.userRequest, signal: options.signal
+      researchNotes: options.researchNotes, userRequest: options.userRequest, signal: options.signal,
+      book: options.book
     });
     return { ...verification, groundingStatus: verification.groundedOk ? "verified" : "failed" };
   } catch (error) {

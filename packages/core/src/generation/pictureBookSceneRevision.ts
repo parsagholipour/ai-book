@@ -1,14 +1,15 @@
+import { MAX_PICTURE_BOOK_PAGES } from "./pageCountAllowance.js";
 import { z } from "zod";
 import type { PriorPageContext } from "./pagesShared.js";
 
 /** A replacement sequence keeps the same physical slots and page identities. */
 export const pictureBookSceneRevisionSchema = z.strictObject({
-  reason: z.string().trim().min(1).max(700),
+  reason: z.string().trim().min(1).max(700).describe("Before writing page prose, state the revised page-index -> consequential change sequence and the entry/exit obligations against untouched neighboring pages."),
   pages: z.array(z.strictObject({
     pageIndex: z.number().int().positive(), markdown: z.string().trim().min(1).max(12_000),
     title: z.string().trim().min(1).max(200).optional(),
     summary: z.string().trim().min(1).max(1200)
-  })).min(2).max(40)
+  })).min(2).max(MAX_PICTURE_BOOK_PAGES)
 });
 export type PictureBookSceneRevision = { pageIndexes: number[]; reason: string };
 

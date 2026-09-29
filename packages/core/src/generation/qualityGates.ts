@@ -145,7 +145,7 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   pageQaRewrite: ["ultra", "premium", "balanced", "fast"],
   finalBookQa: ["ultra", "premium", "balanced", "fast"],
   storyExtractAudit: ["ultra", "premium", "balanced", "fast"],
-  planCritic: ["ultra", "premium", "balanced", "fast"],
+  planCritic: ["ultra", "premium", "balanced"],
   claimVerifier: ["ultra", "premium", "balanced", "fast"],
   changedCandidateGrounding: ["ultra", "premium", "balanced", "fast"],
   compactPageDraftContext: ["balanced", "fast"],

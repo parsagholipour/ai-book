@@ -79,6 +79,13 @@ it("keeps incomplete reads and uncertain roles unverified", async () => {
   expect((await review(audit)).requirements[0]?.status).toBe("unverified");
 });
 
+it("identifies a paraphrased cast citation as evidence failure, not a proven role defect", async () => {
+  const audit = assessment();
+  audit.entities[0]!.evidence = [{ pageIndex: 1, quote: "Rabbit hung it there instead." }];
+  const result = await review(audit);
+  expect(result.requirements[0]).toMatchObject({ status: "unverified", reason: expect.stringContaining("invalid source citation") });
+});
+
 it.each([undefined, { scope: "first_chapter" }, { ...assessment(), entities: "missing" }])("rejects missing or malformed audits without a recovery call", async audit => {
   expect((await review(audit)).requirements[0]?.status).toBe("unverified");
 });

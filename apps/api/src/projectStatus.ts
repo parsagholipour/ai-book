@@ -30,6 +30,7 @@ import { loadProjectQualityReport } from "./mobile/qualityVerdict.js";
 import { countBookPages, pageRewriteScope, readProjectPageRows } from "./projectPageCounts.js";
 import { loadProjectCostSummary } from "./projectCosts.js";
 import { loadProjectFinalizationProgress } from "./projectFinalizationProgress.js";
+import { loadGenerationTimings } from "./mobile/generationTimings.js";
 import type { GenerationJobType } from "./queue.js";
 
 export type PipelineStepKey = "plan" | "pages" | "images" | "export";
@@ -202,7 +203,7 @@ export async function buildProjectStatus(projectId: string) {
       })
     : [];
 
-  const [openImageJobs, compileJobs, rewriteScope, finalization] = await Promise.all([
+  const [openImageJobs, compileJobs, rewriteScope, finalization, generationTimings] = await Promise.all([
     prisma.generationJob.count({
       where: { projectId, type: "GENERATE_IMAGE", status: { in: ["QUEUED", "ACTIVE"] } }
     }),
@@ -217,7 +218,8 @@ export async function buildProjectStatus(projectId: string) {
     // written answers it from its status alone: the poll that runs every few
     // seconds through a generation sends no read for it.
     pageRewriteScope(projectId, project.status),
-    loadProjectFinalizationProgress(project)
+    loadProjectFinalizationProgress(project),
+    loadGenerationTimings(projectId, project.currentPlan)
   ]);
   const completePages = countBookPages(pages, rewriteScope);
   const visibleImageCount = await prisma.imageAsset.count({
@@ -284,6 +286,7 @@ export async function buildProjectStatus(projectId: string) {
 
   return {
     project: { ...project, jobs: jobsWithSteps, generationAttempts },
+    generationTimings,
     quality: latestQuality,
     progress: {
       pages: pageProgress,

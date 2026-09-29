@@ -10,6 +10,7 @@ import { jsonInputValue } from "../runtime/serialization.js";
 import {
   chapterBriefSchema,
   compactPictureBookPlanForBriefs,
+  inputWithSelectedPageCount,
   critiquePageMap,
   mapWithConcurrency,
   mergePageMapCriticPatch,
@@ -89,9 +90,11 @@ export async function prepareChapterSetups(options: {
       textModel: options.providers.text
     });
     const mappedPlan = compactPictureBookPlanForBriefs(options.input, options.plan, briefs);
-    chapterRanges = chapterSetupsForPlan(mappedPlan, options.input.targetPages);
+    const mappedInput = mappedPlan === options.plan ? options.input : inputWithSelectedPageCount(options.input,
+      mappedPlan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0));
+    chapterRanges = chapterSetupsForPlan(mappedPlan, mappedInput.targetPages);
     const integrity = {
-      input: options.input,
+      input: mappedInput,
       plan: mappedPlan,
       textModel: options.providers.text,
       strategy: options.strategy,
@@ -113,7 +116,7 @@ export async function prepareChapterSetups(options: {
           // takes that number; the critic takes the book it came off, because the
           // prompt half also has to ask whether this book's opening is ours to
           // commit at all.
-          const lastPageIndex = options.input.targetPages;
+          const lastPageIndex = mappedInput.targetPages;
           // Nothing about page 1's contract is decided here. This handler used to
           // pass `plan.openingHook` through as a string, which made it the one
           // place the imported-manuscript exemption had to be spelled a second
@@ -124,7 +127,7 @@ export async function prepareChapterSetups(options: {
           // the rule it gates.
           const patch = await critiquePageMap({
             textModel: options.providers.text,
-            input: options.input,
+            input: mappedInput,
             plan: mappedPlan,
             briefs: mapped,
             promises: options.plan.promises ?? []
@@ -376,13 +379,13 @@ export function effectiveWholeBookDraftContext(
   draft: WholeBookDraft,
   exactTargetChapterSetups?: ChapterSetup[]
 ): { input: CreateProjectInput; plan: BookPlan; chapterSetups: ChapterSetup[] } {
-  const acceptedPages = draft.pageSetDiagnostics?.acceptedPages ?? draft.pages.length;
-  const targetPages = Math.max(1, acceptedPages);
-  const targetChanged = targetPages !== input.targetPages;
-  const inputForAcceptedPages = targetChanged ? { ...input, targetPages } : input;
-  const planForAcceptedPages = targetChanged ? normalizePlanPageTargets(plan, targetPages) : plan;
+  const acceptedPages = draft.pages.length;
+  const targetPages = acceptedPages;
+  const inputForAcceptedPages = inputWithSelectedPageCount(input, targetPages);
+  const planMatches = plan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0) === targetPages;
+  const planForAcceptedPages = planMatches ? plan : normalizePlanPageTargets(plan, targetPages);
   const canReuseExactSetups =
-    !targetChanged && draft.pageSetDiagnostics?.renumbered !== true && exactTargetChapterSetups !== undefined;
+    planMatches && draft.pageSetDiagnostics?.renumbered !== true && exactTargetChapterSetups !== undefined;
 
   return {
     input: inputForAcceptedPages,
@@ -434,17 +437,18 @@ export async function persistAcceptedWholeBookTarget(options: {
   plan: BookPlan;
   draft: WholeBookDraft;
   chapterAllocationChanged?: boolean;
+  originalTargetPages?: number;
 }): Promise<void> {
   const diagnostics = options.draft.pageSetDiagnostics;
-  const targetChanged = diagnostics && diagnostics.acceptedPages !== diagnostics.requestedPages;
-  if (!targetChanged && !options.chapterAllocationChanged) {
+  const targetChanged = options.draft.pages.length !== (options.originalTargetPages ?? diagnostics?.requestedPages ?? options.input.targetPages);
+  if (!targetChanged && !options.chapterAllocationChanged && !options.input.mediaSettings.generationPageCount) {
     return;
   }
 
   await prisma.$transaction([
     ...(targetChanged ? [prisma.project.update({
       where: { id: options.projectId },
-      data: { targetPages: diagnostics.acceptedPages }
+      data: { targetPages: options.draft.pages.length }
     })] : []),
     prisma.planVersion.update({
       where: { id: options.planId },

@@ -38,6 +38,7 @@ describe("repair effectiveness for the September 26 captured books", () => {
     const text = new FakeTextModelAdapter(), calls: GenerateJsonOptions<unknown>[] = [];
     let repairs = 0;
     text.generateJson = async <T,>(request: GenerateJsonOptions<T>) => {
+      if (request.purpose === "review-picture-book-continuity") return { data: request.schema.parse({ findings: [] }), text: '{"findings":[]}', provider: "fixture", model: "continuity-fixture" };
       calls.push(request);
       expect(mocks.prisma.page.update).not.toHaveBeenCalled();
       const payload = JSON.parse(request.messages[1]!.content);
@@ -184,7 +185,7 @@ describe("repair effectiveness for the September 26 captured books", () => {
     const bindForCall = vi.fn(async () => ({ adapter }));
     test.options.providers.text = Object.assign(Object.create(adapter), { bindForCall });
     await test.run();
-    expect(bindForCall.mock.calls).toEqual([["revise-page"], ["review-page"]]);
+    expect(bindForCall.mock.calls).toEqual([["revise-page"], ["review-page"], ["review-picture-book-continuity"]]);
     expect(test.calls[0]!.textAttemptBudget!.used).toBe(5);
     expect(test.saved().filter(page => page.revision === 2)).toHaveLength(4);
     expect(test.unavailable).not.toHaveBeenCalled();

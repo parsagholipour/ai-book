@@ -1,8 +1,8 @@
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import { pageQualityReportSchema, pageStyleAuditSchema, pictureBookReviewFingerprint, storyExtractResultSchema,
-  pictureBookRequirementTargets, pictureBookFindingSchema, pictureBookRepairAssessmentSchema, pictureBookRequirementAssessmentSchema,
-  pictureBookCitationRowsSchema, pictureBookEditorialRowsSchema,
+  pictureBookRequirementChecksSchema, pictureBookChecklistErrors, pictureBookRequirementTargets, pictureBookFindingSchema, pictureBookRepairAssessmentSchema, pictureBookRequirementAssessmentSchema,
+  pictureBookCitationRowsSchema, pictureBookEditorialRowsSchema, pictureBookMetadataRowsSchema,
   type BookPlan, type CreateProjectInput, type PictureBookPageReview, type PictureBookReviewChecks, type PriorPageContext } from "@book-maker/core";
 import type { QualityGateContext } from "./qualityEnrichment.js";
 import { pictureBookDeliveryReviews, type PictureBookDeliveryReview } from "./shortPictureBookReviewDelivery.js";
@@ -18,6 +18,7 @@ export const savedPictureBookReviewSchema = z.object({
     .transform(({ unverifiedContradictions, ...extract }) => ({ ...extract, ...(unverifiedContradictions ? { unverifiedContradictions } : {}) })).nullable(),
   findings: z.array(pictureBookFindingSchema).optional(), repairAssessment: pictureBookRepairAssessmentSchema.optional(),
   unverifiedFindings: z.array(pictureBookFindingSchema).optional(),
+  requirementChecks: pictureBookRequirementChecksSchema.optional(),
   requirementAssessments: z.array(pictureBookRequirementAssessmentSchema).optional(),
   styleAudit: pageStyleAuditSchema.extend({ styleOk: z.boolean(), styleIssues: z.array(z.string()), unverifiedStyleIssues: z.array(z.string()).optional() })
     .transform(({ unverifiedStyleIssues, ...audit }) => ({ ...audit, ...(unverifiedStyleIssues ? { unverifiedStyleIssues } : {}) })).nullable(),
@@ -26,16 +27,17 @@ export const savedPictureBookReviewSchema = z.object({
 type Context = { input: CreateProjectInput; plan: BookPlan; pages: readonly PriorPageContext[]; checks: PictureBookReviewChecks };
 const snapshotSchema = z.object({ fingerprint: z.string(), reviews: z.array(savedPictureBookReviewSchema),
   unresolvedPageIndexes: z.array(z.number()).optional(), protocolIssues: z.array(z.string()).optional(),
-  validationIssues: z.array(z.unknown()).optional(), citationRows: z.array(z.unknown()).optional(), editorialRows: z.array(z.unknown()).optional() });
+  validationIssues: z.array(z.unknown()).optional(), citationRows: z.array(z.unknown()).optional(), editorialRows: z.array(z.unknown()).optional(), metadataRows: z.array(z.unknown()).optional() });
 
 /** The hash binds the current contract, full prose, canon, settings and chapter partition. */
 export function readPictureBookReviewSnapshot(value: unknown, options: Context): PictureBookPageReview[] | undefined {
   const parsed = snapshotSchema.safeParse(value);
   if (!parsed.success) return undefined;
   const snapshot = parsed.data;
-  if (snapshot.fingerprint !== pictureBookReviewFingerprint(options) || snapshot.unresolvedPageIndexes?.length || snapshot.protocolIssues?.length || snapshot.validationIssues?.length || snapshot.citationRows?.length || snapshot.editorialRows?.length ||
+  if (snapshot.fingerprint !== pictureBookReviewFingerprint(options) || snapshot.unresolvedPageIndexes?.length || snapshot.protocolIssues?.length || snapshot.validationIssues?.length || snapshot.citationRows?.length || snapshot.editorialRows?.length || snapshot.metadataRows?.length ||
     snapshot.reviews.length !== options.pages.length || new Set(snapshot.reviews.map((review) => review.pageIndex)).size !== options.pages.length) return undefined;
-  const valid = snapshot.reviews.every((review) => (!review.unverifiedFindings?.length || !review.report.approved) &&
+  const valid = snapshot.reviews.every((review) =>
+    pictureBookChecklistErrors({ ...options, enabled: options.checks.pageModelReview }, review.draftMarkdown, review.requirementChecks, review.findings ?? []).length === 0 && (!review.unverifiedFindings?.length || !review.report.approved) &&
     options.pages.some((page) => page.index === review.pageIndex && page.markdown === review.draftMarkdown) &&
     Object.entries(options.checks).every(([key, enabled]) => review.completedChecks[key as keyof PictureBookReviewChecks] === enabled) &&
     options.checks.storyExtractAudit === (review.storyExtract !== null) && options.checks.styleAuditor === (review.styleAudit !== null));
@@ -46,7 +48,8 @@ const deliverySnapshotSchema = snapshotSchema.extend({ deliveryFallback: z.liter
   roundsStarted: z.number().int().min(0).max(2), attemptsUsed: z.number().int().min(0).max(5), outputWidened: z.boolean(),
   unresolvedPageIndexes: z.array(z.number().int().positive()), protocolIssues: z.array(z.string()),
   validationIssues: z.array(z.object({ pageIndex: z.number().int().positive(), message: z.string() })),
-  citationRows: pictureBookCitationRowsSchema.default([]), editorialRows: pictureBookEditorialRowsSchema.default([])
+  citationRows: pictureBookCitationRowsSchema.default([]), editorialRows: pictureBookEditorialRowsSchema.default([]),
+  metadataRows: pictureBookMetadataRowsSchema.default([])
 });
 /** Explicit delivery fallback is reusable for export, never as repair-acceptance evidence. */
 export function readPictureBookDeliverySnapshot(value: unknown, options: Context): PictureBookDeliveryReview[] | undefined {

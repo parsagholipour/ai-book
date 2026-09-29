@@ -50,6 +50,7 @@ export const GENERATION_STAGE_EFFORT: Record<GenerationModelStageId, EffortRecom
   "polish-page": { score: 3, reason: "Refine wording and flow while keeping the page's content intact." },
   "judge-page-drafts": { score: 6, reason: "Compare candidate pages against the same brief and quality criteria." },
   "review-page": { score: 6, reason: "Assess local quality, completeness, and consistency with the brief." },
+  "review-picture-book-continuity": { score: 9, reason: "Compare object locations, possession, conditions and chronology across the complete manuscript." },
   "revise-page": { score: 6, reason: "Address review findings while preserving the page's purpose and context." },
   "patch-page": { score: 3, reason: "Apply a narrow correction with minimal changes to surrounding prose." },
   "verify-page-claims": { score: 8, reason: "Check factual claims against available evidence and recognize uncertainty." },

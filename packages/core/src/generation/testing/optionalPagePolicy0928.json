@@ -1,0 +1,31 @@
+{
+  "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Write 30–33 story pages, never fewer than 30. Extra pages are optional and must add meaningful progression. All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.",
+  "requirements": [
+    {
+      "kind": "content",
+      "text": "Extra pages are optional",
+      "quote": "Extra pages are optional",
+      "scope": {
+        "quote": "Extra pages are optional and must add meaningful progression.",
+        "extent": "whole_book"
+      }
+    },
+    {
+      "kind": "content",
+      "text": "Extra pages must add meaningful progression",
+      "quote": "Extra pages are optional and must add meaningful progression.",
+      "scope": {
+        "quote": "Extra pages are optional and must add meaningful progression.",
+        "extent": "whole_book"
+      }
+    }
+  ],
+  "verdicts": [
+    {
+      "id": "brief-43",
+      "status": "fulfilled",
+      "reason": "The story uses the requested 30 pages; it does not rely on optional extra pages.",
+      "evidence": []
+    }
+  ]
+}

@@ -45,7 +45,7 @@ export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonO
             "Review one generated page for reader-facing quality.",
             "Reject filler, repetition, prompt leakage, generic scaffold prose, continuity contradictions, and pages that do not progress.",
             READER_NAMING_REVIEW_RULE,
-            "For confirmed planning-label leakage, reject the page and set checks.promptLeakFree=false.",
+            "For confirmed planning-label leakage or fictional-status disclaimers leaking into narration, reject the page and set checks.promptLeakFree=false.",
             ...citationReviewRules,
             "Treat semantic repetition as a failure even when wording differs: the same encounter, same decision, same exposition, or same emotional turn cannot appear twice.",
             "Do not reject merely because the same character performs a necessary recurring action type assigned by the current pageBrief; reject it only when it restages the same beat, reuses distinctive wording, or fails to add a new consequence.",

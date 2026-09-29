@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { inputWithSelectedPageCount, shortKidsStoryPageLayout } from "@book-maker/core";
 import type { GenerateJsonOptions, PictureBookReviewCheckpoint, TextModelAdapter } from "@book-maker/core";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ review: vi.fn(), stop: vi.fn(), row: { payload: {} as Record<string, unknown> }, writes: vi.fn() }));
@@ -9,6 +10,7 @@ vi.mock("@book-maker/db", () => {
 vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: mocks.stop }));
 vi.mock("@book-maker/core", async (original) => ({ ...await original<object>(), reviewPictureBookManuscript: mocks.review }));
 import { prepareShortPictureBookReview, usesShortPictureBookReview } from "./shortPictureBook.js";
+import { readPictureBookDeliverySnapshot, readPictureBookReviewSnapshot } from "./shortPictureBookReviewCache.js";
 const pages = Array.from({ length: 30 }, (_, i) => ({ index: i + 1, title: `Page ${i + 1}`, markdown: `Rabbit carries lantern ${i + 1} into the village.`, summary: "A lantern." }));
 const input = { category: "KIDS", prompt: "Rabbit and Wise Turtle find lanterns.", targetPages: 30,
   mediaSettings: { finalReview: true, fullIllustrations: true, generationStrategy: "auto" } };
@@ -33,6 +35,14 @@ it("bounds the new workflow to complete auto-selected short children's manuscrip
     { strategy: { researchDepth: 12, shouldIllustratePage: () => true } },
     { input: { ...input, mediaSettings: { ...input.mediaSettings, mobile: { import: { source: "manuscript" } } } } }
   ]) expect(usesShortPictureBookReview({ ...eligible(), ...mutation } as never)).toBe(false);
+});
+
+it("keeps all 44 pages of a forty-page request in review and separate story-page export", async () => {
+  const extended = inputWithSelectedPageCount({ ...eligible().input, targetPages: 40 }, 44);
+  const manuscript = Array.from({ length: 44 }, (_, i) => ({ ...pages[i % pages.length]!, index: i + 1 }));
+  expect(usesShortPictureBookReview({ ...eligible(), input: extended, pages: manuscript })).toBe(true);
+  expect(shortKidsStoryPageLayout(extended, manuscript)).toBe("separate");
+  expect((await prepareShortPictureBookReview({ ...options(), input: extended, pages: manuscript }))?.size).toBe(44);
 });
 
 it("bases grouped text review on the complete manuscript independently of illustration slots", () => {
@@ -98,9 +108,28 @@ it("propagates unexpected implementation errors, cancellation and checkpoint fai
 
 
 const captured = JSON.parse(readFileSync(new URL("../../../../packages/core/src/generation/testing/balancedGroupReview.json", import.meta.url), "utf8"));
-async function realReviewOptions(answers: unknown[]) {
+it("keeps a clean grouped verdict unverified when independent continuity fails, including redelivery", async () => {
   const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   mocks.review.mockImplementation(core.reviewPictureBookManuscript);
+  const model = new core.FakeTextModelAdapter();
+  const calls: string[] = [];
+  model.generateJson = async request => {
+    calls.push(request.purpose!);
+    if (request.purpose === "review-picture-book-continuity") throw new Error("Continuity unavailable");
+    return { data: request.schema.parse({ findings: [], pages: pages.map(page => ({ pageIndex: page.index, score: 96 })) }),
+      text: "", provider: "fixture", model: "fixture" };
+  };
+  const request = { ...options(), textModel: model, quality: { ...options().quality, enabled: (feature: string) => feature === "pageModelReview" } };
+  const result = await prepareShortPictureBookReview(request);
+  expect([...result.values()].every(review => review.reviewUnavailable && !review.report.approved)).toBe(true);
+  expect(await prepareShortPictureBookReview(request)).toEqual(result);
+  expect(calls).toEqual(["review-page", "review-picture-book-continuity"]);
+});
+
+async function realReviewOptions(answers: unknown[]) {
+  const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+  // Isolate durable grouped-review recovery; continuity delivery is covered separately.
+  mocks.review.mockImplementation(request => core.reviewPictureBookManuscript({ ...request, continuityReview: false }));
   let count = 0;
   const generateJson = vi.fn(async <T>(request: GenerateJsonOptions<T>) => {
     core.consumeTextAttempt(request);
@@ -209,9 +238,9 @@ it("keeps the original citation finding when a worker stops during its reserved 
 
 it("resumes Premium's malformed response from the durable partial review without losing its grounded finding", async () => {
   const premium = JSON.parse(readFileSync(new URL("../../../../packages/core/src/generation/testing/premiumMalformedGroupReview.json", import.meta.url), "utf8"));
-  const { request, generateJson } = await realReviewOptions([premium.response, { pages: [29, 30].map(pageIndex => ({
+  const { request, generateJson } = await realReviewOptions([premium.response, { pages: [30].map(pageIndex => ({
     pageIndex, score: 100, findings: [], storyExtract: "no_changes", styleAudit: "clean"
-  })) }]);
+  })), auxiliaryCorrections: [{ id: "page:29", storyExtract: "no_changes", styleAudit: "clean" }] }]);
   request.input.prompt = premium.brief; request.pages = premium.pages; request.quality.enabled = () => true;
   const save = mocks.writes.getMockImplementation()!;
   mocks.writes.mockImplementation(async value => {
@@ -233,4 +262,42 @@ it("resumes Premium's malformed response from the durable partial review without
   expect(generateJson).toHaveBeenCalledTimes(2);
   expect(mocks.row.payload.pictureBookReview).toMatchObject({ editorialRows: [], unresolvedPageIndexes: [], protocolIssues: [], roundsStarted: 2, attemptsUsed: 2 });
   expect(mocks.row.payload.unrelated).toBe(true);
+});
+
+it.each([false, true])("preserves malformed repair metadata across worker restart and cached delivery (corrected=%s)", async corrected => {
+  const metadata = JSON.parse(readFileSync(new URL("../../../../packages/core/src/generation/testing/quickMalformedFindingMetadata.json", import.meta.url), "utf8"));
+  const response = corrected ? { pages: [], metadataCorrections: [
+    { id: "4:0", supportsSameFinding: true, repairPageIndexes: null, relatedEvidenceIndexes: [0, 1] },
+    { id: "25:0", supportsSameFinding: true, repairPageIndexes: [25, 26, 27, 28, 29], relatedEvidenceIndexes: [1, 2, 3] }
+  ] } : metadata.emptyRecovery;
+  const { request, generateJson } = await realReviewOptions([metadata.response, response]);
+  request.input.prompt = metadata.brief; request.pages = metadata.pages;
+  request.quality.enabled = feature => feature === "pageModelReview" || feature === "storyExtractAudit";
+  const save = mocks.writes.getMockImplementation()!;
+  mocks.writes.mockImplementation(async value => {
+    await save(value);
+    const checkpoint = mocks.row.payload.pictureBookReview as PictureBookReviewCheckpoint;
+    if (checkpoint.attemptsUsed === 1 && checkpoint.roundsStarted === 1) throw new Error("Exit after metadata checkpoint");
+  });
+  await expect(prepareShortPictureBookReview(request)).rejects.toThrow("Exit after metadata checkpoint");
+  expect(mocks.row.payload.pictureBookReview).toMatchObject({ metadataRows: [{ pageIndex: 4 }, { pageIndex: 25 }],
+    unresolvedPageIndexes: [4, 25], roundsStarted: 1, attemptsUsed: 1 });
+  mocks.writes.mockImplementation(save);
+  const reviews = await prepareShortPictureBookReview(request);
+  expect(reviews.size).toBe(30);
+  for (const finding of metadata.response.findings) {
+    const page = reviews.get(finding.pageIndex)!;
+    expect(page.report.approved).toBe(false);
+    if (corrected) expect(page.findings?.[0]?.message).toBe(finding.message);
+    else {
+      expect(page).toMatchObject({ reviewUnavailable: true, report: { issues: [], requiredRevisions: [], scoreBasis: "screened_unscored" } });
+      expect(page.report.notes).toContain(finding.message);
+    }
+  }
+  expect(await prepareShortPictureBookReview(request)).toEqual(reviews);
+  expect(generateJson).toHaveBeenCalledTimes(2);
+  const context = { ...request, checks: metadata.enabledChecks };
+  const snapshot = mocks.row.payload.pictureBookReview;
+  expect(readPictureBookDeliverySnapshot(snapshot, context)).toEqual([...reviews.values()]);
+  if (!corrected) expect(readPictureBookReviewSnapshot(snapshot, context)).toBeUndefined();
 });

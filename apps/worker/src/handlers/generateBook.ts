@@ -23,6 +23,8 @@ import {
   createProviders,
   expandChapterResearch,
   jsonPayloadToRecord,
+  preparePictureBookRequirementContract,
+  usesCompactPictureBookPlanning,
   seedStoryStateFromPromises,
   type BookGenerationStrategy,
   type BookPlan,
@@ -45,7 +47,7 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
     throw new Error("Approved plan not found");
   }
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
-  const plan = bookPlanSchema.parse(planVersion.planningPackage);
+  let plan = bookPlanSchema.parse(planVersion.planningPackage);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
 
@@ -89,6 +91,15 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
         await expandPublishedReplanResearch({ projectId, input, plan, providers, strategy, generationJobId });
       }
     };
+  }
+
+  if (usesCompactPictureBookPlanning(input)) {
+    const prepared = await preparePictureBookRequirementContract({ input, plan, textModel: providers.text });
+    if (prepared !== plan) {
+      // Save before any page-map or writer call, so retries cannot change scope.
+      await prisma.planVersion.update({ where: { id: planId }, data: { planningPackage: prepared } });
+      plan = prepared;
+    }
   }
 
   await maybeExpandStrategyResearch({

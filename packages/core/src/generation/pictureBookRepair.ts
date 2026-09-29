@@ -1,3 +1,5 @@
+import { FINAL_PAGE_OBLIGATION_GUIDANCE } from "./finalPageObligations.js";
+import { MAX_PICTURE_BOOK_PAGES } from "./pageCountAllowance.js";
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { TextAttemptBudget } from "../adapters/textAttemptBudget.js";
@@ -37,7 +39,7 @@ export type PictureBookRepairFeedback = {
 const responseSchema = z.strictObject({ pages: z.array(z.strictObject({
   pageIndex: z.number().int().positive(), reason: z.string().trim().min(1).max(500),
   patches: z.array(pagePatchSchema).min(1).max(12), summary: z.string().trim().min(1).max(1200).nullable()
-})).max(40), sceneRevisions: z.array(pictureBookSceneRevisionSchema).max(20).optional() });
+})).max(MAX_PICTURE_BOOK_PAGES), sceneRevisions: z.array(pictureBookSceneRevisionSchema).max(20).optional() });
 
 /** One coordinated candidate against immutable prose, never a chain of page rewrites. */
 export async function repairPictureBookManuscript(options: {
@@ -50,7 +52,7 @@ export async function repairPictureBookManuscript(options: {
   feedback?: PictureBookRepairFeedback;
 }): Promise<{ pages: PriorPageContext[]; context: PictureBookRepairContext }> {
   const originals = new Map(options.pages.map((page) => [page.index, page]));
-  if (originals.size !== options.pages.length || originals.size < 1 || originals.size > 40)
+  if (originals.size !== options.pages.length || originals.size < 1 || originals.size > MAX_PICTURE_BOOK_PAGES)
     throw new Error("Picture-book repair requires a unique, bounded manuscript.");
   const requirementTargets = validRequirementTargets(options.input.prompt, options.pages, options.requirementTargets ?? []);
   if (requirementTargets.length !== (options.requirementTargets?.length ?? 0)) throw new Error("Requirement repair targets do not match the frozen brief and prose.");
@@ -79,7 +81,9 @@ export async function repairPictureBookManuscript(options: {
         ? "This is a sentence-only repair. Split or simplify the fewest sentences on the targeted pages. Preserve every event, object, quantity, location, causal order, negation, uncertainty and dialogue meaning. Do not add filler, fragments, scenes or new beats. No additional pages or metadata may change; always return summary=null."
         : "You may revise connected pages when necessary to resolve a targeted scene or keep its consequences consistent; explain that dependency in reason. Do not improve unrelated scenes, change character identities, add filler, restage a later reserved beat, or replace the story with an outline.",
       ...(sentenceRepairs.length ? ["sentenceRepairs restricts each listed page to sentence-length edits even in a mixed repair. Use one exact eligible sentence per patch and summary=null. Preserve every event, character choice, cost, causal link, negation and dialogue meaning, including repetition that establishes a character's limitation. Other pages' story defects do not authorize rewriting these scenes. On a correction, restore any meaning lost by the rejected candidate instead of moving it to another page; the original prose remains the baseline."] : []),
+      ...(options.sceneRepairTargets?.length ? ["Plan each connected repair BEFORE wording changes. In reason, give the revised sequence as page index -> consequential new action/decision/discovery/relationship change, then state entry and exit obligations against sceneBoundaries and the full neighboring prose. Use sceneRevisions for redistribution across page slots. Combine repeated checking by different characters into one scene while preserving both contributions; spend freed slots on meaningful consequences. Inspect the first untouched following page for reserved actions: moving its departure/arrival/solution earlier while retaining that action there creates a duplicate. Either keep it at its original location or explicitly include that boundary page in the connected revision. Preserve the chosen page count and all per-page user requirements. A lexical rewrite that leaves two checks in two scenes does not resolve repetitive allocation."] : []),
       "Reports are diagnostic evidence. Reconcile contradictory advice against the actual prose and the user's requirements; do not execute stale suggestions independently. The user's brief and predefined character identities remain authoritative.",
+      FINAL_PAGE_OBLIGATION_GUIDANCE,
       "Preserve complete grammatical relationships when splitting sentences: both sides of a comparison, both endpoints of between/from/to, subjects, referents and negations must remain clear. A shorter fragment is not a repair. Meet the supplied minimum page length without padding; retain useful action and detail when removing repetition.",
       ...(options.feedback ? ["The previous candidate failed verification and was NOT published. feedback contains its changed pages and the specific failures, guidance and related evidence. Produce one corrected COMPLETE patch set against the ORIGINAL pages, retaining valid edits from the previous candidate. Every find must match original pages, never feedback text. " + (sentenceOnly ? "Fix any newly surfaced failure within the original sentence targets; additional pages remain protected. " : "Resolve newly surfaced failures on additional pages only as necessary for this repair. ") + "Reconcile location, direction, possession and chronology with the cited earlier and later prose; never invent a convenient clue that contradicts it. Recheck grammar and meaning on every changed clause. Do not append filler to satisfy a count. This is the final correction opportunity; the complete result will be reviewed again."] : []),
       ...(requirementTargets.length ? ["requirementTargets carries stable finding IDs, exact user obligations, current evidence and acceptanceCriteria from the full-prose review. Resolve each complete obligation, including its scope, actors, relationships, quantities and causal consequences. More detail about one instance cannot satisfy a requested comparison or pattern across instances. A missing event or relationship may require connected patches on additional pages; explain the dependency in reason. Minimal means the smallest COMPLETE resolution, not the fewest changed words. Do not give characters knowledge before they obtain it, move a later discovery earlier, or break established chronology. If a proposed criterion goes beyond the user brief, reconcile it against the whole manuscript instead of following it blindly. The candidate reviewer will separately assess every finding ID against its acceptanceCriteria and exact candidate evidence."] : []),
@@ -91,6 +95,11 @@ export async function repairPictureBookManuscript(options: {
       book: { title: options.plan.title, premise: options.plan.premise, characters: options.plan.characters,
         promises: options.plan.promises, voiceGuide: options.plan.voiceGuide },
       issues: compactPictureBookRepairIssues(options.issues),
+      ...(options.sceneRepairTargets?.length ? { sceneBoundaries: options.sceneRepairTargets.map(target => ({
+        pageIndexes: target.pageIndexes,
+        beforePageIndex: options.pages.find(page => page.index === target.pageIndexes[0]! - 1)?.index ?? null,
+        afterPageIndex: options.pages.find(page => page.index === target.pageIndexes.at(-1)! + 1)?.index ?? null
+      })) } : {}),
       semanticTargetPageIndexes: scopes.filter(scope => !scope.sentenceOnly).map(scope => scope.pageIndex),
       ...(options.sceneRepairTargets?.length ? { sceneRepairTargets: options.sceneRepairTargets } : {}),
       ...(sentenceRepairs.length ? { sentenceRepairs } : {}),

@@ -78,7 +78,6 @@ it.each<{ label: string; change: (audit: ProhibitionAssessment) => void }>([
   { label: "extra protagonist", change: audit => { audit.entities[0]!.permissionQuote = null; } },
   { label: "forged role quote", change: audit => { audit.entities[0]!.evidence[0]!.quote = "He flew to the moon."; } },
   { label: "duplicate alias", change: audit => { audit.entities[0]!.aliases = ["Rabbit"]; } },
-  { label: "absent alias", change: audit => { audit.entities[0]!.aliases = ["Bunny"]; } },
   { label: "absent identity", change: audit => { audit.entities[0]!.name = "Fox"; } },
   { label: "conflicting counterexample", change: audit => { audit.counterexamples = [correction.namingEvidence]; } }
 ])("does not spend a recovery call when the assessment also has $label", async ({ change }) => {
@@ -86,6 +85,28 @@ it.each<{ label: string; change: (audit: ProhibitionAssessment) => void }>([
   const verdicts = [{ ...answer, prohibitionAssessment: audit }];
   const { model, calls } = scriptedDevelopmentModel([]);
   expect(await recoverProhibitionEvidence({ ...base, verdicts, textModel: model })).toEqual(verdicts);
+  expect(calls).toHaveLength(0);
+});
+
+it("removes only absent aliases before recovering the unchanged entity's name anchor", async () => {
+  const audit = structuredClone(assessment);
+  audit.entities[0]!.aliases = ["Bunny"];
+  const { model, calls } = scriptedDevelopmentModel([{ corrections: [correction] }]);
+  const result = await recoverProhibitionEvidence({ ...base, verdicts: [{ ...answer, prohibitionAssessment: audit }], textModel: model });
+  expect(result[0]?.prohibitionAssessment.entities).toEqual([{ ...assessment.entities[0], namingEvidence: correction.namingEvidence }]);
+  expect(audit.entities[0]!.aliases).toEqual(["Bunny"]);
+  expect(calls).toHaveLength(1);
+});
+
+it("cannot authorize an observed main character using an absent alias", async () => {
+  const audit = structuredClone(assessment);
+  audit.entities[0]!.aliases = ["Bunny"];
+  audit.entities[0]!.permissionQuote = "Use Bunny as the main character.";
+  const { model, calls } = scriptedDevelopmentModel([]);
+  const context = { ...base, brief: "Use Bunny as the main character. Avoid extra named main characters." };
+  const [result] = await recoverProhibitionEvidence({ ...context, verdicts: [{ ...answer, prohibitionAssessment: audit }], textModel: model });
+  expect(result?.prohibitionAssessment.entities[0]).toMatchObject({ name: "Rabbit", aliases: [], role: "main_character" });
+  expect(prohibitionCoverageVerdict({ ...context, requirement, answer: result })?.status).toBe("unverified");
   expect(calls).toHaveLength(0);
 });
 

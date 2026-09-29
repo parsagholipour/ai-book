@@ -71,7 +71,10 @@ export function finalRepairQualityIssues(state: {
   const issues: ManuscriptQualityIssue[] = [...grouped.values()].map((failure) => ({
     code: failure.failureClass === "assessment_unavailable" ? "FINAL_QA_REPAIR_UNAVAILABLE" : "FINAL_QA_REPAIR_REJECTED",
     source: "deterministic", severity: "warning",
-    message: `Automatic repair ${failure.failureClass === "assessment_unavailable" ? "could not be verified" : "was rejected"}: ${failure.reason} Saved prose was retained.` +
+    message: `${failure.failureClass === "assessment_unavailable" && failure.reviewFindings?.length &&
+      failure.reviewFindings.every(finding => finding.validationFailure === "repair_metadata")
+      ? "Editorial concerns were found, but repair metadata could not be verified"
+      : `Automatic repair ${failure.failureClass === "assessment_unavailable" ? "could not be verified" : "was rejected"}`}: ${failure.reason} Saved prose was retained.` +
       (failure.reviewValidationIssues?.length && !failure.reviewFindings?.length
         ? ` ${failure.reviewValidationIssues.map(issue => `Page ${issue.pageIndex}: ${issue.message}`).join(" ")}` : ""),
     guidance: "Review the reported findings before requesting another repair.",

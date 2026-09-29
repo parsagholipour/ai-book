@@ -1,3 +1,4 @@
+import { requestedGenerationPages } from "../pageCountAllowance.js";
 import { hasResearchIntent } from "../researchIntent.js";
 import { BOOK_CATEGORIES, type BookCategory } from "../../categories.js";
 import type { CreateProjectInput } from "../../schemas/book.js";
@@ -37,7 +38,7 @@ export { hasResearchIntent } from "../researchIntent.js";
  * when an explicit choice cannot handle the requested page count.
  */
 export function autoStrategyIdForInput(input: CreateProjectInput): BookGenerationStrategyId {
-  const pages = input.targetPages;
+  const pages = requestedGenerationPages(input);
   const factual = hasResearchIntent(input);
 
   if (pages < 5) {

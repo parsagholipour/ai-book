@@ -73,7 +73,7 @@ const GATES = [
     name: "subpath-tests",
     description: "node:test coverage for subpaths and generation experiment harnesses",
     command: "node",
-    args: ["--test", "scripts/check-core-subpaths.test.mjs", "scripts/generation-acceptance.test.mjs", "scripts/story-allocation-experiment.test.mjs"]
+    args: ["--test", "scripts/check-core-subpaths.test.mjs", "scripts/generation-acceptance.test.mjs", "scripts/story-allocation-experiment.test.mjs", "scripts/tsx-dev.test.mjs"]
   },
   {
     name: "test",

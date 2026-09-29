@@ -14,7 +14,7 @@ const deferredFinding = (index: number) => ({ domain: "deferred_media", basis: "
 function setup() {
   const response = { pages: pages.map((page) => ({ pageIndex: page.index, score: 92, findings: page.index % 3 === 0 ? [deferredFinding(page.index)] : [], storyExtract: null, styleAudit: null })) };
   const generateJson = vi.fn(async <T>(options: GenerateJsonOptions<T>) => ({ data: parseSchemaWithContext("Fixture", options.schema, response, options.purpose, JSON.stringify(response)) }));
-  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], checks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false },
+  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], continuityReview: false, checks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false },
     textModel: { generateJson } as unknown as TextModelAdapter };
   return { options, response, generateJson };
 }

@@ -1,5 +1,9 @@
+import { resolvePictureBookChecklist } from "./pictureBookChecklistSpans.js";
+import { pictureBookCounterevidenceErrors } from "./pictureBookChecklistCounterevidence.js";
+import { pictureBookRequirementChecksSchema, pictureBookChecklistErrors } from "./pictureBookPreRepairChecklist.js";
+import { MAX_PICTURE_BOOK_PAGES } from "./pageCountAllowance.js";
 import { z } from "zod";
-import type { CreateProjectInput, PageQualityReport } from "../schemas/book.js";
+import type { BookPlan, CreateProjectInput, PageQualityReport } from "../schemas/book.js";
 import type { PriorPageContext } from "./pagesShared.js";
 import { storyExtractResultSchema, type StoryExtractResult } from "./storyState.js";
 import { pageStyleAuditSchema, type PageStyleAudit } from "./styleAuditor.js";
@@ -33,6 +37,7 @@ export type PictureBookPageReview = {
   unverifiedFindings?: z.infer<typeof findingSchema>[] | undefined;
   repairAssessment?: z.infer<typeof pictureBookRepairAssessmentSchema> | undefined;
   requirementAssessments?: PictureBookRequirementAssessment[] | undefined;
+  requirementChecks?: z.infer<typeof pictureBookRequirementChecksSchema> | undefined;
 };
 export const pictureBookFindingSchema = z.strictObject({
   domain: z.enum(["prose", "deferred_media"]),
@@ -42,7 +47,7 @@ export const pictureBookFindingSchema = z.strictObject({
   repairKind: z.enum(["sentence_length", "semantic"]).optional(),
   message: z.string().trim().min(1).max(500),
   guidance: z.string().trim().min(1).max(500),
-  repairPageIndexes: z.array(z.number().int().positive()).min(2).max(40).optional(),
+  repairPageIndexes: z.array(z.number().int().positive()).min(2).max(MAX_PICTURE_BOOK_PAGES).optional(),
   quote: z.string().min(12).max(700),
   relatedEvidence: z.array(z.strictObject({ pageIndex: z.number().int().positive(), quote: z.string().min(12).max(700) })).max(3).default([])
 });
@@ -76,26 +81,32 @@ export const pictureBookReviewRowSchema = z.strictObject({
   pageIndex: z.number().int().positive(), score: z.number().int().min(0).max(100),
   findings: z.array(findingSchema).max(8),
   continuityFindingLinks: z.unknown().optional(),
+  requirementChecks: pictureBookRequirementChecksSchema.optional(),
   repairAssessment: pictureBookRepairAssessmentSchema.optional(),
   requirementAssessments: z.array(pictureBookRequirementAssessmentSchema).max(8).optional(),
   storyExtract: z.union([z.literal("no_changes"), z.literal("reuse"), compactExtractSchema]).nullable(),
   styleAudit: z.union([z.literal("clean"), pageStyleAuditSchema.extend({ styleOk: z.boolean(), styleIssues: z.array(z.string()) })]).nullable()
 });
-export const pictureBookReviewResponseSchema = z.strictObject({ pages: z.array(pictureBookReviewRowSchema.omit({ repairAssessment: true, requirementAssessments: true })).min(1).max(40) });
-export const pictureBookRepairReviewResponseSchema = z.strictObject({ pages: z.array(pictureBookReviewRowSchema).min(1).max(40) });
+export const pictureBookReviewResponseSchema = z.strictObject({ pages: z.array(pictureBookReviewRowSchema.omit({ repairAssessment: true, requirementAssessments: true })).min(1).max(MAX_PICTURE_BOOK_PAGES) });
+export const pictureBookRepairReviewResponseSchema = z.strictObject({ pages: z.array(pictureBookReviewRowSchema).min(1).max(MAX_PICTURE_BOOK_PAGES) });
 
 
 export function validatedPictureBookReviewRow(options: {
-  input: CreateProjectInput; checks: PictureBookReviewChecks; pages: ReadonlyMap<number, PriorPageContext>;
+  input: CreateProjectInput; plan?: BookPlan; checks: PictureBookReviewChecks; pages: ReadonlyMap<number, PriorPageContext>;
   repairContext?: PictureBookRepairContext;
   reusableStoryExtracts?: ReadonlyMap<number, StoryExtractResult>;
+  /** Retention only: a challenged diagnosis is saved for reconsideration, never approval. */
+  retainChallengedFindings?: boolean;
 }) {
-  return pictureBookReviewRowSchema.transform((review) => {
+  return z.preprocess(value => resolvePictureBookChecklist(value, options.pages), pictureBookReviewRowSchema).transform((review) => {
     const quote = (index: number, original: string) => {
       const page = options.pages.get(index);
       return page ? pictureBookExactQuote(page.markdown, original) ?? original : original;
     };
-    return { ...review, findings: review.findings.map(finding => ({ ...finding,
+    return { ...review,
+      ...(review.requirementChecks ? { requirementChecks: review.requirementChecks.map(check => ({ ...check,
+        evidence: check.evidence === null ? null : quote(review.pageIndex, check.evidence) })) } : {}),
+      findings: review.findings.map(finding => ({ ...finding,
       quote: quote(review.pageIndex, finding.quote), relatedEvidence: finding.relatedEvidence.map(evidence => ({
         ...evidence, quote: quote(evidence.pageIndex, evidence.quote)
       })) })), styleAudit: review.styleAudit && typeof review.styleAudit === "object"
@@ -112,6 +123,8 @@ export function validatedPictureBookReviewRow(options: {
       ...(review.requirementAssessments ?? []).map(assessment => assessment.reason),
       ...(review.styleAudit && typeof review.styleAudit === "object" ? review.styleAudit.styleIssues : [])
     ])) fail(error);
+    if (!options.retainChallengedFindings) for (const error of pictureBookCounterevidenceErrors(page, review.findings)) fail(error);
+    for (const error of pictureBookChecklistErrors({ ...options, enabled: options.checks.pageModelReview }, page.markdown, review.requirementChecks, review.findings)) fail(error);
     for (const error of requirementAssessmentErrors(options.repairContext?.requirementTargets ?? [], review.pageIndex, review.requirementAssessments, options.pages)) fail(error);
     if (review.storyExtract === "reuse" && !options.reusableStoryExtracts?.has(review.pageIndex))
       fail("storyExtract=reuse requires a verified unchanged chronological prefix for this page.");
@@ -121,15 +134,19 @@ export function validatedPictureBookReviewRow(options: {
       fail("Enabled checks require results; disabled checks must be null.");
     if (!options.checks.pageModelReview && review.findings.length) fail("Page model review is disabled; return no page findings.");
     for (const finding of review.findings) {
+      const citationsValid = page.markdown.includes(finding.quote) && finding.relatedEvidence.every((evidence) =>
+        options.pages.get(evidence.pageIndex)?.markdown.includes(evidence.quote));
       // An inexact quotation takes the existing citation-only recovery path first.
       if (finding.repairKind === "sentence_length" && page.markdown.includes(finding.quote) && !isPictureBookSentenceLengthFinding(options.input, page, finding))
         fail("A sentence_length finding requires a measured sentence-length violation and local language evidence in an eligible original sentence, without semantic or cross-page scope.");
-      for (const error of pictureBookSceneRepairScopeErrors(review.pageIndex, finding, options.pages)) fail(error);
+      // Scope depends on exact evidence. Reporting both failures would bypass
+      // citation retention and let a fresh verdict silently erase the finding.
+      // The full row (including scope) is validated again after quote recovery.
+      if (citationsValid) for (const error of pictureBookSceneRepairScopeErrors(review.pageIndex, finding, options.pages)) fail(error);
       if (finding.basis === "cross_page" && finding.relatedEvidence.length === 0) fail("Cross-page defects need related prose evidence.");
       if (finding.basis === "missing_requirement" && (!finding.requirementQuote || !options.input.prompt.includes(finding.requirementQuote)))
         fail("A missing deliverable must quote the exact user requirement, never an inferred chapter beat.");
-      if (!page.markdown.includes(finding.quote) || finding.relatedEvidence.some((evidence) => !options.pages.get(evidence.pageIndex)?.markdown.includes(evidence.quote)))
-        fail(PICTURE_BOOK_CITATION_ERROR);
+      if (!citationsValid) fail(PICTURE_BOOK_CITATION_ERROR);
       if (finding.domain === "deferred_media" && (finding.basis !== "missing_requirement" || !pageGetsInteriorIllustration(options.input, page.index)))
         fail("Only a requested interior illustration on a selected illustration slot can be deferred to the artwork stage.");
     }
@@ -143,6 +160,7 @@ export function pictureBookPageReview(review: z.infer<typeof pictureBookReviewRo
     return {
       pageIndex: review.pageIndex, draftMarkdown: page.markdown,
       findings: review.findings,
+      ...(review.requirementChecks ? { requirementChecks: review.requirementChecks } : {}),
       ...(review.repairAssessment ? { repairAssessment: review.repairAssessment } : {}),
       ...(review.requirementAssessments ? { requirementAssessments: review.requirementAssessments } : {}),
       report: {

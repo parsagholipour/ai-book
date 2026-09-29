@@ -32,6 +32,7 @@ describe("mobile project status DTO", () => {
     mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
     vi.mocked(buildProjectStatus).mockResolvedValue(
       statusRecord({
+        generationTimings: { planningMs: 72_000, bookMs: null },
         project: {
           id: "project-1",
           title: "Progress Book",
@@ -108,6 +109,7 @@ describe("mobile project status DTO", () => {
       score: 88,
       affectedPageIndexes: [3, 4]
     });
+    expect(body.status.generationTimings).toEqual({ planningMs: 72_000, bookMs: null });
     expect(body.status.failureMessage).toContain("while writing a page");
     expect(body.status.failureMessage).not.toContain("narrat");
     expect(body.status.failureMessage).not.toContain("GENERATE_PAGE");

@@ -224,6 +224,9 @@ class _Transcript extends StatelessWidget {
           child: _PlanBubble.snapshot(
             key: ValueKey('project-plan-${plan.id}'),
             plan: plan,
+            statusValue: currentPlanKey == _planKey(plan)
+                ? generationStatusValue
+                : null,
           ),
         );
       }

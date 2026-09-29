@@ -1,11 +1,13 @@
 import {
   normalizePlanPageTargets,
+  generationPageCountBounds,
+  inputWithSelectedPageCount,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput
 } from "@book-maker/core";
 
-type SavedPageTargetInput = Pick<CreateProjectInput, "targetPages">;
+type SavedPageTargetInput = Pick<CreateProjectInput, "targetPages"> & Partial<Pick<CreateProjectInput, "mediaSettings">>;
 type SavedPageTargetStrategy = Pick<BookGenerationStrategy, "executionMode" | "generateWholeBookDraft">;
 
 export function effectiveSavedWholeBookExportContext(
@@ -20,7 +22,7 @@ export function effectiveSavedWholeBookExportContext(
   }
 
   return {
-    input: { ...input, targetPages: acceptedTarget },
+    input: inputWithSelectedPageCount(input, acceptedTarget),
     plan: normalizePlanPageTargets(plan, acceptedTarget)
   };
 }
@@ -40,7 +42,7 @@ export function acceptedSavedPageTarget(
   }
   if (
     strategySupportsWholeBookPageTolerance(strategy) &&
-    pageCountWithinWholeBookTolerance(pageCount, input.targetPages)
+    pageCountWithinWholeBookTolerance(pageCount, input)
   ) {
     return pageCount;
   }
@@ -67,8 +69,7 @@ function strategySupportsWholeBookPageTolerance(strategy: SavedPageTargetStrateg
   );
 }
 
-function pageCountWithinWholeBookTolerance(pageCount: number, targetPages: number): boolean {
-  const minimumPages = Math.ceil(targetPages * 0.5);
-  const maximumPages = Math.floor(targetPages * 1.5);
+function pageCountWithinWholeBookTolerance(pageCount: number, input: SavedPageTargetInput): boolean {
+  const { minimumPages, maximumPages } = generationPageCountBounds(input);
   return pageCount >= minimumPages && pageCount <= maximumPages;
 }

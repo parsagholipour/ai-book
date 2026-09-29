@@ -144,7 +144,7 @@ const LANGUAGE_REQUEST_PATTERNS = [
   // "use Japanese"
   new RegExp(`\\buse\\s+(${LANGUAGE_NAMES})${LANGUAGE_CLAUSE_END_GUARD}`, "iu"),
   // A message that is nothing but the request: "in Spanish please"
-  new RegExp(`^\\W*(?:in|into)\\s+(${LANGUAGE_NAMES})${LANGUAGE_CLAUSE_END_GUARD}`, "iu")
+  new RegExp(`^\\W*(?:(?:no|actually|please|sorry)[,\\s]+)*(?:in|into)\\s+(${LANGUAGE_NAMES})${LANGUAGE_CLAUSE_END_GUARD}`, "iu")
 ];
 
 /**
@@ -239,12 +239,10 @@ export function isEnglishLanguage(language: string | null | undefined): boolean 
 }
 
 export function targetLanguageGenerationGuidance(language: string | null | undefined): string[] {
-  if (isEnglishLanguage(language)) {
-    return [];
-  }
-  const targetLanguage = languageLabel(language);
+  const targetLanguage = isEnglishLanguage(language) ? "English" : languageLabel(language);
   return [
     `Target language: ${targetLanguage}.`,
+    "This selected language overrides the language of earlier drafts, assistant suggestions, source material, and the nationality or setting of the subject.",
     `Write all book-facing string values in ${targetLanguage}, including titles, chapter summaries, planning questions, page titles, Markdown prose, summaries, and continuity notes.`,
     // The exemption exists because a name the user supplied is an identifier,
     // not book-facing text. A saved library character is linked to their
@@ -259,10 +257,7 @@ export function targetLanguageGenerationGuidance(language: string | null | undef
 }
 
 export function targetLanguageReviewGuidance(language: string | null | undefined): string[] {
-  if (isEnglishLanguage(language)) {
-    return [];
-  }
-  const targetLanguage = languageLabel(language);
+  const targetLanguage = isEnglishLanguage(language) ? "English" : languageLabel(language);
   return [
     `The book's target language is ${targetLanguage}.`,
     `Reject reader-facing prose that is mostly not in ${targetLanguage}.`,
@@ -270,8 +265,8 @@ export function targetLanguageReviewGuidance(language: string | null | undefined
   ];
 }
 
-export function targetLanguagePayload(language: string | null | undefined): { targetLanguage: string } | undefined {
-  return isEnglishLanguage(language) ? undefined : { targetLanguage: languageLabel(language) };
+export function targetLanguagePayload(language: string | null | undefined): { targetLanguage: string } {
+  return { targetLanguage: isEnglishLanguage(language) ? "English" : languageLabel(language) };
 }
 
 export function languageLabel(language: string | null | undefined): string {

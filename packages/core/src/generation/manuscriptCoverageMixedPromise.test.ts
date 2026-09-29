@@ -7,14 +7,16 @@ const facts: CoverageEvidenceContext = { title: "The Lantern Path", targetStoryP
   storyPageIndexes: Array.from({ length: 30 }, (_, i) => i + 1), illustratedPageIndexes: [], expectedIllustratedPageIndexes: [],
   characters: [], referenceProvenance: [], mediaInventory: { storyPagesWithArtwork: [], coverArtworkCount: 0, characterReferenceCount: 0 } };
 
-async function review(index = 0, change: (assessment: Record<string, unknown>) => void = () => {}, complete = true) {
+async function review(index = 0, change: (assessment: Record<string, unknown>) => void = () => {}, complete = true, supportedScope = true) {
   const capture = captures[index]!;
   // Explicit new-contract fixture, not a claim that the historical model emitted this separation.
   const mixedPromiseAssessment: Record<string, unknown> = { promiseQuote: capture.promise,
     deliveryRequirements: capture.requirements.map((r, i) => ({ id: `brief-${i + 1}`, quote: r.quote })),
     narrative: { status: "fulfilled", reason: "The complete story reaches its gentle picnic ending.", evidence: capture.recordedVerdict.evidence } };
   change(mixedPromiseAssessment);
-  const { model, calls } = scriptedDevelopmentModel([{ complete, requirements: [{ ...capture.recordedVerdict, id: "promise-1", mixedPromiseAssessment }] }]);
+  const { model, calls } = scriptedDevelopmentModel([{ complete, requirements: [{ ...capture.recordedVerdict, id: "promise-1", mixedPromiseAssessment,
+    scopeAssessment: { supported: supportedScope, authority: "promise", quote: capture.promise, explanation: "Assess only the promised narrative payoff." }
+  }] }]);
   const result = await reviewManuscriptCoverage({ brief: capture.brief, promises: [capture.promise], pages: capture.pages, textModel: model,
     inventory: manuscriptRequirementInventorySchema.parse({ brief: capture.brief, status: "available", complete: true, requirements: capture.requirements }),
     evidenceContext: { ...facts, mediaInventory: {} } });
@@ -36,6 +38,13 @@ it.each([0, 1])("settles captured mixed promise %s from fresh delivery facts whi
 it.each(["missing", "unverified"])("never lets empty images discharge a %s narrative", async status => {
   const { result } = await review(0, a => { a.narrative = { status, reason: "The requested ending is not established.", evidence: [] }; });
   expect(refreshManuscriptCoverageFacts(result, facts).requirements.at(-1)?.status).toBe(status);
+});
+
+it("does not let a mixed delivery promise bypass the narrative scope check on refresh", async () => {
+  const { result } = await review(0, a => { a.narrative = { status: "missing", reason: "The story does not stop immediately upon arrival.", evidence: [] }; }, true, false);
+  const final = refreshManuscriptCoverageFacts(result, facts);
+  expect(final.requirements.at(-1)?.status).toBe("unverified");
+  expect(final.requirements.at(-1)?.mixedPromiseAssessment?.narrative.status).toBe("unverified");
 });
 
 it("rechecks page counts and artwork after serialization and after a prior pass", async () => {

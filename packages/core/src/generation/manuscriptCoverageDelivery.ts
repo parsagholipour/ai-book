@@ -4,6 +4,8 @@ import { deliveryPromiseFacts, type DeliveryObligation } from "./manuscriptCover
 import { mediaAbsenceScopes, mediaAbsenceVerdict } from "./manuscriptCoverageMedia.js";
 import { countReadableWords } from "./proseShape.js";
 import { figureFreeProse } from "./figures/figureBlocks.js";
+import { pageCountConstraintSchema, requirementScopeSchema } from "../schemas/manuscriptRequirements.js";
+import { pageCountRequirementVerdict } from "./manuscriptPageCount.js";
 
 /** Match the local prose QA measurement; figure specifications are not words. */
 export function coverageStoryPageWordCounts(pages: readonly { index: number; markdown: string }[]) {
@@ -12,11 +14,25 @@ export function coverageStoryPageWordCounts(pages: readonly { index: number; mar
 
 const result = { status: z.enum(["fulfilled", "missing", "unverified"]), reason: z.string() };
 export const deliveryCheckSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("page_count"), quote: z.string(), expectedCount: z.number().int().positive(), requireNonempty: z.literal(true).optional(), ...result }),
+  z.object({ kind: z.literal("page_count"), quote: z.string(), expectedCount: z.number().int().positive(), requireNonempty: z.literal(true).optional(),
+    pageCountConstraint: pageCountConstraintSchema.optional(), scope: requirementScopeSchema.optional(), ...result }),
   z.object({ kind: z.literal("word_range"), quote: z.string(), minWords: z.number().int().positive(), maxWords: z.number().int().positive(), ...result }),
   z.object({ kind: z.literal("media_absence"), quote: z.string(), mediaScope: z.enum(["story_pages", "cover", "all", "character_references"]), ...result })
 ]);
 type Verdict = Pick<z.infer<typeof deliveryCheckSchema>, "status" | "reason">;
+
+/** Count original-target promises against the configured allowance, then the
+ * fixed selected map. Unrelated quantities and legacy contexts remain exact. */
+export function storyPageCountVerdict(expectedCount: number, context: CoverageEvidenceContext): Verdict {
+  const bounds = context.storyPageCountBounds &&
+    (expectedCount === context.requestedStoryPages || expectedCount === context.targetStoryPages)
+    ? context.storyPageCountBounds : { minimumPages: expectedCount, maximumPages: expectedCount };
+  const indexes = [...context.storyPageIndexes].sort((a, b) => a - b);
+  const valid = indexes.length >= bounds.minimumPages && indexes.length <= bounds.maximumPages &&
+    indexes.every((index, offset) => index === offset + 1);
+  const expected = bounds.minimumPages === bounds.maximumPages ? String(bounds.minimumPages) : `${bounds.minimumPages}–${bounds.maximumPages}`;
+  return { status: valid ? "fulfilled" : "missing", reason: `The manuscript has ${indexes.length} story-page records; the configured delivery requires ${expected} uniquely numbered pages from 1. Front matter is excluded.` };
+}
 
 /** Store separate evidence for every atom and recompute it from fresh facts.
  * Never trust a model-supplied/cached subset of obligations to clear its parent. */
@@ -36,16 +52,16 @@ export function assessDeliveryObligation(obligation: DeliveryObligation, context
   if (!context) return { status: "unverified", reason: "Actual story-page facts were not supplied." };
   const indexes = [...context.storyPageIndexes].sort((a, b) => a - b);
   if (obligation.kind === "page_count") {
-    const valid = indexes.length === obligation.expectedCount && indexes.every((index, offset) => index === offset + 1);
-    if (valid && obligation.requireNonempty) {
+    const verdict = pageCountRequirementVerdict(obligation, context);
+    if (verdict.status === "fulfilled" && obligation.requireNonempty) {
       const counts = actualWordCounts(context, indexes);
       if (!counts) return { status: "unverified", reason: "Actual prose word counts were not supplied for every promised story page." };
       const empty = counts.filter(count => count.words === 0);
       return { status: empty.length ? "missing" : "fulfilled", reason: empty.length
         ? `Promised story pages contain no prose: ${empty.map(count => count.index).join(", ")}.`
-        : `All ${obligation.expectedCount} uniquely numbered story pages contain prose. Narrative completeness is assessed separately.` };
+        : `All ${indexes.length} uniquely numbered story pages contain prose. Narrative completeness is assessed separately.` };
     }
-    return { status: valid ? "fulfilled" : "missing", reason: `The manuscript has ${indexes.length} story-page records; ${obligation.expectedCount} uniquely numbered pages from 1 were promised. Front matter is excluded.` };
+    return verdict;
   }
   const counts = actualWordCounts(context, indexes);
   if (!counts)

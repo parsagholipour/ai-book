@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChapterSetup } from "../runtime/jobTypes.js";
-import { shouldIllustratePage } from "@book-maker/core";
+import { shouldIllustratePage, inputWithSelectedPageCount } from "@book-maker/core";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -269,6 +269,27 @@ describe("generateBookDraftThenPolish", () => {
     expect(options.plan.chapters.map(chapter => chapter.targetPages)).toEqual([12, 18]);
   });
 
+  it("uses and checkpoints all 33 selected pages before review for a 30-page request", async () => {
+    const { options, strategy } = pictureBookOptions();
+    const brief = { chapterIndex: 1, title: "Lantern path", summary: "The friends return home.", continuityFocus: [],
+      pages: Array.from({ length: 33 }, (_, i) => ({ pageIndex: i + 1, chapterIndex: 1,
+        purpose: `Discover clue ${i + 1}.`, beat: `Follow clue ${i + 1}.`, requiredContinuity: [], endingPressure: "Continue the search." })) };
+    const setups = [{ chapter: { index: 1, title: brief.title, summary: brief.summary, targetPages: 33, keyBeats: [] }, startPage: 1, endPage: 33, brief }];
+    options.strategy = { ...options.strategy, createChapterBriefs: vi.fn() };
+    mocks.prepareChapterSetups.mockResolvedValue(setups);
+    strategy.generateWholeBookDraft.mockResolvedValue({ pages: Array.from({ length: 33 }, (_, i) => pageDraft(i + 1)) });
+    mocks.effectiveWholeBookDraftContext.mockImplementation((input, plan) => ({ input: inputWithSelectedPageCount(input, 33), plan, chapterSetups: setups }));
+    await generateBookDraftThenPolish(options);
+    expect(strategy.generateWholeBookDraft.mock.calls[0]![0].input).toMatchObject({ targetPages: 33,
+      mediaSettings: { generationPageCount: { requestedPages: 30, selectedPages: 33 } } });
+    expect(mocks.persistAcceptedWholeBookTarget.mock.calls[0]![0]).toMatchObject({ originalTargetPages: 30,
+      input: { targetPages: 33 }, plan: { chapters: [{ targetPages: 33 }] } });
+    expect(mocks.checkpointWholeBookDraftPages.mock.calls[0]![0].pages).toHaveLength(33);
+    expect(mocks.groupReview.mock.calls[0]![0].pages).toHaveLength(33);
+    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(33);
+    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
+  });
+
   it("preserves a concrete failed page and its full frozen neighbors for finalization repair", async () => {
     const { options, strategy } = pictureBookOptions();
     const original = mocks.groupReview.getMockImplementation()!;
@@ -374,7 +395,7 @@ describe("generateBookDraftThenPolish", () => {
       return { data: request.schema.parse({ pages: rows }), text: "", model: "fixture", provider: "fixture" };
     } } as unknown as import("@book-maker/core").TextModelAdapter;
     options.input.prompt = "A lantern story.";
-    mocks.groupReview.mockImplementation((request) => core.reviewPictureBookManuscript({ ...request, textModel }));
+    mocks.groupReview.mockImplementation((request) => core.reviewPictureBookManuscript({ ...request, textModel, continuityReview: false }));
     await generateBookDraftThenPolish(options);
     expect(snapshots).toEqual([Array.from({ length: 30 }, (_, i) => i + 1), [18]]);
     expect(strategy.polishPageDraft).not.toHaveBeenCalled();
@@ -403,7 +424,7 @@ describe("generateBookDraftThenPolish", () => {
       if (!response) throw new Error("Unexpected extra provider call");
       return { data: request.schema.parse(response), text: "", model: "captured", provider: "captured" };
     };
-    mocks.groupReview.mockImplementation(request => core.reviewPictureBookManuscript({ ...request, textModel }));
+    mocks.groupReview.mockImplementation(request => core.reviewPictureBookManuscript({ ...request, textModel, continuityReview: false }));
     await generateBookDraftThenPolish(options);
     expect(calls).toBe(2);
     expect(strategy.polishPageDraft).not.toHaveBeenCalled();

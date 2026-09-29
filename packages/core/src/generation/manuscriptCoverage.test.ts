@@ -27,7 +27,7 @@ it("recognizes differently phrased explanations as promise evidence without rely
 });
 
 it("keeps a genuinely missing promise visible", async () => {
-  const { model } = scriptedDevelopmentModel([{ complete: true, requirements: [] }, { complete: true, requirements: [verdict("promise-1", prose, "missing")] }]);
+  const { model } = scriptedDevelopmentModel([{ complete: true, requirements: [] }, { complete: true, requirements: [{ ...verdict("promise-1", prose, "missing"), scopeAssessment: { supported: true, authority: "promise", quote: "Explain forward secrecy.", explanation: "The promised explanation is absent." } }] }]);
   const result = await reviewManuscriptCoverage({ brief: "", promises: ["Explain forward secrecy."], pages: [{ index: 1, markdown: prose }], textModel: model });
   expect(result.issues[0]?.code).toBe("UNPAID_PROMISE");
 });

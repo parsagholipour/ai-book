@@ -17,17 +17,18 @@ import { prisma } from "../packages/db/src/index.ts";
 import { createProjectSchema } from "../packages/core/src/schemas/book.ts";
 import { loadConfig } from "../packages/core/src/config.ts";
 import { libraryCharacterObjectKey } from "../packages/core/src/generation/libraryCharacters.ts";
+import { pageCountAllowance } from "../packages/core/src/generation/pageCountAllowance.ts";
 import { compiledGenerationTextModelRouting, resolveGenerationTextModelRouting } from "../packages/core/src/adapters/generationTextModelRouting.ts";
 import { generationTextModelOptions } from "../packages/core/src/adapters/factory.ts";
 import { bookQueue, dispatchGenerationJob, enqueueGenerationJob, redisConnection } from "../apps/api/src/queue.ts";
 import { listRunLogs, objectStore, readRunLog } from "../packages/storage/src/index.ts";
-import { capturePublishedArtifacts, classifyGenerationCompletion, prepareStorybookIllustrations, sha256, summarizeAcceptance } from "./generation-acceptance.mjs";
+import { capturePublishedArtifacts, classifyGenerationCompletion, expectedStoryIllustrationIndexes, prepareStorybookIllustrations, sha256, summarizeAcceptance } from "./generation-acceptance.mjs";
 import { GENERATION_WATCHDOG_MS, nextBenchmarkRound, parseBenchmarkOptions, summarizeBenchmarkMatrix } from "./generation-performance.mjs";
 
 type Input = ReturnType<typeof createProjectSchema.parse>;
 type Character = { id: string; name: string; portraitFile: string };
 type Benchmark = { rounds: number; maxElapsedMs: Record<Run["tier"], number>; targetKind: "experimental"; profile?: "text-only-30" };
-type PdfLayoutPolicy = { mode: "one-physical-page-per-story"; expectedStoryPages: number };
+type PdfLayoutPolicy = { mode: "one-physical-page-per-story"; expectedStoryPages: number; pageCountBounds?: ReturnType<typeof pageCountAllowance> };
 type Run = {
   round: number; tier: "fast" | "balanced" | "premium"; projectId: string; input: Input;
   state: "prepared" | "running" | "published" | "failed";
@@ -36,7 +37,7 @@ type Run = {
   acceptancePassed?: boolean;
 };
 type Manifest = {
-  version: 1 | 2 | 3 | 4; matrixId: string; preparedAt: string; baseline: string; userId: string;
+  version: 1 | 2 | 3 | 4 | 5; matrixId: string; preparedAt: string; baseline: string; userId: string;
   characters: Character[]; portraitChecks: unknown[]; runs: Run[];
   benchmark?: Benchmark;
   illustrationPolicy?: ReturnType<typeof prepareStorybookIllustrations>["policy"] & { inputFingerprint: string };
@@ -136,7 +137,8 @@ async function prepare() {
   const owner = await prisma.project.findUniqueOrThrow({ where: { id: source.projectId }, select: { userId: true } });
   const baselineInput = createProjectSchema.parse({ ...record(source.input), title: "The Lantern Path" });
   if (baselineInput.category !== "KIDS" || baselineInput.targetPages !== 30 || !baselineInput.mediaSettings.fullIllustrations || !baselineInput.mediaSettings.finalReview) throw new Error("Baseline must be an illustrated 30-page KIDS book with final review");
-  const variant = prepareStorybookIllustrations(baselineInput, process.argv.includes("--illustration-cadence") ? value("--illustration-cadence") : "baseline");
+  const pageCountBounds = pageCountAllowance(baselineInput.targetPages);
+  const variant = prepareStorybookIllustrations(baselineInput, process.argv.includes("--illustration-cadence") ? value("--illustration-cadence") : "baseline", pageCountBounds);
   const input = createProjectSchema.parse(variant.input);
   if (benchmark.profile === "text-only-30" && variant.policy.cadence !== "none") throw new Error("The text-only-30 benchmark profile requires --illustration-cadence none");
   const characters = record(input.mediaSettings.mobile).characters as Character[] | undefined;
@@ -149,8 +151,8 @@ async function prepare() {
     }) });
   }
   const illustrationPolicy = { ...variant.policy, inputFingerprint: sha256(JSON.stringify(runs.map((run) => run.input))) };
-  const pdfLayoutPolicy: PdfLayoutPolicy = { mode: "one-physical-page-per-story", expectedStoryPages: input.targetPages };
-  const manifest: Manifest = { version: 4, matrixId: randomUUID(), preparedAt: new Date().toISOString(), baseline, userId: owner.userId, characters, portraitChecks, runs, benchmark, illustrationPolicy, pdfLayoutPolicy };
+  const pdfLayoutPolicy: PdfLayoutPolicy = { mode: "one-physical-page-per-story", expectedStoryPages: input.targetPages, pageCountBounds };
+  const manifest: Manifest = { version: 5, matrixId: randomUUID(), preparedAt: new Date().toISOString(), baseline, userId: owner.userId, characters, portraitChecks, runs, benchmark, illustrationPolicy, pdfLayoutPolicy };
   save(manifestPath, manifest);
   log({ prepared: runs.length, output: dir, portraitChecks, illustrationPolicy, pdfLayoutPolicy });
 }
@@ -212,7 +214,9 @@ async function captureRun(manifest: Manifest, run: Run) {
   let artifacts: unknown[] = [];
   if (project && classifyGenerationCompletion(project, jobs).state === "published") {
     try { artifacts = await capturePublishedArtifacts({ project, pages, qualityReport: jobs.findLast((job) => job.type === "COMPILE_EXPORT")?.qualityReport,
-      expectedIllustrationPageIndexes: manifest.illustrationPolicy?.expectedPageIndexes, pdfLayoutPolicy: manifest.pdfLayoutPolicy,
+      expectedIllustrationPageIndexes: manifest.pdfLayoutPolicy?.pageCountBounds && manifest.illustrationPolicy
+        ? expectedStoryIllustrationIndexes(manifest.illustrationPolicy.cadence, project.targetPages) : manifest.illustrationPolicy?.expectedPageIndexes,
+      pdfLayoutPolicy: manifest.pdfLayoutPolicy,
       outputDir, getObject: (key: string) => objectStore().get(key) }); }
     catch (error) { captureErrors.push(`Artifacts: ${errorText(error)}`); }
   }
@@ -242,7 +246,8 @@ async function checkFrozenInputs(manifest: Manifest) {
 
 function checkPreparedInputs(manifest: Manifest) {
   if (manifest.version < 3) return;
-  if (manifest.version >= 4 && (manifest.pdfLayoutPolicy?.mode !== "one-physical-page-per-story" || manifest.pdfLayoutPolicy.expectedStoryPages !== 30)) throw new Error("Prepared storybook requires 30 distinct physical story pages");
+  if (manifest.version >= 4 && (manifest.pdfLayoutPolicy?.mode !== "one-physical-page-per-story" || manifest.pdfLayoutPolicy.expectedStoryPages !== 30)) throw new Error("Prepared storybook requires a 30-page story target and distinct physical story pages");
+  if (manifest.version >= 5 && JSON.stringify(manifest.pdfLayoutPolicy?.pageCountBounds) !== JSON.stringify(pageCountAllowance(30))) throw new Error("Prepared storybook allowance differs from the configured 30-page minimum and maximum");
   const policy = manifest.illustrationPolicy;
   if (!policy || policy.inputFingerprint !== sha256(JSON.stringify(manifest.runs.map((run) => run.input)))) throw new Error("Prepared storybook input changed; use a fresh manifest");
   for (const run of manifest.runs) {

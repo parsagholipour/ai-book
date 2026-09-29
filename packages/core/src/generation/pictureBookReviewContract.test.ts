@@ -3,10 +3,21 @@ import { createProjectSchema } from "../schemas/book.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import { scriptedDevelopmentModel } from "./testing/bookDevelopmentFixtures.js";
 import { reviewPictureBookManuscript, PictureBookReviewIncompleteError } from "./pictureBookReview.js";
+import { inputWithSelectedPageCount } from "./pageCountAllowance.js";
 
 const input = createProjectSchema.parse({ prompt: "Rabbit found the missing lantern.", category: "KIDS", targetPages: 1 });
 const pages = [{ index: 1, title: "The Light", markdown: "Rabbit found the missing lantern.", summary: "Rabbit finds it." }];
-const options = { input, pages, plan: makeFallbackPlan(input), chapterBriefs: [] };
+const options = { input, pages, plan: makeFallbackPlan(input), chapterBriefs: [], continuityReview: false };
+
+it("reviews every page when a forty-page request uses its full allowance", async () => {
+  const selected = inputWithSelectedPageCount({ ...input, targetPages: 40 }, 44);
+  const manuscript = Array.from({ length: 44 }, (_, i) => ({ ...pages[0]!, index: i + 1 }));
+  const { model, calls } = scriptedDevelopmentModel([{ findings: [], pages: manuscript.map(page => ({ pageIndex: page.index, score: 95 })) }]);
+  const reviewed = await reviewPictureBookManuscript({ ...options, input: selected, pages: manuscript,
+    textModel: model, checks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false } });
+  expect(reviewed).toHaveLength(44);
+  expect(calls).toHaveLength(1);
+});
 
 it.each([[true, false], [false, true], [false, false], [true, true]])(
   "requests only enabled auxiliary fields (story %s, style %s), storing disabled checks as null", async (story, style) => {

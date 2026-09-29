@@ -3,8 +3,8 @@ import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import type { PriorPageContext } from "./pagesShared.js";
 import type { PictureBookReviewChecks } from "./pictureBookReviewValidation.js";
 
-/** v13 diagnoses scenes before page verdicts, with one evidence standard and repair history. */
-export const PICTURE_BOOK_REVIEW_CONTRACT = 13;
+/** v25 preserves validated auxiliary fields and recovers only bounded repair metadata. */
+export const PICTURE_BOOK_REVIEW_CONTRACT = 25;
 
 export function pictureBookReviewChapters(plan: BookPlan) {
   let startPageIndex = 1;
@@ -25,9 +25,10 @@ function stable(value: unknown): unknown {
 /** Summaries/briefs are no longer reviewer inputs. Every actual prose/context dependency is bound. */
 export function pictureBookReviewFingerprint(options: {
   input: CreateProjectInput; plan: BookPlan; pages: readonly PriorPageContext[]; checks: PictureBookReviewChecks;
+  continuityReview?: boolean;
 }): string {
   return createHash("sha256").update(JSON.stringify(stable({ contract: PICTURE_BOOK_REVIEW_CONTRACT,
-    input: options.input, plan: options.plan, checks: options.checks,
+    input: options.input, plan: options.plan, checks: options.checks, continuityReview: options.continuityReview !== false,
     pages: options.pages.map(({ index, title, markdown }) => ({ index, title, markdown }))
   }))).digest("hex");
 }

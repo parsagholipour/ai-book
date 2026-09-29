@@ -9,6 +9,13 @@ import {
 } from "./qualityGates.js";
 
 describe("qualityFeatureEnabled", () => {
+  it("skips Quick Draft plan review by default while retaining manuscript review", () => {
+    expect(qualityFeatureEnabled(undefined, "planCritic", "fast")).toBe(false);
+    expect(qualityFeatureEnabled(undefined, "finalBookQa", "fast")).toBe(true);
+    for (const tier of ["balanced", "premium", "ultra"] as const) {
+      expect(qualityFeatureEnabled(undefined, "planCritic", tier)).toBe(true);
+    }
+  });
   it("enables chapter semantic acceptance by default and supports per-tier opt-out and opt-in", () => {
     for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
       expect(qualityFeatureEnabled(undefined, "chapterEditAcceptance", tier)).toBe(true);

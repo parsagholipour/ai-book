@@ -1,5 +1,5 @@
 import { bindTextModelCall, MAX_TEXT_PROVIDER_ATTEMPTS, repairPictureBookManuscript,
-  pictureBookRepairPageScopes, PictureBookRepairScopeError,
+  pictureBookRepairPageScopes, PictureBookRepairScopeError, unattemptedPictureBookLocalRequirements,
   type PictureBookRepairFeedback, type TextAttemptBudget } from "@book-maker/core";
 import { RepairRejectedError } from "./compileRepairOutcome.js";
 
@@ -14,14 +14,28 @@ export async function checkedShortBookRepairCandidate(options: Parameters<typeof
   verify: (candidate: Candidate, budget: TextAttemptBudget) => Promise<{
     rejection: RepairRejectedError; failures: PictureBookRepairFeedback["failures"];
   } | undefined>;
+  selectIndependent?: (candidate: Candidate) => Candidate | undefined;
 }): Promise<Candidate> {
-  const { assertActive, check, verify, ...repair } = options;
+  const { assertActive, check, verify, selectIndependent, ...repair } = options;
   const textModel = (await bindTextModelCall(options.textModel, "revise-page")).adapter;
   const budget: TextAttemptBudget = { limit: MAX_TEXT_PROVIDER_ATTEMPTS, used: 0, outputWidened: false };
   const reviewBudget: TextAttemptBudget = { limit: MAX_TEXT_PROVIDER_ATTEMPTS, used: 0, outputWidened: false };
   const originalTargets = new Set(pictureBookRepairPageScopes(options).map(scope => scope.pageIndex));
   let feedback: PictureBookRepairFeedback | undefined;
-  let previous: { pages: Candidate["pages"]; rejection: RepairRejectedError } | undefined;
+  let previous: { candidate: Candidate; rejection: RepairRejectedError; semantic: boolean } | undefined;
+  const finish = async (candidate: Candidate, rejection: RepairRejectedError, semantic: boolean): Promise<Candidate> => {
+    // No new proposal or renewed allowance. Reserve room for editorial AND
+    // independent continuity verification of the exact recombined manuscript.
+    if (!semantic || reviewBudget.limit - reviewBudget.used < 2) throw rejection;
+    const independent = selectIndependent?.(candidate);
+    if (!independent) throw rejection;
+    await assertActive();
+    if ((await check(independent)).length) throw rejection;
+    await assertActive();
+    const result = await verify(independent, reviewBudget);
+    if (result) throw result.rejection;
+    return independent;
+  };
   for (let round = 0; ; round += 1) {
     await assertActive();
     const before = budget.used;
@@ -38,12 +52,13 @@ export async function checkedShortBookRepairCandidate(options: Parameters<typeof
       // Custom/test adapters may not account at the wire. Never grant a free call.
       budget.used = Math.max(budget.used, before + 1);
     }
-    if (!candidate.context.changes.length) return candidate;
+    const unattempted = unattemptedPictureBookLocalRequirements({ ...repair, candidatePages: candidate.pages });
+    if (!candidate.context.changes.length && !unattempted.length) return candidate;
     // An identical rejected manuscript cannot benefit from another paid review.
-    if (previous && candidate.pages.every((page, i) => page.markdown === previous?.pages[i]?.markdown && page.title === previous?.pages[i]?.title))
-      throw previous.rejection;
+    if (previous && candidate.pages.every((page, i) => page.markdown === previous?.candidate.pages[i]?.markdown && page.title === previous?.candidate.pages[i]?.title))
+      return finish(previous.candidate, previous.rejection, previous.semantic);
     await assertActive();
-    let failures = await check(candidate);
+    let failures = [...unattempted, ...await check(candidate)];
     const changed = new Set(candidate.context.changes.map(change => change.pageIndex));
     let semantic = false;
     let rejection: RepairRejectedError;
@@ -71,8 +86,8 @@ export async function checkedShortBookRepairCandidate(options: Parameters<typeof
       semantic = true;
     }
     // A correction must leave room to verify it. Neither allowance is reset.
-    if (round === 1 || budget.used >= budget.limit || reviewBudget.used >= reviewBudget.limit) throw rejection;
-    previous = { pages: candidate.pages, rejection };
+    if (round === 1 || budget.used >= budget.limit || reviewBudget.used >= reviewBudget.limit) return finish(candidate, rejection, semantic);
+    previous = { candidate, rejection, semantic };
     feedback = { ...(semantic ? { phase: "semantic" as const } : {}),
       candidatePages: candidate.pages.filter(page => changed.has(page.index)).map(({ index, markdown, title }) => ({ index, markdown, title })), failures };
   }

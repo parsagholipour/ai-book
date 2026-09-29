@@ -1,0 +1,546 @@
+{
+  "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Write 30–33 story pages, never fewer than 30. Extra pages are optional and must add meaningful progression. All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.",
+  "inventory": {
+    "brief": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path. Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles. Rabbit is playful and hasty; Wise Turtle is slow and steady. Keep both active across the story, with meaningful choices and growth for each. A storm scatters the lanterns marking the woodland path to a night picnic. Rabbit rushes to fix everything alone and makes the path more confusing. Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise. Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare. Build a clear beginning, escalating middle, turning point and satisfying ending. Let Rabbit's energy and Wise Turtle's patience both solve part of the problem. Keep stakes gentle and child appropriate. Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page. Avoid repeated summaries, generic moralizing and extra named main characters. English. Write 30–33 story pages, never fewer than 30. Extra pages are optional and must add meaningful progression. All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.",
+    "status": "available",
+    "version": 1,
+    "complete": true,
+    "requirements": [
+      {
+        "kind": "title",
+        "text": "Title: The Lantern Path",
+        "quote": "The Lantern Path",
+        "scope": {
+          "quote": "called The Lantern Path",
+          "extent": "whole_book"
+        },
+        "expectedTitle": "The Lantern Path"
+      },
+      {
+        "kind": "page_count",
+        "text": "30–33 story pages, at least 30",
+        "quote": "Write 30–33 story pages, never fewer than 30.",
+        "scope": {
+          "quote": "Write 30–33 story pages, never fewer than 30.",
+          "extent": "whole_book"
+        },
+        "expectedCount": 30
+      },
+      {
+        "kind": "character",
+        "text": "Use Rabbit as a central character",
+        "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+        "scope": {
+          "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Use Wise Turtle as a central character",
+        "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+        "scope": {
+          "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Respect Rabbit’s saved character profile",
+        "quote": "respecting their saved character profiles",
+        "scope": {
+          "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Respect Wise Turtle’s saved character profile",
+        "quote": "respecting their saved character profiles",
+        "scope": {
+          "quote": "Use the selected saved characters Rabbit and Wise Turtle as the two central characters, respecting their saved character profiles.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Rabbit is playful",
+        "quote": "Rabbit is playful and hasty",
+        "scope": {
+          "quote": "Rabbit is playful and hasty; Wise Turtle is slow and steady.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Rabbit is hasty",
+        "quote": "Rabbit is playful and hasty",
+        "scope": {
+          "quote": "Rabbit is playful and hasty; Wise Turtle is slow and steady.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Wise Turtle is slow",
+        "quote": "Wise Turtle is slow and steady",
+        "scope": {
+          "quote": "Rabbit is playful and hasty; Wise Turtle is slow and steady.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Wise Turtle is steady",
+        "quote": "Wise Turtle is slow and steady",
+        "scope": {
+          "quote": "Rabbit is playful and hasty; Wise Turtle is slow and steady.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Keep Rabbit active across the story",
+        "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+        "scope": {
+          "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "character",
+        "text": "Keep Wise Turtle active across the story",
+        "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+        "scope": {
+          "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Give Rabbit meaningful choices",
+        "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+        "scope": {
+          "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Give Wise Turtle meaningful choices",
+        "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+        "scope": {
+          "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Show Rabbit’s growth",
+        "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+        "scope": {
+          "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Show Wise Turtle’s growth",
+        "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+        "scope": {
+          "quote": "Keep both active across the story, with meaningful choices and growth for each.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "A storm scatters the path lanterns",
+        "quote": "A storm scatters the lanterns marking the woodland path to a night picnic.",
+        "scope": {
+          "quote": "A storm scatters the lanterns marking the woodland path to a night picnic.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "The lanterns mark a woodland path to a night picnic",
+        "quote": "A storm scatters the lanterns marking the woodland path to a night picnic.",
+        "scope": {
+          "quote": "A storm scatters the lanterns marking the woodland path to a night picnic.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Rabbit rushes to fix everything alone",
+        "quote": "Rabbit rushes to fix everything alone and makes the path more confusing.",
+        "scope": {
+          "quote": "Rabbit rushes to fix everything alone and makes the path more confusing.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Rabbit’s solo effort makes the path more confusing",
+        "quote": "Rabbit rushes to fix everything alone and makes the path more confusing.",
+        "scope": {
+          "quote": "Rabbit rushes to fix everything alone and makes the path more confusing.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Wise Turtle notices a pattern in the lanterns’ locations",
+        "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+        "scope": {
+          "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Together follow clues",
+        "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+        "scope": {
+          "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Together return the lanterns",
+        "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+        "scope": {
+          "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Help neighbors find the picnic before moonrise",
+        "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+        "scope": {
+          "quote": "Wise Turtle notices a pattern in where the lanterns blew; together they follow clues, return the lanterns, and help their neighbors find the picnic before moonrise.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Use a fresh plot, not a race or retelling",
+        "quote": "Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare.",
+        "scope": {
+          "quote": "Give this a fresh plot rather than a race or a retelling of The Tortoise and the Hare.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Build a clear beginning",
+        "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+        "scope": {
+          "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Build an escalating middle",
+        "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+        "scope": {
+          "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Include a turning point",
+        "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+        "scope": {
+          "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Give the story a satisfying ending",
+        "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+        "scope": {
+          "quote": "Build a clear beginning, escalating middle, turning point and satisfying ending.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Rabbit’s energy helps solve part of the problem",
+        "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+        "scope": {
+          "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Wise Turtle’s patience helps solve part of the problem",
+        "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+        "scope": {
+          "quote": "Let Rabbit's energy and Wise Turtle's patience both solve part of the problem.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Keep stakes gentle and child appropriate",
+        "quote": "Keep stakes gentle and child appropriate.",
+        "scope": {
+          "quote": "Keep stakes gentle and child appropriate.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Write for children ages 6–8",
+        "quote": "for children ages 6–8",
+        "scope": {
+          "quote": "Write an original 30-page storybook for children ages 6–8, called The Lantern Path.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Each page is a distinct story scene",
+        "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+        "scope": {
+          "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+          "extent": "each_page"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Each page has concise read-aloud prose",
+        "quote": "concise read-aloud prose",
+        "scope": {
+          "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+          "extent": "each_page"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Each page has natural dialogue",
+        "quote": "natural dialogue",
+        "scope": {
+          "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+          "extent": "each_page"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Each page has concrete sensory details",
+        "quote": "concrete sensory details",
+        "scope": {
+          "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+          "extent": "each_page"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Each page gives a reason to turn the page",
+        "quote": "a reason to turn the page",
+        "scope": {
+          "quote": "Make each page a distinct story scene with concise read-aloud prose, natural dialogue, concrete sensory details and a reason to turn the page.",
+          "extent": "each_page"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Avoid repeated summaries",
+        "quote": "Avoid repeated summaries",
+        "scope": {
+          "quote": "Avoid repeated summaries, generic moralizing and extra named main characters.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Avoid generic moralizing",
+        "quote": "generic moralizing",
+        "scope": {
+          "quote": "Avoid repeated summaries, generic moralizing and extra named main characters.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "prohibition",
+        "text": "Avoid extra named main characters",
+        "quote": "extra named main characters",
+        "scope": {
+          "quote": "Avoid repeated summaries, generic moralizing and extra named main characters.",
+          "extent": "whole_book"
+        },
+        "prohibitionScope": "named_main_characters"
+      },
+      {
+        "kind": "content",
+        "text": "Write in English",
+        "quote": "English.",
+        "scope": {
+          "quote": "English.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Extra pages are optional",
+        "quote": "Extra pages are optional",
+        "scope": {
+          "quote": "Extra pages are optional and must add meaningful progression.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "content",
+        "text": "Extra pages must add meaningful progression",
+        "quote": "Extra pages are optional and must add meaningful progression.",
+        "scope": {
+          "quote": "Extra pages are optional and must add meaningful progression.",
+          "extent": "whole_book"
+        }
+      },
+      {
+        "kind": "media_absence",
+        "text": "Story pages are text-only",
+        "quote": "All story pages are text-only.",
+        "scope": {
+          "quote": "All story pages are text-only.",
+          "extent": "each_page"
+        },
+        "mediaScope": "story_pages"
+      },
+      {
+        "kind": "media_absence",
+        "text": "No interior illustrations",
+        "quote": "Do not create interior illustrations",
+        "scope": {
+          "quote": "Do not create interior illustrations, a cover image, or character reference images.",
+          "extent": "specified"
+        },
+        "mediaScope": "story_pages"
+      },
+      {
+        "kind": "media_absence",
+        "text": "No cover image",
+        "quote": "a cover image",
+        "scope": {
+          "quote": "Do not create interior illustrations, a cover image, or character reference images.",
+          "extent": "specified"
+        },
+        "mediaScope": "cover"
+      },
+      {
+        "kind": "media_absence",
+        "text": "No character reference images",
+        "quote": "character reference images",
+        "scope": {
+          "quote": "Do not create interior illustrations, a cover image, or character reference images.",
+          "extent": "specified"
+        },
+        "mediaScope": "character_references"
+      }
+    ]
+  },
+  "pages": [
+    {
+      "index": 2,
+      "title": "Lights in the Rain",
+      "markdown": "Rain rattled the leaves. Wind swept through the trees with a long, shushing roar.\n\nOne by one, three lanterns tore from their hooks. A glow darted toward the ferns. Another flew past the split stump. The third vanished into the dark beyond the path.\n\nRabbit stared through the rain. The path had gone black.",
+      "summary": "A storm tears all three lanterns from their hooks and scatters them into the woods."
+    },
+    {
+      "index": 8,
+      "title": "Rolling Leaves",
+      "markdown": "A gust shook the branch. The fork lantern slipped free, bumped over a root, and rolled through damp leaves toward the split stump.\n\nRabbit turned down the wrong trail, searching for the glimmer. Wise Turtle watched the lantern vanish from sight.\n\nThe fork stood dark again. Rainwater trickled along the path.",
+      "summary": "The wrong-branch lantern falls and rolls toward the split stump while Rabbit searches the wrong trail."
+    }
+  ],
+  "findings": [
+    {
+      "domain": "prose",
+      "basis": "missing_requirement",
+      "requirementQuote": "natural dialogue",
+      "category": "brief",
+      "repairKind": "semantic",
+      "message": "This page has no spoken dialogue, despite the per-page dialogue requirement.",
+      "guidance": "Add a brief, natural spoken line that fits the storm and advances the scene.",
+      "quote": "One by one, three lanterns tore from their hooks.",
+      "relatedEvidence": [],
+      "pageIndex": 2
+    },
+    {
+      "domain": "prose",
+      "basis": "missing_requirement",
+      "requirementQuote": "natural dialogue",
+      "category": "brief",
+      "repairKind": "semantic",
+      "message": "This page has no spoken dialogue, despite the per-page dialogue requirement.",
+      "guidance": "Add a brief spoken line that fits the lantern’s loss and the darkened fork.",
+      "quote": "The fork stood dark again. Rainwater trickled along the path.",
+      "relatedEvidence": [],
+      "pageIndex": 8
+    }
+  ],
+  "rows": [
+    {
+      "pageIndex": 2,
+      "score": 82,
+      "requirementChecks": [
+        null,
+        "1150e17969a1:3",
+        null,
+        "1150e17969a1:0",
+        "1150e17969a1:9"
+      ],
+      "storyExtract": "reuse",
+      "styleAudit": "clean",
+      "requirementAssessments": [
+        {
+          "findingId": "finding-7f8cbf15908550053ec95f86",
+          "resolved": false,
+          "noNewRegressions": true,
+          "reason": "The revised page still contains no spoken dialogue; the storm description remains narration only.",
+          "evidence": [
+            {
+              "pageIndex": 2,
+              "quote": "One by one, three lanterns tore from their hooks."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageIndex": 8,
+      "score": 82,
+      "requirementChecks": [
+        null,
+        "4ce253280d8f:1",
+        null,
+        "4ce253280d8f:0",
+        "4ce253280d8f:6"
+      ],
+      "storyExtract": "reuse",
+      "styleAudit": "clean",
+      "requirementAssessments": [
+        {
+          "findingId": "finding-5a0685ae99b5cdeeda45ecbe",
+          "resolved": false,
+          "noNewRegressions": true,
+          "reason": "There is still no spoken dialogue on this page; its events and sensory detail are narrated.",
+          "evidence": [
+            {
+              "pageIndex": 8,
+              "quote": "The fork stood dark again. Rainwater trickled along the path."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

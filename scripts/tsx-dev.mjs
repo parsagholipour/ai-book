@@ -37,7 +37,7 @@ function resolvePackageBin(packageName, fallbackRelativeBin) {
 }
 
 const nodemonPath = resolvePackageBin("nodemon", "bin/nodemon.js");
-const tsxPath = resolvePackageBin("tsx", "dist/cli.mjs");
+const entryLoader = join(workspaceRoot, "scripts/tsx-dev-entry.mjs");
 
 const appDir = process.cwd();
 const watchDirs = [
@@ -58,7 +58,9 @@ const nodemonArgs = [
   "--signal",
   "SIGTERM",
   "--exec",
-  `${process.execPath} ${tsxPath} ${entryArg}`
+  "node",
+  entryLoader,
+  resolve(entryArg)
 ];
 
 console.log(

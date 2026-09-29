@@ -4,6 +4,7 @@ import { coverageCitationResolver } from "./manuscriptCoverageCitations.js";
 import { assessDeliveryObligation } from "./manuscriptCoverageDelivery.js";
 import { mediaAbsenceScopes } from "./manuscriptCoverageMedia.js";
 import type { DeliveryObligation } from "./manuscriptCoveragePromises.js";
+import type { PageCountConstraint, RequirementScope } from "../schemas/manuscriptRequirements.js";
 
 const narrativeSchema = z.strictObject({
   status: z.enum(["fulfilled", "missing", "unverified"]), reason: z.string().trim().min(1),
@@ -18,6 +19,7 @@ export const mixedPromiseAssessmentSchema = z.strictObject({
 type Assessment = z.infer<typeof mixedPromiseAssessmentSchema>;
 type Requirement = {
   id: string; source: string; kind: string; quote: string; expectedCount?: number | undefined;
+  pageCountConstraint?: PageCountConstraint | undefined; scope?: RequirementScope | undefined;
   mediaScope?: "story_pages" | "cover" | "all" | "character_references" | undefined;
   sourceQuoteIssue?: string | undefined; deliveryBinding?: unknown;
   mixedPromiseAssessment?: Assessment | undefined;
@@ -39,10 +41,13 @@ function obligations(requirement: Requirement, assessment: Assessment, requireme
         atoms.push({ kind: "media_absence", quote: target.quote, mediaScope });
       }
     } else if (target.kind === "page_count") {
-      const expectedCount = target.expectedCount ?? context?.targetStoryPages;
+      const constraint = target.pageCountConstraint;
+      const expectedCount = target.expectedCount ?? (constraint?.kind === "range" ? constraint.minimum : constraint?.count) ?? context?.targetStoryPages;
+      const source = target.scope?.quote.includes(target.quote) ? target.scope.quote : target.quote;
       if (!expectedCount || !Number.isSafeInteger(expectedCount) || expectedCount < 1 ||
-        (expectedCount !== context?.targetStoryPages && !target.quote.includes(String(expectedCount)))) return undefined;
-      atoms.push({ kind: "page_count", quote: target.quote, expectedCount });
+        (expectedCount !== context?.targetStoryPages && !source.includes(String(expectedCount)))) return undefined;
+      atoms.push({ kind: "page_count", quote: target.quote, expectedCount,
+        ...(constraint ? { pageCountConstraint: constraint } : {}), ...(target.scope ? { scope: target.scope } : {}) });
     } else return undefined;
   }
   return atoms;
@@ -70,6 +75,7 @@ export function mixedPromiseVerdict(requirement: Requirement, requirements: read
 export function assessMixedPromise(options: {
   requirement: Requirement; value: unknown; requirements: readonly Requirement[]; context?: CoverageEvidenceContext | undefined;
   pages: readonly CoveragePage[]; assessmentComplete: boolean;
+  missingScopeConcern?: string | undefined;
 }) {
   if (options.value === undefined || options.requirement.source !== "promise" || options.requirement.kind !== "content") return undefined;
   const parsed = mixedPromiseAssessmentSchema.safeParse(options.value);
@@ -80,6 +86,9 @@ export function assessMixedPromise(options: {
   if (narrative.status === "fulfilled" && (!evidence.length || evidence.length !== narrative.evidence.length)) {
     narrative.status = "unverified";
     narrative.reason = `Unverified narrative assessment: ${narrative.reason} The cited evidence could not be validated.`;
+  } else if (narrative.status === "missing" && options.missingScopeConcern) {
+    narrative.status = "unverified";
+    narrative.reason = `Unverified scope: ${options.missingScopeConcern} Original concern: ${narrative.reason}`;
   } else if (narrative.status === "missing" && !options.assessmentComplete) {
     narrative.status = "unverified";
     narrative.reason = `Unverified narrative concern: ${narrative.reason} The manuscript review was incomplete.`;

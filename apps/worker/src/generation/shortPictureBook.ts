@@ -2,9 +2,9 @@ import { savedPictureBookReviewSchema, shortPictureBookChecks } from "./shortPic
 import { prisma, type Prisma } from "@book-maker/db";
 import { z } from "zod";
 import {
-  hasResearchIntent, isImportedManuscript, pictureBookReviewFingerprint,
+  requestedGenerationPages, hasResearchIntent, isImportedManuscript, pictureBookReviewFingerprint,
   reviewPictureBookManuscript, PictureBookReviewIncompleteError,
-  pictureBookCitationRowsSchema, pictureBookEditorialRowsSchema,
+  pictureBookCitationRowsSchema, pictureBookEditorialRowsSchema, pictureBookMetadataRowsSchema,
   type PictureBookReviewCheckpoint,
   type BookGenerationStrategy, type BookPlan, type ChapterBrief, type CreateProjectInput,
   type PictureBookPageReview, type PictureBookReviewChecks, type PriorPageContext, type TextModelAdapter
@@ -20,7 +20,7 @@ export function usesShortPictureBookReview(options: {
   const { input, pages, strategy } = options;
   return input.category === "KIDS" && input.mediaSettings.finalReview === true && !isImportedManuscript(input.mediaSettings) &&
     (!input.mediaSettings.generationStrategy || input.mediaSettings.generationStrategy === "auto") &&
-    !strategy.researchDepth && !hasResearchIntent(input) && input.targetPages >= 5 && input.targetPages <= 40 &&
+    !strategy.researchDepth && !hasResearchIntent(input) && requestedGenerationPages(input) >= 5 && requestedGenerationPages(input) <= 40 &&
     pages.length === input.targetPages && pages.every((page, position) => page.index === position + 1 && page.markdown.trim().length > 0) &&
     pages.reduce((sum, page) => sum + page.markdown.length, 0) <= 48_000 &&
     pages.reduce((sum, page) => sum + page.markdown.trim().split(/\s+/u).length, 0) <= 6_000;
@@ -28,7 +28,8 @@ export function usesShortPictureBookReview(options: {
 const progressSchema = z.object({
   version: z.literal(2), roundsStarted: z.number().int().min(0).max(2), attemptsUsed: z.number().int().min(0).max(5), outputWidened: z.boolean(),
   validationIssues: z.array(z.object({ pageIndex: z.number().int().positive(), message: z.string() })), protocolIssues: z.array(z.string()),
-  citationRows: pictureBookCitationRowsSchema.default([]), editorialRows: pictureBookEditorialRowsSchema.default([])
+  citationRows: pictureBookCitationRowsSchema.default([]), editorialRows: pictureBookEditorialRowsSchema.default([]),
+  metadataRows: pictureBookMetadataRowsSchema.default([])
 });
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -67,7 +68,7 @@ export async function prepareShortPictureBookReview(options: {
     resume = { ...(progress.success ? progress.data : { version: 2 as const, roundsStarted: 2, attemptsUsed: 5, outputWidened: true,
       validationIssues: [], protocolIssues: ["Stored picture-book review progress is invalid."] }), reviews: valid,
       unresolvedPageIndexes: options.pages.filter((page) => !valid.some((review) => review.pageIndex === page.index)).map((page) => page.index) };
-    if (!resume.unresolvedPageIndexes.length && !resume.protocolIssues.length && !resume.citationRows?.length && !resume.editorialRows?.length) return new Map(valid.map((review) => [review.pageIndex, review]));
+    if (!resume.unresolvedPageIndexes.length && !resume.protocolIssues.length && !resume.citationRows?.length && !resume.editorialRows?.length && !resume.metadataRows?.length) return new Map(valid.map((review) => [review.pageIndex, review]));
   }
   let latest = resume;
   const save = async (checkpoint: PictureBookReviewCheckpoint, deliveryFallback = false) => {
@@ -101,7 +102,7 @@ export async function prepareShortPictureBookReview(options: {
   const checkpoint: PictureBookReviewCheckpoint = { version: 2, reviews, unresolvedPageIndexes: options.pages.filter((page) => !reviews.some((review) => review.pageIndex === page.index && matches(review))).map((page) => page.index),
     validationIssues: latest?.validationIssues ?? [], protocolIssues: latest?.protocolIssues ?? [],
     roundsStarted: latest?.roundsStarted ?? 1, attemptsUsed: latest?.attemptsUsed ?? 1, outputWidened: latest?.outputWidened ?? false,
-    citationRows: latest?.citationRows ?? [], editorialRows: latest?.editorialRows ?? [] };
+    citationRows: latest?.citationRows ?? [], editorialRows: latest?.editorialRows ?? [], metadataRows: latest?.metadataRows ?? [] };
   if (!complete || checkpoint.protocolIssues.length) return deliverIncomplete(checkpoint);
   await save(checkpoint);
   return new Map(reviews.map((review) => [review.pageIndex, review]));

@@ -137,7 +137,8 @@ export async function enrichPageQualityReport(options: {
         textModel: options.textModel,
         pageIndex: options.pageIndex,
         markdown: figureFreeProse(options.draft.markdown),
-        researchNotes: options.researchNotes
+        researchNotes: options.researchNotes,
+        book: { category: options.input.category, prompt: options.input.prompt, premise: options.plan.premise }
       });
       report = withClaimVerification(report, verification);
     } catch (error) {

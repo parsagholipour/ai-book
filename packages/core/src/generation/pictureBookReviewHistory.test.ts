@@ -17,7 +17,7 @@ it("carries verified prior verdicts and exact changed pages into the existing ca
   const original = rows();
   Object.assign(original.pages[1]!, { findings: [finding] });
   const { model } = scriptedDevelopmentModel([original]);
-  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], checks, textModel: model };
+  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], continuityReview: false, checks, textModel: model };
   const previous = await reviewPictureBookManuscript(options);
   const candidate = pages.map(page => page.index === 2 ? { ...page, markdown: "Rabbit lifted the lid and used a twig to raise the lantern." } : page);
   const answer = rows();
@@ -34,7 +34,7 @@ it("carries verified prior verdicts and exact changed pages into the existing ca
 
 it("never reuses a prior clean verdict to suppress a real current defect", async () => {
   const initial = scriptedDevelopmentModel([rows()]);
-  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], checks, textModel: initial.model };
+  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], continuityReview: false, checks, textModel: initial.model };
   const previous = await reviewPictureBookManuscript(options);
   const answer = rows();
   Object.assign(answer.pages[1]!, { findings: [finding] });
@@ -47,7 +47,7 @@ it("never reuses a prior clean verdict to suppress a real current defect", async
 
 it("excludes stale, duplicate and unverified prior verdicts from the clean-page history", async () => {
   const initial = scriptedDevelopmentModel([rows()]);
-  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], checks, textModel: initial.model };
+  const options = { input, plan: makeFallbackPlan(input), pages, chapterBriefs: [], continuityReview: false, checks, textModel: initial.model };
   const previous = await reviewPictureBookManuscript(options);
   previous[0]!.draftMarkdown = "A different manuscript.";
   previous.push(previous[1]!);

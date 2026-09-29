@@ -36,6 +36,7 @@ import type { DirectResumeState } from "./directGenerationResume.js";
 import {
   type BookGenerationStrategy,
   compactPictureBookPlanForBriefs,
+  inputWithSelectedPageCount,
   type BookPlan,
   type CreateProjectInput,
   range,
@@ -519,10 +520,12 @@ export async function generateBookDraftThenPolish(options: {
       : chapterSetupsForPlan(options.plan, options.input.targetPages);
     const chapterBriefs = draftChapterSetups.flatMap((setup) => (setup.brief ? [setup.brief] : []));
     const draftPlan = compactPictureBookPlanForBriefs(options.input, options.plan, chapterBriefs);
+    const draftInput = draftPlan === options.plan ? options.input : inputWithSelectedPageCount(options.input,
+      draftPlan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0));
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy);
     await advanceJobStep(options.generationJobId, "briefs", chapterBriefs.length > 0 ? 30 : 20, "Drafting whole book");
     const draft = await generateWholeBookDraft({
-      input: options.input,
+      input: draftInput,
       plan: draftPlan,
       chapterBriefs: chapterBriefs.length > 0 ? chapterBriefs : undefined,
       researchNotes,
@@ -555,6 +558,7 @@ export async function generateBookDraftThenPolish(options: {
       input: effective.input,
       plan: effective.plan,
       ...(draftPlan !== options.plan ? { chapterAllocationChanged: true } : {}),
+      originalTargetPages: options.input.targetPages,
       draft
     });
     rawPages = draft.pages.map((page) => ({

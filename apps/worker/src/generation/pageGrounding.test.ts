@@ -31,6 +31,26 @@ function fixture(rewrites: string[], approved = true) {
 }
 
 describe("page candidate grounding gate", () => {
+  it("keeps the fiction context through both grounding passes for a researched celebrity romance", async () => {
+    const test = fixture([]);
+    const storyInput = { ...input, category: "CUSTOM" as const,
+      prompt: "Write a fictional romance with Neymar; research his real football career." };
+    const storyPlan = { ...plan, premise: "A fictional romance between Neymar and Camila at Café Maré." };
+    const candidate = page("The reservation sign swayed as Neymar stepped into Café Maré. ‘We came for the window,’ he said.");
+    const check = changedCandidateGrounding({ ...test.options, input: storyInput, plan: storyPlan, pageIndex: 1 });
+    await check(candidate, report(90, { approved: true }), ["Neymar made his Santos debut in 2009."]);
+
+    const book = { category: storyInput.category, prompt: storyInput.prompt, premise: storyPlan.premise };
+    const screen = test.choose.mock.calls[0]![0];
+    expect(JSON.parse(JSON.parse(screen.context).reviewerContext[0].content).book).toEqual(book);
+    const diagnostic = test.generate.mock.calls[0]![0];
+    expect(JSON.parse(diagnostic.messages[1]!.content).book).toEqual(book);
+    for (const instructions of [screen.instructions, diagnostic.messages[0]!.content]) {
+      expect(instructions).toContain("Fictional scenes and dialogue are not factual claims");
+      expect(instructions).toContain("Do not require fiction disclaimers in story prose");
+    }
+  });
+
   it.each(["unavailable", "unverified_no_sources"])("preserves a known grounding failure through %s and persistence", async (status) => {
     const test = fixture([]);
     test.generate.mockRejectedValue(new Error("Verifier offline"));

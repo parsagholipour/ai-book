@@ -1,3 +1,4 @@
+import { MAX_PICTURE_BOOK_PAGES } from "./pageCountAllowance.js";
 import type { PictureBookPageReview } from "./pictureBookReviewValidation.js";
 
 type Finding = NonNullable<PictureBookPageReview["findings"]>[number];
@@ -5,7 +6,7 @@ type Page = { index: number; markdown: string };
 export type PictureBookSceneRepairTarget = { pageIndex: number; pageIndexes: number[] };
 
 export function validSceneRepairPageIndexes(owner: number, indexes: readonly number[], known: ReadonlySet<number>): boolean {
-  return indexes.length >= 2 && indexes.length <= 40 && indexes.includes(owner) &&
+  return indexes.length >= 2 && indexes.length <= MAX_PICTURE_BOOK_PAGES && indexes.includes(owner) &&
     indexes.every((index, i) => known.has(index) && (i === 0 || index === indexes[i - 1]! + 1));
 }
 

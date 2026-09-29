@@ -50,7 +50,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
     mediaSettings: {}
   }),
   nextPlanVersion: mocks.nextPlanVersion,
-  planInputSnapshot: (input: { targetPages: number }) => ({ targetPages: input.targetPages }),
+  planInputSnapshot: (input: { targetPages: number; language: string }) => ({ targetPages: input.targetPages, language: input.language }),
   // The real deep clone, not a stub: the mediaSettings write-back merge is one
   // of the behaviors these tests exist to pin down.
   planMediaSettingsSnapshot: (input: { mediaSettings: unknown }) => JSON.parse(JSON.stringify(input.mediaSettings)),
@@ -237,6 +237,61 @@ describe("revisePlan guards", () => {
 });
 
 describe("revisePlan persistence", () => {
+  it.each([
+    ["No in English", "en"],
+    ["Write it in French", "French"],
+    ["Make Neymar kinder", "pt"]
+  ])("resolves a direct revision's language without a chat classifier: %s", async (message, language) => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({
+      id: "plan-1", inputSnapshot: { ...inputSnapshot, language: "pt" },
+      planningPackage: { title: "Entre o Ruído e o Silêncio", chapters: [] }, messages: [],
+      project: { id: "project-1", currentPlanId: "plan-1", language: "pt", mediaSettings: null }
+    });
+    await revisePlan(reviseJob({ message }));
+    expect(mocks.revisePlan).toHaveBeenCalledWith(expect.objectContaining({ language }));
+    expect(mocks.txPlanVersionCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ inputSnapshot: expect.objectContaining({ language }) })
+    }));
+    expect(mocks.txProjectUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ language })
+    }));
+  });
+
+  it("applies the detected language correction before revising and persists it for generation", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({
+      id: "plan-1",
+      inputSnapshot: { ...inputSnapshot, language: "pt" },
+      planningPackage: { title: "Entre o Ruído e o Silêncio", chapters: [] },
+      messages: [],
+      project: { id: "project-1", currentPlanId: "plan-1", language: "pt", mediaSettings: null }
+    });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      generationJobId: "gj-1",
+      ledgerEntryId: "ledger-1",
+      status: "RUNNING",
+      classifier: { kind: "plan_revision", targetLanguage: "English" },
+      request: "No in English",
+      editInstruction: "No in English"
+    });
+
+    await revisePlan(reviseJob({
+      message: "No in English",
+      editOperationId: "op-1",
+      billingLedgerEntryId: "ledger-1"
+    }));
+
+    expect(mocks.revisePlan).toHaveBeenCalledWith(expect.objectContaining({
+      language: "en",
+      input: expect.objectContaining({ language: "en" })
+    }));
+    expect(mocks.txPlanVersionCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ inputSnapshot: expect.objectContaining({ language: "en" }) })
+    }));
+    expect(mocks.txProjectUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ language: "en" })
+    }));
+  });
+
   it("supersedes the old plan and installs the new one as current", async () => {
     await revisePlan(reviseJob());
 

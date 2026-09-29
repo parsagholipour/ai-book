@@ -169,6 +169,7 @@ bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
   if (project.plan?.isApproved ?? false) return true;
   return switch (project.status) {
     'planning' ||
+    'plan_ready' ||
     'generating' ||
     'editing' ||
     'complete' ||

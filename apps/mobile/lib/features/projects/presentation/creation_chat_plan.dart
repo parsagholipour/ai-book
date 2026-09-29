@@ -12,9 +12,8 @@ class _PlanBubble extends StatefulWidget {
     this.busyAction,
   }) : plan = null;
 
-  const _PlanBubble.snapshot({super.key, required this.plan})
+  const _PlanBubble.snapshot({super.key, required this.plan, this.statusValue})
     : planValue = null,
-      statusValue = null,
       busyAction = null;
 
   final AsyncValue<MobileProjectDetail>? planValue;
@@ -31,15 +30,19 @@ class _PlanBubbleState extends State<_PlanBubble> {
 
   @override
   Widget build(BuildContext context) {
+    final planningTime = formatGenerationDuration(
+      widget.statusValue?.asData?.value.planningDurationMs,
+    );
     final snapshot = widget.plan;
     if (snapshot != null) {
       if (snapshot.isApproved) {
-        return _buildCompactApprovedPlanCard(context, snapshot);
+        return _buildCompactApprovedPlanCard(context, snapshot, planningTime);
       }
       return _buildPlanCard(
         context,
         snapshot,
         label: _planSnapshotLabel(snapshot),
+        planningTime: planningTime,
       );
     }
 
@@ -79,9 +82,9 @@ class _PlanBubbleState extends State<_PlanBubble> {
           );
         }
         if (plan.isApproved) {
-          return _buildCompactApprovedPlanCard(context, plan);
+          return _buildCompactApprovedPlanCard(context, plan, planningTime);
         }
-        return _buildPlanCard(context, plan);
+        return _buildPlanCard(context, plan, planningTime: planningTime);
       },
     );
   }
@@ -150,7 +153,11 @@ class _PlanBubbleState extends State<_PlanBubble> {
     );
   }
 
-  Widget _buildCompactApprovedPlanCard(BuildContext context, MobilePlan plan) {
+  Widget _buildCompactApprovedPlanCard(
+    BuildContext context,
+    MobilePlan plan,
+    String? planningTime,
+  ) {
     final colors = Theme.of(context).colorScheme;
     final chapterLabel = plan.chapters.length == 1
         ? '1 chapter'
@@ -189,6 +196,10 @@ class _PlanBubbleState extends State<_PlanBubble> {
                           style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),
+                        if (planningTime != null) ...[
+                          const SizedBox(height: 4),
+                          Text('Planning took $planningTime'),
+                        ],
                         const SizedBox(height: 6),
                         Wrap(
                           spacing: 8,
@@ -229,6 +240,7 @@ class _PlanBubbleState extends State<_PlanBubble> {
     BuildContext context,
     MobilePlan plan, {
     String label = 'Book plan ready',
+    String? planningTime,
   }) {
     final colors = Theme.of(context).colorScheme;
     final radius = BorderRadius.circular(16);
@@ -270,6 +282,10 @@ class _PlanBubbleState extends State<_PlanBubble> {
                           style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),
+                        if (planningTime != null) ...[
+                          const SizedBox(height: 4),
+                          Text('Planning took $planningTime'),
+                        ],
                       ],
                     ),
                   ),

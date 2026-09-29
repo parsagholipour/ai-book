@@ -68,19 +68,21 @@ describe("explicitLanguageRequest", () => {
 
   it("lets an explicit English request undo a wrong language", () => {
     expect(explicitLanguageRequest("actually write it in English")).toBe("en");
-    expect(targetLanguageGenerationGuidance(explicitLanguageRequest("write it in English"))).toEqual([]);
+    expect(targetLanguageGenerationGuidance(explicitLanguageRequest("write it in English")).join(" ")).toContain("Target language: English");
+    expect(explicitLanguageRequest("No in English")).toBe("en");
+    expect(explicitLanguageRequest("No, in English please")).toBe("en");
   });
 });
 
 describe("prompt language helpers", () => {
-  it("keeps English as the default no-op language", async () => {
+  it("makes English explicit even when it is the default language", async () => {
     await expect(
       detectPromptLanguage(new FakeTextModelAdapter(), "A practical book about community gardens.")
     ).resolves.toBe("en");
 
     expect(normalizeProjectLanguage("English")).toBe("en");
-    expect(targetLanguageGenerationGuidance("en")).toEqual([]);
-    expect(targetLanguagePayload("en")).toBeUndefined();
+    expect(targetLanguageGenerationGuidance("en").join(" ")).toContain("Target language: English");
+    expect(targetLanguagePayload("en")).toEqual({ targetLanguage: "English" });
   });
 
   it("detects and names non-English prompt languages", async () => {

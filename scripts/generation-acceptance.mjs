@@ -19,9 +19,15 @@ export function expectedStoryIllustrationIndexes(cadence, targetPages) {
 }
 
 /** A changed illustration requirement is an explicit new input, never a matched baseline. */
-export function prepareStorybookIllustrations(source, option = "baseline") {
+export function prepareStorybookIllustrations(source, option = "baseline", pageCountBounds) {
   if (!["baseline", "every-page", "every-third-page", "none"].includes(option)) throw new Error(`Unknown --illustration-cadence ${option}`);
   const input = structuredClone(source);
+  if (pageCountBounds) {
+    selectedStorybookLayoutPolicy({ targetPages: input.targetPages }, { expectedStoryPages: input.targetPages, pageCountBounds });
+    // This is an explicit new benchmark variant; retain the original prompt in policy.
+    input.prompt = input.prompt.replace(new RegExp(`\\bExactly ${input.targetPages} story pages\\.`, "gi"), "").trim() +
+      ` Write ${pageCountBounds.minimumPages}–${pageCountBounds.maximumPages} story pages, never fewer than ${pageCountBounds.minimumPages}. Extra pages are optional and must add meaningful progression.`;
+  }
   const originalCadence = input.mediaSettings?.illustrationCadence;
   if (option === "baseline" && !["template-driven", "every-page", "every-third-page", undefined].includes(originalCadence)) throw new Error("Baseline cadence is unsupported for automatic storybook acceptance");
   const cadence = option === "baseline" ? originalCadence === "every-third-page" ? "every-third-page" : "every-page" : option;
@@ -30,16 +36,28 @@ export function prepareStorybookIllustrations(source, option = "baseline") {
   else if (option !== "baseline") input.mediaSettings = { ...input.mediaSettings, fullIllustrations: true, illustrationCadence: cadence };
   if (option === "every-third-page") {
     input.prompt = input.prompt.replace("Make each page a distinct visual scene", "Make each page a distinct story scene") +
-      ` Exactly ${expectedPageIndexes.length} interior illustrations, on story pages ${expectedPageIndexes.join(", ")}. The other ${input.targetPages - expectedPageIndexes.length} story pages contain text without illustrations. Covers and saved character portraits are separate.`;
+      (pageCountBounds ? " Illustrate every third story page (3, 6, 9, and so on through the selected last page). All other story pages contain text without illustrations. Covers and saved character portraits are separate."
+        : ` Exactly ${expectedPageIndexes.length} interior illustrations, on story pages ${expectedPageIndexes.join(", ")}. The other ${input.targetPages - expectedPageIndexes.length} story pages contain text without illustrations. Covers and saved character portraits are separate.`);
   }
   if (option === "none") {
-    input.prompt = input.prompt.replace("30-page illustrated storybook", "30-page storybook")
+    input.prompt = input.prompt.replace(`${input.targetPages}-page illustrated storybook`, `${input.targetPages}-page storybook`)
       .replace("respecting their profiles and portrait references", "respecting their saved character profiles")
       .replace("Make each page a distinct visual scene", "Make each page a distinct story scene") +
-      " Write exactly 30 text-only story pages. Do not create interior illustrations, a cover image, or character reference images.";
+      " All story pages are text-only. Do not create interior illustrations, a cover image, or character reference images.";
   }
   return { input, policy: { option, cadence, expectedPageIndexes, baselinePrompt: source.prompt, preparedPrompt: input.prompt,
     baselineInputHash: sha256(JSON.stringify(source)), changedFromBaseline: JSON.stringify(source) !== JSON.stringify(input) } };
+}
+
+/** Validate the saved selected count against the frozen request. Never infer it
+ * from surviving page rows: a missing mapped page must fail acceptance. */
+export function selectedStorybookLayoutPolicy(project, policy) {
+  if (!policy?.pageCountBounds) return policy;
+  const { minimumPages, maximumPages } = policy.pageCountBounds;
+  const selected = project?.targetPages;
+  if (![minimumPages, maximumPages, selected].every(Number.isSafeInteger) || minimumPages < 1 || maximumPages < minimumPages ||
+      selected < minimumPages || selected > maximumPages) throw new Error(`Selected story-page count ${selected} is outside ${minimumPages}–${maximumPages}`);
+  return { ...policy, expectedStoryPages: selected };
 }
 
 /** Cover/reference assets never fill a story illustration slot. Reject duplicates and extras. */
@@ -155,6 +173,7 @@ export async function verifyArchive(format, bytes) {
 
 /** Downloads exact published keys; never rerenders or repairs to make a test pass. */
 export async function capturePublishedArtifacts({ project, pages, qualityReport, getObject, outputDir, expectedIllustrationPageIndexes, pdfLayoutPolicy, pdfInfo = defaultPdfInfo }) {
+  pdfLayoutPolicy = selectedStorybookLayoutPolicy(project, pdfLayoutPolicy);
   verifyStoryPages(pages, project.targetPages, qualityReport);
   mkdirSync(outputDir, { recursive: true });
   const artifacts = [];
@@ -207,7 +226,11 @@ export function summarizeAcceptance({ project, pages, jobs, images, calls, chara
   const last = compileJobs.at(-1);
   const completion = classifyGenerationCompletion(project, jobs);
   if (completion.state !== "published") issues.push(completion.reason ?? "Publication has not finished");
-  try { verifyStoryPages(pages, 30, last?.qualityReport); } catch (error) { issues.push(error.message); }
+  try {
+    pdfLayoutPolicy = selectedStorybookLayoutPolicy(project, pdfLayoutPolicy);
+    verifyStoryPages(pages, pdfLayoutPolicy?.expectedStoryPages ?? 30, last?.qualityReport);
+    if (pdfLayoutPolicy?.pageCountBounds) expectedIllustrationPageIndexes = expectedStoryIllustrationIndexes(illustrationCadence, pdfLayoutPolicy.expectedStoryPages);
+  } catch (error) { issues.push(error.message); }
   const failed = jobs.filter((job) => FAILURES.has(job.status));
   if (failed.length) issues.push(`${failed.length} failed or canceled jobs; this run required recovery`);
   if (jobs.filter((job) => job.type === "PLAN_BOOK").length !== 1 || jobs.filter((job) => job.type === "GENERATE_BOOK").length !== 1) issues.push("Generation was restarted; run is not an unattended acceptance sample");

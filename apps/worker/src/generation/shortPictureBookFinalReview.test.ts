@@ -82,6 +82,7 @@ it("rejects protocol-incomplete checkpoints and accepts the atomic post-repair s
   expect(readPictureBookReviewSnapshot({ ...snapshot(), protocolIssues: ["Unknown row"] }, { input, plan, pages, checks })).toBeUndefined();
   expect(readPictureBookReviewSnapshot({ ...snapshot(), citationRows: [{ pageIndex: 3 }] }, { input, plan, pages, checks })).toBeUndefined();
   expect(readPictureBookReviewSnapshot({ ...snapshot(), editorialRows: [{ pageIndex: 3 }] }, { input, plan, pages, checks })).toBeUndefined();
+  expect(readPictureBookReviewSnapshot({ ...snapshot(), metadataRows: [{ pageIndex: 3 }] }, { input, plan, pages, checks })).toBeUndefined();
   mocks.find.mockResolvedValue({ payload: { pictureBookReview: { ...snapshot(), fingerprint: "outdated" }, pictureBookFinalReview: snapshot() } });
   expect((await reviewFinalizationManuscript(options())).finalQa.approved).toBe(true);
   expect(mocks.final).not.toHaveBeenCalled();

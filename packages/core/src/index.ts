@@ -1,4 +1,5 @@
 export * from "./concurrency.js";
+export * from "./generation/pageCountAllowance.js";
 export * from "./collections.js";
 export * from "./config.js";
 export * from "./errors.js";
@@ -199,6 +200,8 @@ export { scanSmartUnslopCandidates } from "./generation/smartUnslop.js";
 
 export * from "./adapters/decisionEvaluation.js";
 export { inventoryManuscriptRequirements, manuscriptRequirementInventorySchema, refreshManuscriptCoverageFacts, type ManuscriptRequirementInventory, reviewManuscriptCoverage, manuscriptCoverageIssues, manuscriptCoverageSchema, type ManuscriptCoverage, type ManuscriptCoverageResult, type CoveragePage, type CoverageChapter, type CoverageEvidenceContext } from "./generation/manuscriptCoverage.js";
+export { matchingRequirementInventory } from "./schemas/manuscriptRequirements.js";
+export { preparePictureBookRequirementContract } from "./generation/pictureBookRequirementContract.js";
 export { buildCoverageMediaInventory } from "./generation/manuscriptCoverageMedia.js";
 export { coverageStoryPageWordCounts } from "./generation/manuscriptCoverageDelivery.js";
 
@@ -208,6 +211,7 @@ export { compactPictureBookPlanForBriefs, usesCompactPictureBookPlanning } from 
 export * from "./generation/pictureBookRepair.js";
 export * from "./generation/pictureBookRepairResiduals.js";
 export * from "./generation/pictureBookRequirementTargets.js";
+export { unattemptedPictureBookLocalRequirements } from "./generation/pictureBookUnattemptedRequirements.js";
 export { pictureBookFindingSchema, pictureBookRepairAssessmentSchema, pictureBookPageReview, validatedPictureBookReviewRow } from "./generation/pictureBookReviewValidation.js";
 
 export { sentenceLengthRepairFor, type SentenceLengthRepair } from "./generation/pageSentenceRepair.js";
@@ -215,3 +219,7 @@ export { sentenceLengthRepairFor, type SentenceLengthRepair } from "./generation
 export { runLocalFinalQa, runRequiredFinalQa } from "./generation/pagesFinalLocalQa.js";
 export { groupManuscriptQualityFindings, manuscriptQualityCards } from "./generation/manuscriptQualityFindings.js";
 export { optionalQualityProvenance, pageFindingProvenance, type ManuscriptQualityProvenance } from "./generation/manuscriptQualityProvenance.js";
+
+export { pictureBookRequirementChecksSchema, pictureBookChecklistErrors, pictureBookPageRequirements } from "./generation/pictureBookPreRepairChecklist.js";
+
+export { pictureBookChecklistCounterevidence } from "./generation/pictureBookChecklistCounterevidence.js";

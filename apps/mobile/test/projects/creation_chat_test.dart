@@ -965,9 +965,13 @@ void main() {
 
   testWidgets('building shows the generated plan in-chat', (tester) async {
     final creation = ScriptedCreationRepository();
-    await tester.pumpWidget(
-      app(creation: creation, projects: PlanProjectsRepository()),
+    final projects = PlanProjectsRepository(
+      status: projectStatus(
+        status: 'plan_ready',
+        planningDurationMs: 72 * 1000,
+      ),
     );
+    await tester.pumpWidget(app(creation: creation, projects: projects));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
@@ -990,6 +994,7 @@ void main() {
       findsOneWidget,
     );
     expect(bubbleText(planTitle), findsOneWidget);
+    expect(find.text('Planning took 1m 12s'), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -2403,6 +2408,8 @@ void main() {
         completedPages: 28,
         targetPages: 28,
         imageCount: 1,
+        planningDurationMs: 72 * 1000,
+        bookGenerationDurationMs: 8 * 60 * 1000,
         exports: unlockedExports,
       ),
     );
@@ -2417,6 +2424,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Ready to export'), findsOneWidget);
+    expect(find.text('Planning took 1m 12s'), findsOneWidget);
+    expect(find.text('Book generation took 8m'), findsOneWidget);
     expect(find.text('Open PDF'), findsOneWidget);
     expect(find.text('View progress'), findsOneWidget);
 

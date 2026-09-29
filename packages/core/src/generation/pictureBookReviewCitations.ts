@@ -1,15 +1,33 @@
+import { MAX_PICTURE_BOOK_PAGES } from "./pageCountAllowance.js";
 import { z } from "zod";
 import type { ChatMessage } from "../adapters/types.js";
 import type { PriorPageContext } from "./pagesShared.js";
-import { pictureBookReviewRowSchema } from "./pictureBookReviewValidation.js";
+import { pictureBookFindingSchema, pictureBookReviewRowSchema } from "./pictureBookReviewValidation.js";
+import { pictureBookExactQuote } from "./pictureBookExactQuote.js";
 
-export const pictureBookCitationRowsSchema = z.array(pictureBookReviewRowSchema).max(40);
+export const pictureBookCitationRowsSchema = z.array(pictureBookReviewRowSchema).max(MAX_PICTURE_BOOK_PAGES);
 export type PictureBookCitationRow = z.infer<typeof pictureBookReviewRowSchema>;
 export const pictureBookCitationCorrectionsSchema = z.array(z.strictObject({
   id: z.string(), supportsSameClaim: z.boolean(), quote: z.string().min(12).max(700).nullable()
 })).max(32);
 type Correction = z.infer<typeof pictureBookCitationCorrectionsSchema>[number];
 type Citation = { id: string; pageIndex: number; quote: string; findingPageIndex: number; findingIndex: number; relatedIndex: number | null };
+
+const citationEvidenceSchema = pictureBookFindingSchema.pick({ quote: true, relatedEvidence: true }).extend({
+  relatedEvidence: z.array(pictureBookFindingSchema.shape.relatedEvidence.unwrap().element).max(MAX_PICTURE_BOOK_PAGES).default([])
+}).strip();
+/** Detect unverified evidence even when other fields prevent a correction row
+ * from being parsed. This only retains diagnostic data, never validates scope. */
+export function hasUnverifiedPictureBookCitations(owner: number, findings: readonly unknown[], pages: ReadonlyMap<number, PriorPageContext>): boolean {
+  return findings.some(finding => {
+    const parsed = citationEvidenceSchema.safeParse(finding);
+    if (!parsed.success) return false;
+    return [{ pageIndex: owner, quote: parsed.data.quote }, ...parsed.data.relatedEvidence].some(evidence => {
+      const page = pages.get(evidence.pageIndex);
+      return !page || pictureBookExactQuote(page.markdown, evidence.quote) === undefined;
+    });
+  });
+}
 
 /** Keep the original judgments and assessments. Only bad quotation bytes may change. */
 export function pictureBookCitationRecovery(rows: readonly PictureBookCitationRow[], pages: ReadonlyMap<number, PriorPageContext>) {

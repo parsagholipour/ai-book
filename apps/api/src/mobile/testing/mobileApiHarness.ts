@@ -827,6 +827,7 @@ export function detachedRepairJobRow() {
 
 export function statusRecord(overrides: Record<string, any> = {}) {
   const base = {
+    generationTimings: { planningMs: null, bookMs: null },
     project: {
       id: "project-1",
       title: "Owned Book",
