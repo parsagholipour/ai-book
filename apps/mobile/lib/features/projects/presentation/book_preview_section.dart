@@ -67,13 +67,16 @@ class _GeneratedBookPreviewState extends State<GeneratedBookPreview> {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.xxs),
-          Text(
-            'AI-generated content from your prompt and selected preset.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
+          // An author's own book is their writing, not generated content.
+          if (!project.isAuthorManuscript) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'AI-generated content from your prompt and selected preset.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
             ),
-          ),
+          ],
           if (widget.onReportProject != null)
             Align(
               alignment: AlignmentDirectional.centerStart,

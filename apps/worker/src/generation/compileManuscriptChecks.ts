@@ -10,6 +10,8 @@ export function runCompileManuscriptChecks(options: {
   pages: CompileManuscriptPage[];
   expectedPageCount: number;
   language?: string;
+  /** Imported or Studio-written: content integrity only (`runDeterministicManuscriptChecks`). */
+  authorManuscript: boolean;
 }): ManuscriptQualityIssue[] {
   return runDeterministicManuscriptChecks({
     pages: options.pages.map(({ index, title, markdown, chapter }) => ({
@@ -19,6 +21,7 @@ export function runCompileManuscriptChecks(options: {
       ...(chapter ? { chapterIndex: chapter.index } : {})
     })),
     expectedPageCount: options.expectedPageCount,
-    ...(options.language ? { language: options.language } : {})
+    ...(options.language ? { language: options.language } : {}),
+    ...(options.authorManuscript ? { authorManuscript: true } : {})
   });
 }

@@ -129,5 +129,13 @@ export const JOB_STEP_TEMPLATES: Record<GenerationJobType, readonly JobStepTempl
     { key: "prompt", label: "Prepare portrait" },
     { key: "render", label: "Draw portrait" },
     { key: "store", label: "Save portrait" }
+  ],
+  // One list for every Writing Studio assist kind: `handlers/writingAssist.ts`
+  // advances through exactly these keys and names the kind's own work
+  // ("Drawing the picture", "Drafting the chapter") in the step message.
+  WRITING_ASSIST: [
+    { key: "prepare", label: "Read your manuscript" },
+    { key: "assist", label: "Work on your request" },
+    { key: "save", label: "Save the suggestion" }
   ]
 };

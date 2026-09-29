@@ -154,7 +154,7 @@ export type PageBriefBookScope = OpeningContractSource;
  *
  * The opening *ban* it states beside that (`FIRST_PAGE_IDENTITY_RULE`) stays
  * ungated, and that is the one deliberate asymmetry left here.
- * `isImportedManuscript` protects an author's own text from being rejected and
+ * `isAuthorManuscript` protects an author's own text from being rejected and
  * rewritten, and a brief is a production assignment for prose about to be
  * generated — a repair's replacement page included — so the ban over-applies to
  * an import's page 1 without ever reaching a sentence the author wrote. The two

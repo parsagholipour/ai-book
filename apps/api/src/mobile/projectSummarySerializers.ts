@@ -16,8 +16,10 @@ import {
   currentActionForProject,
   normalizeProjectStatus,
   projectProgressPercent,
-  statusLabel
+  statusLabel,
+  studioDraftStatus
 } from "./projectStatusSerializers.js";
+import { serializeManuscriptSummary } from "./manuscript/manuscriptSerializers.js";
 import {
   type MobileMediaMetadata,
   type MobileProjectDetailDto,
@@ -36,6 +38,7 @@ import { generatedPagePreview, jsonRecord, previewText, stringField } from "./su
 import {
   createProjectSchema,
   isImportedManuscript,
+  isStudioManuscript,
   loadConfig,
   mediaSettingsSchema,
   modelTierSchema
@@ -55,9 +58,17 @@ export async function serializeProjectSummary(
   const mobile = mobileMetadataFromMediaSettings(project.mediaSettings);
   const pageCount = project._count?.pages ?? project.pages?.length ?? 0;
   const imageCount = project._count?.images ?? 0;
-  const progressPercent = projectProgressPercent(project.status, pageCount, project.targetPages);
   const hasExistingPlan = Boolean(project.currentPlanId || project.currentPlan);
   const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
+  const manuscript = serializeManuscriptSummary(project);
+  // A Studio book being written is a DRAFT with no plan, and every generated-book
+  // string for that state ("Ready to create a book plan", 0%) describes a book
+  // nobody is going to plan.
+  const studioDraft =
+    project.status === "DRAFT" && isStudioManuscript(project.mediaSettings)
+      ? studioDraftStatus(manuscript?.wordCount ?? 0, manuscript?.goalWords ?? null)
+      : null;
+  const progressPercent = studioDraft?.progressPercent ?? projectProgressPercent(project.status, pageCount, project.targetPages);
 
   return {
     id: project.id,
@@ -69,15 +80,16 @@ export async function serializeProjectSummary(
     qualityPreset: qualityPresetForProject(project.mediaSettings, mobile?.qualityPreset),
     ...imageSettings,
     status: normalizeProjectStatus(project.status),
-    statusLabel: statusLabel(project.status),
+    statusLabel: studioDraft?.statusLabel ?? statusLabel(project.status),
     progressPercent,
-    currentAction: currentActionForProject(project.status, progressPercent, { hasExistingPlan }),
+    currentAction: studioDraft?.currentAction ?? currentActionForProject(project.status, progressPercent, { hasExistingPlan }),
     promptPreview: previewText(project.prompt),
     targetPages: project.targetPages,
     pageCount,
     imageCount,
     hasPlan: hasExistingPlan,
     source: projectSourceFromMediaSettings(project.mediaSettings),
+    manuscript,
     revisedFrom: revisedFromMediaSettings(project.mediaSettings),
     coverImage: serializeImage(
       project.images?.find((image) => image.type === "COVER") ?? null,
@@ -242,8 +254,14 @@ export function inferBookType(category: string, subcategory: string | null): Mob
  * treats as generated. Core is the leaf of the dependency graph, so this
  * direction is the one it already allows.
  */
-export function projectSourceFromMediaSettings(mediaSettings: unknown): "imported" | "generated" {
-  return isImportedManuscript(mediaSettings) ? "imported" : "generated";
+export function projectSourceFromMediaSettings(mediaSettings: unknown): "imported" | "generated" | "written" {
+  if (isImportedManuscript(mediaSettings)) {
+    return "imported";
+  }
+  // Its own value, deliberately not `isAuthorManuscript`: that predicate is
+  // "imported *or* written", and asking it here would label every Studio book
+  // "imported" in the app.
+  return isStudioManuscript(mediaSettings) ? "written" : "generated";
 }
 
 /**

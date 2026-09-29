@@ -200,6 +200,11 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
                   ChatDrawerFooter(
                     billing: ref.watch(billingProvider),
                     colors: colors,
+                    // A short screen needs every row for the chats; the
+                    // welcome line and the attach sheet still open the Studio.
+                    offerWriteYourOwn:
+                        !_searchOpen &&
+                        MediaQuery.sizeOf(context).height >= 640,
                   ),
               ],
             ),

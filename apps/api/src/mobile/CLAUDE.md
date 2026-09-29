@@ -32,6 +32,24 @@ of mobile responses; the `serialize*` functions in the owning modules and
 spreading a row. Note the leak guard rejects any wire key containing "model", which is why the app
 reads a `qualityPreset` rather than a `modelTier`.
 
+- **An image URL carries its version, because a redrawn cover keeps its path and a replaced
+  picture keeps its row.** Every image URL sent to the app — `serializeImage` (covers, page
+  visuals, character portraits) and the Studio's `cover.imageUrl` (`loadManuscriptCover`) — ends in
+  the `?v=` from `versionedImageAssetUrl` (`support.ts`), a digest of the `ImageAsset` row's id and
+  its stored `path`. The Flutter image cache keys by URL, and so would any HTTP cache under the
+  routes' `private, max-age=300`. Before this, a drawn cover (always `cover.<ext>`) kept the
+  Studio's bare path across every redraw, so the app showed the old picture. A chat picture
+  replacement keeps its row and points it at a new file, so `/assets/:assetId` kept naming the old
+  bytes. The key needs both halves: `generateCover` and every Studio cover change delete and create
+  the COVER row over one file, while replace, undo and redo keep the row and swap `path`. Metadata
+  stays out on purpose, because a move or a keeper-token rebind rewrites it without touching a
+  byte. A writer that rewrites an image's bytes must therefore mint a new row or a new filename:
+  overwriting a file under a row that stays is the one write this version cannot see.
+  (`generateCover` puts the file before it swaps the row, so a swap that fails leaves the old row
+  over new bytes. That window is rare and not closed.) The routes ignore the query and authorize
+  as before, and the app uses the URL exactly as it arrives (`cacheBuster: null`). That is why the
+  Studio's per-session cover epoch is gone.
+
 ## A finished book prices every edit as a proposal first
 
 Nothing is reserved or written until Apply, which is what makes the chat router safe to default
@@ -63,6 +81,7 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
 - [Free presentation edits](#free-presentation-edits)
 - [Characters](#characters)
 - [Voice and audiobook routes](#voice-and-audiobook-routes)
+- [Writing Studio](#writing-studio)
 
 ## Billing surfaces
 
@@ -1278,3 +1297,143 @@ the write binds has to be one all three of them can still find.
   reuses a FAILED row when the voice and `contentRevision` still match — any other change is a
   different audiobook and starts clean. The dedupe key names the run being resumed, because reusing
   the audiobook id alone would match the failed job's row and enqueue nothing at all.
+
+## Writing Studio
+
+Authors write their own books in the app (`manuscript/`, `routes/manuscript.ts`). The Studio edits a
+**working copy** (`Manuscript` / `ManuscriptChapter`); the book people read is still the `Page` rows,
+and only **publish** (`manuscript/manuscriptPublish.ts`) turns one into the other. Spec and wire
+contract: `.scratch/writing-studio/spec.md`.
+
+- **A publish seals every earlier edit, because undo writes text without a revision check.**
+  `undoLastBookEdit` restores a `PageEditSnapshot`'s before-text and redo its after-text onto the page
+  as it stands; neither asks whether the page changed since. After a publish that text is the
+  author's, so a chat Undo of an edit made *before* the publish would overwrite what they just
+  published. The publish transaction stamps `classifier.sealedAt` on every APPLIED operation in one
+  statement, and the single predicates `canUndoBookEdit` / `canRedoBookEdit` refuse a sealed row;
+  `editChangesAvailable` hides "See changes" for sealed structural edits, whose diff reads live pages.
+  `MANUSCRIPT_PUBLISH` itself is not undoable — undo across a publish is the Studio's version history.
+- **A publish reuses rows by position and never shifts an index.** `Page` and `Chapter` both carry a
+  non-deferrable `@@unique([projectId, index])`, so slot *i* is updated in place, the tail is created
+  and the surplus tail deleted — no parking. A changed slot loses everything its old text owned
+  (summary, image prompt and failure, QA verdict, story delta, embeddings, continuity notes, a hero
+  `ImageAsset`'s `pageId`), and a shrinking book degrades `pdfPageMap` to the cover-numbering stub.
+- **A publish stamps no `publicationRevision`, and its compile and cover are rows in its own
+  commit.** A stamped revision makes the compile's publication claim stand down whenever a later job
+  exists, and a first publish always queues a cover. The rows are created with `dispatch:false` and
+  dispatched after commit; the worker's fan-in only compiles when `inputSnapshot.targetPages` ===
+  the page count === `project.targetPages`, every page is COMPLETED and indexed 1..n, and the plan's
+  chapters' `targetPages` match the pages — break one and the book sits in EDITING.
+- **The working copy never overwrites the book blindly: drift is a conflict, not a merge.** Chat
+  edits, Edit Mode, pictures, restructures, continuations and undo all write `Page` rows after a
+  publish. `ManuscriptChapter.publishedPages` records `{pageId, revision}` per chapter; a chapter with
+  no unpublished edits refreshes silently from the book, one with edits gets a conflict the author
+  settles, and a publish that meets unsettled drift under its lock answers `BOOK_CHANGED`.
+- **An author's book refuses every generation route.** After its first publish a Studio book has an
+  APPROVED, current plan like any other, so `POST /plans/:id/approve` would charge a full book and
+  regenerate over the author's pages. Plan create/revise/approve, the operator plan routes and page
+  retry answer 409 `AUTHOR_MANUSCRIPT` for `isAuthorManuscript`, and the chat never reports stage
+  `approved_plan` for one. Imports had the same hole. The chat's own door is `book_replan`, which
+  forks a copy that inherits the book's media settings — the Studio or import record with them — and
+  regenerates it whole: `refuseAuthorBookReplan` (`authorBookReplan.ts`) answers it at the proposal
+  *and* at Apply, because a card quoted before a takeover can still be applied after it.
+  `continue_book` stays open — it exists for imports, and derivation appends its chapters.
+- **An uploaded picture never makes a book "illustrated".** `projectAlreadyIllustrated` decides
+  whether an `add_image` needs a free-tier illustrated-book slot; counting an author's own
+  `upload-…` photo would let one upload unlock unlimited free AI pictures. It skips `upload-` files;
+  AI Studio pictures (`studio-image-…`) still count and claim the slot.
+- **Studio text is screened where it leaves the working copy, in request-sized windows, and never
+  on autosave.** The screen is the app's own `assessContentRestrictions` with the same operator
+  copyright flag — nothing stricter (`manuscript/manuscriptContentScreen.ts`). Its rules are
+  whole-string co-occurrence tests sized for a typed request, and `normalize` reads only 50,000
+  characters, so a 200,000-character chapter screened whole would be refused for "passport" in one
+  scene and "fake" in another, and never read past its first quarter: a chapter is read in
+  overlapping 5,000-character windows (the chat message cap) a half-window apart. Publish screens
+  **only what changed since the last publish** — printed chapters with unpublished edits, and the
+  book-level fields that differ from `settings.published` — **under its lock, on the rows it is
+  about to write** (a pre-read would miss an autosave that lands before the lock), with the flag
+  read before the transaction opens. A refusal is thrown, so nothing is written, charged or spent
+  (the requestId publishes once the text changes), and answers the screen's own 422 plus
+  `chapters: [{chapterId, title}]` and `fields` — which the publish, settings and create routes can
+  only send because their 422 schema, `manuscriptContentRestrictedError`, names them. Settings and
+  creation screen the fields the body carries; the assists screen the typed instruction, picture
+  prompt and notes (the book chat screens its message), never the selection. Autosave is not
+  screened — the working copy is private, and refusing a save loses the author's words. Uploaded
+  pictures are not screened because nothing in the app moderates image bytes. A flag read that
+  fails fails the request, as on every screening route. An import's text is still unscreened at
+  import, and stays so in the Studio until a chapter is edited.
+- **A Studio picture is reclaimed only when no row of its book names it and neither the picture nor
+  the working copy has changed for 30 days.** Before this, only deleting the book removed an
+  `upload-…`, `cover-upload-…` or `studio-image-…` object; every photo an author tried and took out
+  stayed forever. `studioImageSweep.ts` runs in the API beside the chat-attachment retention sweep —
+  it is the same kind of work (user-owned objects, age-based, no job), the API owns the upload
+  routes, and nearly every row it reads is a Studio or chat table — hourly, bounded (50 books, 500
+  deletes, 100 per book, 60 s), with an in-memory cursor. Only those three prefixes are ever
+  candidates (`isSweptStudioImage`); a drawn `cover.<ext>`, chat and generation pictures and sheets
+  are not, whatever the rows say. **The server cannot see what a device holds, so the grace is two
+  rules.** The app keeps every unsaved chapter in a device buffer with **no expiry**, replayed only
+  when that chapter next opens; the editor's undo stack, the clipboard and a second device's stale
+  buffer can put back a picture the server copy dropped, and a removal that small writes no
+  version. So an object must be older than 30 days *and* the book's `Manuscript`,
+  `ManuscriptChapter` and `ManuscriptAssist` clocks older than 30 days. No number is a proof; 30
+  and not 14 because a kept orphan costs a fraction of a cent a month and a wrong delete is a hole
+  in the author's book with nothing on the server to restore it from. **A reference is an exact,
+  URL-decoded filename in `images/<thisProject>/…`** read from every row that can put a picture back
+  (`studioImageReferences.ts`): chapters (soft-deleted ones, conflict copies and notes included),
+  versions, pages, live and archived undo snapshots, `ImageAsset` path and metadata, edit
+  classifiers, moderation snapshots, and assists — READY always, APPLIED for 30 days after it was
+  applied, QUEUED/RUNNING by their `studio-image-<id>` stem; DISMISSED and FAILED name nothing.
+  Another project's URL never counts, because no exporter prints it. **The decision is a re-read,
+  never an exception**: any failed read keeps that book whole for the next pass, and right before
+  deleting it HEADs each candidate, re-reads the rows narrowed to the candidates' names, and re-reads
+  the quiet stamp *last*, so a save that landed mid-pass keeps everything. What remains is a device
+  replaying a reference after 30 quiet days, and a non-Studio write in the milliseconds between the
+  last stamp read and the delete — every server-side copy (undo, redo, publish, restore) copies from
+  a row the pass already counted. `STUDIO_IMAGE_SWEEP` is `delete` in production and `dry-run`
+  (logs `studio_images.would_reclaim`) everywhere else, because the dev stacks share one bucket.
+- **A takeover writes its provenance into the plan's snapshot too, because the worker compiles
+  from the snapshot and the API from the row.** "Continue in Writing Studio"
+  (`manuscript/manuscriptTakeover.ts`, `POST /manuscript/takeover`, design in
+  `.scratch/writing-studio/takeover.md`) turns a finished generated book into what a Studio book is
+  after its first publish. `compileExport` builds its input from the current plan's `inputSnapshot`
+  (`inputForPlanVersion`), and every API reader — the inline export rebuild, the plan guards, the
+  chat stage — reads `Project.mediaSettings`; a record on only one of them compiles one book by the
+  generated rules while the API treats it as the author's. So `mobile.studio` (`origin: "takeover"`,
+  `takeoverRequestId`, layout, kind, art style) is written to both, and the snapshot's `targetPages`
+  becomes the real page count, because the author compile's `PAGE_COUNT_MISMATCH` is an error
+  against it. Every other snapshot key is kept. `origin` is read with `.catch(undefined)`: a value a
+  build does not know must never fail the record, which would silently turn the book back into a
+  generated one. The layout is `picture` exactly when the book prints one sheet a page today
+  (`shortKidsStoryPageLayout` over the snapshot and the pages), so the author rule prints the same.
+- **A takeover rewrites each page into what the generated compile printed, hero first, and
+  detaches every hero in the same commit that seals earlier edits.** The author compile never
+  unwraps a model's whole-page fence, keeps a leading `## Page 3` or page-title heading, and prints
+  no hero — a Studio picture is a line in the text. `takenOverPageText` (core
+  `authoring/takeoverText.ts`) runs the generated `sanitizePageMarkdown` over the page (the chapter
+  it opens named, so a repeat of its heading goes too) and puts the hero — the first attached
+  non-cover row, the one the compile printed — first as `![<localized Illustration>](/assets/images/…)`;
+  every attached non-cover row then gets `pageId = null`, so the picture prints once, from its line,
+  and the first Update has no hero left to detach. Nothing re-attaches one: no generation route runs
+  on an author's book, the finalization re-illustration needs a final review author books never
+  get, and `generateImage`'s keeper token stands down on the changed text. Undo restores snapshots
+  with no revision check, so an undo of a pre-takeover edit would drop a line whose hero is gone —
+  the takeover runs publish's `sealEarlierOperations` in the same transaction, and records itself as
+  a free `MANUSCRIPT_PUBLISH` (`classifier.takeover`) with no `publicationRevision`.
+- **A taken-over book is cut into the chapters its reader saw, and the published Contents is the
+  only record of them.** Every generated book has `Chapter` rows, but a per-page one was *printed*
+  in the model's `chapterize-export` partition, which no column stores; the working copy groups
+  pages by `Chapter` row, and the author compile prints those rows. So the takeover reads the
+  published `book.md` (before its transaction; a storage failure fails the request rather than
+  silently picking the wrong chapters) and, when its Contents parses and covers every page
+  (`readerChaptersFromPublishedMarkdown`, now in core for this), rewrites the rows to it by position
+  — update in place, create the tail, re-point the pages, delete the surplus — and replaces the
+  plan's `chapters` to match, because a continuation numbers new chapters off the plan. A composed
+  book's Contents repeats its rows, so only its sanitized titles move. No Contents — a short or
+  sectioned book — keeps the rows: that is what printed.
+- **A takeover clears the generator's page verdicts and image slots, because the author compile
+  still reads them.** `pageQualityAdvisoryIssues` / `unresolvedPageQualityIssues` fold
+  `Page.qualityReport` into the verdict whatever the provenance, so a generator's FAILED_QA page
+  would mark the author's book "review recommended" on its first compile. Every page is set
+  COMPLETED with `qualityReport`, `imagePrompt` and `imageFailureReason` nulled — the verdict is the
+  author rules' integrity-only one from then on. `storyDelta`, summaries, titles, embeddings and
+  continuity notes stay: the prose did not change, and a continuation still needs its memory.

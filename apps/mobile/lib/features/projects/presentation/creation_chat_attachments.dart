@@ -50,12 +50,13 @@ extension _CreationChatAttachments on _CreationChatScreenState {
           const Divider(height: 1),
           ListTile(
             key: const ValueKey('attach-import-book'),
-            leading: const Icon(Icons.auto_stories_outlined),
-            title: const Text('Import a finished manuscript'),
+            leading: const Icon(Icons.edit_note_outlined),
+            title: const Text('Write or import your own book'),
             subtitle: const Text(
-              'Bring your own book in to improve or continue it',
+              'Write it yourself in the Writing Studio, or bring in a '
+              'finished manuscript',
             ),
-            onTap: () => Navigator.of(sheetContext).pop('import'),
+            onTap: () => Navigator.of(sheetContext).pop('write'),
           ),
         ],
       ),
@@ -72,8 +73,8 @@ extension _CreationChatAttachments on _CreationChatScreenState {
         await openSourceNotesSheet(ref.read(creationChatControllerProvider));
       case 'characters':
         await _openCharacterLibrary();
-      case 'import':
-        if (mounted) context.push('/books/import');
+      case 'write':
+        if (mounted) await showStartWritingSheet(context);
     }
   }
 

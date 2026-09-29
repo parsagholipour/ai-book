@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { jobNames, type GenerationJobType } from "./jobDispatch.js";
 import {
+  COVER_PURCHASE,
   DERIVATIVE_GENERATION_JOBS,
   DETACHED_FROM_PROJECT_LIFECYCLE,
+  EXPORT_PUBLICATION_PROJECT_STATUS,
   MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
   PRESENTATION_ONLY_RECOMPILE,
   JOB_PAGE_REWRITE_SCOPE,
@@ -11,9 +13,12 @@ import {
   PRE_EDIT_STATUS_RESTORING_JOB_TYPES,
   SKIP_FINAL_REVIEW,
   generationJobControlsProjectStatus,
+  generationJobOwnsFailureLifecycle,
   generationJobRestoresPreEditProjectStatus,
+  isCoverPurchasePayload,
   isDerivativeGenerationJobType,
   isDerivativeWorkerJobName,
+  isRevisionOwnedCoverPayload,
   jobOwnsQualityVerdict,
   openJobRewritesPages,
   payloadOwnsProjectOutcome,
@@ -60,6 +65,16 @@ describe("generation job scope", () => {
       expect(generationJobControlsProjectStatus(type)).toBe(true);
       expect(workerJobControlsProjectStatus(name)).toBe(true);
     }
+  });
+
+  it("keeps a Writing Studio assist off the book it assists", () => {
+    // An assist is a suggestion on its own row, queued against books that are
+    // COMPLETE, EDITING mid-publish or still an unpublished DRAFT: failing one
+    // must fail that row and refund that charge, never the book's.
+    expect(isDerivativeGenerationJobType("WRITING_ASSIST")).toBe(true);
+    expect(isDerivativeWorkerJobName("writing-assist")).toBe(true);
+    expect(generationJobControlsProjectStatus("WRITING_ASSIST")).toBe(false);
+    expect(workerJobControlsProjectStatus("writing-assist")).toBe(false);
   });
 
   it("defaults unknown future jobs to the book lifecycle", () => {
@@ -137,6 +152,53 @@ describe("jobOwnsQualityVerdict", () => {
   });
 });
 
+describe("revision-owned covers", () => {
+  const revisionCover = {
+    planId: "plan-1",
+    assetType: "COVER",
+    contentRevision: 4,
+    [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING"
+  };
+
+  it("settles alone: its failure is never the book's, on either side of the queue", () => {
+    expect(isRevisionOwnedCoverPayload(revisionCover)).toBe(true);
+    expect(payloadOwnsProjectOutcome(revisionCover)).toBe(false);
+    expect(workerJobOwnsFailureLifecycle("generate-image", revisionCover)).toBe(false);
+    expect(generationJobOwnsFailureLifecycle("GENERATE_IMAGE", revisionCover)).toBe(false);
+    const purchase = { ...revisionCover, [COVER_PURCHASE]: true, billingLedgerEntryId: "ledger-1" };
+    expect(payloadOwnsProjectOutcome(purchase)).toBe(false);
+  });
+
+  it("leaves the cover a generation run draws owning the book, as it always did", () => {
+    const generationCover = { planId: "plan-1", assetType: "COVER" };
+    expect(isRevisionOwnedCoverPayload(generationCover)).toBe(false);
+    expect(payloadOwnsProjectOutcome(generationCover)).toBe(true);
+    expect(workerJobOwnsFailureLifecycle("generate-image", generationCover)).toBe(true);
+  });
+
+  it("needs all three halves of the shape, so a page picture or a compile of the same revision is not one", () => {
+    const { assetType: _asset, ...withoutAsset } = revisionCover;
+    const { contentRevision: _revision, ...withoutRevision } = revisionCover;
+    const { [EXPORT_PUBLICATION_PROJECT_STATUS]: _status, ...withoutStatus } = revisionCover;
+    for (const payload of [withoutAsset, withoutRevision, withoutStatus, { ...revisionCover, contentRevision: "4" }]) {
+      expect(isRevisionOwnedCoverPayload(payload)).toBe(false);
+    }
+    for (const payload of PAYLOAD_SHAPES) {
+      expect(isRevisionOwnedCoverPayload(payload)).toBe(false);
+    }
+  });
+
+  it("names a purchase only on a cover that says it is one", () => {
+    expect(isCoverPurchasePayload({ ...revisionCover, [COVER_PURCHASE]: true })).toBe(true);
+    expect(isCoverPurchasePayload(revisionCover)).toBe(false);
+    expect(isCoverPurchasePayload({ ...revisionCover, [COVER_PURCHASE]: "true" })).toBe(false);
+    expect(isCoverPurchasePayload({ planId: "plan-1", pageId: "page-1", [COVER_PURCHASE]: true })).toBe(false);
+    for (const payload of PAYLOAD_SHAPES) {
+      expect(isCoverPurchasePayload(payload)).toBe(false);
+    }
+  });
+});
+
 describe("preEditProjectStatus", () => {
   it("reads back the status the book was in before the edit was queued", () => {
     expect(preEditProjectStatus({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" })).toBe("REVIEW_REQUIRED");
@@ -189,6 +251,7 @@ describe("openJobRewritesPages", () => {
     // And the work that is open on plenty of delivered books without touching one.
     expect(openJobRewritesPages("GENERATE_AUDIOBOOK", {})).toBe(false);
     expect(openJobRewritesPages("GENERATE_CHARACTER_PORTRAIT", {})).toBe(false);
+    expect(openJobRewritesPages("WRITING_ASSIST", { assistId: "assist-1" })).toBe(false);
     expect(openJobRewritesPages("GENERATE_IMAGE", { pageId: "page-1" })).toBe(false);
   });
 

@@ -3,7 +3,12 @@ import type { Job } from "bullmq";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    imageAsset: { deleteMany: vi.fn(), findMany: vi.fn(async () => []), create: vi.fn() },
+    imageAsset: {
+      deleteMany: vi.fn(),
+      findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async (): Promise<{ metadata: unknown } | null> => null),
+      create: vi.fn()
+    },
     planVersion: { findUnique: vi.fn() },
     $transaction: vi.fn(async (operations: unknown[]) => operations)
   },
@@ -15,10 +20,12 @@ const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
   selectCoverDesign: vi.fn(),
   ensureCharacterReferenceAssets: vi.fn(async () => []),
-  appendCharacterReferenceRunLog: vi.fn()
+  appendCharacterReferenceRunLog: vi.fn(),
+  refundCreditLedgerEntry: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db/billing", () => ({ refundCreditLedgerEntry: mocks.refundCreditLedgerEntry }));
 vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnqueueCompile }));
 vi.mock("../runtime/jobLifecycle.js", () => ({
   advanceJobStep: mocks.advanceJobStep,
@@ -116,6 +123,42 @@ describe("generateCover", () => {
     });
   });
 
+  // A Studio publish that changes the title or byline queues a revision-owned
+  // cover job over a book that already wears one: the typography moves, the
+  // artwork the reader kept does not.
+  it("re-typesets the design a book already wears when the cover job is revision-owned", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ coverArtSource: "design" }));
+    mocks.prisma.imageAsset.findFirst.mockResolvedValueOnce({
+      metadata: { coverArtSource: "design", coverDesignId: "moonlit-sea" }
+    });
+    const revisionOwned = {
+      data: { ...job().data, assetType: "COVER", contentRevision: 6, exportPublicationProjectStatus: "EDITING" }
+    } as unknown as Job;
+
+    await generateCover(revisionOwned);
+
+    expect(mocks.selectCoverDesign).not.toHaveBeenCalled();
+    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
+    expect(storedAsset()?.metadata).toMatchObject({ coverDesignId: "moonlit-sea", coverDesignSelectedBy: "kept", costUsd: 0 });
+  });
+
+  it("chooses a design for a revision-owned first cover, and for any other job even when one exists", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ coverArtSource: "design" }));
+    const revisionOwned = {
+      data: { ...job().data, assetType: "COVER", contentRevision: 6, exportPublicationProjectStatus: "EDITING" }
+    } as unknown as Job;
+
+    await generateCover(revisionOwned);
+    expect(mocks.selectCoverDesign).toHaveBeenCalledTimes(1);
+
+    // The operator's regenerate route asks for a fresh pick, and is not revision-owned:
+    // it never even looks at the cover it replaces.
+    mocks.prisma.imageAsset.findFirst.mockClear();
+    await generateCover(job());
+    expect(mocks.prisma.imageAsset.findFirst).not.toHaveBeenCalled();
+    expect(mocks.selectCoverDesign).toHaveBeenCalledTimes(2);
+  });
+
   it("gives a designed cover its own typography rather than the book type's", async () => {
     mocks.prisma.planVersion.findUnique.mockResolvedValue(
       planVersion({ includeCover: false, coverArtSource: "design", coverTemplate: "business" })
@@ -139,6 +182,63 @@ describe("generateCover", () => {
     // The book is written and paid for; failing here would refund the whole
     // run. The compile itself fires from maybeCompileAfterCompletedJob once
     // this job's row is COMPLETED — the handler finishing cleanly is the point.
+  });
+
+  // The Writing Studio's "Generate with AI" sells the artwork on its own, so a
+  // design in its place is not what was paid for.
+  it("refunds a purchased AI cover whose artwork falls back to a design", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: true, coverArtSource: "ai" }));
+    mocks.generateImageBytes.mockRejectedValue(new Error("all image providers failed"));
+    const purchase = {
+      data: { ...job().data, assetType: "COVER", coverPurchase: true, billingLedgerEntryId: "ledger-cover" }
+    } as unknown as Job;
+
+    await generateCover(purchase);
+
+    expect(storedAsset()?.metadata).toMatchObject({
+      coverArtSource: "design",
+      coverFallbackReason: "ai_cover_failed",
+      coverPurchaseRefunded: true
+    });
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("ledger-cover", expect.stringContaining("designed cover"));
+  });
+
+  it("fails the job rather than completing a purchase whose refund could not be written", async () => {
+    // Completing would commit the purchase's attempt over a design nobody paid
+    // for; failing hands the refund to the attempt, and a failed Studio cover
+    // never fails the book — the design just stored still prints.
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: true, coverArtSource: "ai" }));
+    mocks.generateImageBytes.mockRejectedValue(new Error("all image providers failed"));
+    mocks.refundCreditLedgerEntry.mockRejectedValueOnce(new Error("ledger unavailable"));
+    const purchase = {
+      data: {
+        ...job().data,
+        assetType: "COVER",
+        contentRevision: 6,
+        exportPublicationProjectStatus: "EDITING",
+        coverPurchase: true,
+        billingLedgerEntryId: "ledger-cover"
+      }
+    } as unknown as Job;
+
+    await expect(generateCover(purchase)).rejects.toThrow("ledger unavailable");
+    expect(storedAsset()?.metadata).toMatchObject({ coverArtSource: "design", coverPurchaseRefunded: true });
+  });
+
+  it("keeps the charge for a purchased AI cover that was drawn, and never refunds a book's own cover", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: true, coverArtSource: "ai" }));
+    mocks.generateImageBytes.mockResolvedValueOnce({ bytes: Buffer.from("art"), mimeType: "image/png", provider: "gemini", model: "m" });
+    const purchase = {
+      data: { ...job().data, assetType: "COVER", coverPurchase: true, billingLedgerEntryId: "ledger-cover" }
+    } as unknown as Job;
+
+    await generateCover(purchase);
+    expect(storedAsset()?.metadata).toMatchObject({ coverArtSource: "ai" });
+
+    // A cover that came with the book falls back without any refund of its own.
+    mocks.generateImageBytes.mockRejectedValueOnce(new Error("all image providers failed"));
+    await generateCover(job());
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
   });
 
   it("still surfaces a user stop instead of quietly producing a design", async () => {

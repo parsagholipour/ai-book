@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
+import '../../projects/data/projects_repository.dart';
+import '../../projects/domain/project_models.dart';
 import '../../projects/presentation/project_chat_screen.dart';
+import '../../studio/presentation/studio_location.dart';
+import '../data/reader_repository.dart';
 import '../domain/reader_models.dart';
 
 /// What the reader can do with a selected passage.
@@ -58,16 +63,77 @@ String readerAskDraft({required int? pageNumber, required String excerpt}) {
       : 'About page $pageNumber: "$excerpt" — ';
 }
 
+/// Resolves "Edit page" for a book the author owns: the Writing Studio route
+/// to open for a book page, or null when the book is not one and its Edit is
+/// Edit Mode.
+typedef ReaderStudioRoute = Future<String?> Function(int? pageIndex);
+
+/// The [ReaderStudioRoute] for [projectId].
+///
+/// An author's book (written in the Studio, or imported) is edited in the
+/// Studio, at the chapter the page belongs to: Edit Mode would rewrite a page
+/// the Studio's working copy then has to report as drift. The chapter comes
+/// from the same editable-book payload the page locator already loaded for
+/// [revision]; a page it cannot place still opens the Studio, just not at a
+/// chapter. Whether the book is the author's is read off the cached book list
+/// — the reader never loads the book's detail.
+ReaderStudioRoute readerStudioRoute({
+  required WidgetRef ref,
+  required ReaderRepository repository,
+  required String projectId,
+  required int? Function() revision,
+}) {
+  return (pageIndex) async {
+    bool? authorOf(List<MobileProjectSummary>? projects) {
+      for (final project in projects ?? const <MobileProjectSummary>[]) {
+        if (project.id == projectId) return project.isAuthorManuscript;
+      }
+      return null;
+    }
+
+    var author = authorOf(ref.read(projectsProvider).value);
+    if (author == null) {
+      try {
+        author = authorOf(await ref.read(projectsProvider.future));
+      } catch (_) {
+        author = null;
+      }
+    }
+    if (author != true) return null;
+
+    final mapped = revision();
+    if (pageIndex == null || mapped == null) return studioLocation(projectId);
+    try {
+      final locator = await repository.pageLocator(
+        projectId: projectId,
+        revision: mapped,
+      );
+      for (final page in locator.book.pages) {
+        if (page.index == pageIndex) {
+          return studioLocation(projectId, chapterId: page.chapterId);
+        }
+      }
+    } catch (_) {
+      // The Studio still opens; it just starts where the author left off.
+    }
+    return studioLocation(projectId);
+  };
+}
+
 /// Runs a selection action, sending edits through the existing chat pipeline.
 ///
 /// Edits are deliberately not confirmed here: sending the message and then
 /// opening the book chat keeps one place where a priced proposal is reviewed,
 /// applied and undone.
+///
+/// [studioRoute] sends "Edit page" to the Writing Studio for a book the author
+/// owns; without it, or when it answers null, the page opens in Edit Mode.
 Future<void> runReaderSelectionAction({
   required BuildContext context,
   required String projectId,
   required ReaderSelection selection,
   required ReaderSelectionAction action,
+  ReaderStudioRoute? studioRoute,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   final router = GoRouter.of(context);
@@ -100,6 +166,11 @@ Future<void> runReaderSelectionAction({
       // Without a page the editor still opens, on its first page, rather than
       // the action doing nothing.
       final pageIndex = selection.bookPageIndex;
+      final studio = await studioRoute?.call(pageIndex);
+      if (studio != null) {
+        router.push(studio);
+        return;
+      }
       router.push(
         pageIndex == null
             ? '/projects/$projectId/edit'

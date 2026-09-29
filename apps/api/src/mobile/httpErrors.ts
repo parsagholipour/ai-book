@@ -102,6 +102,18 @@ export function sendMobileError(reply: FastifyReply, statusCode: number, code: s
   });
 }
 
+/**
+ * The one sentence for an author's book meeting a generation route. A book the
+ * author wrote or imported carries an approved plan only because publish (or
+ * the import) synthesized one, and approving or revising it would charge for a
+ * generation that writes over the author's text. `isAuthorManuscript` decides.
+ */
+export const AUTHOR_MANUSCRIPT_MESSAGE = "This book is written by you — open it in the Writing Studio.";
+
+export function sendAuthorManuscript(reply: FastifyReply): FastifyReply {
+  return sendMobileError(reply, 409, "AUTHOR_MANUSCRIPT", AUTHOR_MANUSCRIPT_MESSAGE);
+}
+
 /** The one answer every mobile route gives when its project lookup misses. */
 export function sendProjectNotFound(reply: FastifyReply): FastifyReply {
   return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");

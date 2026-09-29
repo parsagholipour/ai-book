@@ -64,6 +64,7 @@ enum JobType {
   CONTINUE_BOOK
   GENERATE_AUDIOBOOK
   GENERATE_CHARACTER_PORTRAIT
+  WRITING_ASSIST
 }
 
 enum AudiobookStatus {
@@ -213,6 +214,11 @@ enum BookEditOperationKind {
   /// Insert, delete or reorder pages. One kind for all three; which one it was
   /// lives in BookEditOperation.classifier, along with the record undo reverses.
   RESTRUCTURE_PAGES
+  /// The Writing Studio published its working copy into the book's pages. Free,
+  /// applied in the API transaction, never undoable from the chat: it seals every
+  /// earlier operation (classifier.sealedAt), and the Studio's version history is
+  /// how an author walks a publish back.
+  MANUSCRIPT_PUBLISH
 }
 
 enum BookEditOperationStatus {
@@ -705,6 +711,8 @@ model Project {
   archivedPageEditSnapshots ArchivedPageEditSnapshot[]
   mobileCreationOutputs MobileCreationOutput[]
   bookImport         BookImport?
+  manuscript         Manuscript?
+  assists            ManuscriptAssist[]
   audiobook          Audiobook?
   generationAttempts GenerationAttempt[]
 
@@ -732,6 +740,112 @@ model BookImport {
 
   @@unique([userId, requestId])
   @@index([userId, createdAt])
+}
+
+/// The Writing Studio's working copy of an author-owned book (written in the
+/// Studio, or imported). The book people read and export is still the Page rows;
+/// this is what the author edits between publishes. See
+/// .scratch/writing-studio/spec.md and apps/api/src/mobile/manuscript/.
+model Manuscript {
+  id                   String    @id @default(cuid())
+  projectId            String    @unique
+  /// Bumps on every chapter write, add, delete, reorder and settings change.
+  revision             Int       @default(1)
+  /// { layout, kind, artStyle?, goalWords?, dedication? }
+  settings             Json
+  /// Chapter ids in the order they were last published — how an add, delete or
+  /// reorder since then is told apart from a clean working copy.
+  publishedOrder       Json?
+  firstPublishedAt     DateTime?
+  lastPublishedAt      DateTime?
+  lastPublishRequestId String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapters ManuscriptChapter[]
+}
+
+model ManuscriptChapter {
+  id                 String    @id @default(cuid())
+  manuscriptId       String
+  /// 1..N among live chapters; a deleted chapter keeps its last position so a
+  /// restore can put it back.
+  position           Int
+  title              String
+  markdown           String    @db.Text
+  notes              String    @default("") @db.Text
+  /// IDEA | DRAFTING | REVISED | FINAL — the author's own tracker.
+  status             String    @default("DRAFTING")
+  wordCount          Int       @default(0)
+  revision           Int       @default(1)
+  /// The revision last published; null means never published.
+  publishedRevision  Int?
+  /// The Chapter row this chapter became at the last publish.
+  publishedChapterId String?
+  /// [{ pageId, revision }] as of the last publish or sync — drift detection.
+  publishedPages     Json?
+  /// The book's version of this chapter, captured when the book changed
+  /// underneath (a chat edit) while this chapter held unpublished edits.
+  conflictTitle      String?
+  conflictMarkdown   String?   @db.Text
+  conflictDetectedAt DateTime?
+  deletedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  manuscript Manuscript          @relation(fields: [manuscriptId], references: [id], onDelete: Cascade)
+  versions   ManuscriptVersion[]
+
+  @@index([manuscriptId, position])
+}
+
+model ManuscriptVersion {
+  id        String   @id @default(cuid())
+  chapterId String
+  /// AUTO | BEFORE_AI | RESTORE | PUBLISH | CONFLICT
+  reason    String
+  title     String
+  markdown  String   @db.Text
+  wordCount Int
+  createdAt DateTime @default(now())
+
+  chapter ManuscriptChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@index([chapterId, createdAt])
+}
+
+/// One long or priced Writing Studio AI request, run by a WRITING_ASSIST job:
+/// an illustration, a chapter draft, margin notes, a consistency check, an
+/// outline — or the two free internal passes a publish queues (style profile,
+/// re-embed). The result is a suggestion the author applies by hand; nothing
+/// here writes the working copy or the book's pages. See
+/// .scratch/writing-studio/spec.md ("Long assists").
+model ManuscriptAssist {
+  id              String   @id @default(cuid())
+  projectId       String
+  /// ManuscriptChapter id. No FK: a chapter can be purged at publish while its
+  /// assist is still on screen.
+  chapterId       String?
+  /// ILLUSTRATE | DRAFT_CHAPTER | CHAPTER_FEEDBACK | CONSISTENCY | OUTLINE | STYLE_PROFILE | REEMBED
+  kind            String
+  /// QUEUED | RUNNING | READY | FAILED | DISMISSED | APPLIED
+  status          String   @default("QUEUED")
+  input           Json
+  result          Json?
+  /// Reader-facing sentence when FAILED.
+  error           String?
+  creditsCharged  Int      @default(0)
+  ledgerEntryId   String?
+  generationJobId String?  @unique
+  requestId       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, requestId])
+  @@index([projectId, status])
 }
 
 model MobileCreationDraft {

@@ -165,6 +165,12 @@ const envSchema = z.object({
   ATTACHMENT_STORAGE_DIR: z.string().default("./storage/attachments"),
   /** How long uploaded user files are kept before deletion. Generated books and plans are kept forever. */
   ATTACHMENT_RETENTION_DAYS: z.coerce.number().int().min(1).default(180),
+  /**
+   * The API's sweep of Writing Studio pictures no row names any more
+   * (`apps/api/src/mobile/studioImageSweep.ts`). Unset: `delete` in production,
+   * `dry-run` (logs only) everywhere else.
+   */
+  STUDIO_IMAGE_SWEEP: z.enum(["off", "dry-run", "delete"]).optional(),
   FULL_DOCUMENT_SOURCES: z.coerce.string().transform((value) => value === "true").default(false),
   /**
    * How long a render or publication scratch file must sit untouched before the

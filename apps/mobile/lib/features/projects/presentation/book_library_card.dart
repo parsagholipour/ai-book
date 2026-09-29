@@ -57,12 +57,18 @@ class BookLibraryCard extends StatelessWidget {
       BookStatusKind.writing =>
         '${book.statusLabel} · ${book.progressPercent.clamp(0, 100)}%',
       BookStatusKind.ready => 'Ready to read',
+      _ when book.isUnpublishedManuscript && book.statusLabel.trim() != '' =>
+        book.statusLabel.trim(),
       _ => status.label,
     };
     final updated = MaterialLocalizations.of(
       context,
     ).formatMediumDate(book.updatedAt.toLocal());
-    final pages = '${book.pageCount} ${book.pageCount == 1 ? 'page' : 'pages'}';
+    // An unpublished Studio book has no pages yet; its status line already
+    // counts the words.
+    final pages = book.isUnpublishedManuscript
+        ? null
+        : '${book.pageCount} ${book.pageCount == 1 ? 'page' : 'pages'}';
     final byline = [
       if (book.authorName?.trim().isNotEmpty == true) book.authorName!.trim(),
       if (book.subtitle?.trim().isNotEmpty == true) book.subtitle!.trim(),
@@ -86,7 +92,9 @@ class BookLibraryCard extends StatelessWidget {
                 label: [
                   book.title,
                   statusText,
-                  '${book.bookTypeLabel}, $pages',
+                  pages == null
+                      ? book.bookTypeLabel
+                      : '${book.bookTypeLabel}, $pages',
                   'Updated $updated',
                 ].join('. '),
                 child: ExcludeSemantics(
@@ -163,8 +171,11 @@ class BookLibraryCard extends StatelessWidget {
                               ],
                               const SizedBox(height: AppSpacing.xs),
                               Text(
-                                '${book.bookTypeLabel} · $pages · '
-                                'Updated $updated',
+                                [
+                                  book.bookTypeLabel,
+                                  ?pages,
+                                  'Updated $updated',
+                                ].join(' · '),
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: colors.onSurfaceVariant,
                                 ),

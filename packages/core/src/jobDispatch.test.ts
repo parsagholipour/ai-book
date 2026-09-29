@@ -67,6 +67,19 @@ describe("job retry policy", () => {
     }
   });
 
+  it("keeps a writing assist one-shot: its failure refunds once and is never re-run on the same charge", () => {
+    // An `AuthorAssistUnavailableError` keeps its network cause readable, so
+    // this is the case that would otherwise look recoverable.
+    expect(retryJobOptions("writing-assist")).toBeUndefined();
+    expect(
+      shouldRecoverJobAttempt({ jobName: "writing-assist", attemptsMade: 0, maxAttempts: 1, recoverableNetworkError: true })
+    ).toBe(false);
+    // And a budget someone configured by hand would still be bypassed.
+    expect(
+      shouldBypassConfiguredRetries({ jobName: "writing-assist", attemptsMade: 0, maxAttempts: 2, recoverableNetworkError: true })
+    ).toBe(true);
+  });
+
   it("recovers network failures while attempts remain", () => {
     expect(
       shouldRecoverJobAttempt({ jobName: "generate-book", attemptsMade: 0, maxAttempts: 2, recoverableNetworkError: true })

@@ -745,6 +745,15 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     isMounted: () => mounted,
     onGoToPage: (page) => unawaited(_goToPage(page)),
     hasCoverPage: _hasCoverPage,
+    studioRoute: _studioRoute,
+  );
+
+  /// "Edit page" for a book the author owns opens the Writing Studio.
+  ReaderStudioRoute get _studioRoute => readerStudioRoute(
+    ref: ref,
+    repository: _repository,
+    projectId: widget.projectId,
+    revision: () => _mappingRevision,
   );
 
   // ------------------------------------------------------------------ wakelock

@@ -147,7 +147,7 @@ class _ChatWelcome extends StatelessWidget {
                 _WelcomeIdeaCard(idea: idea, onTap: () => onPickIdea(idea)),
                 const SizedBox(height: 6),
               ],
-              const SizedBox(height: AppSpacing.xs),
+              const _WelcomeStudioLink(),
               _WelcomeTip(
                 icon: Icons.attach_file_outlined,
                 text: 'Add notes, a document or a photo and I read it first.',
@@ -232,6 +232,60 @@ class _WelcomeIdeaCard extends StatelessWidget {
                   color: colors.onSurfaceVariant,
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The side door for people who want to write the book themselves. One line,
+/// link weight: the ideas above are what this screen is for, and a second
+/// button beside them would make every visitor choose between two roads.
+class _WelcomeStudioLink extends StatelessWidget {
+  const _WelcomeStudioLink();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final style = theme.textTheme.bodySmall?.copyWith(
+      color: colors.onSurfaceVariant,
+      height: 1.35,
+    );
+    return Semantics(
+      button: true,
+      label: 'Writing your own book? Open the Writing Studio',
+      child: ExcludeSemantics(
+        child: InkWell(
+          key: const ValueKey('welcome-writing-studio'),
+          onTap: () => showStartWritingSheet(context),
+          borderRadius: BorderRadius.circular(AppRadii.compact),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: AppSizes.minimumTouchTarget,
+            ),
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(4, 6, 4, 6),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      const TextSpan(text: 'Writing your own book? '),
+                      TextSpan(
+                        text: 'Open the Writing Studio →',
+                        style: TextStyle(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  style: style,
+                ),
+              ),
             ),
           ),
         ),

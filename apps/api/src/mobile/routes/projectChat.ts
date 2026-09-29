@@ -293,7 +293,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         // What each page carries, so a request about one kind of content can be
         // scoped to the pages that have it rather than quoted for the whole book.
         const pages = chatPagesForProject(project, await loadChatPageFeatures(project.id));
-        const stage = chatStageForProject(project.status, project.currentPlan);
+        const stage = chatStageForProject(project.status, project.currentPlan, project.mediaSettings);
         const routingTextModel = safeFastRoutingTextModel();
         const sourceRefs = sourceRefsFromInput({ mediaSettings: jsonRecord(jsonRecord(project.currentPlan?.inputSnapshot).mediaSettings ?? project.mediaSettings) });
         // With a current page map, the numbers the user types are the printed PDF

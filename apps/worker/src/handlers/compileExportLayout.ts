@@ -1,6 +1,6 @@
 import {
-  createDeterministicReaderChapters, createReaderChaptersForExport, readerChapterFingerprint,
-  readerChaptersFromComposedChapters, strategyComposesChapters,
+  authorReaderChapters, createDeterministicReaderChapters, createReaderChaptersForExport, isAuthorManuscript,
+  readerChapterFingerprint, readerChaptersFromComposedChapters, strategyComposesChapters,
   type BookGenerationStrategy, type BookPlan, type CreateProjectInput, type TextModelAdapter
 } from "@book-maker/core";
 import { objectKey, objectStore } from "@book-maker/storage";
@@ -16,6 +16,10 @@ export async function resolveCompileReaderLayout(options: {
   const { projectId, input, plan, pages, detachedRepair, presentationOnly } = options;
   const publishedMarkdown = detachedRepair || presentationOnly
     ? (await objectStore().get(objectKey("books", projectId, "book.md")))?.toString("utf8") : undefined;
+  // An author's book is printed in the chapters the author wrote, in every lane
+  // and never through the model: its `Chapter` rows, or `[]` for the plan's
+  // partition, which a publish writes from the same chapters. See `authorReaderChapters`.
+  if (isAuthorManuscript(input.mediaSettings)) return { publishedMarkdown, readerChapters: authorReaderChapters(pages) };
   let preserved = publishedMarkdown !== undefined ? readerChaptersFromPublishedMarkdown(publishedMarkdown, pages) : undefined;
   if (preserved === undefined && detachedRepair && publishedMarkdown === undefined) preserved = await readCompatibleCachedReaderChapters(projectId, pages);
   const composed = strategyComposesChapters(options.strategy) ? readerChaptersFromComposedChapters(pages) : undefined;

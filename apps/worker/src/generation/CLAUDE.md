@@ -714,7 +714,12 @@ heartbeat-protected scratch directories. S3 copies and uploads preserve the publ
   `prepare-characters:{project}:{plan}` key it computes is free even for a book whose generation
   already ran that detection. None of this applies to a book composed by chapters: its reader
   chapters are its `Chapter` rows (`readerChaptersFromComposedChapters`, taken before the cache in
-  every lane), so a composed book makes no chapterization call and has no miss to be free on.
+  every lane), so a composed book makes no chapterization call and has no miss to be free on. An author's book
+  (`isAuthorManuscript`: imported or written in the Studio) makes none either, in every lane:
+  `resolveCompileReaderLayout` returns `authorReaderChapters` — its `Chapter` rows with the author's
+  titles verbatim, or `[]` for the plan partition a publish writes from the same chapters — before
+  anything else is asked. Not `readerChaptersFromComposedChapters`, whose sanitizer replaces a title
+  that only says "Chapter 3" (the Studio's default) with a phrase lifted from the page.
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until
   it has.** `staleGenerationJobReason` refuses to *start* a compile whose `contentRevision` has
   moved, but that is one instant and the work behind it is minutes of QA, reader chapters and a

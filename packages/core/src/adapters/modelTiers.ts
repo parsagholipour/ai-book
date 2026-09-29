@@ -85,7 +85,13 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   // that swaps protected names for generic descriptions and is forbidden from
   // touching anything else. Spelled out rather than imported from the constant,
   // because this module's subpath export is gated on having no runtime imports.
-  "rewrite-image-prompt-copyright-safe"
+  "rewrite-image-prompt-copyright-safe",
+  // The Writing Studio's judgment calls (`authoring/authorAssistPrompts.ts`):
+  // a proofread is a strict-schema find-and-replace, and chapter feedback and
+  // the consistency check are notes quoting the author's text, never prose.
+  "author-assist-proofread",
+  "author-chapter-feedback",
+  "author-consistency"
 ]);
 
 const PREMIUM_IMAGE_MODEL = "gemini-3.1-flash-image";

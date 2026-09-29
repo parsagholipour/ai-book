@@ -45,6 +45,7 @@ import { Prisma, prisma } from "@book-maker/db";
 import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-maker/db/billing";
 import { z } from "zod";
 import { requestedPageCountScope } from "./pageCountScope.js";
+import { manuscriptSummarySelect } from "./manuscript/manuscriptSerializers.js";
 
 /**
  * Creating and loading mobile Project rows, including page-count resolution and
@@ -427,9 +428,24 @@ export async function loadMobileProjectDetail(userId: string, projectId: string)
   })) as MobileProjectRecord | null;
 }
 
+/**
+ * What a project *summary* reads: the cover alone rather than every page
+ * visual, counts rather than rows, and the working copy's word and chapter
+ * tallies for Studio books (one nested select; no chapter markdown).
+ */
+export function mobileProjectSummaryInclude() {
+  return {
+    currentPlan: true,
+    images: { where: { type: "COVER" }, orderBy: { createdAt: "desc" }, take: 1 },
+    _count: { select: { pages: true, images: true, jobs: true } },
+    manuscript: manuscriptSummarySelect
+  } as const;
+}
+
 export function mobileProjectDetailInclude() {
   return {
     currentPlan: true,
+    manuscript: manuscriptSummarySelect,
     pages: {
       orderBy: { index: "asc" },
       select: {

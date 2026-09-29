@@ -4,7 +4,7 @@ import {
   type BookEditPageContext,
   type BookEditProjectStage
 } from "../bookEditIntent.js";
-import { figureStandInMarkdown } from "@book-maker/core";
+import { figureStandInMarkdown, isAuthorManuscript, parseStructuralApplication } from "@book-maker/core";
 import {
   type MobileBookEditOperationDto,
   type MobileBookEditOperationRecord,
@@ -20,7 +20,7 @@ import {
   canRedoBookEdit,
   pickRedoableBookEdit
 } from "./bookEditRedo.js";
-import { canUndoBookEdit, hasBookEditUndoRecord } from "./manualEdits.js";
+import { canUndoBookEdit, hasBookEditUndoRecord, isSealedBookEdit } from "./manualEdits.js";
 import { findOpenProposalId } from "./pendingEditState.js";
 import { currentActionForEditOperation } from "./editOperationCopy.js";
 import { serializePlan } from "./projectArtifactSerializers.js";
@@ -574,6 +574,13 @@ export function serializeBookEditOperation(
  * gets "nothing to review" rather than a card that opens on nothing.
  */
 export function editChangesAvailable(operation: MobileBookEditOperationRecord): boolean {
+  // A structural edit's diff is built from the *live* pages its stamp names,
+  // and a Writing Studio publish has since rewritten those pages: the review
+  // would show the author's published text as what the chat edit inserted.
+  // Snapshot-backed reviews stay — their before/after text is a record.
+  if (isSealedBookEdit(operation.classifier) && parseStructuralApplication(operation.classifier) !== null) {
+    return false;
+  }
   return hasBookEditUndoRecord({
     classifier: operation.classifier,
     snapshotCount: operation._count?.snapshots ?? 0,
@@ -759,9 +766,20 @@ export function chatPagesForProject(project: ProjectForChat, features?: ChatPage
   });
 }
 
-export function chatStageForProject(status: string, currentPlan: ProjectForChat["currentPlan"]): BookEditProjectStage {
+export function chatStageForProject(
+  status: string,
+  currentPlan: ProjectForChat["currentPlan"],
+  mediaSettings?: unknown
+): BookEditProjectStage {
   if (status === "COMPLETE" || status === "REVIEW_REQUIRED") {
     return "complete";
+  }
+  // An author's book has an approved plan only because publish synthesized one;
+  // "approved_plan" would route its chat into plan revisions — a paid replan of
+  // a book nobody planned — including through the EDITING window every
+  // publish opens. Nothing is being planned or generated, so it is "other".
+  if (isAuthorManuscript(mediaSettings)) {
+    return "other";
   }
   if (currentPlan?.status === "APPROVED") {
     return "approved_plan";

@@ -12,7 +12,7 @@ import {
   publishCompiledExports
 } from "../generation/exportPublication.js";
 import { resolveCompileReaderLayout } from "./compileExportLayout.js";
-import { shortKidsStoryPageLayout } from "@book-maker/core";
+import { storyPageLayoutFor } from "@book-maker/core";
 import { usesShortPictureBookReview } from "../generation/shortPictureBook.js";
 import { loadPictureBookRequirementTargets, shortPictureBookChecks } from "../generation/shortPictureBookReviewCache.js";
 import { shortPictureBookReaderChapters } from "../generation/shortPictureBookExport.js";
@@ -68,7 +68,7 @@ import {
   chapterStructureForExport,
   chapterHeadingStylePreference,
   includeSourcesPreference,
-  isImportedManuscript,
+  isAuthorManuscript,
   markdownOpensOnCoverSheet,
   persistablePdfPageMapAfterRender,
   publicAssetUrl,
@@ -184,9 +184,13 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     : null);
   let plan = bookPlanSchema.parse(planVersion.planningPackage);
   let input = inputForPlanVersion(project, planVersion.inputSnapshot);
+  // The author owns an imported or Studio book's text — and its typography, so the
+  // PDF is never refit toward a target, and it answers only to the checks that
+  // ask whether the book is whole (see `CompileMarkdownInput.authorManuscript`).
+  const authorManuscript = isAuthorManuscript(input.mediaSettings);
   // Keep the requested physical target before whole-book tolerance substitutes
   // the saved manuscript-record count for its content checks.
-  const pdfTargetPageCount = isImportedManuscript(input.mediaSettings) ? undefined : input.targetPages;
+  const pdfTargetPageCount = authorManuscript ? undefined : input.targetPages;
   let pages: ExportPageForRepair[] = project.pages;
   const initialStrategy = strategyForInput(input);
   const exportContext = effectiveSavedWholeBookExportContext(input, plan, initialStrategy, pages);
@@ -207,7 +211,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   let initialIntegrityIssuesSnapshot: ManuscriptQualityIssue[] | undefined;
   const initialIntegrityIssues = (): ManuscriptQualityIssue[] =>
     (initialIntegrityIssuesSnapshot ??= runCompileManuscriptChecks({
-      pages, expectedPageCount: input.targetPages, ...(input.language ? { language: input.language } : {})
+      pages, expectedPageCount: input.targetPages, ...(input.language ? { language: input.language } : {}), authorManuscript
     }));
   let modelQualityIssues: ManuscriptQualityIssue[] = [];
   let recoveredFinalQaIssues: ManuscriptQualityIssue[] | undefined;
@@ -229,7 +233,10 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // audit and the targeted structural review below still run for it.
   const finalizationIdentity = { projectId, planId, contentRevision: queuedContentRevision,
     operationIdentity: { attemptId: generationAttemptId, editOperationId, policy } };
+  // Never over an author's book: its repair pass redrafts the pages it flags, and
+  // which page is the author's is not a question a page can answer.
   const runFinalReview =
+    !authorManuscript &&
     !skipFinalReview &&
     !detachedRepair &&
     !presentationOnly &&
@@ -565,7 +572,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
   const inventory = await inventoryWork;
   if (inventory?.status === "rejected") throw inventory.reason;
-  const requirementTargets = !isImportedManuscript(input.mediaSettings) && usesShortPictureBookReview({ input, plan, strategy, pages })
+  const requirementTargets = !authorManuscript && usesShortPictureBookReview({ input, plan, strategy, pages })
     ? await loadPictureBookRequirementTargets({ projectId, planId, generationJobId, input, plan, pages, checks: shortPictureBookChecks(quality) }) : [];
   const coverageOptions = { requirementTargets, inventory: plan.requirementInventory, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
     pages, chapters: chapterStructureForExport({ plan, pages: markdownPages, readerChapters }), textModel: providers.text,
@@ -576,7 +583,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // early empty stand-down would discard findings about pages the edit left alone.
   const supersededForCoverage = supersededBeforeCoverage || Boolean(overlapCoverage &&
     await exportPublicationSuperseded(projectId, queuedContentRevision));
-  const coverage = isImportedManuscript(input.mediaSettings) ? null : overlapCoverage
+  const coverage = authorManuscript ? null : overlapCoverage
     ? supersededForCoverage ? null : await finalizationCoverageForCompile({ ...coverageOptions, operation: finalization! })
     : await manuscriptCoverageForCompile({ ...coverageOptions, projectId, allowModelReview: ownsOutcome && !skipFinalReview });
   if (pendingFinalizationImages.length > 0 && !supersededForCoverage) {
@@ -589,11 +596,13 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     ...runCompileManuscriptChecks({
       pages,
       expectedPageCount: input.targetPages,
-      ...(input.language ? { language: input.language } : {})
+      ...(input.language ? { language: input.language } : {}),
+      authorManuscript
     }),
     // A case assertion the composed chapter's repair could not narrow: recorded on the chapter's
     // report, matched against the pages that still carry it, and a blocking issue on the card.
-    ...(strategyComposesChapters(strategy) ? [...unsupportedCaseClaimIssues(pages), ...arithmeticErrorIssues(pages), ...composedChapterLengthIssues(pages, input)] : []),
+    // An author's chapter is as long as they wrote it, whatever strategy "auto" resolves to.
+    ...(strategyComposesChapters(strategy) && !authorManuscript ? [...unsupportedCaseClaimIssues(pages), ...arithmeticErrorIssues(pages), ...composedChapterLengthIssues(pages, input)] : []),
     ...(repairVerificationIncomplete
       ? [{
           code: "FINAL_QA_REPAIR_INCOMPLETE",
@@ -674,7 +683,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     const researchSources = await researchCitationsForExport(project.research);
     return strategy.compileMarkdownWithPageAnchors({
       plan,
-      storyPageLayout: shortKidsStoryPageLayout(input, markdownPages),
+      storyPageLayout: storyPageLayoutFor(input, markdownPages),
+      authorManuscript,
       category: input.category,
       language: input.language,
       readerChapters,
@@ -728,7 +738,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   if (markdown === undefined) {
     throw new Error("Export compile produced no manuscript");
   }
-  assertBookLikeMarkdown(markdown);
+  assertBookLikeMarkdown(markdown, { authorManuscript });
   await advanceJobStep(generationJobId, "write", 80);
   // Render in scoped local scratch. Only the final revision claim permits
   // publishing these bytes to the project’s durable object keys.

@@ -1,4 +1,5 @@
 import { busyEditReply, proposeBookEdit } from "./bookEditIntents.js";
+import { refuseAuthorBookReplan } from "./authorBookReplan.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectRecord } from "./dto.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
@@ -23,6 +24,9 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
   operation: MobileBookEditOperationRecord | null;
 }> {
   const { userId, project, userMessageId, message, intent } = options;
+  // A card quoted before the book became its author's can still be applied after.
+  const refused = await refuseAuthorBookReplan({ project, userMessageId, intent });
+  if (refused) return { reply: refused, operation: null };
   // Same settings the proposal was quoted from, or the user approves one price
   // and is charged another.
   const replanSettings = intent.replanSettings ?? null;

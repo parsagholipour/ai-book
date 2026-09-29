@@ -145,4 +145,33 @@ describe("operator surface guard", () => {
     }
     await app.close();
   });
+
+  it("answers a signed-out app request with the app's 401, never a 500", async () => {
+    const app = Fastify();
+    await registerAuth(app, { WEB_PASSWORD: "operator-password" } as never);
+    // The shape every mobile route declares for its 401.
+    const unauthorized = {
+      type: "object",
+      required: ["error"],
+      properties: {
+        error: {
+          type: "object",
+          required: ["code", "message"],
+          properties: { code: { type: "string" }, message: { type: "string" } }
+        }
+      }
+    };
+    app.get("/api/mobile/projects", { schema: { response: { 401: unauthorized } } }, async () => ({ reached: true }));
+    app.get("/api/projects", async () => ({ reached: true }));
+
+    const mobile = await app.inject({ method: "GET", url: "/api/mobile/projects" });
+    expect(mobile.statusCode).toBe(401);
+    expect(mobile.json()).toEqual({ error: { code: "AUTH_REQUIRED", message: "Sign in to continue." } });
+
+    // The operator console keeps the answer it has always parsed.
+    const operator = await app.inject({ method: "GET", url: "/api/projects" });
+    expect(operator.statusCode).toBe(401);
+    expect(operator.json()).toEqual({ error: "Password required" });
+    await app.close();
+  });
 });

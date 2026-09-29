@@ -23,6 +23,21 @@ export function fingerprintGenerationRequest(value: unknown): string {
   return hashString(JSON.stringify(sortJsonValue(value)));
 }
 
+/**
+ * An `ImageAsset`'s URL with its version on it: `?v=` names the row and the
+ * file it points at, so the URL moves whenever the bytes behind it can and
+ * stays put otherwise (a stable URL is what lets a client cache the picture).
+ *
+ * Both halves are needed. A drawn cover is rewritten at one path
+ * (`cover.<ext>`) under a *new* row, and a replaced page picture keeps its
+ * row but points it at a *new* file. Metadata is deliberately left out: a
+ * move or a keeper-token rebind rewrites it without touching a byte.
+ */
+export function versionedImageAssetUrl(url: string, asset: { id: string; path: string }): string {
+  const version = createHash("sha256").update(`${asset.id}\n${asset.path}`).digest("base64url").slice(0, 12);
+  return `${url}${url.includes("?") ? "&" : "?"}v=${version}`;
+}
+
 function sortJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sortJsonValue);

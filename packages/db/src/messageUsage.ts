@@ -233,6 +233,13 @@ async function hasSavedMessageReply(tx: BillingTx, row: Reservation): Promise<bo
       where: { projectId: id, parentId: message.id, role: "ASSISTANT" }, select: { id: true }
     }));
   }
+  // A Writing Studio quick assist (`studio:<projectId>:<requestId>`) persists
+  // nothing: its suggestion travels back in the HTTP response and nowhere else,
+  // so no row can prove it was delivered. An expired hold is therefore always
+  // refunded — the author who never saw the reply keeps the message. Spelled
+  // out rather than left to the fall-through, so a later scope that *does*
+  // save its reply cannot quietly change what a studio hold settles as.
+  if (scope === "studio") return false;
   return false;
 }
 

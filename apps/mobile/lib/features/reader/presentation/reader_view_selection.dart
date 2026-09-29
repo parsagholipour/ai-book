@@ -139,6 +139,7 @@ extension _ReaderViewSelection on _ReaderViewState {
       projectId: widget.projectId,
       selection: selection,
       action: action,
+      studioRoute: _studioRoute,
     );
   }
 

@@ -320,6 +320,49 @@ export type ComposedChapterPage = MarkdownPage & {
  * the caller falls back to the model grouping.
  */
 export function readerChaptersFromComposedChapters(pagesInput: ComposedChapterPage[]): ReaderChapter[] | undefined {
+  return chapterRowRuns(pagesInput)?.map((run, position) => ({
+    index: position + 1,
+    title: sanitizeReaderChapterTitle(run.chapter.title ?? "", position + 1, run.pages),
+    summary: sanitizeReaderChapterSummary(run.chapter.summary ?? "", run.pages),
+    startPageIndex: run.pages[0]!.index,
+    endPageIndex: run.pages[run.pages.length - 1]!.index
+  }));
+}
+
+/**
+ * The reader chapters of an author's manuscript (`isAuthorManuscript`): its
+ * `Chapter` rows, titled exactly as the author titled them — or `[]`, which
+ * hands the compile the plan's partition, the one a Studio publish writes from
+ * those same chapters.
+ *
+ * Never the model grouping. `createReaderChaptersForExport` regroups a book the
+ * pipeline wrote; on an author's book it would invent a structure over one the
+ * author already chose, and on every cache miss it was an unbilled model call.
+ * And not {@link readerChaptersFromComposedChapters} either, whose sanitizer is
+ * written for a model's titles: it replaces a title that is only "Chapter 3" —
+ * the Studio's default name for a new chapter — with a phrase lifted from the
+ * page, so an author who never renamed their chapters had one printed for them.
+ * Here the title is passed through untouched; `formatChapterHeading` already
+ * heads an empty one, or one that only says "Chapter 3", by its number alone.
+ */
+export function authorReaderChapters(pagesInput: ComposedChapterPage[]): ReaderChapter[] {
+  return chapterRowRuns(pagesInput)?.map((run, position) => ({
+    index: position + 1,
+    title: run.chapter.title?.trim() ?? "",
+    summary: run.chapter.summary?.trim() ?? "",
+    startPageIndex: run.pages[0]!.index,
+    endPageIndex: run.pages[run.pages.length - 1]!.index
+  })) ?? [];
+}
+
+/**
+ * The contiguous runs of `page.chapter`, in page order, or `undefined` when the
+ * rows are not a partition worth printing: a page without a chapter, a chapter
+ * whose pages are not one run, fewer than two chapters.
+ */
+function chapterRowRuns(
+  pagesInput: ComposedChapterPage[]
+): Array<{ chapter: NonNullable<ComposedChapterPage["chapter"]>; pages: MarkdownPage[] }> | undefined {
   const pages = [...pagesInput]
     .filter((page) => Number.isInteger(page.index) && page.index > 0)
     .sort((a, b) => a.index - b.index);
@@ -338,13 +381,7 @@ export function readerChaptersFromComposedChapters(pagesInput: ComposedChapterPa
   if (runs.length < 2 || new Set(runs.map((run) => run.chapter.index)).size !== runs.length) {
     return undefined;
   }
-  return runs.map((run, position) => ({
-    index: position + 1,
-    title: sanitizeReaderChapterTitle(run.chapter.title ?? "", position + 1, run.pages),
-    summary: sanitizeReaderChapterSummary(run.chapter.summary ?? "", run.pages),
-    startPageIndex: run.pages[0]!.index,
-    endPageIndex: run.pages[run.pages.length - 1]!.index
-  }));
+  return runs;
 }
 
 function shouldAttemptReaderChapterization(pages: MarkdownPage[]): boolean {

@@ -7,7 +7,7 @@ import {
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
 import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
 import { isRecord, jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
-import { isImportedManuscript } from "../schemas/mediaSettings.js";
+import { isAuthorManuscript } from "../schemas/mediaSettings.js";
 import { evidenceLedgerFields } from "./evidenceLedger.js";
 import { figureStandInMarkdown } from "./figures/figureBlocks.js";
 import { pageDraftSummary } from "./figures/figureDraftSummary.js";
@@ -355,9 +355,24 @@ export function pinStyleExcerpts(
   return [...fromPages, ...fromImport].slice(0, 2);
 }
 
+/**
+ * The author's own sentences, for the style lock: the import's profile, or —
+ * for a book written in the Studio — the one its STYLE_PROFILE pass learned
+ * (`mediaSettings.mobile.studio.styleProfile`). The import's wins when a book
+ * somehow has both: it was learned from the whole manuscript as it arrived.
+ */
 export function sampleExcerptsFromInput(input: CreateProjectInput): string[] {
   const mobile = mediaSettingsMobileRecord(input.mediaSettings);
-  const profile = jsonRecord(jsonRecord(mobile.import).styleProfile);
+  for (const source of [mobile.import, mobile.studio]) {
+    const excerpts = styleProfileExcerpts(jsonRecord(jsonRecord(source).styleProfile));
+    if (excerpts.length > 0) {
+      return excerpts;
+    }
+  }
+  return [];
+}
+
+function styleProfileExcerpts(profile: Record<string, unknown>): string[] {
   return Array.isArray(profile.sampleExcerpts)
     ? profile.sampleExcerpts.filter((excerpt): excerpt is string => typeof excerpt === "string" && excerpt.trim().length > 0)
     : [];
@@ -447,7 +462,8 @@ export type OpeningContractSource = {
  *
  * The contract has two halves — one gated on the book's provenance, one on that
  * provenance *and* the plan — and **an imported manuscript is exempt from
- * both**:
+ * both** (and so is a book written in the Studio: the gate is
+ * `isAuthorManuscript`, and every "import" below means either kind):
  *
  *   - the **opening-quality** half (never open on throat-clearing; open the way
  *     this category opens) is what the exemption was first written for. Page 1
@@ -491,7 +507,7 @@ export type OpeningContractSource = {
  * some entirely unrelated cause. Hence the second half of the gate.
  *
  * **Which page is the author's is not a question that can be asked.** `Page`
- * carries no provenance column, so `isImportedManuscript` reads the *project's*
+ * carries no provenance column, so `isAuthorManuscript` reads the *project's*
  * mediaSettings and both halves can only ever be book-level. That over-applies
  * in one direction — `resolveStructuralEdit` (`pageRestructure.ts`) accepts
  * `anchorPageIndex: 0`, so pages inserted at the head of an imported book are
@@ -540,8 +556,8 @@ export function openingContractForRange(
   // always read; the hook is the plan's answer *less that same exemption*,
   // rather than a second predicate spelled beside it — which is what the brief
   // producers' `openingHookForRange` still returns, and why nothing here calls
-  // `isImportedManuscript` twice.
-  const speaksForThisBooksOpening = reachesFirstPage && !isImportedManuscript(source.input.mediaSettings);
+  // `isAuthorManuscript` twice.
+  const speaksForThisBooksOpening = reachesFirstPage && !isAuthorManuscript(source.input.mediaSettings);
   const openingHook = speaksForThisBooksOpening ? openingHookForRange(source.plan, pageStart, pageEnd) : undefined;
   return {
     writesFirstPage: reachesFirstPage,

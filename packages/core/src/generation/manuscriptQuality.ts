@@ -179,10 +179,44 @@ function runQualityRules<Context>(
   return findings;
 }
 
+/**
+ * The deterministic checks an author's own manuscript (`isAuthorManuscript`)
+ * answers to: whether the book is *whole*, never whether it is well written.
+ *
+ * Kept — content integrity, the questions a publish can get wrong and the author
+ * can fix: pages missing, miscounted or misnumbered; an empty page; a
+ * `TODO`/`TBD`/placeholder the author left in; an unmatched code fence or a link
+ * cut off mid-way (`MALFORMED_MARKDOWN`), which swallows everything after it.
+ *
+ * Skipped — every judgment of the prose itself: near-duplicate pages, repeated
+ * phrases and openings, the structural slop families and the
+ * `STRUCTURAL_SLOP_SATURATION` error their corroboration raises
+ * (`publicationCorroborationError`), recap backtracking, sentence-opening cadence.
+ * They were measured against what this pipeline's models write — a model's
+ * habits, flagged so the repair pass can redraft them — and an author's refrain,
+ * house style or deliberate repetition is not a defect this product may grade,
+ * let alone one that holds their book in REVIEW_REQUIRED. Skipped as well:
+ * `PROMPT_LEAKAGE`, which looks for our own prompts in the prose, and
+ * `UNSUPPORTED_CITATION`, which asks each *page* to define its own footnotes —
+ * right for a model's self-contained page, wrong for an author's, whose
+ * definitions sit wherever they wrote them and whose pages are only where the
+ * paginator cut.
+ */
+const AUTHOR_MANUSCRIPT_CHECK_CODES = new Set([
+  "MISSING_PAGES",
+  "PAGE_COUNT_MISMATCH",
+  "PAGE_INDEX_INVALID",
+  "EMPTY_PAGE",
+  "PLACEHOLDER_TEXT",
+  "MALFORMED_MARKDOWN"
+]);
+
 export function runDeterministicManuscriptChecks(options: {
   pages: ManuscriptIntegrityPage[];
   expectedPageCount: number;
   language?: string;
+  /** The author owns the text: content-integrity checks only. See {@link AUTHOR_MANUSCRIPT_CHECK_CODES}. */
+  authorManuscript?: boolean;
 }): ManuscriptQualityIssue[] {
   const pages = [...options.pages].sort((a, b) => a.index - b.index);
   const indexes = pages.map((page) => page.index);
@@ -209,12 +243,15 @@ export function runDeterministicManuscriptChecks(options: {
   });
   const pageTexts = prepared.map(({ plain }) => plain);
   const pageTokens = prepared.map(({ tokens }) => tokens);
-  const cached = cacheManuscriptPages(prepared);
-  const englishPhraseDetectors = englishPhraseDetectorsEnabled(options.language, pageTexts);
 
   for (const { page, plain } of prepared) {
     issues.push(...runQualityRules(MANUSCRIPT_PAGE_QUALITY_RULES, { page, plain }));
   }
+  if (options.authorManuscript) {
+    return stampShadowWouldBlock(issues.filter((issue) => AUTHOR_MANUSCRIPT_CHECK_CODES.has(issue.code)), pages.length);
+  }
+  const cached = cacheManuscriptPages(prepared);
+  const englishPhraseDetectors = englishPhraseDetectorsEnabled(options.language, pageTexts);
 
   issues.push(
     ...nearDuplicateIssues(pages, pageTokens),

@@ -6,11 +6,14 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../studio/presentation/studio_location.dart';
 import '../data/projects_repository.dart';
 import '../domain/chat_text_direction.dart';
 import '../domain/project_models.dart';
 import 'book_edit_widgets.dart';
+import 'book_takeover.dart';
 import 'project_chat_screen.dart';
 
 /// Manual Edit Mode: the user edits the generated book text themselves.
@@ -49,6 +52,11 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
   final Map<String, UndoHistoryController> _undoControllers = {};
   final Set<String> _dirtyPageIds = {};
   ScrollController _stripController = ScrollController();
+  bool _takingOver = false;
+
+  /// Kept across a retry after a network failure, so a takeover that did land
+  /// is replayed rather than repeated.
+  String? _takeoverRequestId;
 
   @override
   void initState() {
@@ -242,6 +250,55 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
     }
   }
 
+  /// Moves this book into the Writing Studio (`book_takeover.dart`) and opens
+  /// it there. Typed edits would not survive the move, so they block it.
+  Future<void> _continueInStudio() async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (_hasChanges) {
+      messenger.showAppSnackBar(
+        const SnackBar(
+          content: Text(
+            'Save or discard your changes first, then open the Writing '
+            'Studio.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!await confirmBookTakeover(context) || !mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final router = GoRouter.of(context);
+    _takeoverRequestId ??= studioRequestId('studio-takeover');
+    AppHaptics.commit();
+    setState(() => _takingOver = true);
+    try {
+      await takeOverBookIntoStudio(
+        container: container,
+        projectId: widget.projectId,
+        requestId: _takeoverRequestId!,
+      );
+      _takeoverRequestId = null;
+      AppHaptics.success();
+      router.go(studioLocation(widget.projectId));
+    } on ApiException catch (error) {
+      // The server answered and did nothing; the next tap is a new request,
+      // and the book page should show the book as it is now.
+      _takeoverRequestId = null;
+      container.invalidate(projectDetailProvider(widget.projectId));
+      AppHaptics.error();
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
+    } catch (error) {
+      AppHaptics.error();
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _takingOver = false);
+    }
+  }
+
   Future<bool> _confirmDiscard() async {
     return showAppConfirmationDialog(
       context,
@@ -256,6 +313,7 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
   @override
   Widget build(BuildContext context) {
     final book = _book;
+    final detail = ref.watch(projectDetailProvider(widget.projectId)).value;
     return PopScope(
       canPop: !_hasChanges || _saving,
       onPopInvokedWithResult: (didPop, _) async {
@@ -288,18 +346,30 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
           ),
           actions: [
             Padding(
-              padding: const EdgeInsetsDirectional.only(end: 12),
+              padding: EdgeInsetsDirectional.only(
+                end: canContinueInStudio(detail) ? 4 : 12,
+              ),
               child: AppButton.primary(
-                onPressed: _hasChanges && !_saving ? _save : null,
+                onPressed: _hasChanges && !_saving && !_takingOver
+                    ? _save
+                    : null,
                 loading: _saving,
                 loadingLabel: 'Saving',
                 leading: const Icon(Icons.save_outlined, size: 18),
                 label: 'Save',
               ),
             ),
+            if (canContinueInStudio(detail))
+              BookTakeoverMenu(
+                onContinueInStudio: _saving || _takingOver || book == null
+                    ? null
+                    : _continueInStudio,
+              ),
           ],
         ),
-        body: _loading
+        body: _takingOver
+            ? const BookTakeoverProgress()
+            : _loading
             ? const AppLoadingState(message: 'Loading your book')
             : _loadError != null
             ? AppErrorState(

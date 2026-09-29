@@ -16,6 +16,8 @@ import { dryRunDetail, dryRunPageBeat, rotate } from "./fakeDryRunBeats.js";
 import { fakeChapterForms, fakeComposedChapter, fakeDescribedPages, fakeBookArc, fakeCutChapter, fakeSeams, fakeDetemplatedChapter } from "./fakeComposedChapters.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
 import { fakePagePatch } from "./fakePagePatch.js";
+import { fakeAuthorAssist } from "./fakeAuthorAssist.js";
+import { isAuthorAssistPurpose } from "../authoring/authorAssistTypes.js";
 import { PAGE_PATCH_PURPOSE } from "../generation/pagePatchEdit.js";
 import { parseSchemaWithContext } from "./json.js";
 import type {
@@ -272,6 +274,10 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
     if (options.purpose === PAGE_PATCH_PURPOSE) {
       return fakePagePatch(options);
+    }
+
+    if (isAuthorAssistPurpose(options.purpose)) {
+      return fakeAuthorAssist(options.purpose, options);
     }
 
     if (schema === bookPlanSchema && this.input) {

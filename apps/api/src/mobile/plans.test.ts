@@ -37,7 +37,7 @@ describe("mobile plan lifecycle", () => {
     mockPrisma.project.update.mockResolvedValue({});
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
     mockPrisma.planVersion.findFirst
-      .mockResolvedValueOnce({ id: "plan-1", projectId: "project-1", status: "DRAFT" })
+      .mockResolvedValueOnce({ id: "plan-1", projectId: "project-1", status: "DRAFT", project: { mediaSettings: {} } })
       .mockResolvedValueOnce({ id: "plan-1", projectId: "project-1", status: "DRAFT", project: projectRecord({ id: "project-1" }) });
     mockPrisma.planVersion.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.planVersion.update.mockResolvedValue({});

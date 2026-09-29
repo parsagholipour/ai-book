@@ -194,6 +194,10 @@ class AudiobookCache {
   /// The media session fetches artwork itself, outside our Dio client and
   /// without the bearer token, so a remote URL would silently render nothing —
   /// it has to be a local file.
+  ///
+  /// A redrawn cover keeps its server path, so the `?v=` the API puts on a
+  /// cover URL is part of the filename: a new cover is a new file, and the
+  /// one it replaces is dropped once the new one is on disk.
   Future<File?> ensureCoverArt({
     required String projectId,
     required String audiobookId,
@@ -203,17 +207,34 @@ class AudiobookCache {
       return null;
     }
     final directory = await audiobookDirectory(projectId, audiobookId);
-    final file = File('${directory.path}/cover.img');
+    final version = Uri.tryParse(coverUrl)?.queryParameters['v'];
+    final name = version == null || version.isEmpty
+        ? 'cover.img'
+        : 'cover-v${safeSegment(version)}.img';
+    final file = File('${directory.path}/$name');
     if (await file.exists()) {
       return file;
     }
     try {
       await _download(coverUrl, file);
-      return file;
     } catch (_) {
       // Artwork is decoration. Losing it must never stop playback.
       return null;
     }
+    try {
+      await for (final entry in directory.list()) {
+        final other = entry.path.split(Platform.pathSeparator).last;
+        final isCover =
+            other == 'cover.img' ||
+            (other.startsWith('cover-v') && other.endsWith('.img'));
+        if (entry is File && isCover && other != name) {
+          await entry.delete().catchError((_) => entry);
+        }
+      }
+    } catch (_) {
+      // A stale cover left behind is a few kilobytes; the new one is in hand.
+    }
+    return file;
   }
 
   /// Drops every narration for a project except [keepAudiobookId].

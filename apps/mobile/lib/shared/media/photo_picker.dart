@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 /// The purpose owns the plugin policy so feature callers cannot accidentally
 /// make a character crop source as lossy as a directly uploaded chat image, or
 /// make every chat attachment pay the character crop's larger byte cost.
-enum PhotoPickerPurpose { characterCropSource, chatAttachment }
+enum PhotoPickerPurpose { characterCropSource, chatAttachment, bookImage }
 
 /// The platform-facing seam around `image_picker`.
 ///
@@ -94,9 +94,19 @@ const _chatAttachmentPolicy = (
   imageQuality: 85,
 );
 
+// Pictures an author puts in their own book are printed, so they keep more
+// pixels than a chat photo; the server re-encodes every upload anyway, so the
+// quality stays a notch under the crop source's.
+const _bookImagePolicy = (
+  maxWidth: 2400.0,
+  maxHeight: 2400.0,
+  imageQuality: 88,
+);
+
 _PhotoPickerPolicy _policyFor(PhotoPickerPurpose purpose) {
   return switch (purpose) {
     PhotoPickerPurpose.characterCropSource => _characterCropSourcePolicy,
     PhotoPickerPurpose.chatAttachment => _chatAttachmentPolicy,
+    PhotoPickerPurpose.bookImage => _bookImagePolicy,
   };
 }

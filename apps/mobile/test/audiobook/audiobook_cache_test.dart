@@ -170,6 +170,30 @@ void main() {
   );
 
   test(
+    'a redrawn cover is a new lock-screen file, and the old one goes',
+    () async {
+      // A redraw keeps the cover's server path; only its `?v=` moves.
+      Future<File?> art(String url) =>
+          cache.ensureCoverArt(projectId: 'p', audiobookId: 'a', coverUrl: url);
+
+      final first = await art('/api/mobile/projects/p/assets/c1?v=one');
+      final again = await art('/api/mobile/projects/p/assets/c1?v=one');
+      final redrawn = await art('/api/mobile/projects/p/assets/c2?v=two');
+
+      expect(api.downloads, 2);
+      expect(again!.path, first!.path);
+      expect(redrawn!.path, isNot(first.path));
+      expect(await redrawn.readAsString(), contains('?v=two'));
+      final covers = redrawn.parent
+          .listSync()
+          .map((entry) => entry.path.split(Platform.pathSeparator).last)
+          .where((name) => name.startsWith('cover'))
+          .toList();
+      expect(covers, ['cover-vtwo.img']);
+    },
+  );
+
+  test(
     'older audiobook payloads default backup narration disclosure to false',
     () {
       expect(MobileAudiobook.fromJson(const {}).backupNarrationUsed, isFalse);

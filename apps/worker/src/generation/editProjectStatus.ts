@@ -1,5 +1,5 @@
 import type { SettledProjectStatus } from "@book-maker/core";
-import type { BookEditOperationKind, Prisma } from "@book-maker/db";
+import type { BookEditOperationKind, JobType, Prisma } from "@book-maker/db";
 
 type EditProjectStatusClient = Pick<
   Prisma.TransactionClient,
@@ -17,6 +17,19 @@ const LEGACY_PUBLICATION_KINDS = new Set<BookEditOperationKind>([
   "REMOVE_IMAGE",
   "RESTRUCTURE_PAGES"
 ]);
+
+/**
+ * Job types a newer row of which never supersedes an edit's publication.
+ *
+ * A Writing Studio assist is a suggestion on its own `ManuscriptAssist` row: it
+ * writes no page, no status and no revision, and it may be started at any
+ * moment — including inside a chat edit's EDITING window. Counted as a "later
+ * lifecycle", one tap on Illustrate made that edit's own compile stand down,
+ * and nothing was ever coming to publish in its place, so the book sat EDITING
+ * with its paid edit unexported. `JobType` rather than a derived list because
+ * the rest of the derivative set is left exactly as it was.
+ */
+const JOBS_OUTSIDE_EDIT_OWNERSHIP: JobType[] = ["WRITING_ASSIST"];
 
 function classifierRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -136,6 +149,7 @@ async function ownsEditProjectStatus(
       createdAt: options.phase === "APPLIED" && operation.publicationRevision === null
         ? { gte: ownershipStartedAt }
         : { gt: ownershipStartedAt },
+      type: { notIn: JOBS_OUTSIDE_EDIT_OWNERSHIP },
       ...(allowedJobIds.length > 0 ? { id: { notIn: allowedJobIds } } : {})
     },
     select: { id: true }

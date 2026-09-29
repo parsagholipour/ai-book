@@ -711,7 +711,9 @@ export async function hasOpenProjectWork(projectId: string): Promise<boolean> {
   const openWork = {
     projectId,
     status: { in: ["QUEUED", "ACTIVE"] },
-    type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH"] }
+    // A Writing Studio assist is a detached derivative: it never writes the
+    // book, so it must never hold an edit, a publish or an undo back.
+    type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH", "WRITING_ASSIST"] }
   } satisfies Prisma.GenerationJobWhereInput;
   const openJobs = await prisma.generationJob.findMany({ where: openWork, select: { payload: true } });
   return openJobs.some((job) => !isDetachedFromProjectLifecycle(job.payload));

@@ -7,7 +7,7 @@ import {
   type MobileProjectImageDto
 } from "./dto.js";
 import { mobileAssetFilenameSchema } from "./schemas.js";
-import { jsonRecord, sanitizeDownloadFilename, stringField } from "./support.js";
+import { jsonRecord, sanitizeDownloadFilename, stringField, versionedImageAssetUrl } from "./support.js";
 import {
   exportRequiresSubscription,
   exportContentType,
@@ -42,7 +42,10 @@ export function serializeImage(
   return {
     id: image.id,
     role,
-    url: `/api/mobile/projects/${encodeURIComponent(image.projectId)}/assets/${encodeURIComponent(image.id)}`,
+    url: versionedImageAssetUrl(
+      `/api/mobile/projects/${encodeURIComponent(image.projectId)}/assets/${encodeURIComponent(image.id)}`,
+      image
+    ),
     contentType: imageContentType(image),
     altText,
     pageId: image.pageId

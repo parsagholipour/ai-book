@@ -39,8 +39,14 @@ enum BookLibrarySort {
 
 /// Ideas and plans stay in chat until writing has produced manuscript pages.
 /// The drawer and the full library use the same definition of a book.
+///
+/// A book the author is writing in the Studio is a book from its first word —
+/// it has no chat to live in, and no pages until it is published, so it would
+/// otherwise be reachable from nowhere.
 List<MobileProjectSummary> libraryBooks(List<MobileProjectSummary> projects) =>
-    projects.where((project) => project.pageCount > 0).toList()
+    projects
+        .where((project) => project.pageCount > 0 || project.isWritten)
+        .toList()
       ..sort(BookLibrarySort.updated.compare);
 
 List<MobileProjectSummary> searchLibraryBooks(

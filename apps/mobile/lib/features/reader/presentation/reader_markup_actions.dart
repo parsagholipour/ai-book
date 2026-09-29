@@ -43,6 +43,7 @@ class ReaderMarkupActions {
     required this.isMounted,
     required this.onGoToPage,
     this.hasCoverPage = false,
+    this.studioRoute,
   });
 
   final BuildContext context;
@@ -56,6 +57,9 @@ class ReaderMarkupActions {
   final bool Function() isMounted;
   final void Function(int page) onGoToPage;
   final bool hasCoverPage;
+
+  /// Sends "Edit page" to the Writing Studio for a book the author owns.
+  final ReaderStudioRoute? studioRoute;
 
   // ------------------------------------------------------------------ creating
 
@@ -314,6 +318,7 @@ class ReaderMarkupActions {
         hasCoverPage: hasCoverPage,
       ),
       action: action,
+      studioRoute: studioRoute,
     );
   }
 

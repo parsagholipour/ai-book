@@ -1,5 +1,5 @@
-import Fastify from "fastify";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import Fastify, { type FastifyInstance } from "fastify";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PAGE_REVIEW_PROMPT_MODE_DEFAULTS,
   QUALITY_EFFORT_TIERS,
@@ -45,6 +45,27 @@ function settingsOf(
 }
 
 describe("admin generation quality settings", () => {
+  // Registering the route compiles its body schemas — a validator for every
+  // stage at every tier — which costs about two seconds per app, and grows
+  // with the stage registry. Every test that uses Fastify's default options
+  // shares one app (the route keeps no per-app state, and the mocks are
+  // consulted per request); the two that need their own AJV options build their
+  // own. Twenty-seven fresh apps turned this suite into ~40 s of schema
+  // compiles, which timed out under the full parallel `pnpm check`.
+  let sharedApp: Promise<FastifyInstance> | undefined;
+  function defaultApp(): Promise<FastifyInstance> {
+    sharedApp ??= (async () => {
+      const app = Fastify({ logger: false });
+      await app.register(adminGenerationQualityRoutes);
+      return app;
+    })();
+    return sharedApp;
+  }
+
+  afterAll(async () => {
+    if (sharedApp) await (await sharedApp).close();
+  });
+
   beforeEach(() => {
     vi.resetAllMocks();
     process.env.DEEPSEEK_API_KEY = "deepseek-test-key";
@@ -65,8 +86,7 @@ describe("admin generation quality settings", () => {
       reply.code(403).send({ error: "Operator access required" });
       return null;
     });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const headers = { authorization: "Bearer mobile-access-token" };
     const responses = await Promise.all([
@@ -102,13 +122,11 @@ describe("admin generation quality settings", () => {
     expect(mockPrisma.generationQualityRevision.findFirst).not.toHaveBeenCalled();
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
-    await app.close();
   });
 
   it("returns compiled defaults when no revision rows exist", async () => {
     mockPrisma.generationQualityRevision.findFirst.mockResolvedValue(null);
-    const app = Fastify();
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "GET",
@@ -156,7 +174,6 @@ describe("admin generation quality settings", () => {
     expect(pipelines.strategies.find((strategy) => strategy.id === "page-map-sequential")?.pipeline).toBe("per-page");
     expect(pipelines.routing.rows.length).toBeGreaterThan(5);
     expect(Object.keys(pipelines.stages).sort()).toEqual(["composed", "per-page", "planning"]);
-    await app.close();
   });
 
   it("writes an append-only revision for the full feature map", async () => {
@@ -170,8 +187,7 @@ describe("admin generation quality settings", () => {
         ...data
       })
     );
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -199,7 +215,6 @@ describe("admin generation quality settings", () => {
         updatedBy: "operator-console"
       })
     });
-    await app.close();
   });
 
   it("stores an empty finalBookQa assignment as disabled", async () => {
@@ -213,8 +228,7 @@ describe("admin generation quality settings", () => {
         ...data
       })
     );
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -228,7 +242,6 @@ describe("admin generation quality settings", () => {
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ settings: expect.objectContaining({ finalBookQa: [] }) })
     });
-    await app.close();
   });
 
   /**
@@ -241,8 +254,7 @@ describe("admin generation quality settings", () => {
    */
   it("names a field the reset does not take rather than storing the canned note", async () => {
     mockStoredRevision({ version: 4 });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "POST",
@@ -255,7 +267,6 @@ describe("admin generation quality settings", () => {
     expect(error).toMatch(/^not:/);
     expect(error).not.toMatch(/feature this build knows/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /**
@@ -266,8 +277,7 @@ describe("admin generation quality settings", () => {
    */
   it("refuses a feature id on the reset, which resets every feature anyway", async () => {
     mockStoredRevision({ version: 4 });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "POST",
@@ -278,7 +288,6 @@ describe("admin generation quality settings", () => {
     expect(response.statusCode).toBe(400);
     expect((response.json() as { error: string }).error).toMatch(/^styleAuditor:/);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /** The same answer with the strip switched off, as on the PATCH. */
@@ -302,8 +311,7 @@ describe("admin generation quality settings", () => {
   /** The note the hook exists to protect still reaches the revision. */
   it("resets with the operator's own note when the key is spelled right", async () => {
     mockStoredRevision({ version: 4 });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "POST",
@@ -320,7 +328,6 @@ describe("admin generation quality settings", () => {
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ note: "Tuning the auditor down for the week" })
     });
-    await app.close();
   });
 
   /**
@@ -336,8 +343,7 @@ describe("admin generation quality settings", () => {
       version: 7,
       settings: { ...QUALITY_FEATURE_DEFAULTS, beatDedup: [], claimRetrieve: ["ultra", "premium"] }
     });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const { beatDedup: _unknownToThisClient, ...knownToThisClient } = QUALITY_FEATURE_DEFAULTS;
     const response = await app.inject({
@@ -355,13 +361,11 @@ describe("admin generation quality settings", () => {
         settings: expect.objectContaining({ beatDedup: [], styleAuditor: ["ultra"] })
       })
     });
-    await app.close();
   });
 
   it("names one feature and leaves the other ten alone", async () => {
     mockStoredRevision({ version: 1, settings: { ...QUALITY_FEATURE_DEFAULTS, writerTools: [] } });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -375,7 +379,6 @@ describe("admin generation quality settings", () => {
       writerTools: [],
       pageMapCritic: ["ultra"]
     });
-    await app.close();
   });
 
   it("preserves a future feature when an older replica patches another gate", async () => {
@@ -384,8 +387,7 @@ describe("admin generation quality settings", () => {
       version: 8,
       settings: { ...QUALITY_FEATURE_DEFAULTS, futureContinuityGate: futureFeature }
     });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -400,7 +402,6 @@ describe("admin generation quality settings", () => {
         settings: expect.objectContaining({ futureContinuityGate: futureFeature, styleAuditor: [] })
       })
     });
-    await app.close();
   });
 
   it("preserves future tiers on an untouched known feature", async () => {
@@ -409,8 +410,7 @@ describe("admin generation quality settings", () => {
       version: 8,
       settings: { ...QUALITY_FEATURE_DEFAULTS, planCritic: futureTiers }
     });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -425,13 +425,11 @@ describe("admin generation quality settings", () => {
         settings: expect.objectContaining({ planCritic: futureTiers, styleAuditor: [] })
       })
     });
-    await app.close();
   });
 
   it("falls back to the compiled default for a feature no revision has ever set", async () => {
     mockStoredRevision(null);
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -441,7 +439,6 @@ describe("admin generation quality settings", () => {
 
     expect(response.statusCode).toBe(200);
     expect(settingsOf(response)).toEqual({ ...QUALITY_FEATURE_DEFAULTS, styleAuditor: [] });
-    await app.close();
   });
 
   /**
@@ -454,8 +451,7 @@ describe("admin generation quality settings", () => {
    */
   it("refuses a PATCH that claims nothing rather than minting a no-op revision", async () => {
     mockStoredRevision({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -467,14 +463,12 @@ describe("admin generation quality settings", () => {
     // It says what was missing, rather than blaming the tier lists it was sent none of.
     expect((response.json() as { error: string }).error).toMatch(/at least one/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /** Blank once trimmed, a note stores as `null` — the empty body in a hat. */
   it("refuses a note that is only whitespace", async () => {
     mockStoredRevision({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -485,7 +479,6 @@ describe("admin generation quality settings", () => {
     expect(response.statusCode).toBe(400);
     expect((response.json() as { error: string }).error).toMatch(/at least one/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /**
@@ -497,8 +490,7 @@ describe("admin generation quality settings", () => {
    */
   it("names the note when a change note is over the length cap", async () => {
     mockStoredRevision({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -512,7 +504,6 @@ describe("admin generation quality settings", () => {
     expect(error).toContain("500");
     expect(error).not.toMatch(/effort tier/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /**
@@ -528,8 +519,7 @@ describe("admin generation quality settings", () => {
       version: 3,
       settings: { ...QUALITY_FEATURE_DEFAULTS, writerTools: [] }
     });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -549,7 +539,6 @@ describe("admin generation quality settings", () => {
         note: "Writer tools stay off until the retry budget lands"
       })
     });
-    await app.close();
   });
 
   /**
@@ -562,8 +551,7 @@ describe("admin generation quality settings", () => {
    */
   it("names a feature id this build does not know rather than dropping it in silence", async () => {
     mockStoredRevision({ version: 1 });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -576,7 +564,6 @@ describe("admin generation quality settings", () => {
     expect(error).toMatch(/^retiredFeature:/);
     expect(error).not.toMatch(/effort tier/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /**
@@ -613,8 +600,7 @@ describe("admin generation quality settings", () => {
    */
   it("names the misspelled feature rather than calling the body empty", async () => {
     mockStoredRevision({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -627,14 +613,12 @@ describe("admin generation quality settings", () => {
     expect(error).toMatch(/^styleAudito:/);
     expect(error).not.toMatch(/at least one/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /** Every unknown id in one sentence, so a second save does not find a second one. */
   it("names every unknown id a body carries", async () => {
     mockStoredRevision({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -646,7 +630,6 @@ describe("admin generation quality settings", () => {
     const { error } = response.json() as { error: string };
     expect(error).toMatch(/^beatDedupp, planCriticc:/);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /**
@@ -656,8 +639,7 @@ describe("admin generation quality settings", () => {
    */
   it("leaves a body that is not an object to the schema", async () => {
     mockStoredRevision({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -669,7 +651,6 @@ describe("admin generation quality settings", () => {
     const { error } = response.json() as { error: string };
     expect(error).not.toMatch(/this build knows/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /**
@@ -679,8 +660,7 @@ describe("admin generation quality settings", () => {
    */
   it.each(QUALITY_EFFORT_TIERS)("accepts %s, the tier list core compiled", async (tier) => {
     mockStoredRevision({ version: 1 });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -690,7 +670,6 @@ describe("admin generation quality settings", () => {
 
     expect(response.statusCode).toBe(200);
     expect(settingsOf(response).styleAuditor).toEqual([tier]);
-    await app.close();
   });
 
   /** A `P2002` the way Prisma raises one for `version Int @unique`. */
@@ -723,8 +702,7 @@ describe("admin generation quality settings", () => {
         createdAt: new Date("2026-08-23T09:30:00.000Z"),
         ...data
       }));
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -748,7 +726,6 @@ describe("admin generation quality settings", () => {
         settings: expect.objectContaining({ styleExcerpts: [], planCritic: [] })
       })
     });
-    await app.close();
   });
 
   /** The reset path builds its settings differently and replays identically. */
@@ -764,8 +741,7 @@ describe("admin generation quality settings", () => {
         createdAt: new Date("2026-08-23T09:40:00.000Z"),
         ...data
       }));
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "POST",
@@ -777,7 +753,6 @@ describe("admin generation quality settings", () => {
     // A reset names every feature, so the winner's revision is what it replaces
     // rather than what it merges onto — compiled defaults, at version 6.
     expect(response.json()).toMatchObject({ version: 6, settings: QUALITY_FEATURE_DEFAULTS });
-    await app.close();
   });
 
   /**
@@ -792,8 +767,7 @@ describe("admin generation quality settings", () => {
     mockPrisma.generationQualityRevision.create
       .mockRejectedValueOnce(versionAlreadyTaken())
       .mockRejectedValueOnce(versionAlreadyTaken());
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -810,14 +784,12 @@ describe("admin generation quality settings", () => {
     expect((response.json() as { error: string }).error).toMatch(/Re-send/);
     expect((response.json() as { error: string }).error).not.toMatch(/Reload/);
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledTimes(2);
-    await app.close();
   });
 
   it("does not replay a failure that is not a unique-index conflict", async () => {
     mockStoredRevision({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } });
     mockPrisma.generationQualityRevision.create.mockRejectedValue(new Error("connection terminated"));
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -827,13 +799,11 @@ describe("admin generation quality settings", () => {
 
     expect(response.statusCode).toBe(500);
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledTimes(1);
-    await app.close();
   });
 
   it("refuses an effort tier core never compiled", async () => {
     mockStoredRevision({ version: 1 });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -847,7 +817,6 @@ describe("admin generation quality settings", () => {
     expect(error).toMatch(/^styleAuditor\[0\]:/);
     expect(error).toContain(QUALITY_EFFORT_TIERS.join(", "));
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 
   /**
@@ -858,8 +827,7 @@ describe("admin generation quality settings", () => {
    */
   it("names the feature whose value is not a list of tiers", async () => {
     mockStoredRevision({ version: 1 });
-    const app = Fastify({ logger: false });
-    await app.register(adminGenerationQualityRoutes);
+    const app = await defaultApp();
 
     const response = await app.inject({
       method: "PATCH",
@@ -872,6 +840,5 @@ describe("admin generation quality settings", () => {
     expect(error).toMatch(/^styleAuditor:/);
     expect(error).toMatch(/lists of effort tiers/i);
     expect(mockPrisma.generationQualityRevision.create).not.toHaveBeenCalled();
-    await app.close();
   });
 });

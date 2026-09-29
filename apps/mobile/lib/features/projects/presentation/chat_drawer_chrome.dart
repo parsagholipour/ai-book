@@ -8,6 +8,7 @@ import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../../characters/data/characters_repository.dart';
 import '../../characters/presentation/character_library_screen.dart';
+import '../../studio/presentation/start_writing_sheet.dart';
 import 'creation_chat_navigation.dart';
 
 class ChatDrawerHeader extends StatelessWidget {
@@ -187,15 +188,52 @@ class ChatDrawerNewBookButton extends StatelessWidget {
   }
 }
 
+/// The quiet second way to start a book, under the loud first one: a link, not
+/// a button, so "New book" stays the one obvious thing to press.
+class ChatDrawerWriteYourOwnLink extends StatelessWidget {
+  const ChatDrawerWriteYourOwnLink({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: TextButton(
+        key: const ValueKey('drawer-write-your-own'),
+        style: TextButton.styleFrom(
+          foregroundColor: theme.colorScheme.primary,
+          visualDensity: VisualDensity.compact,
+          textStyle: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        onPressed: () {
+          // The drawer is closing, and its context goes with it; the sheet is
+          // opened from the navigator that outlives it.
+          final navigator = Navigator.of(context);
+          navigator.pop();
+          showStartWritingSheet(navigator.context);
+        },
+        child: const Text('or write your own'),
+      ),
+    );
+  }
+}
+
 class ChatDrawerFooter extends StatelessWidget {
   const ChatDrawerFooter({
     required this.billing,
     required this.colors,
+    this.offerWriteYourOwn = true,
     super.key,
   });
 
   final AsyncValue<MobileBilling> billing;
   final ColorScheme colors;
+
+  /// Whether the "or write your own" link sits under New book. It steps aside
+  /// while the chats are being searched, and on a short screen, where the
+  /// chats need every row they can get.
+  final bool offerWriteYourOwn;
 
   @override
   Widget build(BuildContext context) {
@@ -207,9 +245,13 @@ class ChatDrawerFooter extends StatelessWidget {
       children: [
         const Divider(height: 1),
         const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: ChatDrawerNewBookButton(),
         ),
+        if (offerWriteYourOwn)
+          const ChatDrawerWriteYourOwnLink()
+        else
+          const SizedBox(height: 4),
         Padding(
           padding: const EdgeInsetsDirectional.only(start: 8, end: 12),
           // A Wrap, not a Row: at large text the balance drops to its own line

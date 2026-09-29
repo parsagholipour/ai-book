@@ -11,7 +11,7 @@ vi.mock("../queue.js", async () => (await import("../mobile/testing/mobileApiMoc
 vi.mock("../projectStatus.js", async () => (await import("../mobile/testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { type BookEditIntentKind } from "../bookEditIntent.js";
-import { APPLY_BOOK_EDIT_OPERATION_SQL } from "./operationEconomics.js";
+import { APPLY_BOOK_EDIT_OPERATION_SQL, WRITING_ASSIST_OPERATION_SQL } from "./operationEconomics.js";
 
 /**
  * The operation each edit an `APPLY_BOOK_EDIT` job can carry is charged under.
@@ -59,5 +59,29 @@ describe("APPLY_BOOK_EDIT_OPERATION_SQL", () => {
     expect(APPLY_BOOK_EDIT_OPERATION_SQL).toContain("ELSE 'BOOK_TEXT_EDIT'");
     expect(APPLY_BOOK_EDIT_OPERATION_SQL.startsWith("CASE j.payload ->> 'intentKind'")).toBe(true);
     expect(APPLY_BOOK_EDIT_OPERATION_SQL.trimEnd().endsWith("END")).toBe(true);
+  });
+});
+
+describe("WRITING_ASSIST_OPERATION_SQL", () => {
+  /** The Writing Studio price table (.scratch/writing-studio/spec.md), written out as the second opinion. */
+  const PRICED: ReadonlyArray<[string, string]> = [
+    ["ILLUSTRATE", "IMAGE_GENERATION"],
+    ["DRAFT_CHAPTER", "PAGE_REGENERATION"],
+    ["CHAPTER_FEEDBACK", "BOOK_TEXT_EDIT"],
+    ["CONSISTENCY", "PREMIUM_REVIEW"],
+    ["OUTLINE", "PLAN_GENERATION"]
+  ];
+
+  it("maps every priced assist kind to the operation it is charged under, once", () => {
+    for (const [kind, operation] of PRICED) {
+      expect(WRITING_ASSIST_OPERATION_SQL).toContain(`WHEN '${kind}' THEN '${operation}'`);
+    }
+    expect(WRITING_ASSIST_OPERATION_SQL.match(/WHEN '/g) ?? []).toHaveLength(PRICED.length);
+  });
+
+  it("leaves the free internal passes unmapped, so their spend reads as unbilled", () => {
+    expect(WRITING_ASSIST_OPERATION_SQL).not.toContain("STYLE_PROFILE");
+    expect(WRITING_ASSIST_OPERATION_SQL).not.toContain("REEMBED");
+    expect(WRITING_ASSIST_OPERATION_SQL).not.toContain("ELSE");
   });
 });

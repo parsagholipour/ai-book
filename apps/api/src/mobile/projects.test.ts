@@ -15,6 +15,7 @@ import {
   resetMobileHarness,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
+import { seedObject } from "../testing/objectStorage.js";
 
 describe("mobile project listing and detail", () => {
   beforeEach(resetMobileHarness);
@@ -216,7 +217,7 @@ describe("mobile project listing and detail", () => {
       imageFailed: false,
       image: {
         id: "image-page",
-        url: "/api/mobile/projects/project-a/assets/image-page",
+        url: expect.stringMatching(/^\/api\/mobile\/projects\/project-a\/assets\/image-page\?v=[A-Za-z0-9_-]{12}$/),
         contentType: "image/png"
       }
     });
@@ -226,11 +227,46 @@ describe("mobile project listing and detail", () => {
     expect(project.coverImage).toMatchObject({
       id: "image-cover",
       role: "cover",
-      url: "/api/mobile/projects/project-a/assets/image-cover"
+      url: expect.stringMatching(/^\/api\/mobile\/projects\/project-a\/assets\/image-cover\?v=[A-Za-z0-9_-]{12}$/)
     });
     expect(JSON.stringify(project)).not.toMatch(/temperature|generationStrategy|mediaSettings|cost|tokens/);
     // Not a replan copy, so it names no origin.
     expect(project.revisedFrom).toBeNull();
+    await app.close();
+  });
+
+  it("serves a cover at the versioned URL the serializer hands out, to its owner only", async () => {
+    // A redraw rewrites cover.<ext> in place, so the app's cache is only told
+    // by the `?v=` the URL carries; the route itself must not care about it.
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    const cover = {
+      id: "image-cover",
+      projectId: "project-a",
+      pageId: null,
+      type: "COVER",
+      path: "http://localhost:4001/assets/images/project-a/cover.png",
+      metadata: { mimeType: "image/png" }
+    };
+    seedObject("images/project-a/cover.png", "cover-bytes");
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-a", images: [cover] }));
+    mockPrisma.imageAsset.findFirst.mockImplementation(
+      async ({ where }: { where: { id: string; projectId: string; project: { userId: string } } }) =>
+        where.id === cover.id && where.projectId === cover.projectId && where.project.userId === "user-a" ? cover : null
+    );
+    const app = await buildMobileApp();
+
+    const detail = await app.inject({ method: "GET", url: "/api/mobile/projects/project-a", headers: bearer("token-a") });
+    const url: string = detail.json().project.coverImage.url;
+    const own = await app.inject({ method: "GET", url, headers: bearer("token-a") });
+    const other = await app.inject({ method: "GET", url, headers: bearer("token-b") });
+
+    expect(url).toContain("?v=");
+    expect(own.statusCode).toBe(200);
+    expect(own.body).toBe("cover-bytes");
+    expect(own.headers["content-type"]).toBe("image/png");
+    expect(own.headers["cache-control"]).toBe("private, max-age=300");
+    expect(other.statusCode).toBe(404);
+    expect(other.json().error.code).toBe("ASSET_NOT_FOUND");
     await app.close();
   });
 

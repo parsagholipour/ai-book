@@ -98,7 +98,7 @@ generation/  algorithms shared by handlers: book passes, page review loop, seman
              plan helpers
 handlers/    one file per job type — planning, generateBook, generatePage, generateImage,
              generateCover, compileExport, applyBookEdit, importBook, continueBook,
-             replanBook, characters
+             replanBook, characters, writingAssist (the Writing Studio's AI tools)
 ```
 
 Job types live in `JobType` in the Prisma schema, and `jobNames` in `packages/core/src/jobDispatch.ts`
@@ -117,6 +117,7 @@ src/server.ts        app wiring, static assets, retention sweep, queue reconcili
 src/routes/          the legacy operator API (/api/projects, …) used by apps/web
 src/admin/           metrics + inspection queries behind /api/admin (the dashboard)
 src/mobile/          everything under /api/mobile — this is the surface the Flutter app uses
+src/mobile/manuscript/  the Writing Studio: an author's working copy, versions, AI assists, publish
 src/mobileAuth.ts    email/password + bearer/refresh tokens for mobile users
 src/auth.ts          WEB_PASSWORD cookie auth for the operator console only
 ```
@@ -312,7 +313,9 @@ code in that area, however obvious the rule looks.
 
 - **Declining the cover buys a designed one, it does not remove the cover.** → packages/core/src/generation/CLAUDE.md
 - **A cover that cannot be drawn now finishes the book instead of failing it.** → apps/worker/src/handlers/CLAUDE.md
+- **A purchased cover's attempt is settled by its own cover job, never by the compile after it.** → apps/worker/src/handlers/CLAUDE.md
 - **Two things decide whether a cover design reads, and neither is visible in the code.** → packages/core/src/generation/CLAUDE.md
+- **An image URL carries its version, because a redrawn cover keeps its path and a replaced picture keeps its row.** → apps/api/src/mobile/CLAUDE.md
 - **A refused picture gets one rewritten prompt, and only a refusal about a name may have it.** → apps/worker/CLAUDE.md
 - **The rewrite touches the prompt, so the provenance record speaks for the prompt: a retry that re-sent the reference sheets claims no removal.** → apps/worker/CLAUDE.md
 - **A replacement replaces the provenance record too, and undo brings the old one back with the old bytes.** → apps/worker/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
@@ -422,6 +425,23 @@ code in that area, however obvious the rule looks.
 - **A costless call has four different causes and the Costs tab splits all four.** → apps/api/src/admin/CLAUDE.md
 - **"Revenue" is two different numbers and the dashboard shows both.** → apps/api/src/admin/CLAUDE.md
 - **A reversal is an amount, not a boolean.** → apps/api/src/admin/CLAUDE.md
+
+### Writing Studio (author-written books)
+
+- **A publish seals every earlier edit, because undo writes text without a revision check.** → apps/api/src/mobile/CLAUDE.md
+- **A publish reuses rows by position and never shifts an index.** → apps/api/src/mobile/CLAUDE.md
+- **A publish stamps no `publicationRevision`, and its compile and cover are rows in its own commit.** → apps/api/src/mobile/CLAUDE.md
+- **The working copy never overwrites the book blindly: drift is a conflict, not a merge.** → apps/api/src/mobile/CLAUDE.md
+- **An author's book refuses every generation route.** → apps/api/src/mobile/CLAUDE.md
+- **An uploaded picture never makes a book "illustrated".** → apps/api/src/mobile/CLAUDE.md
+- **Studio text is screened where it leaves the working copy, in request-sized windows, and never on autosave.** → apps/api/src/mobile/CLAUDE.md
+- **A Studio picture is reclaimed only when no row of its book names it and neither the picture nor the working copy has changed for 30 days.** → apps/api/src/mobile/CLAUDE.md
+- **A takeover writes its provenance into the plan's snapshot too, because the worker compiles from the snapshot and the API from the row.** → apps/api/src/mobile/CLAUDE.md
+- **A takeover rewrites each page into what the generated compile printed, hero first, and detaches every hero in the same commit that seals earlier edits.** → apps/api/src/mobile/CLAUDE.md
+- **A taken-over book is cut into the chapters its reader saw, and the published Contents is the only record of them.** → apps/api/src/mobile/CLAUDE.md
+- **A takeover clears the generator's page verdicts and image slots, because the author compile still reads them.** → apps/api/src/mobile/CLAUDE.md
+- **An author's book compiles by its own rules, and a generated book never sees them.** → packages/core/src/generation/CLAUDE.md
+- **A revision-owned cover re-typesets the design the book already wears.** → apps/worker/src/handlers/CLAUDE.md
 
 ### Local stack
 

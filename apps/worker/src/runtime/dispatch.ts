@@ -8,7 +8,10 @@ import {
   coverArtSourceFor,
   dispatchBackoffMs,
   errorMessage,
+  exportPublicationProjectStatusFromPayload,
+  isCoverPurchasePayload,
   isDetachedFromProjectLifecycle,
+  isRevisionOwnedCoverPayload,
   jobOwnsQualityVerdict,
   legacyCompilePolicy,
   resolveBookGenerationStrategy,
@@ -30,7 +33,7 @@ import {
 import { config } from "./config.js";
 import { queue } from "./queue.js";
 import { jsonPayloadToRecord } from "./serialization.js";
-import { currentGenerationAttemptId } from "./generationAttemptContext.js";
+import { currentGenerationAttemptId, runWithGenerationAttempt } from "./generationAttemptContext.js";
 import {
   compileIdentityAfterCompletion,
   recoveredCompileSuccessorIdentity
@@ -330,6 +333,23 @@ export async function maybeEnqueueCover(projectId: string, planId: string, input
   return true;
 }
 
+/**
+ * Whether this revision's own cover already ended without a picture — FAILED,
+ * or CANCELED under it. Then the cover question for this manuscript is
+ * answered: the book publishes coverless (the title sheet) rather than asking
+ * `maybeEnqueueCover` for a generation-style cover, which owns the book's
+ * outcome and would mark a published book FAILED if it failed too — and whose
+ * spent dedupe key would otherwise leave fan-in answering "waiting" forever.
+ * The next publish or cover change draws again.
+ */
+async function revisionCoverSettledWithoutPicture(projectId: string, contentRevision: number): Promise<boolean> {
+  const settled = await prisma.generationJob.findMany({
+    where: { projectId, type: "GENERATE_IMAGE", contentRevision, status: { in: ["FAILED", "CANCELED"] } },
+    select: { payload: true }
+  });
+  return settled.some((job) => isRevisionOwnedCoverPayload(job.payload));
+}
+
 export async function countOpenCoverJobs(projectId: string): Promise<number> {
   const openJobs = await prisma.generationJob.findMany({
     where: {
@@ -515,7 +535,10 @@ export async function maybeEnqueueCompile(
     terminalPages === pages.length &&
     pages.length === acceptedPageTarget &&
     openPageJobs === 0;
-  if (pagesReady && coverArtSourceFor(input.mediaSettings) !== "none" && coverAssets === 0 && openImageJobs === 0) {
+  if (
+    pagesReady && coverArtSourceFor(input.mediaSettings) !== "none" && coverAssets === 0 && openImageJobs === 0 &&
+    !(await revisionCoverSettledWithoutPicture(projectId, project.contentRevision))
+  ) {
     await maybeEnqueueCover(projectId, planId, input);
     return "waiting";
   }
@@ -736,5 +759,55 @@ export async function maybeCompileAfterCompletedJob(job: WorkerRuntimeJob) {
   if (!projectId || !planId) {
     return;
   }
-  await maybeEnqueueCompile(projectId, planId);
+  await compileOutsidePurchase(job, () => maybeEnqueueCompile(projectId, planId));
+}
+
+/**
+ * The failure twin of `maybeCompileAfterCompletedJob`, for the one job whose
+ * failure leaves a compile waiting on it: a revision-owned cover. `markFailed`
+ * settles that row alone (`coverSettlement.ts`) and never the book, but the
+ * compile its revision queued stood down while the cover was open — or is still
+ * queued behind it — and until now only the cover's *completion* re-queued it,
+ * so a failed cover left the book EDITING with nothing coming. Released here, it
+ * publishes the revision with the cover the book already has, or coverless
+ * (`revisionCoverSettledWithoutPicture`), and ends COMPLETE or REVIEW_REQUIRED.
+ *
+ * Only while the book is still the revision and status the cover was queued
+ * for: a newer revision's own jobs fan in for it, and a settled book must not be
+ * handed a recompile nobody asked for.
+ */
+export async function maybeCompileAfterFailedJob(job: WorkerRuntimeJob): Promise<CompileDispatchOutcome | null> {
+  if (job.name !== "generate-image" || !isRevisionOwnedCoverPayload(job.data)) {
+    return null;
+  }
+  const { projectId, planId, contentRevision } = job.data;
+  if (!projectId || !planId || contentRevision === undefined) {
+    return null;
+  }
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { status: true, contentRevision: true, currentPlanId: true }
+  });
+  if (
+    !project ||
+    project.status !== exportPublicationProjectStatusFromPayload(job.data) ||
+    project.contentRevision !== contentRevision ||
+    project.currentPlanId !== planId
+  ) {
+    return "settled";
+  }
+  return compileOutsidePurchase(job, () =>
+    maybeEnqueueCompile(projectId, planId, undefined, { contentRevision, requireContentRevisionMatch: true })
+  );
+}
+
+/**
+ * A purchased cover's attempt is the purchase alone, settled by its own job;
+ * the compile after it is free presentation work that must never carry it, or
+ * a refunded purchase would stand that compile down as stale and a failed
+ * reprint could never settle a delivered one. Fan-in otherwise inherits the
+ * delivery's attempt from context, so it is run outside it here.
+ */
+function compileOutsidePurchase<T>(job: WorkerRuntimeJob, fanIn: () => Promise<T>): Promise<T> {
+  return isCoverPurchasePayload(job.data) ? runWithGenerationAttempt(null, fanIn) : fanIn();
 }

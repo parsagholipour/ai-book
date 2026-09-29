@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../studio/presentation/studio_book_card.dart';
+import '../../studio/presentation/studio_location.dart';
 import '../domain/project_models.dart';
 import 'book_hero.dart';
 import 'book_plan_review.dart';
@@ -10,6 +12,7 @@ import 'book_preview_section.dart';
 import 'book_stage.dart';
 import 'book_stage_cards.dart';
 import 'generation_progress_overview.dart';
+import 'plan_write_it_myself.dart';
 import 'project_export_panel.dart';
 
 /// Everything one book has to say, on one page.
@@ -77,6 +80,13 @@ class BookScreenBody extends StatelessWidget {
     final projectId = status?.projectId ?? project?.id;
     final finished =
         stage == BookStage.ready || stage == BookStage.reviewRequired;
+    // The author owns this text, so every "go and fix it" leads to the Studio,
+    // not to Edit Mode's page-by-page markdown.
+    final authorManuscript = project?.isAuthorManuscript ?? false;
+    final unpublishedChanges =
+        stage != BookStage.manuscript &&
+        authorManuscript &&
+        (project?.manuscript?.hasUnpublishedChanges ?? false);
 
     final sections = <Widget>[
       BookHero(
@@ -100,7 +110,9 @@ class BookScreenBody extends StatelessWidget {
         ),
 
       // What is happening to this book right now, whatever that is.
-      if (stage == BookStage.needsPlan && project != null)
+      if (stage == BookStage.manuscript && project != null)
+        StudioBookCard(project: project)
+      else if (stage == BookStage.needsPlan && project != null)
         NoPlanCard(
           project: project,
           billing: billing,
@@ -120,6 +132,14 @@ class BookScreenBody extends StatelessWidget {
           onQuestionAnswers: onRevisePlan ?? (_) async {},
           onRevisionRequest: onRevisePlan ?? (_) async {},
           onApprovePlan: onApprovePlan,
+          // The quiet door out of the generated road: an outline the author
+          // writes themselves. Only while the plan is still theirs to decide.
+          approvalFooter: plan.isApproved || project.isAuthorManuscript
+              ? null
+              : PlanWriteItMyselfLink(
+                  projectId: project.id,
+                  enabled: busyAction == null,
+                ),
         )
       else if (stage == BookStage.needsAttention && status != null)
         BookStoppedCard(
@@ -140,21 +160,41 @@ class BookScreenBody extends StatelessWidget {
           onResume: onResume,
         ),
 
+      // Written in the Studio since the last publish, and not in the book yet.
+      if (unpublishedChanges && projectId != null)
+        AppInlineNotice(
+          key: const ValueKey('book-unpublished-changes'),
+          icon: Icons.edit_note_outlined,
+          title: 'You have changes that aren\'t in your book yet',
+          message:
+              'They are saved in the Writing Studio. Update your book when '
+              'you want readers to see them.',
+          actionLabel: 'Update book',
+          onAction: () =>
+              context.push(studioLocation(projectId, publish: true)),
+        ),
+
       // Flagged quality issues warn but never withhold the download: the reader
       // paid for this book, and the files are right there in the hero.
-      if (quality != null &&
+      if (stage != BookStage.manuscript &&
+          quality != null &&
           (quality.isBlocked || quality.recommendsReview) &&
           projectId != null)
         BookQualityNotice(
           quality: quality,
-          onOpenPage: (pageIndex) =>
-              context.push('/projects/$projectId/edit?pageIndex=$pageIndex'),
+          onOpenPage: (pageIndex) => context.push(
+            authorManuscript
+                ? studioLocation(projectId)
+                : '/projects/$projectId/edit?pageIndex=$pageIndex',
+          ),
           onReview: () {
             final first = quality.affectedPageIndexes.isNotEmpty
                 ? quality.affectedPageIndexes.first
                 : null;
             context.push(
-              first == null
+              authorManuscript
+                  ? studioLocation(projectId)
+                  : first == null
                   ? '/projects/$projectId/edit'
                   : '/projects/$projectId/edit?pageIndex=$first',
             );
@@ -165,7 +205,11 @@ class BookScreenBody extends StatelessWidget {
 
       // The plan the book came from: kept, but out of the way, once it is no
       // longer something the reader decides.
-      if (!stage.leadsWithPlan && plan != null) PlanSummaryCard(plan: plan),
+      // An author's own book has a plan only as bookkeeping the publish wrote
+      // — chapters and page counts read off their manuscript — so it is not
+      // shown back to them as a plan.
+      if (!stage.leadsWithPlan && plan != null && !authorManuscript)
+        PlanSummaryCard(plan: plan),
 
       if (project != null && stage.hasManuscript)
         GeneratedBookPreview(
@@ -181,6 +225,7 @@ class BookScreenBody extends StatelessWidget {
       // that is 30% written is noise about a decision nobody can make yet.
       if (exports != null &&
           !finished &&
+          stage != BookStage.manuscript &&
           (exports.pdf.available || exports.epub.available))
         ProjectExportPanel(
           exports: exports,

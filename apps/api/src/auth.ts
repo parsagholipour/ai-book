@@ -98,6 +98,14 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
       return;
     }
 
+    // Signed out on the app's own surface. It has to answer in the app's error
+    // envelope: every `/api/mobile/*` route declares its 401 as
+    // `{ error: { code, message } }`, so the console's `{ error: "Password
+    // required" }` failed response serialization and the app saw a 500 instead
+    // of the 401 that sends it to sign-in.
+    if (allowsMobileBearer(path)) {
+      return reply.code(401).send({ error: { code: "AUTH_REQUIRED", message: "Sign in to continue." } });
+    }
     return reply.code(401).send({ error: "Password required" });
   });
 }

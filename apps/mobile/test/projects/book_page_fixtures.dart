@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:go_router/go_router.dart';
 import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
+import 'package:tomeza/features/studio/domain/manuscript_models.dart';
 import 'package:tomeza/shared/api/api_client.dart';
 
 // Fixtures for the single book page: a book in any stage, and a harness that
@@ -111,6 +113,10 @@ MobileProjectDetail bookProject({
   String? subtitle,
   int pageCount = 16,
   MobileExportSet? exports,
+  String source = 'generated',
+  MobileManuscriptSummary? manuscript,
+  String statusLabel = 'Status',
+  MobileProjectQuality quality = const MobileProjectQuality.pending(),
 }) {
   final resolvedPlan = withPlan ? (plan ?? bookPlan()) : null;
   return MobileProjectDetail(
@@ -123,7 +129,7 @@ MobileProjectDetail bookProject({
     qualityPreset: 'balanced',
     imagesEnabled: true,
     status: status,
-    statusLabel: 'Status',
+    statusLabel: statusLabel,
     progressPercent: 100,
     currentAction: 'Working.',
     promptPreview: prompt.length > 180 ? prompt.substring(0, 180) : prompt,
@@ -138,6 +144,9 @@ MobileProjectDetail bookProject({
     language: 'en',
     plan: resolvedPlan,
     pages: const [],
+    source: source,
+    manuscript: manuscript,
+    quality: quality,
   );
 }
 
@@ -199,6 +208,7 @@ Widget bookPageApp({
   Future<void> Function()? onRefresh,
   String? busyAction,
   TextScaler textScaler = TextScaler.noScaling,
+  List<Override> overrides = const [],
 }) {
   final router = GoRouter(
     routes: [
@@ -234,6 +244,7 @@ Widget bookPageApp({
       apiAuthHeadersProvider.overrideWith(
         (ref) async => const <String, String>{},
       ),
+      ...overrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,

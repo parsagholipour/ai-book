@@ -6,6 +6,7 @@ import { proposeAddImageEdit } from "./addImageOperations.js";
 import { proposeImageLayoutEdit } from "./imageLayoutOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
 import { applyBackMatterEdit } from "./backMatterEdits.js";
+import { refuseAuthorBookReplan } from "./authorBookReplan.js";
 import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
 import {
   affectedPagesForIntent,
@@ -21,7 +22,7 @@ import {
   queueChatBookEdit,
   queueChatPlanRevision
 } from "./editOperations.js";
-import { sendMobileError, sendProjectNotFound } from "./httpErrors.js";
+import { AUTHOR_MANUSCRIPT_MESSAGE, sendMobileError, sendProjectNotFound } from "./httpErrors.js";
 import { redoLastBookEdit } from "./bookEditRedoApply.js";
 import { undoLastBookEdit } from "./manualEdits.js";
 import {
@@ -42,7 +43,7 @@ import { generateGroundedProjectAnswer } from "./groundedAnswer.js";
 import { replayClaimedProposal } from "./proposalExecutionClaims.js";
 import { isPrismaUniqueConflict, jsonInputValue } from "./support.js";
 import { findPendingProposalById, type PendingEditState } from "./pendingEditState.js";
-import { bookPlanSchema, chapterDisplayHeading, resolveStructuralPageEdit, type TextModelAdapter } from "@book-maker/core";
+import { bookPlanSchema, chapterDisplayHeading, isAuthorManuscript, resolveStructuralPageEdit, type TextModelAdapter } from "@book-maker/core";
 import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
@@ -302,11 +303,14 @@ export async function handleProjectChatIntent(options: {
   }
 
   if (intent.kind === "plan_revision") {
-    if (!project.currentPlan) {
+    // An author's plan is a synthesized record of their chapters: revising it
+    // would pay a model to regenerate over the author's own text.
+    const authorBook = isAuthorManuscript(project.mediaSettings);
+    if (!project.currentPlan || authorBook) {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: "I need a saved book plan before I can revise it.",
+        content: authorBook ? AUTHOR_MANUSCRIPT_MESSAGE : "I need a saved book plan before I can revise it.",
         metadata: { intent, charged: false }
       });
       return { reply, operation: null };
@@ -497,6 +501,8 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
     return { reply, operation: null };
   }
   if (intent.kind === "book_replan") {
+    const refused = await refuseAuthorBookReplan({ project, userMessageId, intent });
+    if (refused) return { reply: refused, operation: null };
     const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings: intent.replanSettings });
     const proposalIntent = { ...intent, clarification: "none" as const };
     const reply = await createAssistantChatMessage({

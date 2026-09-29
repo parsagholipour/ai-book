@@ -110,6 +110,12 @@ String? bookBlurb(
   if (tagline != null) {
     return _tidy(tagline, maxLength);
   }
+  // A book written in the Studio has no brief and no premise of its own: the
+  // prompt and the plan are the app's scaffolding ("Author-written manuscript:
+  // …"), never the author's words. Its subtitle is the only blurb it has.
+  if (project.isWritten) {
+    return null;
+  }
   final premise = usePremise ? _nonEmpty(plan?.premise) : null;
   if (premise != null) {
     return _tidy(premise, maxLength);

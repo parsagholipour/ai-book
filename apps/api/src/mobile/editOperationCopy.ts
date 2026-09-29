@@ -83,6 +83,10 @@ function appliedEditSummary(
       return "Plan revised.";
     case "MANUAL_EDIT":
       return "Your edits are saved.";
+    case "MANUSCRIPT_PUBLISH":
+      return jsonRecord(operation.classifier).takeover === true
+        ? "Book moved into the Writing Studio."
+        : "Book updated from the Writing Studio.";
     default:
       return "Edit applied.";
   }
@@ -244,6 +248,11 @@ export function currentActionForEditOperation(
   }
   if (operation.kind === "MANUAL_EDIT") {
     return "Saving your manual edits.";
+  }
+  if (operation.kind === "MANUSCRIPT_PUBLISH") {
+    return jsonRecord(operation.classifier).takeover === true
+      ? "Setting your book up in the Writing Studio."
+      : "Updating your book from the Writing Studio.";
   }
   return "Applying text edits.";
 }

@@ -52,7 +52,8 @@ const validPayloads = {
     attemptId: "attempt-1",
     libraryCharacterId: "library-character-1",
     userId: "user-1"
-  }
+  },
+  [jobNames.WRITING_ASSIST]: { ...projectFields, assistId: "assist-1" }
 } as const satisfies { [Name in WorkerJobName]: WorkerJobPayloadByName[Name] };
 
 describe("worker job payload schemas", () => {

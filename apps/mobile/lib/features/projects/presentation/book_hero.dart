@@ -7,6 +7,8 @@ import '../../../shared/ui/motion.dart';
 import '../../billing/domain/billing_models.dart';
 import '../domain/book_blurb.dart';
 import '../domain/project_models.dart';
+import '../../studio/presentation/studio_cover_picker.dart';
+import '../../studio/presentation/studio_location.dart';
 import 'book_cover.dart';
 import 'book_screen_skeleton.dart';
 import 'book_stage.dart';
@@ -70,7 +72,10 @@ class BookHero extends StatelessWidget {
     // Large text leaves a 96dp cover too little beside it: a long word in the
     // title breaks mid-word. A smaller cover gives the title its width back.
     final largeText = MediaQuery.textScalerOf(context).scale(1) >= 1.3;
-    final coverWidth = _finished ? (largeText ? 72.0 : 96.0) : 64.0;
+    // A book being written by its author is theirs already: it gets the full
+    // cover, not the thumbnail a book still being generated wears.
+    final fullCover = _finished || stage == BookStage.manuscript;
+    final coverWidth = fullCover ? (largeText ? 72.0 : 96.0) : 64.0;
     final canRead = _finished && (exports?.pdf.available ?? false);
 
     return AppCard(
@@ -94,12 +99,24 @@ class BookHero extends StatelessWidget {
                       context.push('/projects/$projectId/read');
                     }
                   : null,
+              // An author chooses their own cover. Before the first publish
+              // that is the writing card's to offer; after it, here.
+              onChangeCover:
+                  project.isAuthorManuscript &&
+                      stage != BookStage.manuscript &&
+                      projectId != null
+                  ? () {
+                      AppHaptics.tap();
+                      showStudioCoverSheet(context, projectId: projectId);
+                    }
+                  : null,
             ),
           if (_finished && projectId != null && exports != null) ...[
             const SizedBox(height: AppSpacing.md),
             _HeroActions(
               projectId: projectId,
               stage: stage,
+              authorManuscript: project?.isAuthorManuscript ?? false,
               exports: exports!,
               billing: billing,
               busyAction: busyAction,
@@ -150,6 +167,7 @@ class _BookIdentity extends StatelessWidget {
     required this.status,
     required this.coverWidth,
     required this.onTapCover,
+    this.onChangeCover,
   });
 
   final BookStage stage;
@@ -157,6 +175,7 @@ class _BookIdentity extends StatelessWidget {
   final MobileProjectStatus? status;
   final double coverWidth;
   final VoidCallback? onTapCover;
+  final VoidCallback? onChangeCover;
 
   @override
   Widget build(BuildContext context) {
@@ -254,6 +273,11 @@ class _BookIdentity extends StatelessWidget {
                       ),
                     ),
                   ],
+                  if (onChangeCover != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                      child: _ChangeCoverLink(onTap: onChangeCover!),
+                    ),
                 ],
               ),
             ),
@@ -305,6 +329,47 @@ class _BookIdentity extends StatelessWidget {
   }
 }
 
+/// A link-weight way to the cover choice, beside the cover it changes.
+class _ChangeCoverLink extends StatelessWidget {
+  const _ChangeCoverLink({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Semantics(
+      button: true,
+      label: 'Change cover',
+      child: ExcludeSemantics(
+        child: InkWell(
+          key: const ValueKey('hero-change-cover'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppRadii.compact),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.image_outlined, size: 18, color: colors.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Change cover',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The state a book is in, when the card below it does not already say so.
 ///
 /// A book being planned or written has a progress card whose title is the state;
@@ -336,6 +401,11 @@ Widget? _stageBadge(BookStage stage) {
       label: 'Draft',
       icon: Icons.edit_note_outlined,
     ),
+    BookStage.manuscript => const AppStatusBadge(
+      label: 'Writing',
+      icon: Icons.edit_outlined,
+      tone: AppTone.success,
+    ),
     BookStage.planning || BookStage.writing => null,
   };
 }
@@ -355,6 +425,12 @@ String? bookMetaLine({
 }) {
   if (stage == BookStage.planReview) {
     return null;
+  }
+  if (stage == BookStage.manuscript) {
+    // The card below counts the words; the line says how the book is built.
+    final chapters = project.manuscript?.chapterCount ?? 0;
+    if (chapters <= 0) return null;
+    return chapters == 1 ? '1 chapter' : '$chapters chapters';
   }
   final parts = <String>[];
   final chapters = project.plan?.chapters.length ?? 0;
@@ -387,6 +463,7 @@ class _HeroActions extends StatefulWidget {
   const _HeroActions({
     required this.projectId,
     required this.stage,
+    required this.authorManuscript,
     required this.exports,
     required this.billing,
     required this.busyAction,
@@ -398,6 +475,9 @@ class _HeroActions extends StatefulWidget {
 
   final String projectId;
   final BookStage stage;
+
+  /// The author owns this book's text, so its Edit is the Writing Studio.
+  final bool authorManuscript;
   final MobileExportSet exports;
   final MobileBilling? billing;
   final String? busyAction;
@@ -467,11 +547,17 @@ class _HeroActionsState extends State<_HeroActions> {
               ],
               Expanded(
                 child: _ActionTile(
-                  icon: Icons.edit_note_outlined,
-                  label: 'Edit',
+                  icon: widget.authorManuscript
+                      ? Icons.edit_outlined
+                      : Icons.edit_note_outlined,
+                  label: widget.authorManuscript ? 'Write' : 'Edit',
                   onTap: () {
                     AppHaptics.tap();
-                    context.push('/projects/$id/edit');
+                    context.push(
+                      widget.authorManuscript
+                          ? studioLocation(id)
+                          : '/projects/$id/edit',
+                    );
                   },
                 ),
               ),

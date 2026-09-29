@@ -41,6 +41,7 @@ const dispatchedFields = {
   replanOperationId: optionalId("replanOperationId"),
   audiobookId: optionalId("audiobookId"),
   libraryCharacterId: optionalId("libraryCharacterId"),
+  assistId: optionalId("assistId"),
   contentRevision: z.number().int().nonnegative().optional(),
   importQuota: importQuotaSchema.optional()
 } as const;
@@ -248,6 +249,30 @@ const generateCharacterPortraitSchema = z.object({
   userId: requiredId("userId")
 }).passthrough();
 
+/**
+ * A page a Studio publish rewrote, as the publish saw it. A re-embed writes a
+ * page's memory row only while the page still has this id at this index and
+ * revision — a later publish may have reused the slot.
+ */
+const writingAssistPageSchema = z.object({
+  pageId: requiredId("pages[].pageId"),
+  index: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative()
+});
+
+/**
+ * `writing-assist`: one `ManuscriptAssist` row. The row carries the kind and
+ * the author's input; the payload names it, plus — for a re-embed only — the
+ * pages the publish rewrote (read off the row's `input.pages` when absent).
+ * A priced kind rides `attemptId`, which is how the charge is committed on
+ * success and refunded on failure.
+ */
+const writingAssistSchema = z.object({
+  ...projectDispatchedFields,
+  assistId: requiredId("assistId"),
+  pages: z.array(writingAssistPageSchema).optional()
+}).passthrough();
+
 /** Exhaustive by construction: a new core job name is a compile error here. */
 export const jobPayloadSchemas = {
   [jobNames.PLAN_BOOK]: planBookSchema,
@@ -263,7 +288,8 @@ export const jobPayloadSchemas = {
   [jobNames.IMPORT_BOOK]: importBookSchema,
   [jobNames.CONTINUE_BOOK]: continueBookSchema,
   [jobNames.GENERATE_AUDIOBOOK]: generateAudiobookSchema,
-  [jobNames.GENERATE_CHARACTER_PORTRAIT]: generateCharacterPortraitSchema
+  [jobNames.GENERATE_CHARACTER_PORTRAIT]: generateCharacterPortraitSchema,
+  [jobNames.WRITING_ASSIST]: writingAssistSchema
 } as const satisfies Record<WorkerJobName, z.ZodType>;
 
 export type WorkerJobPayloadByName = {
@@ -296,6 +322,7 @@ export type ImportBookJob = WorkerJob<typeof jobNames.IMPORT_BOOK>;
 export type ContinueBookJob = WorkerJob<typeof jobNames.CONTINUE_BOOK>;
 export type GenerateAudiobookJob = WorkerJob<typeof jobNames.GENERATE_AUDIOBOOK>;
 export type GenerateCharacterPortraitJob = WorkerJob<typeof jobNames.GENERATE_CHARACTER_PORTRAIT>;
+export type WritingAssistJob = WorkerJob<typeof jobNames.WRITING_ASSIST>;
 
 export type RawWorkerJob = Job<unknown, void, string>;
 

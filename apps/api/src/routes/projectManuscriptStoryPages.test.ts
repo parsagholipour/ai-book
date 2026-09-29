@@ -29,3 +29,26 @@ it.each(["adult", "imported"])("preserves flowing %s exports", async (kind) => {
   const compiled = await compileProjectManuscript("story", "http://localhost:4001", "/unused");
   expect(compiled?.pageMapPlan?.storyPageLayout).toBeUndefined();
 });
+
+it("rebuilds a Studio book exactly as the worker compiles it: its layout, its chapters, its page breaks", async () => {
+  const studio = (layout: "flow" | "picture") => ({
+    ...row.mediaSettings, mobile: { studio: { layout, kind: "story", createdAt: "2026-09-29T00:00:00.000Z" } }
+  });
+  const chapter = (index: number, title: string) => ({ id: `chapter-${index}`, index, title, summary: "" });
+  const pages = [1, 2, 3, 4].map((index) => ({
+    index, title: `Page ${index}`, images: [], chapter: index <= 2 ? chapter(1, "Chapter 1") : chapter(2, "The Storm"),
+    markdown: index === 3 ? "## Page 3\n\nThe storm came in." : `Paragraph ${index}.`
+  }));
+  findUnique.mockResolvedValue({ ...row, category: "STORY", targetPages: 4, mediaSettings: studio("flow"), pages });
+
+  const flow = await compileProjectManuscript("story", "http://localhost:4001", "/unused");
+
+  expect(flow?.pageMapPlan?.storyPageLayout).toBeUndefined();
+  expect(flow?.markdown).toContain("Paragraph 1.\n\nParagraph 2.");
+  // Four pages earn title-only sections; the author's own "## Page 3" survives under its chapter.
+  expect(flow?.markdown).toContain("Paragraph 2.\n\n<a id=\"chapter-2\"></a>\n\n## The Storm\n## Page 3\n\nThe storm came in.");
+
+  findUnique.mockResolvedValue({ ...row, category: "STORY", targetPages: 4, mediaSettings: studio("picture"), pages });
+  const picture = await compileProjectManuscript("story", "http://localhost:4001", "/unused");
+  expect(picture?.pageMapPlan?.storyPageLayout).toBe("separate");
+});

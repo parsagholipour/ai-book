@@ -96,13 +96,19 @@ export async function enforceContentRestrictions(
  * built it. The two halves only work together, which is why the schema below
  * sits beside this function rather than with the other OpenAPI fragments in
  * `mobile/schemas.ts`.
+ *
+ * `details` is where a refusal says *where* the words are — the Writing
+ * Studio's publish names the chapters (`manuscript/manuscriptContentScreen.ts`)
+ * — and it can never overwrite the three fields above it. A route that sends
+ * details declares a 422 schema naming them too, for the same reason.
  */
 export function sendContentRestricted(
   reply: FastifyReply,
-  refusal: ContentRestrictionRefusal
+  refusal: ContentRestrictionRefusal,
+  details: Record<string, unknown> = {}
 ): FastifyReply {
   return reply.code(422).send({
-    error: { code: contentRestrictionCode(refusal.reason), message: refusal.message, reason: refusal.reason }
+    error: { ...details, code: contentRestrictionCode(refusal.reason), message: refusal.message, reason: refusal.reason }
   });
 }
 
@@ -134,8 +140,10 @@ export class ContentRestrictedError extends Error {
  * The serializer's copy of that body, for the routes that document their 422
  * with it: `POST /api/mobile/characters` and `PATCH /api/mobile/characters/:id`
  * in `mobile/routes/characters.ts`, and `POST
- * /api/mobile/characters/:id/portrait` in `mobile/routes/characterImages.ts`.
- * Those are the only ones today.
+ * /api/mobile/characters/:id/portrait` in `mobile/routes/characterImages.ts`,
+ * and the Writing Studio's two AI-assist routes. The Studio's create, settings
+ * and publish routes declare `manuscriptContentRestrictedError`, this shape plus
+ * the `chapters` and `fields` they send.
  *
  * Declaring it is what lets `reason` out. fast-json-stringify removes whatever
  * the response schema does not name, so a refusal documented with

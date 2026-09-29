@@ -1,6 +1,6 @@
 import { UnrecoverableError } from "bullmq";
 import { errorMessage } from "@book-maker/core";
-import { maybeCompileAfterCompletedJob } from "./runtime/dispatch.js";
+import { maybeCompileAfterCompletedJob, maybeCompileAfterFailedJob } from "./runtime/dispatch.js";
 import { createRunLogger, providerConfigSnapshot, type RunLogger } from "./providers/runLogging.js";
 import {
   STOPPED_JOB_ERROR,
@@ -39,6 +39,7 @@ import { generatePage } from "./handlers/generatePage.js";
 import { importBook } from "./handlers/importBook.js";
 import { planBook, revisePlan } from "./handlers/planning.js";
 import { replanBook } from "./handlers/replanBook.js";
+import { writingAssist } from "./handlers/writingAssist.js";
 import {
   parseWorkerJob,
   workerJobStringField,
@@ -161,6 +162,9 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
         case "generate-character-portrait":
           await generateCharacterPortrait(job);
           break;
+        case "writing-assist":
+          await writingAssist(job);
+          break;
         default:
           unreachableWorkerJob(job);
       }
@@ -239,6 +243,11 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
 
     await runLogger.append("job.failed", { error: serializeError(error) });
     await markFailed(job, error);
+    // A revision-owned cover's failure settles alone, and the compile of its
+    // revision is still waiting on it; best-effort, the stranded sweep backs it.
+    await maybeCompileAfterFailedJob(job).catch((releaseError: unknown) =>
+      runLogger.append("job.follow_up_failed", { error: serializeError(releaseError) }).catch(() => undefined)
+    );
     if (shouldBypassConfiguredRetries(job, error)) {
       throw new UnrecoverableError(errorMessage(error));
     }

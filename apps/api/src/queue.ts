@@ -10,6 +10,7 @@ import {
   generationJobOwnsFailureLifecycle,
   generationJobRestoresPreEditProjectStatus,
   isPresentationOnlyRecompile,
+  isRevisionOwnedCoverPayload,
   jobNames,
   payloadOwnsProjectOutcome,
   jobOwnsQualityVerdict,
@@ -559,9 +560,10 @@ export async function stopProjectGenerationJobs(projectId: string) {
   };
 }
 
-/** One settlement per distinct paid attempt among the jobs a stop claimed. */
+/** One settlement per distinct paid attempt a stop claimed; a revision-owned cover owns no book but settles its own. */
 function settlingAttemptIds(jobs: ReadonlyArray<{ attemptId?: string | null | undefined; payload: unknown }>) {
-  const owning = jobs.flatMap((job) => (job.attemptId && payloadOwnsProjectOutcome(job.payload) ? [job.attemptId] : []));
+  const settles = (payload: unknown) => payloadOwnsProjectOutcome(payload) || isRevisionOwnedCoverPayload(payload);
+  const owning = jobs.flatMap((job) => (job.attemptId && settles(job.payload) ? [job.attemptId] : []));
   return [...new Set(owning)];
 }
 

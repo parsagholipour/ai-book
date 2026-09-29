@@ -3,10 +3,13 @@ import { isSourceForwardBookCategory } from "../categories.js";
 import { jsonRecord } from "../schemas/jsonCoercion.js";
 import { DEFAULT_MARKDOWN_LABELS, markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
 import { joinMarkdownPageBlocks } from "./markdownPageBoundaries.js";
+import { assertBookLikeMarkdown } from "./bookLikeMarkdown.js";
 
 // Re-exported because `markdownLabels` was always part of this module's surface
-// — `epub.ts` and the exporters import it from here.
+// — `epub.ts` and the exporters import it from here. The leak checks moved out
+// of this file and stay on its surface for the same reason.
 export { markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
+export { assertBookLikeMarkdown, findBookLikeMarkdownIssues, type BookLikeMarkdownOptions } from "./bookLikeMarkdown.js";
 
 export type MarkdownPage = {
   index: number;
@@ -59,6 +62,26 @@ export type CompileMarkdownInput = {
    * and the two must never disagree.
    */
   authorName?: string | undefined;
+  /**
+   * The author owns this text — an imported or Studio-written book
+   * (`isAuthorManuscript`), never one this pipeline drafted. Three things change,
+   * and generated books compile byte-for-byte as before:
+   *
+   * - **Every page boundary is a paragraph break.** A generated page is a model's
+   *   unit and its prose may run on into the next one, so pages join on a single
+   *   newline (`joinMarkdownPageBlocks`). An author's page is only where the
+   *   paginator cut, and it cuts between blocks (`paginateManuscriptChapter`) —
+   *   but every page is trimmed, so the blank line that separated those blocks is
+   *   gone, and a single newline merged the paragraphs either side of every cut
+   *   into one `<p>`. Joining on a blank line puts back exactly what was cut.
+   * - **A page prints as written.** A model's whole-page ```` ```markdown ```` wrapper
+   *   is an author's code block, so it is never unwrapped; a model's `## Page 3`
+   *   title is an author's heading, so a leading heading goes only when it repeats
+   *   the chapter heading printed above it.
+   * - **The generation-leak checks are skipped** (`findBookLikeMarkdownIssues`), so
+   *   an author's own "Page 3" heading cannot fail their export.
+   */
+  authorManuscript?: boolean | undefined;
 };
 
 /**
@@ -223,7 +246,7 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
             ? `${chapterAnchorMarkup(chapterAnchorId(chapter))}\n\n## ${formatChapterHeading(chapter, heading)}`
             : "",
           page.imagePath ? `\n![${sanitizeImageAlt(page.index, page.imageAlt, labels)}](${page.imagePath})\n` : "",
-          sanitizePageMarkdown(page, chapter, labels, heading),
+          sanitizePageMarkdown(page, chapter, labels, heading, input.authorManuscript === true),
           ""
         ]
           .filter(Boolean)
@@ -235,7 +258,9 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
   ];
 
   const kept = elements.filter((element) => element.text);
-  const { markdown, offsets } = joinMarkdownPageBlocks(kept.map((element) => element.text));
+  const { markdown, offsets } = joinMarkdownPageBlocks(kept.map((element) => element.text), {
+    paragraphBreaks: input.authorManuscript === true
+  });
 
   const pageAnchors: PageAnchorPlan[] = [];
   let sourcesOffset: number | undefined;
@@ -265,7 +290,7 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
     }
   }
 
-  assertBookLikeMarkdown(markdown);
+  assertBookLikeMarkdown(markdown, { authorManuscript: input.authorManuscript });
   return {
     markdown,
     ...(input.storyPageLayout ? { storyPageLayout: input.storyPageLayout } : {}),
@@ -274,39 +299,6 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
     hasCoverPage: Boolean(coverImagePath || titlePage),
     hasContents: Boolean(contents)
   };
-}
-
-export function assertBookLikeMarkdown(markdown: string): void {
-  const issues = findBookLikeMarkdownIssues(markdown);
-  if (issues.length > 0) {
-    throw new Error(`Compiled book Markdown contains reader-facing generation artifacts: ${issues.join("; ")}`);
-  }
-}
-
-export function findBookLikeMarkdownIssues(markdown: string): string[] {
-  const issues: string[] = [];
-  if (/^---\s*\r?\n/.test(markdown.trimStart())) {
-    issues.push("frontmatter block");
-  }
-  if (/^generatedAt\s*:/im.test(markdown) || /\bgeneratedAt\b/i.test(markdown)) {
-    issues.push("generatedAt metadata");
-  }
-  if (/^pages\s*:\s*\d+\s*$/im.test(markdown)) {
-    issues.push("page-count metadata");
-  }
-  if (/^#{1,6}\s+Page\s+\d+\b/im.test(markdown)) {
-    issues.push("page-number heading");
-  }
-  if (/^\s*-\s+\[Page\s+\d+(?::|\])/im.test(markdown)) {
-    issues.push("page-number table of contents link");
-  }
-  if (/<div\b[^>]*class=["'][^"']*\bpage-break\b/i.test(markdown)) {
-    issues.push("raw page-break markup");
-  }
-  if (/!\[Illustration for Page \d+\]/i.test(markdown)) {
-    issues.push("page-number image alt text");
-  }
-  return issues;
 }
 
 export function sanitizePageTitle(index: number, title: string): string {
@@ -673,13 +665,16 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function sanitizePageMarkdown(
+export function sanitizePageMarkdown(
   page: MarkdownPage,
   chapter: DisplayChapter | undefined,
   labels: MarkdownLabels,
-  headingFormat: ChapterHeadingFormat
+  headingFormat: ChapterHeadingFormat,
+  authorManuscript: boolean
 ): string {
-  const markdown = unwrapWholePageMarkdownFence(page.markdown);
+  // An author's whole-page fence is their code block, not a model's wrapper, and
+  // their "## Page 3" heading is theirs: only a repeat of the chapter heading goes.
+  const markdown = authorManuscript ? page.markdown.trim() : unwrapWholePageMarkdownFence(page.markdown);
   const lines = markdown.split(/\r?\n/);
   const firstLine = lines[0];
   const heading = firstLine?.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
@@ -687,7 +682,7 @@ function sanitizePageMarkdown(
     return markdown;
   }
 
-  if (!shouldStripLeadingHeading(heading[1] ?? "", page, chapter, labels, headingFormat)) {
+  if (!shouldStripLeadingHeading(heading[1] ?? "", page, chapter, labels, headingFormat, authorManuscript)) {
     return markdown;
   }
 
@@ -709,15 +704,16 @@ function shouldStripLeadingHeading(
   page: MarkdownPage,
   chapter: DisplayChapter | undefined,
   labels: MarkdownLabels,
-  headingFormat: ChapterHeadingFormat
+  headingFormat: ChapterHeadingFormat,
+  authorManuscript: boolean
 ): boolean {
   const normalizedHeading = normalizeHeadingText(heading);
   const normalizedPageTitle = normalizeHeadingText(sanitizePageTitle(page.index, page.title));
   const pagePrefix = new RegExp(`^page\\s+${page.index}\\b`, "i");
   if (
-    pagePrefix.test(normalizedHeading) ||
+    !authorManuscript && (pagePrefix.test(normalizedHeading) ||
     /^page(?:\s+\d+\b|\s+title\b|\s+like\b)/i.test(normalizedHeading) ||
-    (normalizedHeading.length > 0 && normalizedHeading === normalizedPageTitle)
+    (normalizedHeading.length > 0 && normalizedHeading === normalizedPageTitle))
   ) {
     return true;
   }

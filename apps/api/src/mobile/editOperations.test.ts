@@ -224,7 +224,8 @@ describe("hasOpenProjectWork", () => {
     expect(call[0].where).toEqual({
       projectId: "project-1",
       status: { in: ["QUEUED", "ACTIVE"] },
-      type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH"] }
+      // A Writing Studio assist is a detached derivative and never holds the book.
+      type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH", "WRITING_ASSIST"] }
     });
     expect(call[0].where.payload).toBeUndefined();
     expect(call[0].where.NOT).toBeUndefined();

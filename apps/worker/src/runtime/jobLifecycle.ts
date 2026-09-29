@@ -3,6 +3,7 @@ import {
   bookGenerationChargeFromPayloads,
   errorMessage,
   exportPublicationProjectStatusFromPayload,
+  isCoverPurchasePayload,
   isPresentationOnlyRecompile,
   isRecoverableNetworkError,
   parseStructuralApplication,
@@ -35,6 +36,7 @@ import {
   markEditOperationCompleted
 } from "./editOperationSettlement.js";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
+import { isRevisionOwnedCoverJob, settleRevisionOwnedCoverExit } from "./coverSettlement.js";
 import {
   assertJobNotStopped,
   buildStepTemplate,
@@ -46,6 +48,7 @@ import { staleGenerationTargetReason } from "./staleJobGuard.js";
 import { stagedReplanSuccessorProof } from "./stagedReplanJobGuard.js";
 import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE, type JobLifecycleSettlement } from "./jobTypes.js";
 import { jsonPayloadToRecord } from "./serialization.js";
+import { failWritingAssistForJob } from "./writingAssistSettlement.js";
 import {
   parseWorkerJob,
   workerJobStringField,
@@ -248,6 +251,10 @@ export async function cancelStaleGenerationJob(job: WorkerRuntimeJob, reason: st
       console.error(`Failed to refund stale-cancelled generation for job ${generationJobId ?? "?"}`, error);
     });
   }
+  if (job.name === "writing-assist") {
+    // A canceled row never runs, so its assist would otherwise wait QUEUED forever.
+    await failWritingAssistForJob(job, new Error(reason), { attemptSettled: Boolean(attemptId) });
+  }
   const operationId = editOperationIdFromJob(job);
   if (!operationId) {
     return;
@@ -300,7 +307,7 @@ export async function markCompleted(job: WorkerRuntimeJob, lifecycleSettlement: 
   }
   if (completion.lifecycleSettlement === "defer-to-successor") return true;
   const attemptId = generationAttemptIdFromJob(job);
-  if (attemptId && attemptCompletesWithJob(job.name)) await markGenerationAttemptSucceeded(attemptId);
+  if (attemptId && attemptCompletesWithJob(job)) await markGenerationAttemptSucceeded(attemptId);
   await markEditOperationCompleted(job);
   return true;
 }
@@ -334,6 +341,11 @@ export async function markFailed(job: WorkerRuntimeJob, error: unknown) {
       console.error(`Failed to settle generation attempt ${attemptId}`, settlementError);
     });
     await stopSiblingJobsForSettledAttempt(attemptId);
+  }
+  if (isRevisionOwnedCoverJob(job)) {
+    // Never the book's failure: see `coverSettlement.ts`. processJob releases the compile.
+    await settleRevisionOwnedCoverExit(job, errorMessage(error), "failed");
+    return;
   }
   const recoverablePlanRevision =
     !attemptId && job.name === "revise-plan" && isRecoverableNetworkError(error) && Boolean(editOperationId);
@@ -393,6 +405,12 @@ export async function markFailed(job: WorkerRuntimeJob, error: unknown) {
   }
   if (job.name === "generate-character-portrait") {
     await failCharacterPortraitForJob(job, errorMessage(error));
+    return;
+  }
+  if (job.name === "writing-assist") {
+    // A suggestion on its own row, never the book's outcome: the attempt above
+    // refunded the charge, and only the assist row learns why it failed.
+    await failWritingAssistForJob(job, error, { attemptSettled: Boolean(attemptId) });
     return;
   }
   if (job.name === "plan-book") {
@@ -608,12 +626,21 @@ export async function markStopped(job: WorkerRuntimeJob) {
       console.error(`Failed to settle stopped generation attempt ${attemptId}`, settlementError);
     });
   }
+  if (isRevisionOwnedCoverJob(job)) {
+    // The API's stop already chose the project's status; the cover owns none.
+    await settleRevisionOwnedCoverExit(job, STOPPED_JOB_ERROR, "stopped");
+    return;
+  }
   if (job.name === "generate-audiobook") {
     await failAudiobookForJob(job, STOPPED_JOB_ERROR);
     return;
   }
   if (job.name === "generate-character-portrait") {
     await failCharacterPortraitForJob(job, STOPPED_JOB_ERROR);
+    return;
+  }
+  if (job.name === "writing-assist") {
+    await failWritingAssistForJob(job, new Error(STOPPED_JOB_ERROR), { attemptSettled: Boolean(attemptId) });
     return;
   }
   // Operation settlement is separate from project settlement: Apply and
@@ -738,7 +765,12 @@ async function stopSiblingJobsForSettledAttempt(attemptId: string): Promise<void
     });
 }
 
-function attemptCompletesWithJob(jobName: string): boolean {
+function attemptCompletesWithJob(job: WorkerRuntimeJob): boolean {
+  // A purchased cover's attempt is the purchase, and its own job delivers it
+  // (`coverSettlement.ts`); a fallback to a design refunded the ledger entry in
+  // the handler first, so completing here leaves a charge standing only for
+  // artwork that was stored.
+  if (job.name === "generate-image") return isCoverPurchasePayload(job.data);
   return [
     "plan-book",
     "revise-plan",
@@ -746,8 +778,11 @@ function attemptCompletesWithJob(jobName: string): boolean {
     "apply-book-edit",
     "continue-book",
     "generate-audiobook",
-    "generate-character-portrait"
-  ].includes(jobName);
+    "generate-character-portrait",
+    // A delivered assist commits its charge: `markCompleted` runs only after
+    // the handler wrote the suggestion (or found it already written).
+    "writing-assist"
+  ].includes(job.name);
 }
 
 /**

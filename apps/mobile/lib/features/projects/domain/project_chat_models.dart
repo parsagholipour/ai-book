@@ -794,6 +794,7 @@ class MobileEditableBookPage {
     required this.title,
     required this.markdown,
     required this.revision,
+    this.chapterId,
   });
 
   final String id;
@@ -802,6 +803,11 @@ class MobileEditableBookPage {
   final String markdown;
   final int revision;
 
+  /// The chapter this page belongs to, for a book the author edits in the
+  /// Writing Studio: "Edit page" in the reader opens the Studio there. Null
+  /// from servers that predate it, and for pages outside any chapter.
+  final String? chapterId;
+
   factory MobileEditableBookPage.fromJson(Map<String, dynamic> json) {
     return MobileEditableBookPage(
       id: json['id'] as String,
@@ -809,6 +815,7 @@ class MobileEditableBookPage {
       title: json['title'] as String,
       markdown: json['markdown'] as String,
       revision: json['revision'] as int,
+      chapterId: json['chapterId'] as String?,
     );
   }
 }

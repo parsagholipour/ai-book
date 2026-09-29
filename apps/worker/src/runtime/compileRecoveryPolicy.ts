@@ -35,6 +35,7 @@ function compileRecoveryPolicyFromEdit(kind: BookEditOperationKind): CompilePubl
     case "PAGE_REWRITE":
     case "CHAPTER_REGENERATE":
     case "MANUAL_EDIT":
+    case "MANUSCRIPT_PUBLISH":
       return compilePublicationPolicyFromPayload({ skipFinalReview: true });
     case "PLAN_REVISION":
     case "BOOK_REPLAN":

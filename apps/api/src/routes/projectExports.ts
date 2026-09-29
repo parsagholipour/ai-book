@@ -6,7 +6,7 @@ import {
   removeExportProvenance,
   writeExportProvenance,
   markdownOpensOnCoverSheet,
-  isImportedManuscript,
+  isAuthorManuscript,
   persistablePdfPageMapAfterRender,
   publishedExportFilename,
   type AppConfig,
@@ -397,7 +397,7 @@ export function rebuildProjectPdfExport(
           publicApiUrl: appConfig.PUBLIC_API_URL,
           outputPath,
           language: project.language,
-          targetPageCount: isImportedManuscript(project.mediaSettings) ? undefined : project.targetPages,
+          targetPageCount: isAuthorManuscript(project.mediaSettings) ? undefined : project.targetPages,
           // Scopes the renderer's file access to this book's own illustrations,
           // exactly as the worker's compile does.
           projectId,

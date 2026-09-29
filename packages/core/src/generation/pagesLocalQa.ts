@@ -4,7 +4,7 @@ import { pageDraftSummary } from "./figures/figureDraftSummary.js";
 import { isSignpostingBookCategory } from "../categories.js";
 import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import type { PageDraft, PageQualityReport } from "../schemas/book.js";
-import { isImportedManuscript } from "../schemas/mediaSettings.js";
+import { isAuthorManuscript } from "../schemas/mediaSettings.js";
 import type { FinalQaPage, ReviewPageOptions } from "./pages.js";
 import { skippedPageQualityReport } from "./pagesSkippedQualityReport.js";
 import { overlapTokens } from "./pageOverlap.js";
@@ -82,7 +82,7 @@ function pageRule(
 const FIRST_PAGE_OPENING_QUALITY_RULE = pageRule(
   ({ currentBody, options }) =>
     options.pageIndex === 1 &&
-    !isImportedManuscript(options.input.mediaSettings) &&
+    !isAuthorManuscript(options.input.mediaSettings) &&
     hasWeakFirstPageOpening(currentBody),
   ["styleNatural"],
   "First page opens with a generic or meta hook instead of a concrete one."

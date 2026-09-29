@@ -1,16 +1,50 @@
 import { chapterAnchorMarkup, type CompiledBookMarkdown, type PageAnchorPlan } from "./markdown.js";
-import { isImportedManuscript, type CreateProjectInput } from "../schemas/book.js";
+import { isAuthorManuscript, studioLayoutFromMediaSettings, type CreateProjectInput } from "../schemas/book.js";
 import { requestedGenerationPages } from "./pageCountAllowance.js";
 
 export type StoryPagePlan = Pick<CompiledBookMarkdown, "pageAnchors" | "sourcesOffset" | "storyPageLayout">;
 
+type StoryLayoutInput = Pick<CreateProjectInput, "category" | "targetPages"> & { mediaSettings: unknown };
+type StoryLayoutPage = { index: number; markdown: string };
+
+/**
+ * The story layout a book is typeset in — the one both compiles (the worker's
+ * and the API's inline rebuild) must ask, so the two cannot disagree.
+ *
+ * An author's book never takes the generated rule: its page count and its
+ * category are the author's, not a picture-book plan's. It gets separate story
+ * pages only when it was written in the Studio's picture layout, where a page
+ * is a unit the author made on purpose — picture on top, text below — and one
+ * printed sheet per page is what they composed. A flow book's pages are where
+ * the typesetter cut, and printing each on its own sheet would scatter prose.
+ */
+export function storyPageLayoutFor(input: StoryLayoutInput, pages: readonly StoryLayoutPage[]): "separate" | undefined {
+  return isAuthorManuscript(input.mediaSettings)
+    ? studioPictureStoryPageLayout(input.mediaSettings, pages)
+    : shortKidsStoryPageLayout(input, pages);
+}
+
+/**
+ * A Studio picture book: one sheet per page, at any length — a one-page book
+ * is a cover and a sheet — and in any category, because the author chose the
+ * layout, not the planner. Only the shape `splitStoryPageMarkdown` can cut is
+ * required: pages 1..n, contiguous, none empty. Anything else (a chat edit that
+ * left a gap, a page emptied by hand) falls back to flowing prose rather than
+ * failing the render.
+ */
+export function studioPictureStoryPageLayout(mediaSettings: unknown, pages: readonly StoryLayoutPage[]): "separate" | undefined {
+  return studioLayoutFromMediaSettings(mediaSettings) === "picture" && contiguousStoryPages(pages) ? "separate" : undefined;
+}
+
 /** Scene pagination is independent of image frequency and model-review switches. */
-export function shortKidsStoryPageLayout(input: Pick<CreateProjectInput, "category" | "targetPages"> & { mediaSettings: unknown },
-  pages: readonly { index: number; markdown: string }[]): "separate" | undefined {
+export function shortKidsStoryPageLayout(input: StoryLayoutInput, pages: readonly StoryLayoutPage[]): "separate" | undefined {
   return input.category === "KIDS" && requestedGenerationPages(input) >= 5 && requestedGenerationPages(input) <= 40 &&
-    !isImportedManuscript(input.mediaSettings) && pages.length === input.targetPages &&
-    pages.every((page, index) => page.index === index + 1 && page.markdown.trim().length > 0)
+    !isAuthorManuscript(input.mediaSettings) && pages.length === input.targetPages && contiguousStoryPages(pages)
     ? "separate" : undefined;
+}
+
+function contiguousStoryPages(pages: readonly StoryLayoutPage[]): boolean {
+  return pages.length > 0 && pages.every((page, index) => page.index === index + 1 && page.markdown.trim().length > 0);
 }
 
 /** Exact source slices shared by PDF, Word and EPUB; no title/paragraph guessing. */

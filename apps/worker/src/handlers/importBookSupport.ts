@@ -83,10 +83,21 @@ export function mediaSettingsWithImportStyle(
   };
 }
 
-/** Style profile stored by a completed import, if any. */
+/**
+ * The author's style profile: the one a completed import stored, or — for a
+ * book written in the Writing Studio — the one its STYLE_PROFILE pass learned
+ * (`mediaSettings.mobile.studio.styleProfile`), so a continuation writes in the
+ * author's voice either way. The import's wins when both exist.
+ */
 export function importStyleProfileFromMediaSettings(mediaSettings: unknown): Record<string, unknown> | null {
-  const profile = jsonRecord(jsonRecord(jsonRecord(jsonRecord(mediaSettings).mobile).import).styleProfile);
-  return Object.keys(profile).length > 0 ? profile : null;
+  const mobile = jsonRecord(jsonRecord(mediaSettings).mobile);
+  for (const source of [mobile.import, mobile.studio]) {
+    const profile = jsonRecord(jsonRecord(source).styleProfile);
+    if (Object.keys(profile).length > 0) {
+      return profile;
+    }
+  }
+  return null;
 }
 
 /** Detected language when usable, the project's existing language otherwise. */

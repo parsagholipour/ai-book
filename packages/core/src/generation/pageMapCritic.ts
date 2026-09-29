@@ -38,7 +38,7 @@ import {
  * two values it needs off them. Page 1's contract asks three questions and only
  * two of them are answerable from a number: the third is whether this book's
  * opening is the pipeline's to commit at all, which lives in the *project's*
- * provenance (`isImportedManuscript`, `schemas/mediaSettings.ts`). Handed
+ * provenance (`isAuthorManuscript`, `schemas/mediaSettings.ts`). Handed
  * `plan.openingHook` as a string, this pass could not ask it — so the gate lived
  * in the worker, one call site away from the rule it gates, which is how an
  * imported manuscript's page 1 went on being briefed to deliver a hook a later

@@ -1,12 +1,14 @@
 import {
   assertBookLikeMarkdown,
+  authorReaderChapters,
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   getBookGenerationStrategy,
   chapterHeadingLabelPreference,
   chapterHeadingStylePreference,
   includeSourcesPreference,
+  isAuthorManuscript,
   mediaSettingsSchema,
-  shortKidsStoryPageLayout,
+  storyPageLayoutFor,
   resolvePublicImageUrl,
   type BookPageMapPlan
 } from "@book-maker/core";
@@ -50,7 +52,7 @@ export async function compileProjectManuscript(
     where: { id: projectId },
     include: {
       currentPlan: true,
-      pages: { orderBy: { index: "asc" }, include: { images: true } },
+      pages: { orderBy: { index: "asc" }, include: { images: true, chapter: true } },
       images: true,
       research: true
     }
@@ -66,9 +68,15 @@ export async function compileProjectManuscript(
 
   const strategy = strategyForMediaSettings(project.mediaSettings);
   const cover = project.images.find((image) => image.type === "COVER");
+  // The same author rules the worker's compile applies (`compileExport.ts`), or
+  // an inline rebuild of an imported or Studio book would print a different book:
+  // paragraph-break page joins, the Studio picture layout, the author's chapters.
+  const authorManuscript = isAuthorManuscript(project.mediaSettings);
   const compiled = strategy.compileMarkdownWithPageAnchors({
     plan: project.currentPlan.planningPackage as never,
-    storyPageLayout: shortKidsStoryPageLayout(project, generatedPages),
+    storyPageLayout: storyPageLayoutFor(project, generatedPages),
+    authorManuscript,
+    ...(authorManuscript ? { readerChapters: authorReaderChapters(generatedPages) } : {}),
     category: project.category,
     language: project.language,
     ...(project.authorName ? { authorName: project.authorName } : {}),
@@ -95,7 +103,7 @@ export async function compileProjectManuscript(
     chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
     chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
   });
-  assertBookLikeMarkdown(compiled.markdown);
+  assertBookLikeMarkdown(compiled.markdown, { authorManuscript });
   return { markdown: compiled.markdown, pageMapPlan: compiled };
 }
 

@@ -1,13 +1,10 @@
-import { getProjectOrThrow, strategyForInput } from "../generation/bookHelpers.js";
+import { getProjectOrThrow } from "../generation/bookHelpers.js";
 import {
-  characterReferencePromptInstruction,
-  imageAssetPlanId,
-  librarySnapshotForSheet,
-  resolveLibraryPortraitSeed,
-  selectReferenceImagePaths,
-  toWorkerImageAsset,
-  type CharacterReferenceSelection
-} from "../generation/characterReferences.js";
+  illustrationPromptForReferences,
+  insertionReferenceSelection,
+  renderIllustration,
+  storeIllustration
+} from "../generation/illustrationRender.js";
 import {
   imageAltFromSubject,
   markdownWithAppendedImage,
@@ -24,25 +21,19 @@ import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import {
   bookPlanSchema,
   createProviders,
-  imageAdapterCapabilities,
   imageRenderProvenance,
   jsonRecord,
-  libraryCharactersFromMediaSettings,
   markdownLabels,
-  matchLibraryCharacter,
-  optimizeImageForStorage,
   preEditProjectStatus,
   publicAssetUrl,
   storedImageRenderProvenance,
   withImageRenderProvenance,
-  type BookPlan,
-  type ImageAdapter,
   type SettledProjectStatus
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 import { randomUUID } from "node:crypto";
-import { objectKey, objectStore } from "@book-maker/storage";
+import { objectStore } from "@book-maker/storage";
 
 /**
  * The `apply-book-edit` image fork: render one chat-requested illustration.
@@ -184,7 +175,6 @@ export async function applyImageInsertion(
   }
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
-  const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
 
   // Re-validate the target against the live book: the quote was made against a
@@ -239,38 +229,37 @@ export async function applyImageInsertion(
   // A function of what is attached, not of the selection: the instruction
   // counts the pictures and names the last few as saved faces, so a fallback
   // that can take fewer has to be able to say it again for what it sends.
-  const promptForReferenceImages = (attached: readonly string[]) =>
-    [
-      `Create one interior book illustration depicting: ${insertion.subject}.`,
+  const promptForReferenceImages = illustrationPromptForReferences({
+    subject: insertion.subject,
+    context: [
       requestContext && requestContext !== insertion.subject.trim()
         ? `The reader's request:\n${requestContext}`
         : "",
       characterContext
         ? `Character context (supplemental canon, not an additional edit requirement):\n${characterContext}`
-        : "",
-      characterReferencePromptInstruction(selection, attached),
-      `Global visual style: ${plan.illustrationPlan.globalStyle}`,
-      `Continuity rules: ${plan.illustrationPlan.pageRules.join(" ")}`
-    ]
-      .filter(Boolean)
-      .join("\n");
+        : ""
+    ],
+    selection,
+    globalStyle: plan.illustrationPlan.globalStyle,
+    pageRules: plan.illustrationPlan.pageRules
+  });
   const imagePrompt = promptForReferenceImages(selection.paths);
   // No try/catch: a failed render must fail the job (and refund through the
   // attempt settlement). The FallbackImageAdapter chain inside the logged
   // provider is the resilience budget, exactly as for generated pages.
-  const image = await strategy.generateImageBytes({
+  const image = await renderIllustration({
+    input,
     image: providers.image,
     prompt: imagePrompt,
     projectId,
     pageId: targetPage.id,
-    referenceImagePaths: selection.paths,
+    selection,
     promptForReferenceImages
   });
 
   await advanceJobStep(generationJobId, "apply", 70, `Storing the illustration for page ${targetPage.index}`, {
     pageIndex: targetPage.index
   });
-  const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
   // The marker is the operationId prefix, shared by every delivery of this
   // operation, so the belt check below recognises any delivery's line. The
   // filename is delivery-unique on top of it: two stalled deliveries render
@@ -278,11 +267,16 @@ export async function applyImageInsertion(
   // silently swapped the artwork under the winner's published markdown.
   // A losing delivery's file is a harmless orphan instead, removed below.
   const marker = `chat-image-${operationId}`;
-  const filename = replaceAsset
-    ? `page-${targetPage.index}-${operationId}-${randomUUID()}.${optimizedImage.extension}`
-    : `${marker}-${randomUUID()}.${optimizedImage.extension}`;
-  const imagePath = objectKey("images", projectId, filename);
-  await objectStore().put(imagePath, optimizedImage.bytes, { contentType: optimizedImage.mimeType });
+  const stored = await storeIllustration({
+    projectId,
+    image,
+    fileName: (extension) =>
+      replaceAsset
+        ? `page-${targetPage.index}-${operationId}-${randomUUID()}.${extension}`
+        : `${marker}-${randomUUID()}.${extension}`
+  });
+  const filename = stored.fileName;
+  const imagePath = stored.objectKey;
 
   const alt = imageAltFromSubject(insertion.subject, markdownLabels(project.language).illustration);
   const imageLine = `![${alt}](/assets/images/${projectId}/${filename})`;
@@ -643,64 +637,6 @@ async function applyAssetReplacementInTx(
     }
   });
   return true;
-}
-
-/**
- * Reference images for a one-off insertion.
- *
- * Never `ensureCharacterReferenceAssets`: it filters sheets by
- * `metadata.planId` and would delete and re-render the whole cast after any
- * continuation or replan — one unbilled image call per character inside a job
- * quoted at one image — and for a non-illustrated book it returns nothing,
- * dropping library faces with it. Existing sheets are read as they are: the
- * current plan's, falling back to any earlier plan's, which still show the
- * same cast.
- */
-async function insertionReferenceSelection(options: {
-  projectId: string;
-  planVersionId: string;
-  subject: string;
-  input: ReturnType<typeof inputForPlanVersion>;
-  plan: BookPlan;
-  image: ImageAdapter;
-  projectUserId: string | null;
-}): Promise<CharacterReferenceSelection> {
-  const allSheets = await prisma.imageAsset.findMany({
-    where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" },
-    orderBy: { createdAt: "asc" }
-  });
-  const currentPlanSheets = allSheets.filter((asset) => imageAssetPlanId(asset.metadata) === options.planVersionId);
-  const sheets = currentPlanSheets.length > 0 ? currentPlanSheets : allSheets;
-  const selection = await selectReferenceImagePaths({
-    input: options.input,
-    plan: options.plan,
-    assets: sheets.map(toWorkerImageAsset),
-    projectId: options.projectId,
-    image: options.image,
-    context: options.subject
-  });
-  const budget = imageAdapterCapabilities(options.image).maxReferenceImages - selection.paths.length;
-  if (budget <= 0) {
-    return selection;
-  }
-  // A saved character named in the subject whose book has no sheet for them —
-  // a text-only book has none at all — still gets their portrait attached, or
-  // the reader's own character would be drawn from prose alone. The seeding
-  // path's ownership trio (`resolveLibraryPortraitSeed`) is the only way a
-  // portrait is ever read off a stored snapshot.
-  const snapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
-  const match = matchLibraryCharacter(options.subject, snapshots);
-  if (!match || sheets.some((asset) => librarySnapshotForSheet(asset.metadata, [match]) !== null)) {
-    return selection;
-  }
-  const outcome = await resolveLibraryPortraitSeed(match, options.projectUserId);
-  if (!outcome.seeded) {
-    return selection;
-  }
-  return {
-    paths: [...selection.paths, outcome.seed.path],
-    libraryFaceNames: [...selection.libraryFaceNames, match.name]
-  };
 }
 
 // The page-markdown image helpers moved to `generation/imageMarkdown.ts` when

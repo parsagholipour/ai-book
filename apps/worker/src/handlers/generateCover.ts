@@ -13,7 +13,11 @@ import {
   bookPlanSchema,
   buildCoverArtworkPrompt,
   coverArtSourceFor,
+  coverDesign,
   createProviders,
+  isCoverPurchasePayload,
+  isRevisionOwnedCoverPayload,
+  jsonRecord,
   optimizeImageForStorage,
   publicAssetUrl,
   renderCoverPng,
@@ -26,6 +30,7 @@ import { characterReferenceAssetsOrNone } from "../generation/characterReference
 import { coverDesignArtwork } from "../generation/coverArtwork.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { prisma } from "@book-maker/db";
+import { refundCreditLedgerEntry } from "@book-maker/db/billing";
 import type { GenerateImageJob } from "../runtime/jobPayloads.js";
 import { objectKey, objectStore } from "@book-maker/storage";
 
@@ -82,17 +87,27 @@ export async function generateCover(job: GenerateImageJob) {
   );
   await advanceJobStep(generationJobId, "prompt", 20, "Building cover prompt");
 
+  // A revision-owned job is a book the reader already holds, re-typeset for a new
+  // manuscript revision — a Studio publish that changed the title or byline. Its
+  // designed cover keeps the artwork the reader chose to keep, and only the
+  // typography moves; asking the selector again could hand the same book a
+  // different picture for a one-word title change.
+  const keptDesign = coverArtSource === "design" && isRevisionOwnedCoverPayload(job.data)
+    ? await currentCoverDesign(projectId)
+    : undefined;
   const designedCover = async (fallbackReason?: string): Promise<CoverArtworkResult> => {
     await updateJobProgress(generationJobId, { message: "Choosing a cover design" });
-    const choice = await selectCoverDesign({
-      textModel: providers.text,
-      input,
-      plan,
-      seed: projectId,
-      title: metadata.title,
-      subtitle: metadata.subtitle,
-      bailOnError: isStopRequestedError
-    });
+    const choice: { design: CoverDesign; selectedBy: string; reason?: string } = keptDesign
+      ? { design: keptDesign, selectedBy: "kept" }
+      : await selectCoverDesign({
+          textModel: providers.text,
+          input,
+          plan,
+          seed: projectId,
+          title: metadata.title,
+          subtitle: metadata.subtitle,
+          bailOnError: isStopRequestedError
+        });
     await advanceJobStep(generationJobId, "render", 45, `Rendering the ${choice.design.name} cover`);
     const artwork = await coverDesignArtwork(choice.design);
     return {
@@ -118,6 +133,7 @@ export async function generateCover(job: GenerateImageJob) {
   };
 
   let cover: CoverArtworkResult;
+  let purchasedArtworkFailed = false;
   if (coverArtSource === "design") {
     cover = await designedCover();
   } else {
@@ -177,6 +193,10 @@ export async function generateCover(job: GenerateImageJob) {
         message: "Cover artwork failed; falling back to a designed cover"
       });
       cover = await designedCover("ai_cover_failed");
+      purchasedArtworkFailed = isCoverPurchase(job);
+      if (purchasedArtworkFailed) {
+        cover.metadata = { ...cover.metadata, coverPurchaseRefunded: true };
+      }
     }
   }
 
@@ -221,6 +241,51 @@ export async function generateCover(job: GenerateImageJob) {
       }
     })
   ]);
+  if (purchasedArtworkFailed) {
+    await refundPurchasedCover(job);
+  }
+}
+
+/**
+ * A cover the reader bought on its own — the Writing Studio's "Generate with
+ * AI" (`apps/api/src/mobile/manuscript/manuscriptCover.ts`) — rather than one
+ * that came with a book. Its payload says so and names the charge.
+ */
+function isCoverPurchase(job: GenerateImageJob): boolean {
+  return isCoverPurchasePayload(job.data) && Boolean(job.data.billingLedgerEntryId);
+}
+
+/**
+ * The artwork a purchase paid for could not be drawn, and the book got a free
+ * designed cover instead: the charge goes back. The job itself succeeded, and
+ * its completion closes the purchase's attempt (`attemptCompletesWithJob`), so
+ * the ledger entry is refunded here, before that; a refund is one cumulative
+ * reversal per charge, so any later settlement tops it up to nothing.
+ *
+ * Not best-effort. Swallowed, a refund that could not be written was followed
+ * by that completion committing a purchase nobody received. Thrown, the job
+ * fails instead: `markFailed` refunds through the attempt, whose `refundPending`
+ * the reconciler finishes, and a purchase is always a revision-owned cover
+ * (`coverSettlement.ts`), whose failure never fails the book — the design just
+ * stored still prints through the compile its failure releases.
+ */
+async function refundPurchasedCover(job: GenerateImageJob): Promise<void> {
+  const ledgerEntryId = job.data.billingLedgerEntryId;
+  if (!ledgerEntryId) return;
+  await refundCreditLedgerEntry(ledgerEntryId, "AI cover artwork could not be drawn; a designed cover was used");
+}
+
+/** The catalog design the book's current cover was rendered from, when it was a designed one. */
+async function currentCoverDesign(projectId: string): Promise<CoverDesign | undefined> {
+  const current = await prisma.imageAsset.findFirst({
+    where: { projectId, type: "COVER" },
+    orderBy: { createdAt: "desc" },
+    select: { metadata: true }
+  });
+  const metadata = jsonRecord(current?.metadata);
+  return metadata.coverArtSource === "design" && typeof metadata.coverDesignId === "string"
+    ? coverDesign(metadata.coverDesignId)
+    : undefined;
 }
 
 /** `ImageAsset.provider` for a cover that came from the catalog, not a model. */

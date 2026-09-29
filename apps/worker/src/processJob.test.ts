@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   shouldRecoverJobAttempt: vi.fn(),
   shouldBypassConfiguredRetries: vi.fn(),
   maybeCompileAfterCompletedJob: vi.fn(),
+  maybeCompileAfterFailedJob: vi.fn(),
   runLoggerAppend: vi.fn(),
   planBook: vi.fn(),
   compileExport: vi.fn(),
@@ -22,7 +23,9 @@ const mocks = vi.hoisted(() => ({
   generateBook: vi.fn(),
   stagedReplanSuccessorOperationId: vi.fn(),
   generatePage: vi.fn(),
-  applyBookEdit: vi.fn()
+  generateImage: vi.fn(),
+  applyBookEdit: vi.fn(),
+  writingAssist: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: {}, Prisma: {} }));
@@ -41,7 +44,8 @@ vi.mock("./runtime/jobLifecycle.js", () => ({
   staleGenerationJobReason: mocks.staleGenerationJobReason
 }));
 vi.mock("./runtime/dispatch.js", () => ({
-  maybeCompileAfterCompletedJob: mocks.maybeCompileAfterCompletedJob
+  maybeCompileAfterCompletedJob: mocks.maybeCompileAfterCompletedJob,
+  maybeCompileAfterFailedJob: mocks.maybeCompileAfterFailedJob
 }));
 vi.mock("./providers/runLogging.js", () => ({
   createRunLogger: () => ({ append: mocks.runLoggerAppend }),
@@ -57,11 +61,12 @@ vi.mock("./handlers/generateBook.js", () => ({
   generateBook: mocks.generateBook,
   stagedReplanSuccessorOperationId: mocks.stagedReplanSuccessorOperationId
 }));
-vi.mock("./handlers/generateImage.js", () => ({ generateImage: vi.fn() }));
+vi.mock("./handlers/generateImage.js", () => ({ generateImage: mocks.generateImage }));
 vi.mock("./handlers/generatePage.js", () => ({ generatePage: mocks.generatePage }));
 vi.mock("./handlers/importBook.js", () => ({ importBook: vi.fn() }));
 vi.mock("./handlers/planning.js", () => ({ planBook: mocks.planBook, revisePlan: vi.fn() }));
 vi.mock("./handlers/replanBook.js", () => ({ replanBook: vi.fn() }));
+vi.mock("./handlers/writingAssist.js", () => ({ writingAssist: mocks.writingAssist }));
 
 import { processWorkerJob } from "./processJob.js";
 import {
@@ -118,6 +123,7 @@ beforeEach(() => {
   mocks.compileExport.mockResolvedValue({});
   mocks.continueBook.mockResolvedValue({});
   mocks.maybeCompileAfterCompletedJob.mockResolvedValue(undefined);
+  mocks.maybeCompileAfterFailedJob.mockResolvedValue(null);
 });
 
 describe("processWorkerJob ordering", () => {
@@ -439,6 +445,30 @@ describe("processWorkerJob completion", () => {
   });
 });
 
+describe("processWorkerJob writing assists", () => {
+  const assist = () => job("writing-assist", { planId: undefined, assistId: "assist-1", attemptId: "attempt-1" });
+
+  it("dispatches a writing assist to its handler and completes it, which commits its charge", async () => {
+    mocks.writingAssist.mockResolvedValue(undefined);
+    const delivered = assist();
+
+    await processWorkerJob(delivered);
+
+    expect(mocks.writingAssist).toHaveBeenCalledWith(delivered);
+    expect(mocks.markCompleted).toHaveBeenCalledWith(delivered, undefined);
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("settles a failed writing assist through markFailed, which refunds it", async () => {
+    mocks.writingAssist.mockRejectedValue(new Error("provider outage"));
+
+    await expect(processWorkerJob(assist())).rejects.toThrow("provider outage");
+
+    expect(mocks.markFailed).toHaveBeenCalledWith(expect.objectContaining({ name: "writing-assist" }), expect.any(Error));
+    expect(mocks.markCompleted).not.toHaveBeenCalled();
+  });
+});
+
 describe("processWorkerJob failure routing", () => {
   it("settles malformed data before lifecycle claims or handler side effects", async () => {
     const malformed = job("generate-page", { pageId: undefined });
@@ -460,6 +490,44 @@ describe("processWorkerJob failure routing", () => {
     expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
   });
 
+  it("releases the compile a failed revision-owned cover held, after settling the cover alone", async () => {
+    const coverFailure = new Error("Chromium could not render the cover");
+    mocks.generateImage.mockRejectedValue(coverFailure);
+    mocks.markFailed.mockImplementation(async () => {
+      mocks.order.push("mark-failed");
+    });
+    mocks.maybeCompileAfterFailedJob.mockImplementation(async () => {
+      mocks.order.push("release-compile");
+      return "compile";
+    });
+    const cover = job("generate-image", {
+      assetType: "COVER",
+      contentRevision: 7,
+      exportPublicationProjectStatus: "EDITING"
+    });
+
+    await expect(processWorkerJob(cover)).rejects.toBe(coverFailure);
+
+    expect(mocks.markFailed).toHaveBeenCalledWith(expect.objectContaining({ name: "generate-image" }), coverFailure);
+    expect(mocks.order.slice(-2)).toEqual(["mark-failed", "release-compile"]);
+    expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
+  });
+
+  it("never lets a release outage replace the cover's own failure", async () => {
+    const coverFailure = new Error("image provider outage");
+    mocks.generateImage.mockRejectedValue(coverFailure);
+    mocks.maybeCompileAfterFailedJob.mockRejectedValue(new Error("Redis unavailable"));
+
+    await expect(
+      processWorkerJob(job("generate-image", { assetType: "COVER", contentRevision: 7, exportPublicationProjectStatus: "EDITING" }))
+    ).rejects.toBe(coverFailure);
+
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.follow_up_failed",
+      expect.objectContaining({ error: expect.objectContaining({ message: "Redis unavailable" }) })
+    );
+  });
+
   it("routes a stop request to markStopped as unrecoverable", async () => {
     mocks.generatePage.mockRejectedValue(new StopRequestedError());
 
@@ -467,6 +535,7 @@ describe("processWorkerJob failure routing", () => {
 
     expect(mocks.markStopped).toHaveBeenCalled();
     expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.maybeCompileAfterFailedJob).not.toHaveBeenCalled();
   });
 
   it("does not complete or fail a structural waiter that never owned the delivery", async () => {

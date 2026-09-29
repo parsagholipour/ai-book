@@ -30,6 +30,7 @@ import { objectKey, objectStore } from "@book-maker/storage";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import { generationFailureJobTypes } from "../generationJobTypes.js";
 import { jobsWithoutRefundedCharges } from "../resumeGuards.js";
+import { refuseAuthorManuscript } from "./authorManuscriptGuard.js";
 // One implementation of "can this failed row be resumed", shared with the
 // mobile retry route. It used to be copied here, and the copies drifted: the
 // guard that keeps a detached export repair out of a resume was added to one.
@@ -376,6 +377,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
+    if (refuseAuthorManuscript(reply, project.mediaSettings)) return;
 
     const template = input
       ? await prisma.template.findFirst({
@@ -412,10 +414,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       return;
     }
     const body = planMessageBodySchema.parse(request.body);
-    const plan = await prisma.planVersion.findFirst({ where: ownedPlanWhere(id, actor) });
+    const plan = await prisma.planVersion.findFirst({ where: ownedPlanWhere(id, actor), include: { project: { select: { mediaSettings: true } } } });
     if (!plan) {
       return reply.code(404).send({ error: "Plan not found" });
     }
+    if (refuseAuthorManuscript(reply, plan.project.mediaSettings)) return;
 
     if (plan.status === "APPROVED") {
       return reply.code(400).send({ error: "Approved plans cannot be revised. Create a new plan version first." });
@@ -476,6 +479,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     if (!plan) {
       return reply.code(404).send({ error: "Plan not found" });
     }
+    if (refuseAuthorManuscript(reply, plan.project.mediaSettings)) return;
 
     const approvalDedupeKey = `generate-book:${plan.projectId}:${id}`;
     const existingApprovalJob = await prisma.generationJob.findUnique({ where: { dedupeKey: approvalDedupeKey } });
@@ -656,12 +660,13 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       return;
     }
     const [project, page] = await Promise.all([
-      prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true, currentPlanId: true } }),
+      prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true, currentPlanId: true, mediaSettings: true } }),
       prisma.page.findUnique({ where: { id: pageId }, select: { id: true, projectId: true, index: true, status: true, revision: true } })
     ]);
     if (!project || !page || page.projectId !== id) {
       return reply.code(404).send({ error: "Page not found" });
     }
+    if (refuseAuthorManuscript(reply, project.mediaSettings)) return;
     if (!project.currentPlanId) {
       return reply.code(400).send({ error: "A project needs an approved plan before pages can be retried." });
     }

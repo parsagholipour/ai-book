@@ -291,7 +291,7 @@ describe("which forks of an edit rewrite pages", () => {
       {}
     );
 
-    expect(grouped.none?.sort()).toEqual(["ADD_IMAGE", "MOVE_IMAGE", "REMOVE_IMAGE"]);
+    expect(grouped.none?.sort()).toEqual(["ADD_IMAGE", "MANUSCRIPT_PUBLISH", "MOVE_IMAGE", "REMOVE_IMAGE"]);
     expect(grouped.page_indexes?.sort()).toEqual([
       "CHAPTER_REGENERATE",
       "LOCAL_PATCH",

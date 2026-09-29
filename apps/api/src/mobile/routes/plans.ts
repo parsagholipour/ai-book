@@ -11,6 +11,7 @@ import { retryBookEditOperation } from "../bookEditOperationRetries.js";
 import {
   hitTieredLimit,
   requireMobileAuth,
+  sendAuthorManuscript,
   sendGenerationAttemptError,
   sendMobileError,
   sendOperationNotFound,
@@ -42,7 +43,7 @@ import {
   operationRetryBodySchema
 } from "../schemas.js";
 import { fingerprintGenerationRequest, hashString, jsonRecord } from "../support.js";
-import { createProjectSchema, estimateFullBookCreditCost } from "@book-maker/core";
+import { createProjectSchema, estimateFullBookCreditCost, isAuthorManuscript } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,
@@ -110,6 +111,9 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!project) {
         return sendProjectNotFound(reply);
       }
+      if (isAuthorManuscript(project.mediaSettings)) {
+        return sendAuthorManuscript(reply);
+      }
       if (!(await enforceContentRestrictions(reply, project.prompt))) {
         return;
       }
@@ -154,10 +158,13 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       }
       const plan = await prisma.planVersion.findFirst({
         where: { id, project: { userId: auth.user.id } },
-        select: { id: true, projectId: true, status: true }
+        select: { id: true, projectId: true, status: true, project: { select: { mediaSettings: true } } }
       });
       if (!plan) {
         return sendMobileError(reply, 404, "PLAN_NOT_FOUND", "Plan not found.");
+      }
+      if (isAuthorManuscript(plan.project.mediaSettings)) {
+        return sendAuthorManuscript(reply);
       }
       if (plan.status === "APPROVED") {
         return sendMobileError(reply, 400, "PLAN_ALREADY_APPROVED", "Approved plans cannot be revised.");
@@ -266,6 +273,12 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       });
       if (!plan) {
         return sendMobileError(reply, 404, "PLAN_NOT_FOUND", "Plan not found.");
+      }
+      // An author's book has an APPROVED current plan once it is published or
+      // imported, and approving it would charge FULL_BOOK_GENERATION and run
+      // GENERATE_BOOK over the author's pages.
+      if (isAuthorManuscript(plan.project.mediaSettings)) {
+        return sendAuthorManuscript(reply);
       }
       // Approving anything but the project's current plan would charge a
       // second full-book package for a stale draft: SUPERSEDED catches

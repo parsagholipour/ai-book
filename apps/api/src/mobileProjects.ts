@@ -16,6 +16,10 @@ import { registerMobileVoiceRoutes } from "./mobile/routes/voice.js";
 import { registerMobileAudiobookRoutes } from "./mobile/routes/audiobook.js";
 import { registerMobileCharacterRoutes } from "./mobile/routes/characters.js";
 import { registerMobileCharacterImageRoutes } from "./mobile/routes/characterImages.js";
+import { registerMobileManuscriptRoutes } from "./mobile/routes/manuscript.js";
+import { registerMobileManuscriptAssistRoutes } from "./mobile/routes/manuscriptAssists.js";
+import { registerMobileManuscriptCoverRoutes } from "./mobile/routes/manuscriptCover.js";
+import { registerMobileManuscriptTakeoverRoutes } from "./mobile/routes/manuscriptTakeover.js";
 
 /**
  * Composition root for the mobile API.
@@ -54,6 +58,10 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   await registerMobileAudiobookRoutes(fastify, context);
   await registerMobileCharacterRoutes(fastify, context);
   await registerMobileCharacterImageRoutes(fastify, context);
+  await registerMobileManuscriptRoutes(fastify, context);
+  await registerMobileManuscriptAssistRoutes(fastify, context);
+  await registerMobileManuscriptCoverRoutes(fastify, context);
+  await registerMobileManuscriptTakeoverRoutes(fastify, context);
 };
 
 export { MOBILE_PRODUCT_PRESETS, mobileAuthError } from "./mobile/schemas.js";

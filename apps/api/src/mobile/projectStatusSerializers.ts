@@ -16,7 +16,8 @@ import {
   type MobileQueuedJobDto,
   type ProjectStatusResult
 } from "./dto.js";
-import { generationJobControlsProjectStatus, loadConfig, printedPageOffset } from "@book-maker/core";
+import { generationJobControlsProjectStatus, isStudioManuscript, jsonRecord, loadConfig, printedPageOffset } from "@book-maker/core";
+import { prisma } from "@book-maker/db";
 
 /**
  * Serializes project status, progress, current actions, failures, and recovery.
@@ -76,10 +77,48 @@ export async function loadSerializedProjectStatus(
     userId,
     status.project.contentRevision
   );
-  return serializeProjectStatus(status, exports);
+  return serializeProjectStatus(status, exports, await loadStudioDraftStatus(status.project));
 }
 
-export function serializeProjectStatus(status: ProjectStatusResult, exports: MobileExportSetDto): MobileProjectStatusDto {
+/**
+ * The words a Studio book being written holds, read only for that one state:
+ * every other status says what the pipeline is doing, and a Studio draft has
+ * no pipeline — only an author.
+ */
+async function loadStudioDraftStatus(project: { id: string; status: string; mediaSettings: unknown }): Promise<StudioDraftStatus | null> {
+  if (project.status !== "DRAFT" || !isStudioManuscript(project.mediaSettings)) {
+    return null;
+  }
+  const manuscript = await prisma.manuscript.findUnique({
+    where: { projectId: project.id },
+    select: { settings: true, chapters: { where: { deletedAt: null }, select: { wordCount: true } } }
+  });
+  const words = manuscript?.chapters.reduce((sum, chapter) => sum + chapter.wordCount, 0) ?? 0;
+  const goal = jsonRecord(manuscript?.settings).goalWords;
+  return studioDraftStatus(words, typeof goal === "number" && goal > 0 ? goal : null);
+}
+
+export type StudioDraftStatus = { statusLabel: string; currentAction: string; progressPercent: number };
+
+/**
+ * What a Studio book reads as while it is being written: "Writing · 3,200
+ * words", progress toward the author's word goal when they set one. The
+ * generated-book strings for DRAFT are unchanged for every other book.
+ */
+export function studioDraftStatus(words: number, goalWords: number | null): StudioDraftStatus {
+  const count = `${words.toLocaleString("en-US")} ${words === 1 ? "word" : "words"}`;
+  return {
+    statusLabel: `Writing · ${count}`,
+    currentAction: words > 0 ? "Keep writing, then publish when you're ready." : "Start writing your book.",
+    progressPercent: goalWords ? Math.min(100, Math.round((words / goalWords) * 100)) : 0
+  };
+}
+
+export function serializeProjectStatus(
+  status: ProjectStatusResult,
+  exports: MobileExportSetDto,
+  studioDraft: StudioDraftStatus | null = null
+): MobileProjectStatusDto {
   const project = status.project;
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
   // Derivative operations report failure through their own resources. A
@@ -97,7 +136,7 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
   const generationProgress = serializeGenerationProgress(status, imageSettings);
   const editProgress = serializeEditProgress(status);
-  const progressPercent = statusProgressPercent(status, generationProgress, editProgress);
+  const progressPercent = studioDraft?.progressPercent ?? statusProgressPercent(status, generationProgress, editProgress);
   const planningProgress = serializePlanningProgress(status);
   // Newest eligible attempt first: `resumableAttemptIds` follows the failed
   // jobs' creation order, so after a paid retry fails the retry's id is the
@@ -123,13 +162,14 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   return {
     projectId: project.id,
     status: normalizeProjectStatus(project.status),
-    statusLabel: statusLabel(project.status),
+    statusLabel: studioDraft?.statusLabel ?? statusLabel(project.status),
     progressPercent,
     generationTimings: status.generationTimings ?? { planningMs: null, bookMs: null },
     ...imageSettings,
     // The live phrase leads whenever there is one: it is the only part of this
     // payload that says what is happening right now rather than what stage it is.
-    currentAction: planningProgress?.steps.find((step) => step.status === "active")?.label ??
+    currentAction: studioDraft?.currentAction ??
+      planningProgress?.steps.find((step) => step.status === "active")?.label ??
       generationProgress?.detail ??
       editProgress?.detail ??
       currentActionFromSteps(project.status, steps, progressPercent),
@@ -317,7 +357,8 @@ export function failureMessageForJob(type: GenerationJobType, rawError: string |
     IMPORT_BOOK: "importing your book",
     CONTINUE_BOOK: "writing new chapters",
     GENERATE_AUDIOBOOK: "narrating your book",
-    GENERATE_CHARACTER_PORTRAIT: "drawing a character portrait"
+    GENERATE_CHARACTER_PORTRAIT: "drawing a character portrait",
+    WRITING_ASSIST: "working on your writing request"
   } satisfies Record<GenerationJobType, string>;
   const detail = rawError?.replace(/\s+/g, " ").trim();
   return detail ? `We hit a problem while ${phase[type]}: ${detail.slice(0, 240)}` : `We hit a problem while ${phase[type]}.`;

@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startExportTempCleanup } from "./exportTempCleanup.js";
+
+// The runner follows the injected sweep with two real ones — the scratch
+// directories and the object store's abandoned export predecessors — added
+// after these tests were written. Unmocked, every lifecycle test walked the
+// machine's real temp directories and listed the real bucket: quick on an idle
+// machine, and past the 5 s timeout (under fake timers, which also freeze any
+// client retry backoff) whenever the full parallel `pnpm check` loaded it.
+// These tests are about the runner; the sweeps have their own suites.
+vi.mock("@book-maker/storage", async (importActual) => ({
+  ...(await importActual<typeof import("@book-maker/storage")>()),
+  sweepTemporaryDirectories: vi.fn(async () => 0)
+}));
+vi.mock("./exportObjectCleanup.js", () => ({ sweepStaleExportObjects: vi.fn(async () => 0) }));
 import type { ExportTempSweepCursor, ExportTempSweepResult } from "@book-maker/core";
 
 /**

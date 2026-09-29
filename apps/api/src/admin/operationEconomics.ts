@@ -330,6 +330,25 @@ export const APPLY_BOOK_EDIT_OPERATION_SQL = [
 ].join("\n");
 
 /**
+ * A Writing Studio assist's `CreditOperation`, by the `ManuscriptAssist.kind`
+ * the job's payload names. Every priced kind maps onto an existing operation
+ * (.scratch/writing-studio/spec.md, "Phase 2 + 3 contract"); the two internal
+ * passes a publish queues — STYLE_PROFILE and REEMBED — are free, so they map
+ * to nothing and their spend lands in the unbilled buckets, which is what it is.
+ * The kind lives on the row rather than the payload, hence the scalar subquery;
+ * it runs only for this job type's calls.
+ */
+export const WRITING_ASSIST_OPERATION_SQL = [
+  `CASE (SELECT a.kind FROM "ManuscriptAssist" a WHERE a.id = j.payload ->> 'assistId')`,
+  "            WHEN 'ILLUSTRATE' THEN 'IMAGE_GENERATION'",
+  "            WHEN 'DRAFT_CHAPTER' THEN 'PAGE_REGENERATION'",
+  "            WHEN 'CHAPTER_FEEDBACK' THEN 'BOOK_TEXT_EDIT'",
+  "            WHEN 'CONSISTENCY' THEN 'PREMIUM_REVIEW'",
+  "            WHEN 'OUTLINE' THEN 'PLAN_GENERATION'",
+  "          END"
+].join("\n");
+
+/**
  * The same per-model counters `costBreakdown.ts` collects, but keyed by the
  * charge that paid for the call instead of by the call site — which is why it
  * borrows that module's row shape and its tested roll-up rather than growing a
@@ -390,6 +409,9 @@ async function loadAttributedCostRows(window: AdminWindow): Promise<ProviderCost
           WHEN 'CONTINUE_BOOK' THEN 'PAGE_REGENERATION'
           WHEN 'GENERATE_AUDIOBOOK' THEN 'AUDIOBOOK_GENERATION'
           WHEN 'GENERATE_CHARACTER_PORTRAIT' THEN 'CHARACTER_PORTRAIT_GENERATION'
+          -- One job name, five billed operations and two free passes; the
+          -- assist row's kind says which (see WRITING_ASSIST_OPERATION_SQL).
+          WHEN 'WRITING_ASSIST' THEN ${Prisma.raw(WRITING_ASSIST_OPERATION_SQL)}
         END AS job_operation
       FROM "ProviderCallLog" l
       LEFT JOIN "GenerationJob" j ON j.id = l."generationJobId"

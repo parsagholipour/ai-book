@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../billing/domain/billing_models.dart';
+import '../../studio/presentation/studio_location.dart';
 import '../../voice/presentation/character_cast_sheet.dart';
 import '../domain/project_models.dart';
 import 'project_export_actions.dart';
 
-enum _BookAction { chat, call, listen, open, share }
+enum _BookAction { write, chat, call, listen, open, share }
 
 /// One row of the menu: what it does, and to which file.
 typedef _ExportChoice = ({_BookAction action, MobileExportAvailability export});
@@ -41,7 +42,12 @@ Future<void> showBookActionsMenu({
   if (overlay is! RenderBox) return;
 
   final credits = billing?.credits.available;
-  final exports = project.exports.all;
+  // A manuscript the author has not published has no chat to go to and no
+  // files coming until they publish it; the one thing to do is keep writing.
+  final unpublished = project.isUnpublishedManuscript;
+  final exports = unpublished
+      ? const <MobileExportAvailability>[]
+      : project.exports.all;
 
   final action = await showMenu<Object>(
     context: context,
@@ -50,19 +56,34 @@ Future<void> showBookActionsMenu({
       Offset.zero & overlay.size,
     ),
     items: [
-      const PopupMenuItem<Object>(
-        value: _BookAction.chat,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.chat_bubble_outline),
-            SizedBox(width: 12),
-            Flexible(
-              child: Text('Go to chat', overflow: TextOverflow.ellipsis),
-            ),
-          ],
+      if (unpublished)
+        const PopupMenuItem<Object>(
+          value: _BookAction.write,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_outlined),
+              SizedBox(width: 12),
+              Flexible(
+                child: Text('Keep writing', overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+        )
+      else
+        const PopupMenuItem<Object>(
+          value: _BookAction.chat,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.chat_bubble_outline),
+              SizedBox(width: 12),
+              Flexible(
+                child: Text('Go to chat', overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
         ),
-      ),
       // Characters only exist for a finished book, so unlike the export items
       // this one is hidden rather than disabled: there is nothing to promise.
       if (project.status == 'complete')
@@ -113,6 +134,11 @@ Future<void> showBookActionsMenu({
   );
 
   if (action == null || !context.mounted) return;
+
+  if (action == _BookAction.write) {
+    context.push(studioLocation(project.id));
+    return;
+  }
 
   // Chat is available throughout the book lifecycle and is unrelated to
   // export readiness or unlock credits.
@@ -173,6 +199,7 @@ Future<void> showBookActionsMenu({
         isMounted: () => context.mounted,
         onRefresh: onRefresh,
       );
+    case _BookAction.write:
     case _BookAction.chat:
     case _BookAction.call:
     case _BookAction.listen:

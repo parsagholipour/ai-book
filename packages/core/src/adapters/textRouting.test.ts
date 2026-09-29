@@ -74,6 +74,11 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "develop-book-plan", "review-book-development", "build-case-evidence", "verify-case-evidence",
   "review-chapter-evidence", "plan-developmental-edit", "rewrite-developmental-sections",
   // Full-context semantic review uses the same prose lane as chapter evidence review.
+  // The Writing Studio's writer tools (`authoring/authorAssistPrompts.ts`): each
+  // suggests prose, ideas or an answer in the author's voice. Its proofread,
+  // chapter feedback and consistency calls are on the mechanical list.
+  "author-assist-rewrite", "author-assist-continue", "author-assist-describe", "author-assist-brainstorm",
+  "author-assist-ask", "author-draft-chapter", "author-outline",
 ]);
 
 // Finite-choice screens bypass text routing and escalate to their own diagnostic purpose.

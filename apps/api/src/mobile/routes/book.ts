@@ -46,7 +46,7 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
           status: true,
           pages: {
             orderBy: { index: "asc" },
-            select: { id: true, index: true, title: true, markdown: true, revision: true }
+            select: { id: true, index: true, chapterId: true, title: true, markdown: true, revision: true }
           }
         }
       });

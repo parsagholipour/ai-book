@@ -47,6 +47,12 @@ BookStatusInfo bookStatusInfo(MobileProjectSummary project) {
   if (project.hasReadyExport) {
     return const BookStatusInfo(BookStatusKind.ready, 'Ready');
   }
+  // Not a book being generated, so no percentage and no "draft saved". The
+  // short form suits the shelf; the library spells out the server's own label
+  // ("Writing · 3,200 words").
+  if (project.isUnpublishedManuscript) {
+    return const BookStatusInfo(BookStatusKind.inProgress, 'Writing');
+  }
   if (project.isLive) {
     final percent = project.progressPercent.clamp(0, 100);
     return BookStatusInfo(
@@ -95,6 +101,7 @@ MobileProjectSummary projectWithLiveStatus(
     pageCount: status.pageProgress.completed,
     imageCount: status.imageCount,
     hasPlan: project.hasPlan,
+    manuscript: project.manuscript,
     exports: status.exports,
     createdAt: project.createdAt,
     updatedAt: status.updatedAt,

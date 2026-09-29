@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { isImportedManuscript, loadConfig } from "@book-maker/core";
+import { isAuthorManuscript, isImportedManuscript, loadConfig } from "@book-maker/core";
 import {
   serializeProjectDetail as serializeProjectDetailFromFacade,
   serializeProjectSummary as serializeProjectSummaryFromFacade
@@ -56,12 +56,19 @@ describe("projectSourceFromMediaSettings", () => {
     expect(projectSourceFromMediaSettings({ mobile: { import: {} } })).toBe("generated");
     expect(projectSourceFromMediaSettings({})).toBe("generated");
   });
+
+  it("labels a Writing Studio book written, a value of its own rather than the author-manuscript predicate", () => {
+    const studio = { mobile: { studio: { layout: "flow", kind: "story", createdAt: "2026-09-29T00:00:00.000Z" } } };
+    expect(isAuthorManuscript(studio)).toBe(true);
+    expect(projectSourceFromMediaSettings(studio)).toBe("written");
+    expect(projectSourceFromMediaSettings({ mobile: { studio: { layout: "scroll" } } })).toBe("generated");
+  });
 });
 
 describe("summary/detail serializer parity", () => {
   const summaryKeys = [
     "authorName", "bookType", "coverArtSource", "coverEnabled", "coverImage", "createdAt", "currentAction", "exports",
-    "hasPlan", "id", "illustrationsEnabled", "imageCount", "imagesEnabled", "lengthPreset", "pageCount", "progressPercent",
+    "hasPlan", "id", "illustrationsEnabled", "imageCount", "imagesEnabled", "lengthPreset", "manuscript", "pageCount", "progressPercent",
     "promptPreview", "qualityPreset", "revisedFrom", "source", "status", "statusLabel", "subtitle", "targetPages",
     "title", "updatedAt"
   ];

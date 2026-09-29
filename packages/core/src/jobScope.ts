@@ -13,7 +13,15 @@ export const DERIVATIVE_GENERATION_JOBS = Object.freeze({
   PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
   BUILD_CHARACTER_PERSONA: "build-character-persona",
   GENERATE_AUDIOBOOK: "generate-audiobook",
-  GENERATE_CHARACTER_PORTRAIT: "generate-character-portrait"
+  GENERATE_CHARACTER_PORTRAIT: "generate-character-portrait",
+  /**
+   * A Writing Studio assist (illustrate, draft, notes, outline, style profile,
+   * re-embed). Its result is a suggestion on its own `ManuscriptAssist` row that
+   * the author applies by hand, so a failure fails that row and refunds its own
+   * attempt — never the book, which may be COMPLETE, EDITING or a DRAFT the
+   * author is still writing.
+   */
+  WRITING_ASSIST: "writing-assist"
 } as const);
 
 export type DerivativeGenerationJobType = keyof typeof DERIVATIVE_GENERATION_JOBS;
@@ -118,15 +126,62 @@ export function isMarkdownRecompileWithoutVerdict(payload: unknown): boolean {
 /**
  * Whether this payload belongs to work whose outcome is the paid book's own.
  *
- * False for the two payload-flagged kinds that settle alone — a detached export
- * repair and a presentation-only recompile. Every surface that settles, reports
- * or resumes a row on the book's behalf must ask this one question, and ask it
- * here: a site that checks one flag by hand misses the other, which is exactly
- * how a non-owning row ends up refunding a delivered book or painting a
- * COMPLETE one as failed.
+ * False for the three payload-shaped kinds that settle alone — a detached export
+ * repair, a presentation-only recompile and a revision-owned cover. Every
+ * surface that settles, reports or resumes a row on the book's behalf must ask
+ * this one question, and ask it here: a site that checks one flag by hand misses
+ * the other, which is exactly how a non-owning row ends up refunding a delivered
+ * book or painting a COMPLETE one as failed.
  */
 export function payloadOwnsProjectOutcome(payload: unknown): boolean {
-  return !isDetachedFromProjectLifecycle(payload) && !isPresentationOnlyRecompile(payload);
+  return (
+    !isDetachedFromProjectLifecycle(payload) &&
+    !isPresentationOnlyRecompile(payload) &&
+    !isRevisionOwnedCoverPayload(payload)
+  );
+}
+
+/**
+ * A cover queued for one manuscript revision of a book that already exists: a
+ * Writing Studio publish drawing or re-typesetting its cover, a Studio cover
+ * change (AI artwork, or back to a design), a replan's cover. It carries the
+ * revision and the EDITING it expects — the stale guard's inputs — which is what
+ * tells it apart from the cover a generation run draws (`maybeEnqueueCover`),
+ * which carries neither.
+ *
+ * Its failure is never the book's. The book's pages are published and paid for,
+ * and the compile of that revision stands down only while the cover is open, so
+ * a cover that cannot be drawn leaves the book with the cover it already has —
+ * or the coverless title sheet — rather than FAILED with its generation refunded
+ * (`markFailed`), "needs attention" forever (`findCurrentOwningFailure`) or
+ * resumed into GENERATING (`canRecoverGenerationJob`). The worker settles the
+ * row alone and releases the compile (`maybeCompileAfterFailedJob`).
+ */
+export function isRevisionOwnedCoverPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as Record<string, unknown>;
+  return (
+    record.assetType === "COVER" &&
+    typeof record.contentRevision === "number" &&
+    Number.isInteger(record.contentRevision) &&
+    exportPublicationProjectStatusFromPayload(payload) !== null
+  );
+}
+
+/**
+ * Payload flag for a cover the reader bought on its own — the Writing Studio's
+ * "Generate with AI" — rather than one that came with a book or a publish. The
+ * attempt such a job carries is the purchase, and only its own cover job settles
+ * it: SUCCEEDED when the job completes, refunded when the artwork is not what
+ * was stored or the job fails or stops. Never a compile's: a reprint that fails
+ * after the artwork landed cannot un-deliver it.
+ */
+export const COVER_PURCHASE = "coverPurchase";
+
+export function isCoverPurchasePayload(payload: unknown): boolean {
+  return payloadFlag(payload, COVER_PURCHASE) && (payload as Record<string, unknown>).assetType === "COVER";
 }
 
 /** The settled status a free presentation reprint must return to on failure. */
@@ -364,7 +419,13 @@ export const JOB_PAGE_REWRITE_SCOPE: Readonly<Record<GenerationJobType, PageRewr
   /** Narrates a finished book. Failing one must not even touch the book. */
   GENERATE_AUDIOBOOK: "never",
   /** Account-scoped: it has no project, let alone a page. */
-  GENERATE_CHARACTER_PORTRAIT: "never"
+  GENERATE_CHARACTER_PORTRAIT: "never",
+  /**
+   * Writes its own `ManuscriptAssist` row, and for a re-embed the `Embedding`
+   * rows of pages a publish already wrote — never `Page.markdown` or a verdict.
+   * What an assist suggests reaches the book only through a later publish.
+   */
+  WRITING_ASSIST: "never"
 });
 
 /**

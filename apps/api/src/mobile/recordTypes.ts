@@ -2,6 +2,7 @@ import type { MobileBookTypeChoice, MobilePageCountMode, MobilePageCountSource }
 import type { buildProjectStatus } from "../projectStatus.js";
 import type { MobileBookType, MobileJsonValue, MobileLengthPreset, MobileQualityPreset } from "./dto.js";
 import type { BillingOperation, CreateProjectInput } from "@book-maker/core";
+import type { ManuscriptSummaryRecord } from "./manuscript/manuscriptSerializers.js";
 
 /**
  * The Prisma row shapes and creation inputs the mobile serializers read —
@@ -59,6 +60,8 @@ export type MobileProjectRecord = {
     images?: number;
     jobs?: number;
   };
+  /** The Writing Studio working copy's tallies, when the query selected them. */
+  manuscript?: ManuscriptSummaryRecord | null;
   createdAt: Date;
   updatedAt: Date;
 };

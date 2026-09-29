@@ -37,6 +37,7 @@ import '../../characters/domain/character_models.dart';
 import '../../characters/domain/library_mentions.dart';
 import '../../characters/presentation/character_avatar.dart';
 import '../../characters/presentation/character_library_screen.dart';
+import '../../studio/presentation/start_writing_sheet.dart';
 import '../data/creation_prefs_store.dart';
 import '../data/projects_repository.dart';
 import '../domain/chat_markdown.dart';

@@ -50,7 +50,7 @@ whole quote for a book with *no* generated images divided by its pages, so the r
 compare the way the later approval bill will.
 The app **re-implements both formulas in Dart** (`estimatePlanGenerationCredits` and
 `estimateProjectCredits` in `project_models.dart`, which mirror `planGenerationCreditCost` and
-`tierPrice` in `_tierCost`) and there is no server quote route to fall back on, so the two
+`tierPrice` in `tierCreditRate`, `domain/credit_rates.dart`) and there is no server quote route to fall back on, so the two
 must move together — which is why both sides spell their totals out in tests rather than
 deriving them from the price table. The app picks its tier off the project DTO's
 `qualityPreset`, which `qualityPresetForProject` fills in from the tier when the mobile echo is

@@ -1,7 +1,7 @@
 import { parseStructuralApplication } from "@book-maker/core";
 import { Prisma } from "@book-maker/db";
 
-import { canUndoBookEdit, hasBookEditUndoRecord, UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
+import { canUndoBookEdit, hasBookEditUndoRecord, isSealedBookEdit, UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
 import { previousImageAssetsFromClassifier } from "./imageEditRecords.js";
 import { jsonRecord } from "./support.js";
 
@@ -62,6 +62,11 @@ export function canRedoBookEdit(operation: {
     return false;
   }
   if (!hasBookEditRedoRecord(operation)) {
+    return false;
+  }
+  // Sealed by a Writing Studio publish: a redo would put pre-publish text
+  // back over the author's published words (see `isSealedBookEdit`).
+  if (isSealedBookEdit(operation.classifier)) {
     return false;
   }
   return typeof jsonRecord(operation.classifier).undoneAt === "string";

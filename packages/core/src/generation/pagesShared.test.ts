@@ -72,6 +72,17 @@ describe("sampleExcerptsFromInput", () => {
   it("yields an empty list when mobile is missing", () => {
     expect(sampleExcerptsFromInput(baseInput)).toEqual([]);
   });
+
+  it("reads a Studio book's learned profile, and lets an import's win when both exist", () => {
+    const studio = { layout: "flow", kind: "story", createdAt: "2026-09-29", styleProfile: { sampleExcerpts: ["Studio voice."] } };
+    const withMobile = (mobile: Record<string, unknown>) =>
+      ({ ...baseInput, mediaSettings: { ...baseInput.mediaSettings, mobile } }) as CreateProjectInput;
+
+    expect(sampleExcerptsFromInput(withMobile({ studio }))).toEqual(["Studio voice."]);
+    expect(
+      sampleExcerptsFromInput(withMobile({ studio, import: { styleProfile: { sampleExcerpts: ["Imported voice."] } } }))
+    ).toEqual(["Imported voice."]);
+  });
 });
 
 describe("style lock helpers", () => {

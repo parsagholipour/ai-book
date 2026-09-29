@@ -8,6 +8,7 @@ import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../studio/presentation/start_writing_sheet.dart';
 import '../data/projects_repository.dart';
 import '../domain/book_library.dart';
 import '../domain/project_models.dart';
@@ -144,11 +145,12 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
                                     context.push(newBookChatLocation()),
                               ),
                               // The other way a book arrives: one the reader
-                              // already wrote.
+                              // writes, or has already written.
                               AppButton.text(
-                                label: 'Import a manuscript',
-                                leading: const Icon(Icons.upload_file_outlined),
-                                onPressed: () => context.push('/books/import'),
+                                key: const ValueKey('library-write-your-own'),
+                                label: 'Write or import your own book',
+                                leading: const Icon(Icons.edit_note_outlined),
+                                onPressed: () => showStartWritingSheet(context),
                               ),
                             ],
                           ),

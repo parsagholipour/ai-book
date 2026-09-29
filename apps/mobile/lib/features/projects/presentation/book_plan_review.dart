@@ -23,6 +23,7 @@ class ProjectPlanReview extends StatelessWidget {
     required this.busyAction,
     this.billing,
     this.onApprovePlan,
+    this.approvalFooter,
     super.key,
   });
 
@@ -34,6 +35,10 @@ class ProjectPlanReview extends StatelessWidget {
   final Future<void> Function(String message) onRevisionRequest;
   final Future<void> Function()? onApprovePlan;
   final String? busyAction;
+
+  /// A quiet line under Approve (the book page puts "I'll write it myself"
+  /// there), never a second button beside it.
+  final Widget? approvalFooter;
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +105,7 @@ class ProjectPlanReview extends StatelessWidget {
           onApprove: busyAction == null && onApprovePlan != null
               ? () => onApprovePlan!()
               : null,
+          footer: approvalFooter,
         ),
         const SizedBox(height: 16),
         Semantics(
@@ -155,8 +161,12 @@ class PlanApprovalBar extends StatelessWidget {
     this.estimate,
     this.available,
     this.busy = false,
+    this.footer,
     super.key,
   });
+
+  /// Under the button: a quiet alternative, never a competing action.
+  final Widget? footer;
 
   /// Credits the book will cost after approval; null while billing loads.
   final int? estimate;
@@ -231,6 +241,10 @@ class PlanApprovalBar extends StatelessWidget {
             loadingLabel: 'Approving plan',
             expanded: true,
           ),
+          if (footer != null) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            footer!,
+          ],
         ],
       ),
     );

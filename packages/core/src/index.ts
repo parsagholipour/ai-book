@@ -117,6 +117,7 @@ export * from "./generation/libraryCharacterImages.js";
 export * from "./generation/voiceCharacters.js";
 export * from "./generation/libraryVoiceCharacters.js";
 export * from "./generation/readerChapters.js";
+export * from "./generation/publishedReaderChapters.js";
 export * from "./generation/exactReplacement.js";
 export * from "./generation/editAdherence.js";
 export * from "./generation/editAdherenceHierarchy.js";
@@ -149,7 +150,13 @@ export * from "./generation/docx.js";
 export * from "./generation/exportProvenance.js";
 export * from "./generation/exportTempSweep.js";
 export * from "./generation/pdf.js";
-export { shortKidsStoryPageLayout, splitStoryPageMarkdown, type StoryPagePlan } from "./generation/pdfStoryPages.js";
+export {
+  shortKidsStoryPageLayout,
+  splitStoryPageMarkdown,
+  storyPageLayoutFor,
+  studioPictureStoryPageLayout,
+  type StoryPagePlan
+} from "./generation/pdfStoryPages.js";
 export * from "./generation/pdfCss.js";
 export * from "./generation/pdfDocument.js";
 export * from "./generation/pdfPageAnchors.js";
@@ -181,6 +188,20 @@ export { isRecord, jsonRecord } from "./schemas/jsonCoercion.js";
 // serializer reads too, so it leaves the package by name from the module that
 // owns the rule. See its docstring for why there is one of it.
 export { isImportedManuscript } from "./schemas/mediaSettings.js";
+export * from "./authoring/manuscriptText.js";
+export * from "./authoring/manuscriptPagination.js";
+export * from "./authoring/authorBookPlan.js";
+export * from "./authoring/takeoverText.js";
+export * from "./authoring/authorAssistTypes.js";
+export { runQuickAuthorAssist, validateQuickAuthorAssistRequest, type QuickAuthorAssistRequest, type QuickAuthorAssistResult } from "./authoring/authorAssist.js";
+export {
+  checkBookConsistency,
+  clampTargetWords,
+  draftChapterFromNotes,
+  outlineAuthorBook,
+  reviewChapterForAuthor,
+  type ConsistencyNote
+} from "./authoring/authorLongAssists.js";
 export * from "./sources/types.js";
 export * from "./sources/retrieval.js";
 export * from "./sources/tools.js";

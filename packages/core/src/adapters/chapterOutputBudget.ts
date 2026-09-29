@@ -6,11 +6,14 @@ const SHORT_STRUCTURED_PURPOSES = new Set([
   "review-dossier-provenance", "review-chapter-edit-acceptance", "review-page",
   "critique-page-map", "generate-chapter-brief", "book.final_qa.chapter_transitions",
   "final-book-qa", "audit-page-style", "review-manuscript-structure",
-  "generate-page", "polish-page", "revise-page", "repair-page-brief", "judge-page-drafts"
+  "generate-page", "polish-page", "revise-page", "repair-page-brief", "judge-page-drafts",
+  "author-assist-rewrite", "author-assist-proofread", "author-assist-continue", "author-assist-describe",
+  "author-assist-brainstorm", "author-assist-ask", "author-chapter-feedback", "author-consistency", "author-outline"
 ]);
 
 const CHAPTER_PURPOSES = new Set([
-  "plan-book", "generate-page-map", "compose-chapter", "edit-chapter", "read-manuscript", "inventory-brief-requirements", "plan-chapter-forms"
+  "plan-book", "generate-page-map", "compose-chapter", "edit-chapter", "read-manuscript", "inventory-brief-requirements", "plan-chapter-forms",
+  "author-draft-chapter"
 ]);
 
 /**

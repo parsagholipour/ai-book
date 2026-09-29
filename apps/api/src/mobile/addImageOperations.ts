@@ -26,6 +26,7 @@ import {
   imageLimitChatMessage
 } from "./projectChat.js";
 import { jsonInputValue } from "./support.js";
+import { hasChargedStudioIllustration, UPLOADED_IMAGE_PREFIX } from "./manuscript/manuscriptImages.js";
 import { imageMarkdownRe, PRE_EDIT_PROJECT_STATUS, resolveBookImageAsset } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { GenerationQuotaExceededError, getImageQuota } from "@book-maker/db/billing";
@@ -65,10 +66,11 @@ export async function addImageQuotaLimit(userId: string, projectId: string, cost
 
 /**
  * Whether the book already holds (or was already billed as holding) interior
- * illustrations. Four cheap checks, any of which settles it:
+ * illustrations. Five cheap checks, any of which settles it:
  * interior ImageAsset rows; an inline image ref in any page's markdown; a page
  * whose illustration failed to render (that book's slot was consumed at
- * approval); or a prior applied ADD_IMAGE edit (covers add → undo → add).
+ * approval); a prior applied ADD_IMAGE edit (covers add → undo → add); or a
+ * charged Writing Studio illustration that was not refunded.
  */
 async function projectAlreadyIllustrated(projectId: string): Promise<boolean> {
   const interiorAsset = await prisma.imageAsset.findFirst({
@@ -92,6 +94,11 @@ async function projectAlreadyIllustrated(projectId: string): Promise<boolean> {
   if (priorAddImage) {
     return true;
   }
+  // A Writing Studio illustration claimed the slot when it was charged, before
+  // any page carries it (it reaches the book only through a publish).
+  if (await hasChargedStudioIllustration(projectId)) {
+    return true;
+  }
   // SQL LIKE prefilter, then the exporters' own regex and resolver: a page
   // that merely mentions the path in prose is not an illustrated page, and an
   // image ref must be scoped to THIS project — resolveBookImageAsset demands
@@ -102,25 +109,42 @@ async function projectAlreadyIllustrated(projectId: string): Promise<boolean> {
   // Residual, accepted: a pasted ref that is correctly scoped to this project
   // still counts without checking the file exists — the same blind spot the
   // approve door's estimate has.
+  //
+  // The window is the whole book (600 pages is the ceiling), not the first 50
+  // matches: a Writing Studio author's own pictures match the prefilter and
+  // are skipped below, so a picture book of uploads would otherwise fill the
+  // window and hide the one generated picture behind it.
   const candidates = await prisma.page.findMany({
     where: { projectId, markdown: { contains: "/assets/images/" } },
     select: { markdown: true },
-    take: 50
+    take: 600
   });
-  return candidates.some((page) => {
-    const re = imageMarkdownRe();
-    for (let match = re.exec(page.markdown); match; match = re.exec(page.markdown)) {
-      const resolved = resolveBookImageAsset(match[2] ?? "", {
-        imageStorageDir: "/image-store",
-        publicApiBase: "",
-        projectId
-      });
-      if (resolved) {
-        return true;
-      }
+  return candidates.some((page) => pageMarkdownCountsAsIllustrated(page.markdown, projectId));
+}
+
+/**
+ * Whether a page's markdown holds a picture this product drew for this book.
+ *
+ * An author's own upload (`upload-…`, `manuscriptImages.ts`) is not one: it
+ * cost nothing and drew nothing, so it must neither mark the book illustrated
+ * nor keep the next chat picture from claiming the free tier's slot. Every
+ * other image line resolving to this project's folder counts — the Studio's
+ * own AI pictures are `studio-image-…` and claim the slot like any other.
+ */
+export function pageMarkdownCountsAsIllustrated(markdown: string, projectId: string): boolean {
+  const re = imageMarkdownRe();
+  for (let match = re.exec(markdown); match; match = re.exec(markdown)) {
+    const resolved = resolveBookImageAsset(match[2] ?? "", {
+      imageStorageDir: "/image-store",
+      publicApiBase: "",
+      projectId
+    });
+    const filename = decodeURIComponent(resolved?.assetPath.split("/").pop() ?? "");
+    if (resolved && !filename.startsWith(UPLOADED_IMAGE_PREFIX)) {
+      return true;
     }
-    return false;
-  });
+  }
+  return false;
 }
 
 /**

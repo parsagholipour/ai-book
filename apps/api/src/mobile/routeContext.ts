@@ -31,9 +31,10 @@ import {
   type GeminiLiveSessionResponse,
   type IngestCreationAttachmentInput,
   type ResearchAdapter,
+  type ModelTier,
   type TextModelAdapter
 } from "@book-maker/core";
-import { createLiveFastJudgmentsTextModel } from "../generationTextModelRouting.js";
+import { createLiveFastJudgmentsTextModel, createLiveTieredTextModel } from "../generationTextModelRouting.js";
 
 /**
  * Shared setup for every mobile route group: config, rate limiters, the Google
@@ -57,6 +58,12 @@ export type MobileProjectRoutesOptions = {
    * exercise the add_image flow inject a canned decide-tool model here.
    */
   routingTextModel?: TextModelAdapter;
+  /**
+   * Test seam for the Writing Studio's quick assists; defaults to the live
+   * model on the book's own quality tier. A suite injects a scripted model
+   * here, the way `routingTextModel` does for the chat router.
+   */
+  studioAssistTextModel?: TextModelAdapter;
   /**
    * Test seam for reading a character photo. Undefined is the real behaviour
    * with no vision provider configured, and the upload degrades to storing the
@@ -100,6 +107,8 @@ export type MobileRouteContext = {
     | ((request: CharacterPhotoVisionRequest) => Promise<CharacterPhotoVisionResult>)
     | undefined;
   safeFastRoutingTextModel: () => TextModelAdapter | undefined;
+  /** The book-tier model a quick assist writes with; undefined when none can be built. */
+  studioAssistTextModel: (tier: ModelTier) => TextModelAdapter | undefined;
   advisorEnrichment:
     | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => Promise<Partial<MobileBookAdvisorResponse>>)
     | undefined;
@@ -117,6 +126,16 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
     }
     try {
       return createLiveFastJudgmentsTextModel(appConfig);
+    } catch {
+      return undefined;
+    }
+  };
+  const studioAssistTextModel = (tier: ModelTier): TextModelAdapter | undefined => {
+    if (options.studioAssistTextModel) {
+      return options.studioAssistTextModel;
+    }
+    try {
+      return createLiveTieredTextModel(appConfig, tier);
     } catch {
       return undefined;
     }
@@ -213,6 +232,7 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
     attachmentIngestion,
     characterPhotoVision,
     safeFastRoutingTextModel,
+    studioAssistTextModel,
     advisorEnrichment,
     creationEnrichment,
     voiceSession

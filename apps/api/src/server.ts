@@ -21,6 +21,7 @@ import { mobileImportRoutes } from "./mobileImports.js";
 import { mobilePasswordResetRoutes } from "./mobilePasswordReset.js";
 import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
 import { sweepStaleVoiceCalls } from "./mobile/voiceCalls.js";
+import { startStudioImageSweep, studioImageSweepMode } from "./mobile/studioImageSweep.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
 import { adminAnalyticsRoutes } from "./routes/adminAnalytics.js";
@@ -97,6 +98,11 @@ const sweepAttachments = async () => {
 await sweepAttachments();
 const attachmentSweepTimer = setInterval(() => void sweepAttachments(), 24 * 60 * 60 * 1000);
 attachmentSweepTimer.unref();
+
+// Writing Studio pictures (uploads, uploaded covers, AI Studio illustrations)
+// that no row of their book names any more. Paced and bounded per pass; it
+// only logs outside production unless STUDIO_IMAGE_SWEEP says otherwise.
+const studioImageSweep = startStudioImageSweep({ mode: studioImageSweepMode(config), log: app.log });
 
 // A voice call holds credits while it runs. An app killed mid-call stops
 // heartbeating without ever ending the call, so the hold has to be released for
@@ -242,6 +248,7 @@ const shutdown = async () => {
   clearInterval(messageRecoveryTimer);
   clearInterval(pricingRefreshTimer);
   clearInterval(queueReconcileTimer);
+  await studioImageSweep.stop();
   await app.close();
   // The lazy export rebuild renders in this process too, so the API holds a
   // pooled Chromium of its own — budget two browsers in production, one per

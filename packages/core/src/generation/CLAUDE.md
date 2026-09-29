@@ -570,7 +570,8 @@ holds the event loop open and vitest will never exit.
   never open on throat-clearing, a welcome, a definition of the topic, or meta framing such as "In
   this book" — is what an imported manuscript is exempt from: page 1 of an import is the author's
   own first sentence, and every one of those rules is a licence to rewrite it
-  (`isImportedManuscript`, `schemas/mediaSettings.ts`). The **hook-delivery** half is gated on the
+  (`isAuthorManuscript`, `schemas/mediaSettings.ts` — an import or a Studio book; "import" below
+  means either). The **hook-delivery** half is gated on the
   plan having committed to an `openingHook` **and on that same provenance**, because an import's
   plan is not a commitment its book was written to: `synthesizeImportedBookPlan`
   (`ingestion/manuscriptImport.ts`) builds it out of the finished manuscript and sets no
@@ -582,7 +583,7 @@ holds the event loop open and vitest will never exit.
   `polishPageDraft` rewrite the page they are handed, in place, and a reader's own "make page 1
   sharper" reaches `revisePageDraft` through `rewritePageForUserRequest`
   (`apps/worker/src/generation/textEditRewrite.ts`). Which page is the author's cannot be asked — `Page`
-  has no provenance column, so `isImportedManuscript` reads the *project's* mediaSettings and both
+  has no provenance column, so `isAuthorManuscript` reads the *project's* mediaSettings and both
   halves are book-level. That over-applies to prose inserted at the head of an import
   (`resolveStructuralEdit` accepts `anchorPageIndex: 0`, so a generated page can sit at global index
   1) and is right anyway: the hook that page would deliver is the invented one, and hook-without-ban
@@ -628,7 +629,7 @@ holds the event loop open and vitest will never exit.
   exemption: `firstPageOpeningRule` grants the signposting categories exactly one concession — "you
   may signpost later on the page, never in the first paragraph" — and `FIRST_PAGE_OPENING_WINDOW`
   *is* that first paragraph, so an exemption there approved the one sentence the instruction never
-  did. `isImportedManuscript` is therefore named in exactly two places in this pipeline, the prompts
+  did. `isAuthorManuscript` is therefore named in exactly two places in this pipeline, the prompts
   (`pagesShared.ts`) and the gate (`pagesLocalQa.ts`); `pagesReview.ts` names it nowhere and reads
   `statesOpeningQuality` off the contract instead.
   **The sweep measures both sets rather than listing them, which is why editing the test cannot keep
@@ -1173,6 +1174,26 @@ again before deleting. Cleanup is single-flight; shutdown stops it before closin
   every lane, before the cache and the model; it declines (`undefined`) when any page lacks a
   chapter or a chapter's pages are not one run, and the model grouping stands in. The apparatus is
   still sized by `chapterPresentationFor` from the partition about to be printed.
+
+- **An author's book compiles by its own rules, and a generated book never sees them.**
+  `CompileMarkdownInput.authorManuscript` (set from `isAuthorManuscript` by both compiles — the
+  worker's and the API's inline rebuild — or the two print different books) changes four things:
+  page blocks join on a blank line (`joinMarkdownPageBlocks`' `paragraphBreaks`), because the Studio
+  paginator cuts only between blocks and every page is trimmed, so the single-newline join merged the
+  paragraphs either side of every cut into one `<p>` — imports did this until their first Studio
+  publish; a page is never unwrapped from a whole-page fence and keeps a leading `## Page 3`; the
+  generation-leak checks (`bookLikeMarkdown.ts`) are skipped, so an author's own sentence cannot
+  FAIL their export; and `runDeterministicManuscriptChecks` keeps content integrity only. A Studio
+  picture book prints one sheet per page through `storyPageLayoutFor`, never the short-kids rule.
+  The fixture corpus is all generated books, so `pnpm render:fixtures --compare` is the proof a
+  change here left them alone. A generated book its owner took over into the Studio
+  (`studio.origin: "takeover"`) compiles by these rules from its first recompile, so
+  `takenOverPageText` (`authoring/takeoverText.ts`) rewrites each of its pages once into what the
+  generated rules *printed* — `sanitizePageMarkdown` under the generated flag, the hero as the first
+  line — and the book does not change in print when it changes hands. Its figures stay a composed
+  chapter's own under the Studio's AI too: chapter feedback reads stand-ins, a chapter draft never
+  sees one in the ending it continues from and never keeps one it invented
+  (`authorLongAssists.ts`), and the style profile reads figure-free prose.
 
 ## Library characters
 

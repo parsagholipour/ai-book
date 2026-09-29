@@ -1,4 +1,4 @@
-import { isImportedManuscript, readerChaptersFromComposedChapters, type BookGenerationStrategy, type BookPlan, type CreateProjectInput } from "@book-maker/core";
+import { isAuthorManuscript, readerChaptersFromComposedChapters, type BookGenerationStrategy, type BookPlan, type CreateProjectInput } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 import { usesShortPictureBookReview } from "./shortPictureBook.js";
 
@@ -6,7 +6,7 @@ import { usesShortPictureBookReview } from "./shortPictureBook.js";
 export function shortPictureBookReaderChapters(options: {
   input: CreateProjectInput; plan: BookPlan; strategy: BookGenerationStrategy; pages: readonly ExportPageForRepair[];
 }) {
-  if (isImportedManuscript(options.input.mediaSettings) || !usesShortPictureBookReview(options)) return undefined;
+  if (isAuthorManuscript(options.input.mediaSettings) || !usesShortPictureBookReview(options)) return undefined;
   const identities = new Map<number, string>();
   for (const page of options.pages) {
     const chapter = page.chapter;

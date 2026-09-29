@@ -19,6 +19,7 @@ import {
   mobileQualityPresetSchema
 } from "./schemas.js";
 import { type CoverArtSource } from "@book-maker/core";
+import { type ManuscriptSummaryDto } from "./manuscript/manuscriptDto.js";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
 import { z } from "zod";
 
@@ -86,8 +87,16 @@ export type MobileProjectSummaryDto = {
   pageCount: number;
   imageCount: number;
   hasPlan: boolean;
-  /** "imported" for books brought in by the author, "generated" otherwise. */
-  source: "imported" | "generated";
+  /**
+   * "imported" for books brought in by the author, "written" for books written
+   * in the Writing Studio, "generated" otherwise.
+   */
+  source: "imported" | "generated" | "written";
+  /**
+   * The Writing Studio working copy's tallies; null unless the book has one
+   * (every Studio book, and an import once it has been opened in the Studio).
+   */
+  manuscript: ManuscriptSummaryDto | null;
   /** Set on a copy created by a chat "rebuild the book" request; null otherwise. */
   revisedFrom: MobileProjectRevisionOriginDto | null;
   /**
@@ -311,6 +320,7 @@ export type MobileProjectPageDto = {
 export type MobileProjectImageDto = {
   id: string;
   role: "cover" | "page_visual" | "character";
+  /** Carries a `?v=` that changes whenever the picture does (`versionedImageAssetUrl`); cache by it. */
   url: string;
   contentType: string;
   altText: string;
@@ -364,7 +374,8 @@ export type MobileBookEditOperationDto = {
     | "move_image"
     | "remove_image"
     | "restructure_pages"
-    | "manual_edit";
+    | "manual_edit"
+    | "manuscript_publish";
   status: "queued" | "active" | "applied" | "failed" | "canceled";
   affectedPageIndexes: number[];
   /**
@@ -473,6 +484,13 @@ export type MobileProjectChatMessageResponseDto = MobileProjectChatResponseDto &
 export type MobileEditableBookPageDto = {
   id: string;
   index: number;
+  /**
+   * The `Chapter` row the page belongs to. Added for the Writing Studio, which
+   * opens at the chapter holding the page the reader was on (a manuscript
+   * chapter's `bookChapterId`); every older field is unchanged because
+   * `ReaderRepository.pageLocator` reads this payload.
+   */
+  chapterId: string | null;
   title: string;
   markdown: string;
   revision: number;
@@ -765,6 +783,9 @@ export type MobileVoiceCastDto = {
 // serializer; its response shapes live beside them. Re-exported here so the
 // contract stays one import for every existing caller.
 export * from "./characterDto.js";
+
+// The Writing Studio's shapes, likewise beside their routes.
+export type * from "./manuscript/manuscriptDto.js";
 
 /**
  * Everything the app needs to open its own Gemini Live socket.

@@ -62,5 +62,15 @@ export const GENERATION_STAGE_EFFORT: Record<GenerationModelStageId, EffortRecom
   "extract-voice-character-candidates": { score: 2, reason: "Identify named speaking characters from the supplied material." },
   "build-voice-character-persona": { score: 4, reason: "Synthesize consistent voice traits from the character's existing portrayal." },
   "import-chapterize": { score: 3, reason: "Recover chapter structure from an existing document." },
-  "import-style-profile": { score: 3, reason: "Summarize observable voice and formatting patterns in imported prose." }
+  "import-style-profile": { score: 3, reason: "Summarize observable voice and formatting patterns in imported prose." },
+  "author-assist-rewrite": { score: 3, reason: "Rewrite a short passage in the author's voice, keeping its facts; answered while the author waits." },
+  "author-assist-proofread": { score: 2, reason: "Find spelling, grammar and punctuation errors as exact spans; answered while the author waits." },
+  "author-assist-continue": { score: 3, reason: "Continue a few sentences from the cursor in the author's voice; answered while the author waits." },
+  "author-assist-describe": { score: 3, reason: "Add concrete sensory detail to a short passage; answered while the author waits." },
+  "author-assist-brainstorm": { score: 3, reason: "Suggest three distinct next directions grounded in the text; answered while the author waits." },
+  "author-assist-ask": { score: 4, reason: "Answer an author's question about their passage as an editor; answered while the author waits." },
+  "author-draft-chapter": { score: 6, reason: "Draft a whole chapter from the author's notes in their voice." },
+  "author-chapter-feedback": { score: 6, reason: "Give developmental notes on pacing, clarity and dialogue, quoting the passages they concern." },
+  "author-consistency": { score: 7, reason: "Find factual contradictions across every chapter of the book." },
+  "author-outline": { score: 6, reason: "Outline a whole book as chapters with a beginning, development and ending." }
 };

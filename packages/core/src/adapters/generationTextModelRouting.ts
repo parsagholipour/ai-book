@@ -78,7 +78,17 @@ export const GENERATION_MODEL_STAGES = [
   { id: "extract-voice-character-candidates", label: "Voice character extraction", group: "Supporting steps", role: "writer" },
   { id: "build-voice-character-persona", label: "Voice character persona", group: "Supporting steps", role: "writer" },
   { id: "import-chapterize", label: "Import chapter structure", group: "Supporting steps", role: "judgment" },
-  { id: "import-style-profile", label: "Import style profile", group: "Supporting steps", role: "judgment" }
+  { id: "import-style-profile", label: "Import style profile", group: "Supporting steps", role: "judgment" },
+  { id: "author-assist-rewrite", label: "Rewrite", group: "Writing Studio", role: "writer" },
+  { id: "author-assist-proofread", label: "Proofread", group: "Writing Studio", role: "judgment" },
+  { id: "author-assist-continue", label: "Continue writing", group: "Writing Studio", role: "writer" },
+  { id: "author-assist-describe", label: "Describe more vividly", group: "Writing Studio", role: "writer" },
+  { id: "author-assist-brainstorm", label: "What happens next", group: "Writing Studio", role: "writer" },
+  { id: "author-assist-ask", label: "Ask about the text", group: "Writing Studio", role: "writer" },
+  { id: "author-draft-chapter", label: "Draft chapter from notes", group: "Writing Studio", role: "writer" },
+  { id: "author-chapter-feedback", label: "Chapter feedback", group: "Writing Studio", role: "judgment" },
+  { id: "author-consistency", label: "Book consistency check", group: "Writing Studio", role: "judgment" },
+  { id: "author-outline", label: "Book outline", group: "Writing Studio", role: "writer" }
 ] as const;
 export type GenerationModelStageId = (typeof GENERATION_MODEL_STAGES)[number]["id"];
 export type GenerationStageRoute = { primary: DecisionModelSelection; fallback: TextModelSelection };

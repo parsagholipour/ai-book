@@ -771,5 +771,22 @@ export function canUndoBookEdit(operation: {
   if (!hasBookEditUndoRecord(operation)) {
     return false;
   }
+  if (isSealedBookEdit(operation.classifier)) {
+    return false;
+  }
   return jsonRecord(operation.classifier).undoneAt === undefined;
+}
+
+/**
+ * Whether a Writing Studio publish has sealed this edit.
+ *
+ * Undo and Redo write their snapshots back with no revision check — they
+ * restore *text* — so once an author has published over a chat edit, undoing
+ * that edit would overwrite the author's published words with the text from
+ * before the chat edit. Publish stamps `classifier.sealedAt` on every applied
+ * edit in one statement (`manuscriptPublish.ts`), and both predicates refuse a
+ * sealed row: across a publish, the Studio's version history is the undo.
+ */
+export function isSealedBookEdit(classifier: unknown): boolean {
+  return typeof jsonRecord(classifier).sealedAt === "string";
 }

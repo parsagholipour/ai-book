@@ -113,6 +113,19 @@ describe("ordinary message allowance", () => {
     expect(await getCreditBalance(userId, later)).toMatchObject({ reservedCredits: 0, lifetimeCreditsSpent: 7 });
   });
 
+  it("refunds an expired Studio assist hold, because a quick assist saves no reply", async () => {
+    price({ messageCreditsFree: 7 });
+    await send("studio:book:request");
+    // Even beside a saved project transcript for the same ids: the studio scope
+    // never reads one, since the assist's answer is never written anywhere.
+    db.state.projectChatMessages.set("user", { id: "user", projectId: "book", requestId: "request", role: "USER" });
+    db.state.projectChatMessages.set("reply", { id: "reply", projectId: "book", parentId: "user", role: "ASSISTANT" });
+    const later = new Date(now.getTime() + 20 * 60_000);
+    expect(await recoverMessageUsage({ now: later })).toBe(1);
+    expect(await getCreditBalance(userId, later)).toMatchObject({ availableCredits: 1000, reservedCredits: 0, lifetimeCreditsSpent: 0 });
+    expect([...db.state.messageReservations.values()][0]?.status).toBe("REFUNDED");
+  });
+
   it.each([
     ["free", 50, 50], ["creator", 150, 100], ["pro", 300, 150], ["max", 600, 200]
   ] as const)("defaults %s to %i messages and a %i credit reset", (tier, dailyLimit, resetCredits) => {

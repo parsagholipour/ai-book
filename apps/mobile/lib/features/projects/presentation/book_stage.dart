@@ -9,6 +9,10 @@ import '../domain/project_models.dart';
 /// has to pick what the reader came for, and this is that decision, kept out of
 /// the widget tree so it can be read and tested on its own.
 enum BookStage {
+  /// A book the author is writing in the Studio and has never published:
+  /// there is no plan and no book to read, only a manuscript to keep writing.
+  manuscript,
+
   /// The idea is saved and nothing has been drafted yet.
   needsPlan,
 
@@ -59,6 +63,11 @@ BookStage bookStageFor({
   MobileProjectDetail? project,
   MobileProjectStatus? status,
 }) {
+  // Before anything else: a never-published Studio book is a DRAFT with no
+  // plan, and every rule below would read it as a book waiting for one.
+  if (project?.isUnpublishedManuscript ?? false) {
+    return BookStage.manuscript;
+  }
   final state = (status?.status ?? project?.status ?? 'draft').toLowerCase();
 
   // A scheduled retry is still the book being written: it is waiting on the

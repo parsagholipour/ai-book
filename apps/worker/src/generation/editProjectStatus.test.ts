@@ -94,6 +94,7 @@ describe("edit project status ownership", () => {
       where: {
         projectId: "project-1",
         createdAt: { gt: appliedAt },
+        type: { notIn: ["WRITING_ASSIST"] },
         id: { notIn: ["job-old"] }
       },
       select: { id: true }
@@ -197,11 +198,28 @@ describe("edit project status ownership", () => {
       where: {
         projectId: "project-1",
         createdAt: { gte: appliedAt },
+        type: { notIn: ["WRITING_ASSIST"] },
         id: { notIn: ["job-old"] }
       },
       select: { id: true }
     });
     expect(updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("is not superseded by a Writing Studio assist started inside the EDITING window", async () => {
+    // The query is the whole rule, so the fake answers it the way Postgres
+    // would: a newer assist row exists, and only the type filter keeps it out.
+    const { client, updateMany, findLaterLifecycle } = statusClient();
+    const newerJobs = [{ id: "assist-job", type: "WRITING_ASSIST" }];
+    findLaterLifecycle.mockImplementation(
+      async ({ where }: { where: { type?: { notIn?: string[] } } }) =>
+        newerJobs.find((job) => !(where.type?.notIn ?? []).includes(job.type)) ?? null
+    );
+
+    await expect(
+      claimAppliedEditPublication(client, "project-1", "op-old", "COMPLETE")
+    ).resolves.toBe(true);
+    expect(updateMany).toHaveBeenCalledTimes(2);
   });
 
   it("keeps non-publication APPLIED kinds unstamped", async () => {
@@ -240,6 +258,7 @@ describe("edit project status ownership", () => {
       where: {
         projectId: "project-1",
         createdAt: { gt: appliedAt },
+        type: { notIn: ["WRITING_ASSIST"] },
         id: { notIn: ["job-old"] }
       },
       select: { id: true }

@@ -12,11 +12,13 @@ import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../../reader/data/reader_repository.dart';
+import '../../studio/data/studio_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'book_preview_section.dart';
 import 'book_screen_body.dart';
 import 'book_screen_skeleton.dart';
+import 'book_stage.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'project_export_actions.dart';
@@ -93,6 +95,10 @@ class _BookScreenState extends ConsumerState<BookScreen>
     // `asData` is null for the whole of a refresh.
     final project = projectValue.value;
     final status = statusValue.value;
+    // A book the author has not published yet has nothing for the book chat
+    // to talk about: no pages, no plan, nothing to edit or ask about.
+    final unpublishedManuscript =
+        bookStageFor(project: project, status: status) == BookStage.manuscript;
 
     MobileBookEditOperation? failedRevision;
     for (final operation in chatValue.value?.operations ?? const []) {
@@ -115,11 +121,13 @@ class _BookScreenState extends ConsumerState<BookScreen>
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Book chat',
-            onPressed: () => context.push('/projects/${widget.projectId}/chat'),
-            icon: const Icon(Icons.chat_bubble_outline),
-          ),
+          if (!unpublishedManuscript)
+            IconButton(
+              tooltip: 'Book chat',
+              onPressed: () =>
+                  context.push('/projects/${widget.projectId}/chat'),
+              icon: const Icon(Icons.chat_bubble_outline),
+            ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _refresh,
@@ -231,6 +239,8 @@ class _BookScreenState extends ConsumerState<BookScreen>
 
   void _refresh() {
     ref.invalidate(projectStatusProvider(widget.projectId));
+    // Only watched while the page shows a manuscript; a no-op otherwise.
+    ref.invalidate(manuscriptProvider(widget.projectId));
     _refreshDetails();
   }
 

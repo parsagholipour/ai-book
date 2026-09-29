@@ -2,7 +2,7 @@ import { savedPictureBookReviewSchema, shortPictureBookChecks } from "./shortPic
 import { prisma, type Prisma } from "@book-maker/db";
 import { z } from "zod";
 import {
-  requestedGenerationPages, hasResearchIntent, isImportedManuscript, pictureBookReviewFingerprint,
+  requestedGenerationPages, hasResearchIntent, isAuthorManuscript, pictureBookReviewFingerprint,
   reviewPictureBookManuscript, PictureBookReviewIncompleteError,
   pictureBookCitationRowsSchema, pictureBookEditorialRowsSchema, pictureBookMetadataRowsSchema,
   type PictureBookReviewCheckpoint,
@@ -18,7 +18,7 @@ export function usesShortPictureBookReview(options: {
   input: CreateProjectInput; plan: BookPlan; strategy: BookGenerationStrategy; pages: readonly PriorPageContext[];
 }): boolean {
   const { input, pages, strategy } = options;
-  return input.category === "KIDS" && input.mediaSettings.finalReview === true && !isImportedManuscript(input.mediaSettings) &&
+  return input.category === "KIDS" && input.mediaSettings.finalReview === true && !isAuthorManuscript(input.mediaSettings) &&
     (!input.mediaSettings.generationStrategy || input.mediaSettings.generationStrategy === "auto") &&
     !strategy.researchDepth && !hasResearchIntent(input) && requestedGenerationPages(input) >= 5 && requestedGenerationPages(input) <= 40 &&
     pages.length === input.targetPages && pages.every((page, position) => page.index === position + 1 && page.markdown.trim().length > 0) &&

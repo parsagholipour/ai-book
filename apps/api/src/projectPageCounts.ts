@@ -392,7 +392,9 @@ export const EDIT_OPERATION_PAGE_REWRITE_SCOPE = {
   ADD_IMAGE: "none",
   /** Free, and not a page edit — the invariant the residue above contradicted. */
   MOVE_IMAGE: "none",
-  REMOVE_IMAGE: "none"
+  REMOVE_IMAGE: "none",
+  /** The author's own text published from the Writing Studio — nothing is redrafted. */
+  MANUSCRIPT_PUBLISH: "none"
 } as const satisfies Record<BookEditOperationKind, EditPageRewriteScope>;
 
 /**

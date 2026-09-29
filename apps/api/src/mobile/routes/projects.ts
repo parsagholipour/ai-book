@@ -1,6 +1,7 @@
 import { type MobileProjectCreateResponseDto, type MobileProjectRecord } from "../dto.js";
 import { hitTieredLimit, requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
-import { buildMobileCreateProjectInput, createMobileProjectRecord } from "../projectRecords.js";
+import { buildMobileCreateProjectInput, createMobileProjectRecord, mobileProjectSummaryInclude } from "../projectRecords.js";
+import { manuscriptSummarySelect } from "../manuscript/manuscriptSerializers.js";
 import { serializeProjectDetail, serializeProjectSummary } from "../projectSummarySerializers.js";
 import { idParamsSchema, mobileAuthError, mobileProjectCreateBodySchema, mobileProjectCreateOpenApiBody } from "../schemas.js";
 import { prisma } from "@book-maker/db";
@@ -28,13 +29,9 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       const projects = (await prisma.project.findMany({
         where: { userId: auth.user.id },
         orderBy: { updatedAt: "desc" },
-        include: {
-          currentPlan: true,
-          // Only the cover: the library renders cover art per project, and
-          // pulling every page visual here would be a large payload for a list.
-          images: { where: { type: "COVER" }, orderBy: { createdAt: "desc" }, take: 1 },
-          _count: { select: { pages: true, images: true, jobs: true } }
-        }
+        // Only the cover: the library renders cover art per project, and
+        // pulling every page visual here would be a large payload for a list.
+        include: mobileProjectSummaryInclude()
       })) as MobileProjectRecord[];
 
       return {
@@ -120,7 +117,8 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
             }
           },
           images: { select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true } },
-          _count: { select: { pages: true, images: true, jobs: true } }
+          _count: { select: { pages: true, images: true, jobs: true } },
+          manuscript: manuscriptSummarySelect
         }
       })) as MobileProjectRecord | null;
       if (!project) {

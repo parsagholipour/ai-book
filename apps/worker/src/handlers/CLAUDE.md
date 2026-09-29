@@ -17,8 +17,9 @@ into a finished book.
 Not every failure is the book's failure. `markFailed` and `markStopped` in
 `runtime/jobLifecycle.ts` are a chain of early-returning branches on `job.name`, checked *before*
 the default path that sets the project FAILED and refunds — `generate-audiobook` and
-`generate-character-portrait` each divert to their own settlement, and a detached `compile-export`
-(one carrying `DETACHED_FROM_PROJECT_LIFECYCLE`) owns nothing at all. Work out which branch your
+`generate-character-portrait` each divert to their own settlement, a revision-owned cover settles
+alone (see *Covers and portraits*), and a detached `compile-export` (one carrying
+`DETACHED_FROM_PROJECT_LIFECYCLE`) owns nothing at all. Work out which branch your
 job lands in before writing a status or a refund; the wrong answer marks a delivered, fully paid
 book FAILED and hands the credits back.
 
@@ -720,6 +721,56 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   give-up is written to the character-reference run log as `character.reference.unavailable`, since
   it is the fifth way a page ends up drawn with no sheet and they are indistinguishable from the
   book.
+  **That catch covers the artwork; for a revision-owned cover the rule now covers the whole job.**
+  Everything else that throws — the typesetting render, the object store, the asset write, the
+  reference selection above the `try` — still reaches `markFailed`, and for the cover a generation
+  run draws that is still the book's failure (deliberately unchanged: its attempt is the book's, and
+  resume owns it). A *revision-owned* cover (`isRevisionOwnedCoverPayload` in
+  packages/core/src/jobScope.ts: `assetType: "COVER"` plus `contentRevision` plus
+  `exportPublicationProjectStatus` — a Studio publish's cover, a Studio cover change, a replan's
+  cover) is drawn for a book whose pages are already published, and one failure there marked an
+  author's published book FAILED and walked the payload's `planId` to a taken-over book's own
+  `FULL_BOOK_GENERATION` charge to refund it. `payloadOwnsProjectOutcome` is false for it now, which
+  is the one question every settling, reporting and resuming surface asks: `markFailed`/`markStopped`
+  settle only its row (`runtime/coverSettlement.ts`), `findCurrentOwningFailure` does not paint the
+  book "needs attention", `canRecoverGenerationJob` never resumes it into GENERATING, and the API's
+  stop never treats it as a legacy book-run row. **A failed cover also has to release the compile.**
+  The compile of its revision stood down while the cover was open, and only the cover's *completion*
+  re-queued it, so a failed cover left the book EDITING with nothing coming. `processJob` now calls
+  `maybeCompileAfterFailedJob` after `markFailed` — only while the book is still the revision and
+  EDITING the cover was queued under — and fan-in stops asking for a cover for a revision whose own
+  cover already ended FAILED or CANCELED (`revisionCoverSettledWithoutPicture`): the generation-style
+  cover `maybeEnqueueCover` would queue in its place owns the book, so its failure would be the
+  FAILED this closes, and its spent dedupe key answered "waiting" forever — which is also what the
+  stranded sweep would have met. So the book publishes with the cover it already has, or the
+  coverless title sheet, and ends COMPLETE or REVIEW_REQUIRED on its compile's verdict; its next
+  publish draws again. The cover's own row stays FAILED, which is the record and nothing more.
+- **A purchased cover's attempt is settled by its own cover job, never by the compile after it.**
+  The Studio's "Generate with AI" (`coverPurchase`, `apps/api/src/mobile/manuscript/manuscriptCover.ts`)
+  charges through `startGenerationAttempt`, and that attempt used to ride the presentation reprint
+  too, completing with it. Two paths never closed: a reprint that failed after the artwork landed is
+  presentation work, so `markFailed` skipped the attempt and it sat ACTIVE forever; and failing the
+  attempt from the cover side stood that reprint down as stale. Now only the cover row carries it,
+  and every exit of that job settles it: completion commits it (`attemptCompletesWithJob` — the
+  artwork is on the book whether or not the reprint succeeds, the way an `add_image` edit commits
+  with its apply rather than its recompile; approve-time covers refund with a failed compile only
+  because there the compile is what delivers the purchase, the book); a fallback to a design refunds
+  `billingLedgerEntryId` in the handler first, and a refund that cannot be written *fails* the job
+  rather than letting completion commit it; an outright failure refunds through the attempt in
+  `coverSettlement.ts` without stopping siblings; a stop or a stale cancellation cancels and refunds
+  it. Fan-in after a purchase — released or completed — runs outside the attempt's context
+  (`compileOutsidePurchase`), so a re-queued reprint never inherits it either. Rows written while the
+  reprint still carried the attempt settle the same way; the one difference is a refunded purchase
+  standing that reprint down, which the stranded sweep then recompiles.
+- **A revision-owned cover re-typesets the design the book already wears.** A Studio publish that
+  changes the title, subtitle or byline queues a cover row carrying `contentRevision` and
+  `exportPublicationProjectStatus` over a book that already has a designed cover. `generateCover`
+  reads the current cover's `coverDesignId` and renders that design again (`coverDesignSelectedBy:
+  "kept"`) rather than asking the selector, which could hand the same book a different picture for a
+  one-word title change. Only a revision-owned job keeps it; the operator's regenerate route asks
+  for a fresh pick. The handler itself never refused an existing cover — only the enqueue gates
+  (`maybeEnqueueCover`, `maybeEnqueueRevisionOwnedReplanCover`) do, and the API writes this row
+  directly.
 - **The portrait job is the one `GenerationJob` with no project.** `GENERATE_CHARACTER_PORTRAIT`
   runs with `projectId` null, which is why that column is nullable: every project-scoped query
   (stop, settlement, status, `failureMessage`) simply never sees the row, and

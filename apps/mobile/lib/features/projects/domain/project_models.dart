@@ -9,6 +9,8 @@ export 'project_chat_models.dart';
 export 'project_status_models.dart';
 export 'question_answers.dart';
 
+import '../../studio/domain/manuscript_models.dart';
+import 'credit_rates.dart';
 import 'export_models.dart';
 import 'project_status_models.dart';
 import 'question_answers.dart';
@@ -54,6 +56,7 @@ class MobileProjectSummary {
     this.source = 'generated',
     this.revisedFrom,
     this.coverImage,
+    this.manuscript,
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
        illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
        coverArtSource =
@@ -68,8 +71,14 @@ class MobileProjectSummary {
   /// Cover art once the cover job has finished; null before that.
   final MobileProjectImage? coverImage;
 
-  /// "imported" for books the author uploaded, "generated" otherwise.
+  /// "imported" for books the author uploaded, "written" for books begun in
+  /// the Writing Studio, "generated" otherwise.
   final String source;
+
+  /// Writing progress for a book with a Studio working copy: always for a
+  /// written book, and for an import once the author has opened it in the
+  /// Studio. Null for everything else.
+  final MobileManuscriptSummary? manuscript;
 
   /// Set when this book is a copy a chat "rebuild the book" request created;
   /// names the book it was rebuilt from.
@@ -139,10 +148,22 @@ class MobileProjectSummary {
               json['revisedFrom'] as Map<String, dynamic>,
             ),
       coverImage: parseProjectCoverImage(json),
+      manuscript: MobileManuscriptSummary.fromJsonOrNull(json['manuscript']),
     );
   }
 
   bool get isImported => source == 'imported';
+
+  /// Begun in the Writing Studio.
+  bool get isWritten => source == 'written';
+
+  /// The author owns this book's text, so its Edit is the Writing Studio.
+  bool get isAuthorManuscript => isImported || isWritten;
+
+  /// A Studio book that has never been published: there is no book to read
+  /// yet, only a manuscript to keep writing.
+  bool get isUnpublishedManuscript =>
+      isWritten && !(manuscript?.published ?? hasPlan);
 
   /// Whether the server is still working on this book. The same question
   /// [MobileProjectStatus.isLive] answers, asked of a listed summary — which
@@ -228,6 +249,7 @@ class MobileProjectDetail extends MobileProjectSummary {
     super.source,
     super.revisedFrom,
     super.coverImage,
+    super.manuscript,
     this.plan,
     this.quality = const MobileProjectQuality.pending(),
   });
@@ -285,6 +307,7 @@ class MobileProjectDetail extends MobileProjectSummary {
           )
           .toList(),
       coverImage: parseProjectCoverImage(json),
+      manuscript: MobileManuscriptSummary.fromJsonOrNull(json['manuscript']),
       quality: MobileProjectQuality.fromJson(
         (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
@@ -717,26 +740,26 @@ int estimateProjectCredits({
 }) {
   final includeCover = coverEnabled ?? imagesEnabled ?? true;
   final includeIllustrations = illustrationsEnabled ?? imagesEnabled ?? true;
-  final fullBookBase = _tierCost(creditCosts, 'fullBookBase', qualityPreset, {
-    'fast': 220,
-    'balanced': 350,
-    'premium': 500,
-    'ultra': 650,
-  });
-  final fullBookPerPage = _tierCost(
+  final fullBookBase = tierCreditRate(
+    creditCosts,
+    'fullBookBase',
+    qualityPreset,
+    {'fast': 220, 'balanced': 350, 'premium': 500, 'ultra': 650},
+  );
+  final fullBookPerPage = tierCreditRate(
     creditCosts,
     'fullBookPerPage',
     qualityPreset,
     {'fast': 5, 'balanced': 8, 'premium': 30, 'ultra': 71},
   );
-  final imageGeneration = _tierCost(
+  final imageGeneration = tierCreditRate(
     creditCosts,
     'imageGeneration',
     qualityPreset,
     {'fast': 45, 'balanced': 45, 'premium': 85, 'ultra': 85},
   );
-  final premiumReview = _intCost(creditCosts, 'premiumReview', 200);
-  final exportUnlock = _intCost(creditCosts, 'exportUnlock', 150);
+  final premiumReview = flatCreditRate(creditCosts, 'premiumReview', 200);
+  final exportUnlock = flatCreditRate(creditCosts, 'exportUnlock', 150);
   final imageCount = estimatedInteriorImageCount(
     bookType: bookType,
     bookTypeChoice: bookTypeChoice,
@@ -763,45 +786,12 @@ int estimatePlanGenerationCredits({
   required String qualityPreset,
   required Map<String, dynamic> creditCosts,
 }) {
-  return _tierCost(creditCosts, 'planGeneration', qualityPreset, const {
+  return tierCreditRate(creditCosts, 'planGeneration', qualityPreset, const {
     'fast': 20,
     'balanced': 40,
     'premium': 80,
     'ultra': 120,
   });
-}
-
-/// One rate at the tier this book is priced at.
-///
-/// Mirrors `tierPrice` in `packages/core/src/billing.ts`, including its key
-/// convention: the unsuffixed key is the balanced rate and the others add
-/// `Fast` / `Premium` / `Ultra`. Anything that is not one of the four tier
-/// names — the server sends `'custom'` for a book it has no preset for — is
-/// balanced, which is exactly what the server charges such a book.
-///
-/// The fallbacks are only reached before `/api/mobile/billing` has loaded; they
-/// duplicate `DEFAULT_CREDIT_COSTS`, so the two must move together.
-int _tierCost(
-  Map<String, dynamic> creditCosts,
-  String baseKey,
-  String qualityPreset,
-  Map<String, int> fallbacks,
-) {
-  final tier = switch (qualityPreset) {
-    'fast' || 'premium' || 'ultra' => qualityPreset,
-    _ => 'balanced',
-  };
-  final key = switch (tier) {
-    'fast' => '${baseKey}Fast',
-    'premium' => '${baseKey}Premium',
-    'ultra' => '${baseKey}Ultra',
-    _ => baseKey,
-  };
-  return _intCost(
-    creditCosts,
-    key,
-    fallbacks[tier] ?? fallbacks['balanced'] ?? 0,
-  );
 }
 
 /// Book type the quote uses.
@@ -862,15 +852,4 @@ String generatedImagesLabel({
     (_, true) => 'Illustrations only',
     (_, false) => 'No generated images',
   };
-}
-
-int _intCost(Map<String, dynamic> creditCosts, String key, int fallback) {
-  final value = creditCosts[key];
-  if (value is int) {
-    return value;
-  }
-  if (value is num) {
-    return value.round();
-  }
-  return fallback;
 }

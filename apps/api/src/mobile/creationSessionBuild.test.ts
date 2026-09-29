@@ -510,6 +510,7 @@ describe("mobile creation session project build", () => {
         "imagesEnabled",
         "language",
         "lengthPreset",
+        "manuscript",
         "pageCount",
         "pages",
         "plan",

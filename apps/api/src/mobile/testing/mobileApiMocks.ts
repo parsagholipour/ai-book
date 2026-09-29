@@ -387,11 +387,48 @@ export const mockPrisma = ({
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
-  page: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), count: vi.fn() },
+  page: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    count: vi.fn(),
+    createMany: vi.fn(),
+    deleteMany: vi.fn()
+  },
   pageEditSnapshot: { create: vi.fn() },
-  planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+  planVersion: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+  chapter: { findMany: vi.fn(noRows), create: vi.fn(), update: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
+  character: { findMany: vi.fn(noRows) },
+  // The Writing Studio's working copy; `testing/manuscriptFakeDb.ts` backs
+  // these with rows for the suites that exercise it.
+  manuscript: { findUnique: vi.fn(noRow), create: vi.fn(), update: vi.fn() },
+  manuscriptChapter: {
+    findUnique: vi.fn(noRow),
+    findFirst: vi.fn(noRow),
+    findMany: vi.fn(noRows),
+    create: vi.fn(),
+    createMany: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    deleteMany: vi.fn()
+  },
+  manuscriptVersion: { findFirst: vi.fn(noRow), findMany: vi.fn(noRows), create: vi.fn(), deleteMany: vi.fn() },
+  // Writing Studio assists (Phase 2). Empty by default: `projectAlreadyIllustrated`
+  // asks it on every chat add_image, so every suite has to get an answer.
+  manuscriptAssist: {
+    findUnique: vi.fn(noRow),
+    findFirst: vi.fn(noRow),
+    findMany: vi.fn(noRows),
+    count: vi.fn(async (..._args: any[]) => 0),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(rowsAffected(0))
+  },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: {
+    count: vi.fn(async (..._args: any[]) => 0),
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
@@ -411,8 +448,17 @@ export const mockPrisma = ({
   },
   creditLedgerEntry: { findMany: vi.fn(), update: vi.fn() },
   subscriptionState: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
-  providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
-  imageAsset: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+  providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn(), create: vi.fn() },
+  imageAsset: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    deleteMany: vi.fn(),
+    count: vi.fn(async (..._args: any[]) => 0)
+  },
   voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
   voiceCall: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
   voiceCallEvent: { create: vi.fn() },
@@ -666,6 +712,8 @@ export function dbModuleMock() {
     // asserting the mock's own numbers.
     PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
     revertStructuralPageChange: vi.fn(),
+    deletePageEmbeddings: vi.fn(),
+    deletePageContinuityNotes: vi.fn(),
     casRebuildProjectStoryState: vi.fn(),
     rebuildStoryStateFromPages: vi.fn()
   };

@@ -25,6 +25,7 @@ import '../../features/projects/presentation/import_book_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/audiobook/presentation/audiobook_screen.dart';
 import '../../features/reader/presentation/book_reader_screen.dart';
+import '../../features/studio/presentation/studio_screen.dart';
 import '../../shared/api/api_error.dart';
 import '../../shared/ui/app_components.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
@@ -356,6 +357,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             initialDraft: _chatLaunch(state.extra)?.draft,
             initialMessage: _chatLaunch(state.extra)?.send,
             initialReaderContext: _chatLaunch(state.extra)?.readerContext,
+          ),
+        ),
+      ),
+      GoRoute(
+        // The Writing Studio. `?chapter=` opens that chapter (default: the
+        // one written in last); `?publish=1` opens the publish sheet on load.
+        path: '/projects/:id/write',
+        pageBuilder: (context, state) => _appPage(
+          state,
+          StudioScreen(
+            projectId: state.pathParameters['id']!,
+            chapterId: state.uri.queryParameters['chapter'],
+            openPublish: state.uri.queryParameters['publish'] == '1',
           ),
         ),
       ),

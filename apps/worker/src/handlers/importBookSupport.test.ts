@@ -86,6 +86,16 @@ describe("mediaSettingsWithImportStyle", () => {
     expect(importStyleProfileFromMediaSettings({ mobile: { bookType: "custom" } })).toBeNull();
     expect(importStyleProfileFromMediaSettings(null)).toBeNull();
   });
+
+  it("falls back to the profile a Studio book learned, so continuation keeps the author's voice", () => {
+    const studioProfile = { voiceGuide: ["Short sentences."], sampleExcerpts: ["It rained."] };
+    const studio = { layout: "flow", kind: "story", createdAt: "2026-09-29", styleProfile: studioProfile };
+    expect(importStyleProfileFromMediaSettings({ mobile: { studio } })).toEqual(studioProfile);
+    expect(
+      importStyleProfileFromMediaSettings({ mobile: { studio, import: { styleProfile: { voiceGuide: ["Imported."] } } } })
+    ).toEqual({ voiceGuide: ["Imported."] });
+    expect(importStyleProfileFromMediaSettings({ mobile: { studio: { layout: "flow" } } })).toBeNull();
+  });
 });
 
 describe("normalizeImportedLanguage", () => {
