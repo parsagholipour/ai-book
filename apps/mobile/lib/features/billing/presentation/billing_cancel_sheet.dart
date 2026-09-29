@@ -6,6 +6,7 @@ import '../domain/billing_models.dart';
 import 'billing_controller.dart';
 import 'billing_free_plan_card.dart';
 import 'billing_plan_tiles.dart';
+import 'billing_shared_parts.dart';
 import 'play_subscriptions_link.dart';
 
 /// What cancelling actually costs, before it happens.
@@ -62,37 +63,40 @@ class _CancelSubscriptionSheetState
       listenable: controller,
       builder: (context, _) {
         final busy = controller.state.subscriptionBusy;
+        final endsAt = plan?.periodEndsAt;
+        final handsOffToPlay = !(plan?.canCancelInApp ?? false);
         return SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'Cancel your $label plan?',
-                  style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 16),
-                for (final kept in _whatYouKeep(plan, label, purchased)) ...[
-                  BillingBenefitRow(label: kept, accent: colors.primary),
-                  const SizedBox(height: 8),
-                ],
-                const SizedBox(height: 12),
-                Text(
-                  _moveLine(plan),
-                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 10),
-                for (final benefit in _freePlanGrants(freeTier)) ...[
-                  BillingBenefitRow(
-                    label: benefit,
-                    accent: colors.onSurfaceVariant,
+                Semantics(
+                  header: true,
+                  child: Text(
+                    'Cancel your $label plan?',
+                    style: text.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _FactCard(
+                  tone: _FactTone.keep,
+                  heading: 'What you keep',
+                  icon: Icons.check_circle_outline,
+                  lines: _whatYouKeep(context, plan, label, purchased),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _FactCard(
+                  tone: _FactTone.after,
+                  heading: _moveLine(context, plan),
+                  icon: Icons.arrow_forward_rounded,
+                  lines: _freePlanGrants(freeTier),
+                ),
                 if (_sentToPlay) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.sm),
                   AppInlineNotice(
                     icon: Icons.open_in_new,
                     title: 'Finish in Google Play',
@@ -103,9 +107,24 @@ class _CancelSubscriptionSheetState
                               'subscriptions in the Play Store, cancel there, '
                               'then come back and check your plan.',
                   ),
+                ] else if (handsOffToPlay) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  // The app cannot end a Google Play subscription itself, so
+                  // it says where the button goes before the reader taps it.
+                  Text(
+                    endsAt == null
+                        ? 'Google Play manages this subscription, so we will '
+                              'open it there for you to cancel.'
+                        : 'Google Play manages this subscription, so we will '
+                              'open it there for you to cancel. It stays active '
+                              'until ${billingDate(context, endsAt)}.',
+                    style: text.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
                 ],
                 if (controller.state.error != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.sm),
                   AppInlineNotice(
                     tone: AppTone.error,
                     icon: Icons.error_outline,
@@ -113,22 +132,27 @@ class _CancelSubscriptionSheetState
                     message: controller.state.error!,
                   ),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: AppSpacing.lg - 4),
                 AppActionGroup(
                   primary: AppButton.primary(
                     key: const ValueKey('cancel-subscription-confirm'),
                     onPressed: busy ? null : () => _confirm(controller),
                     loading: busy,
                     loadingLabel: 'Working',
+                    leading: handsOffToPlay && !_sentToPlay
+                        ? const Icon(Icons.open_in_new, size: 18)
+                        : null,
                     label: _actionLabel(plan),
                     expanded: true,
                   ),
                   secondary: [
-                    AppButton.text(
+                    AppButton.outlined(
+                      key: const ValueKey('cancel-subscription-keep'),
                       onPressed: busy
                           ? null
                           : () => Navigator.of(context).pop(),
                       label: 'Keep $label',
+                      expanded: true,
                     ),
                   ],
                 ),
@@ -195,27 +219,93 @@ List<String> _freePlanGrants(MobileFreeTier freeTier) {
 }
 
 List<String> _whatYouKeep(
+  BuildContext context,
   MobileSubscriptionPlan? plan,
   String label,
   int purchasedCredits,
 ) {
   final endsAt = plan?.periodEndsAt;
   return <String>[
-    if (endsAt != null) 'You keep $label until ${_formatDate(endsAt)}',
+    if (endsAt != null) 'You keep $label until ${billingDate(context, endsAt)}',
     if (purchasedCredits > 0)
       'Your ${formatCredits(purchasedCredits)} purchased credits never expire',
     'Every book you have made stays yours',
   ];
 }
 
-String _moveLine(MobileSubscriptionPlan? plan) {
+String _moveLine(BuildContext context, MobileSubscriptionPlan? plan) {
   final endsAt = plan?.periodEndsAt;
   return endsAt == null
       ? 'Then you move to Free:'
-      : 'After ${_formatDate(endsAt)} you move to Free:';
+      : 'After ${billingDate(context, endsAt)} you move to Free:';
 }
 
-String _formatDate(DateTime value) {
-  final local = value.toLocal();
-  return '${local.day}/${local.month}/${local.year}';
+enum _FactTone { keep, after }
+
+/// A short list of facts under one heading: what stays, or what changes.
+///
+/// The two lists are told apart by more than colour — a filled check against a
+/// plain arrow, and their headings — since they are the whole point of the
+/// sheet.
+class _FactCard extends StatelessWidget {
+  const _FactCard({
+    required this.tone,
+    required this.heading,
+    required this.icon,
+    required this.lines,
+  });
+
+  final _FactTone tone;
+  final String heading;
+  final IconData icon;
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final keep = tone == _FactTone.keep;
+    final accent = keep ? colors.primary : colors.onSurfaceVariant;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: keep
+            ? colors.primaryContainer.withValues(alpha: 0.55)
+            : colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              header: true,
+              child: Text(
+                heading,
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            for (final line in lines)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ExcludeSemantics(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(icon, size: 18, color: accent),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: Text(line, style: text.bodyMedium)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 // The transcript scrolls to paragraphs the lazy list has not built yet, which
@@ -11,12 +14,19 @@ import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../projects/data/projects_repository.dart';
 import '../../projects/domain/project_models.dart';
+import '../../projects/presentation/book_cover.dart';
+import '../../projects/presentation/plan_build_progress.dart';
 import '../domain/audiobook_models.dart';
 import '../domain/audiobook_timeline.dart';
+import 'audio_sound_bars.dart';
 import 'audiobook_controller.dart';
 import 'narrator_picker_sheet.dart';
 
 part 'audiobook_screen_controls.dart';
+part 'audiobook_screen_header.dart';
+part 'audiobook_screen_scrubber.dart';
+part 'audiobook_screen_sheets.dart';
+part 'audiobook_screen_states.dart';
 part 'audiobook_screen_transcript.dart';
 
 /// The listening screen.
@@ -25,6 +35,11 @@ part 'audiobook_screen_transcript.dart';
 /// being made behind it. The transcript below follows along sentence by
 /// sentence and can be tapped to jump, which is the part that makes this feel
 /// less like a media player and more like reading with your ears.
+///
+/// Two layouts share one set of controls. With the transcript open the cover
+/// shrinks to a strip and the words take the room; with it closed (or when the
+/// screen is too short for the words to be worth reading) the cover is the
+/// centrepiece and moves gently while there is sound.
 class AudiobookScreen extends ConsumerStatefulWidget {
   const AudiobookScreen({required this.projectId, super.key});
 
@@ -60,12 +75,18 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
       });
     }
 
+    final audiobook = state.audiobook;
+    final listening =
+        audiobook != null && !audiobook.hasFailed && state.canPlay;
+    final colors = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
+      backgroundColor: colors.surfaceContainerLowest,
       appBar: AppBar(
         title: const Text('Listen'),
+        backgroundColor: colors.surfaceContainerLowest,
         actions: [
-          if (state.hasAudiobook)
+          if (listening)
             IconButton(
               tooltip: _showTranscript ? 'Hide transcript' : 'Show transcript',
               onPressed: () {
@@ -76,6 +97,7 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
                 _showTranscript
                     ? Icons.subtitles
                     : Icons.subtitles_off_outlined,
+                color: _showTranscript ? colors.primary : null,
               ),
             ),
           if (state.hasAudiobook)
@@ -86,13 +108,40 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
             ),
         ],
       ),
-      body: SafeArea(child: _body(state, detail)),
+      body: SafeArea(
+        child: _Crossfade(
+          reduced: AppMotion.reducedMotion(context),
+          child: KeyedSubtree(
+            key: ValueKey(_stageOf(state)),
+            child: _body(state, detail),
+          ),
+        ),
+      ),
     );
+  }
+
+  /// Which screen the state is on. Only a change of *kind* cross-fades: the
+  /// player rebuilds on every position tick and must not restart a transition.
+  String _stageOf(AudiobookState state) {
+    final audiobook = state.audiobook;
+    if (state.loading) {
+      return 'loading';
+    }
+    if (audiobook == null) {
+      return state.error != null ? 'load-error' : 'empty';
+    }
+    if (audiobook.hasFailed) {
+      return 'failed';
+    }
+    if (!state.canPlay) {
+      return state.error != null ? 'download-error' : 'preparing';
+    }
+    return 'player';
   }
 
   Widget _body(AudiobookState state, MobileProjectDetail? detail) {
     if (state.loading) {
-      return const AppLoadingState(message: 'Looking for your audiobook');
+      return const _PlayerSkeleton();
     }
     if (!state.hasAudiobook) {
       // A failed load must not masquerade as "never narrated" — that offers to
@@ -115,13 +164,11 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
 
     final audiobook = state.audiobook!;
     if (audiobook.hasFailed) {
-      return AppErrorState(
-        title: 'Narration stopped',
+      return _NarrationStopped(
         message:
             audiobook.failureMessage ??
             'The narration did not finish. Your credits were refunded.',
-        actionLabel: 'Try again',
-        onRetry: () => _openPicker(detail, replacing: true),
+        onChooseNarrator: () => _openPicker(detail, replacing: true),
       );
     }
     if (!state.canPlay) {
@@ -143,25 +190,62 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
 
     return Column(
       children: [
-        _NowPlayingHeader(
-          bookTitle: detail?.title ?? 'Your book',
-          audiobook: audiobook,
-          coverUrl: detail?.coverImage?.url,
-          compact: _showTranscript,
+        if (audiobook.isStale)
+          _StaleBanner(onRenarrate: () => _openPicker(detail, replacing: true)),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = _textScaleOf(context);
+              // The words need room to be worth reading. Below this the cover
+              // layout takes over, which scrolls rather than overflowing at
+              // large text sizes or in landscape.
+              final transcriptFits =
+                  constraints.maxHeight >= _compactHeaderExtent(scale) + 150;
+              if (_showTranscript && transcriptFits) {
+                return Column(
+                  children: [
+                    _NowPlayingHeader.compact(
+                      state: state,
+                      bookTitle: detail?.title ?? 'Your book',
+                      bookId: widget.projectId,
+                      authorName: detail?.authorName,
+                      coverImage: detail?.coverImage,
+                      onChapters: () => _openChapters(),
+                    ),
+                    Expanded(
+                      child: _TranscriptPane(
+                        projectId: widget.projectId,
+                        timeline: state.activeTimeline,
+                        activeSegmentIndex: state.activeSegmentIndex,
+                        showHint: state.globalPositionMs == 0 && !state.playing,
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return Center(
+                child: SingleChildScrollView(
+                  child: _NowPlayingHeader.large(
+                    state: state,
+                    bookTitle: detail?.title ?? 'Your book',
+                    bookId: widget.projectId,
+                    authorName: detail?.authorName,
+                    coverImage: detail?.coverImage,
+                    onChapters: () => _openChapters(),
+                    maxHeight: constraints.maxHeight,
+                  ),
+                ),
+              );
+            },
+          ),
         ),
-        if (_showTranscript)
-          Expanded(
-            child: _TranscriptPane(
-              projectId: widget.projectId,
-              timeline: state.activeTimeline,
-              activeSegmentIndex: state.activeSegmentIndex,
-            ),
-          )
-        else
-          const Spacer(),
         _PlayerControls(projectId: widget.projectId, state: state),
       ],
     );
+  }
+
+  void _openChapters() {
+    showAudiobookChaptersSheet(context, projectId: widget.projectId);
   }
 
   Future<void> _openPicker(
@@ -171,109 +255,48 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
     final controller = ref.read(
       audiobookControllerProvider(widget.projectId).notifier,
     );
+    final currentVoice = ref
+        .read(audiobookControllerProvider(widget.projectId))
+        .audiobook
+        ?.voice;
     await showNarratorPickerSheet(
       context,
       projectId: widget.projectId,
       pageCount: detail?.pageCount ?? detail?.targetPages ?? 0,
       replacing: replacing,
+      currentVoice: replacing ? currentVoice : null,
       onConfirm: (voice) =>
           controller.narrate(voice: voice, replace: replacing),
     );
   }
 }
 
-class _NotNarratedYet extends StatelessWidget {
-  const _NotNarratedYet({required this.onStart, required this.busy});
+/// How much bigger than the design size the reader's text is.
+double _textScaleOf(BuildContext context) =>
+    math.max(1, MediaQuery.textScalerOf(context).scale(16) / 16);
 
-  final VoidCallback onStart;
-  final bool busy;
+/// Room the compact now-playing strip needs, before the transcript gets any.
+double _compactHeaderExtent(double scale) => math.max(96, 66 * scale + 26);
 
-  @override
-  Widget build(BuildContext context) {
-    return AppEmptyState(
-      icon: Icons.headphones,
-      title: 'Hear your book read aloud',
-      message:
-          'Pick a narrator and we will read the whole book to you. The first chapter is usually ready within a couple of minutes.',
-      actionLabel: busy ? 'Starting…' : 'Choose a narrator',
-      onAction: busy ? null : onStart,
-    );
-  }
-}
+/// Cross-fades between screens of different kinds and holds still otherwise.
+class _Crossfade extends StatelessWidget {
+  const _Crossfade({required this.child, required this.reduced});
 
-/// The gap between paying and the first chapter landing. It is short, but it is
-/// the moment someone is most likely to wonder whether anything happened.
-class _PreparingNarration extends StatelessWidget {
-  const _PreparingNarration({required this.audiobook});
-
-  final MobileAudiobook audiobook;
+  final Widget child;
+  final bool reduced;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final progress = audiobook.progress;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppShimmer(
-              child: Container(
-                width: 92,
-                height: 92,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colors.primary.withValues(alpha: 0.16),
-                ),
-                child: Icon(Icons.graphic_eq, size: 40, color: colors.primary),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              '${audiobook.narratorName} is warming up',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              progress?.currentAction ?? 'Preparing narration',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (audiobook.backupNarrationUsed) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Generated with backup narration',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-            const SizedBox(height: 20),
-            AppAnimatedProgressBar(
-              value: progress == null || progress.chapterCount == 0
-                  ? 0
-                  : progress.chaptersReady / progress.chapterCount,
-              semanticLabel: 'Narration progress',
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'You can leave this screen — we will keep narrating.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+    if (reduced) {
+      return child;
+    }
+    return AnimatedSwitcher(
+      duration: AppMotion.medium,
+      switchInCurve: AppMotion.enter,
+      switchOutCurve: AppMotion.exit,
+      layoutBuilder: (current, previous) =>
+          Stack(fit: StackFit.expand, children: [...previous, ?current]),
+      child: child,
     );
   }
 }

@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import '../../../shared/ui/motion.dart';
+import 'chat_assistant_avatar.dart';
 
 /// The assistant-side "working on it" bubble, shown while a chat turn is in
 /// flight.
@@ -11,15 +15,26 @@ import 'package:flutter/material.dart';
 /// button greys out and nothing else moves, which reads as a broken app rather
 /// than a busy one.
 ///
-/// The copy advances on a timer for the same reason. A spinner that has said
+/// Three dots pulse the way a person's typing indicator does, and the copy
+/// beside them advances on a timer for the same reason. A spinner that has said
 /// the same word for forty seconds stops being reassuring; naming a later stage
 /// says the wait is expected. It never rewinds and never claims to be finished.
+/// The dots only run while this bubble is on screen, which is only while the
+/// server says a reply is in flight; with reduced motion they hold still.
 class ChatThinkingBubble extends StatefulWidget {
-  const ChatThinkingBubble({this.stages = creationThinkingStages, super.key});
+  const ChatThinkingBubble({
+    this.stages = creationThinkingStages,
+    this.showAvatar = false,
+    super.key,
+  });
 
   /// What the bubble says, in order, one stage every four seconds. The last
   /// entry is where it settles, so make it one that stays true.
   final List<String> stages;
+
+  /// Draws the assistant's avatar beside the bubble, for a transcript whose
+  /// other assistant messages wear one.
+  final bool showAvatar;
 
   @override
   State<ChatThinkingBubble> createState() => _ChatThinkingBubbleState();
@@ -42,7 +57,12 @@ const bookChatThinkingStages = <String>[
   'Almost there…',
 ];
 
-class _ChatThinkingBubbleState extends State<ChatThinkingBubble> {
+class _ChatThinkingBubbleState extends State<ChatThinkingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1300),
+  );
   Timer? _timer;
   int _stage = 0;
 
@@ -58,8 +78,19 @@ class _ChatThinkingBubbleState extends State<ChatThinkingBubble> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (AppMotion.reducedMotion(context)) {
+      _pulse.stop();
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat();
+    }
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
+    _pulse.dispose();
     super.dispose();
   }
 
@@ -69,34 +100,30 @@ class _ChatThinkingBubbleState extends State<ChatThinkingBubble> {
     final stage = widget.stages.isEmpty
         ? 'Thinking…'
         : widget.stages[_stage.clamp(0, widget.stages.length - 1)];
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: colors.surfaceContainerHighest,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomLeft: Radius.circular(4),
-            bottomRight: Radius.circular(16),
-          ),
+    final bubble = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: const BorderRadiusDirectional.only(
+          topStart: Radius.circular(18),
+          topEnd: Radius.circular(18),
+          bottomEnd: Radius.circular(18),
+          bottomStart: Radius.circular(4),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                semanticsLabel: 'Assistant is thinking',
-                color: colors.primary,
-              ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            label: 'Assistant is thinking',
+            child: ExcludeSemantics(
+              child: _TypingDots(animation: _pulse, color: colors.primary),
             ),
-            const SizedBox(width: 10),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: AnimatedSwitcher(
+              duration: AppMotion.medium,
               child: Text(
                 stage,
                 key: ValueKey(stage),
@@ -105,7 +132,72 @@ class _ChatThinkingBubbleState extends State<ChatThinkingBubble> {
                 ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: widget.showAvatar
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Padding(
+                    padding: EdgeInsetsDirectional.only(end: 8),
+                    child: ChatAssistantAvatar(),
+                  ),
+                  Flexible(child: bubble),
+                ],
+              )
+            : bubble,
+      ),
+    );
+  }
+}
+
+/// Three dots that swell in turn. Each is offset in the loop so the pulse
+/// travels along the row instead of blinking in unison.
+class _TypingDots extends StatelessWidget {
+  const _TypingDots({required this.animation, required this.color});
+
+  final Animation<double> animation;
+  final Color color;
+
+  static const _dot = 7.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) const SizedBox(width: 4),
+              _dotAt(i),
+            ],
           ],
+        );
+      },
+    );
+  }
+
+  Widget _dotAt(int index) {
+    // Held still (mid-strength) while the controller is stopped.
+    final t = animation.isAnimating ? animation.value : 0.5;
+    final phase = (t - index * 0.16) % 1.0;
+    final wave = (math.sin(phase * 2 * math.pi - math.pi / 2) + 1) / 2;
+    return Opacity(
+      opacity: 0.35 + 0.65 * wave,
+      child: Transform.scale(
+        scale: 0.8 + 0.3 * wave,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          child: const SizedBox.square(dimension: _dot),
         ),
       ),
     );

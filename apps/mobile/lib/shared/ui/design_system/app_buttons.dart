@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../haptics.dart';
+import '../motion.dart';
 import 'app_tokens.dart';
 
 enum _AppButtonVariant { primary, tonal, outlined, text, destructive }
@@ -7,7 +9,12 @@ enum _AppButtonVariant { primary, tonal, outlined, text, destructive }
 /// The shared contract for ordinary, labelled application actions.
 ///
 /// This widget deliberately owns presentation state only. Feature code still
-/// owns async work, errors, navigation, haptics, and the value of [loading].
+/// owns async work, errors, navigation, and the value of [loading]; haptics are
+/// opt-in through [haptic], because most call sites already fire their own and
+/// two impacts inside one tap read as a stutter.
+///
+/// It gives every variant the same feedback: a small press-in scale, and a
+/// width that eases (rather than jumps) when [loading] swaps a spinner in.
 class AppButton extends StatelessWidget {
   const AppButton.primary({
     required this.label,
@@ -19,6 +26,7 @@ class AppButton extends StatelessWidget {
     this.alignStart = false,
     this.maxLines,
     this.overflow,
+    this.haptic = false,
     super.key,
   }) : _variant = _AppButtonVariant.primary;
 
@@ -32,6 +40,7 @@ class AppButton extends StatelessWidget {
     this.alignStart = false,
     this.maxLines,
     this.overflow,
+    this.haptic = false,
     super.key,
   }) : _variant = _AppButtonVariant.tonal;
 
@@ -45,6 +54,7 @@ class AppButton extends StatelessWidget {
     this.alignStart = false,
     this.maxLines,
     this.overflow,
+    this.haptic = false,
     super.key,
   }) : _variant = _AppButtonVariant.outlined;
 
@@ -58,6 +68,7 @@ class AppButton extends StatelessWidget {
     this.alignStart = false,
     this.maxLines,
     this.overflow,
+    this.haptic = false,
     super.key,
   }) : _variant = _AppButtonVariant.text;
 
@@ -71,6 +82,7 @@ class AppButton extends StatelessWidget {
     this.alignStart = false,
     this.maxLines,
     this.overflow,
+    this.haptic = false,
     super.key,
   }) : _variant = _AppButtonVariant.destructive;
 
@@ -83,6 +95,9 @@ class AppButton extends StatelessWidget {
   final bool alignStart;
   final int? maxLines;
   final TextOverflow? overflow;
+
+  /// Fires [AppHaptics.tap] as the press is accepted. Off by default.
+  final bool haptic;
   final _AppButtonVariant _variant;
 
   bool get enabled => onPressed != null && !loading;
@@ -105,7 +120,14 @@ class AppButton extends StatelessWidget {
             ),
           )
         : leading;
-    final callback = enabled ? onPressed : null;
+    final callback = !enabled
+        ? null
+        : haptic
+        ? () {
+            AppHaptics.tap();
+            onPressed!();
+          }
+        : onPressed;
     final style = _style(colors);
     final child = switch (_variant) {
       _AppButtonVariant.primary =>
@@ -149,11 +171,7 @@ class AppButton extends StatelessWidget {
               ),
       _AppButtonVariant.text =>
         icon == null
-            ? TextButton(
-                onPressed: callback,
-                style: style,
-                child: labelWidget,
-              )
+            ? TextButton(onPressed: callback, style: style, child: labelWidget)
             : TextButton.icon(
                 onPressed: callback,
                 style: style,
@@ -180,7 +198,18 @@ class AppButton extends StatelessWidget {
       enabled: enabled,
       liveRegion: loading,
       label: announcedLabel,
-      child: ExcludeSemantics(child: child),
+      child: ExcludeSemantics(
+        child: AppPressScale(
+          enabled: enabled,
+          // A spinner slides in beside (or in place of) the label; easing the
+          // size keeps the neighbours from jumping when a request starts.
+          child: AnimatedSize(
+            duration: AppMotion.adapt(context, AppMotion.fast),
+            curve: AppMotion.standard,
+            child: child,
+          ),
+        ),
+      ),
     );
     return expanded ? SizedBox(width: double.infinity, child: result) : result;
   }
@@ -194,7 +223,8 @@ class AppButton extends StatelessWidget {
   };
 
   ButtonStyle? _style(ColorScheme colors) {
-    final alignment = alignStart ? Alignment.centerLeft : null;
+    // Directional, so a right-to-left label starts at the right edge.
+    final alignment = alignStart ? AlignmentDirectional.centerStart : null;
     if (_variant == _AppButtonVariant.destructive) {
       return _destructiveStyle(
         colors,

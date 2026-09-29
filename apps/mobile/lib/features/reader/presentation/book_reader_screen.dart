@@ -15,6 +15,7 @@ import '../../projects/presentation/project_export_actions.dart';
 import '../data/reader_repository.dart';
 import '../domain/reader_models.dart';
 import 'reader_document_loader.dart';
+import 'reader_opening_state.dart';
 import 'reader_view.dart';
 
 /// Reads a finished book inside the app.
@@ -172,7 +173,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       return ReaderScaffold(
         title: 'Reading',
         projectId: widget.projectId,
-        body: const AppLoadingState(message: 'Opening your book'),
+        body: const ReaderOpeningState(),
       );
     }
 
@@ -180,7 +181,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       loading: () => ReaderScaffold(
         title: 'Reading',
         projectId: widget.projectId,
-        body: const AppLoadingState(message: 'Opening your book'),
+        body: const ReaderOpeningState(),
       ),
       error: (error, _) => ReaderScaffold(
         title: 'Reading',
@@ -221,10 +222,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !_unlockOffered) {
             unawaited(
-              _offerUnlock(
-                export,
-                pageNumbering: status.pdfPageNumbering,
-              ),
+              _offerUnlock(export, pageNumbering: status.pdfPageNumbering),
             );
           }
         });
@@ -250,10 +248,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       loader: loader,
       status: status,
       openAtBookPage: widget.openAtBookPage,
-      onOpenPaywall: () => _offerUnlock(
-        export,
-        pageNumbering: status.pdfPageNumbering,
-      ),
+      onOpenPaywall: () =>
+          _offerUnlock(export, pageNumbering: status.pdfPageNumbering),
       onRefreshExport: _refreshExport,
     );
   }

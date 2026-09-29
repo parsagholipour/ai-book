@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 
-/// The form scrolls independently of its save action, including with a
-/// keyboard open or larger system text. The sheet owns the available height.
+/// The form scrolls independently of its title and its save action, including
+/// with a keyboard open or larger system text. The sheet owns the available
+/// height.
+///
+/// The title and close button stay put while the form scrolls: a long form that
+/// carried its own exit off the top of the screen made "where do I leave" a
+/// question that needed a scroll back up to answer.
 class CharacterEditorLayout extends StatelessWidget {
   const CharacterEditorLayout({
     required this.creating,
@@ -12,6 +17,7 @@ class CharacterEditorLayout extends StatelessWidget {
     required this.onClose,
     required this.onSave,
     required this.children,
+    this.savingLabel,
     super.key,
   });
 
@@ -21,6 +27,10 @@ class CharacterEditorLayout extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onSave;
   final List<Widget> children;
+
+  /// What the save button says while it works. Defaults to "Creating…" or
+  /// "Saving…"; a create that goes on to upload a photo says so.
+  final String? savingLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -35,30 +45,41 @@ class CharacterEditorLayout extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(20, 12, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Semantics(
+                      header: true,
+                      child: Text(
+                        creating ? 'New character' : 'Edit character',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close editor',
+                    onPressed: busy ? null : onClose,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            creating ? 'New character' : 'Edit character',
-                            style: theme.textTheme.headlineSmall,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Close editor',
-                          onPressed: busy ? null : onClose,
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                      ],
-                    ),
                     Text(
                       creating
-                          ? 'Start with a name. Add what makes them unforgettable.'
+                          ? 'Start with a face and a name. Add what makes them '
+                                'unforgettable.'
                           : 'The little details make them feel like themselves.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
@@ -81,6 +102,8 @@ class CharacterEditorLayout extends StatelessWidget {
                 child: AppButton.primary(
                   key: const ValueKey('character-editor-save'),
                   label: creating ? 'Create character' : 'Save changes',
+                  loadingLabel:
+                      savingLabel ?? (creating ? 'Creating…' : 'Saving…'),
                   leading: Icon(
                     creating ? Icons.add_rounded : Icons.check_rounded,
                   ),

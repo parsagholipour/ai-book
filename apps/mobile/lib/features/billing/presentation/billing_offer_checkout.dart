@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/haptics.dart';
 import '../domain/billing_models.dart';
 import 'billing_controller.dart';
 import 'billing_plan_tiles.dart';
 import 'billing_product_option.dart';
+import 'billing_shared_parts.dart';
 
 /// The exact next purchase, outside the scrolling offer. Multi-pack goals still
 /// charge for one pack here; the total goal belongs in the quote above it.
+///
+/// It is the one place a purchase starts, so everything the reader needs to
+/// agree to sits in it: what is being bought, the price, how it renews, and
+/// what happened if the last attempt failed.
 class BillingOfferCheckout extends StatelessWidget {
   const BillingOfferCheckout({
     required this.state,
@@ -18,6 +24,8 @@ class BillingOfferCheckout extends StatelessWidget {
     this.covered = false,
     this.unavailableLabel = 'Temporarily unavailable',
     this.onDone,
+    this.onRetry,
+    this.onManage,
     this.buttonKey = const ValueKey('paywall-checkout-buy'),
     super.key,
   });
@@ -30,6 +38,12 @@ class BillingOfferCheckout extends StatelessWidget {
   final String unavailableLabel;
   final VoidCallback? onBuy;
   final VoidCallback? onDone;
+
+  /// Offered instead of a dead button while Google Play cannot be reached.
+  final VoidCallback? onRetry;
+
+  /// Where someone already on this plan goes to change or cancel it.
+  final VoidCallback? onManage;
   final Key buttonKey;
 
   @override
@@ -47,6 +61,8 @@ class BillingOfferCheckout extends StatelessWidget {
         !state.loading &&
         !busy &&
         !isCurrent;
+    final storeDown = !state.loading && !state.storeAvailable && !covered;
+    final canRetry = storeDown && onRetry != null && !busy;
     final status = state.error ?? state.message;
     final subscription = item?.isSubscription ?? false;
     final after = !subscription && item != null && state.billing != null
@@ -55,9 +71,24 @@ class BillingOfferCheckout extends StatelessWidget {
     final remaining = after == null || requiredCredits == null
         ? null
         : (requiredCredits! - after).clamp(0, requiredCredits!);
+    final VoidCallback? action = covered
+        ? onDone
+        : enabled
+        ? () {
+            AppHaptics.commit();
+            onBuy?.call();
+          }
+        : canRetry
+        ? onRetry
+        : null;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg - 4,
+        AppSpacing.sm,
+        AppSpacing.lg - 4,
+        AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
         color: colors.surface,
         border: Border(top: BorderSide(color: colors.outlineVariant)),
@@ -67,20 +98,20 @@ class BillingOfferCheckout extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (status != null) ...[
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                status,
-                style: text.bodySmall?.copyWith(
-                  color: state.error == null
-                      ? colors.onSurfaceVariant
-                      : colors.error,
-                ),
-              ),
+            BillingNoticeLine(
+              message: status,
+              tone: state.error == null ? AppTone.neutral : AppTone.error,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.xs),
           ],
-          if (covered || (item != null && !state.loading)) ...[
+          // The chosen row already shows this price, and while Play is down the
+          // price is not something anyone can pay. At large text the line is
+          // also the difference between seeing the button and not.
+          if (covered ||
+              (item != null &&
+                  !state.loading &&
+                  !storeDown &&
+                  !billingLargeText(context))) ...[
             Text(
               covered
                   ? 'You have enough credits to continue.'
@@ -89,15 +120,11 @@ class BillingOfferCheckout extends StatelessWidget {
               textAlign: TextAlign.center,
               style: text.labelLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.xs),
           ],
           AppButton.primary(
             key: covered ? const ValueKey('paywall-credits-done') : buttonKey,
-            onPressed: covered
-                ? onDone
-                : enabled
-                ? onBuy
-                : null,
+            onPressed: action,
             loading: busy,
             loadingLabel: state.restoring
                 ? 'Restoring purchases'
@@ -108,24 +135,38 @@ class BillingOfferCheckout extends StatelessWidget {
                 ? 'Loading options…'
                 : isCurrent
                 ? 'Your current plan'
+                : canRetry
+                ? 'Try again'
                 : !enabled
                 ? unavailableLabel
                 : subscription
                 ? 'Choose ${billingPlanName(item)}'
                 : 'Add ${formatCredits(item.creditAmount)} credits',
           ),
-          const SizedBox(height: 8),
-          Text(
-            covered
-                ? 'Return to your book and try again.'
-                : subscription
-                ? 'Renews monthly · Cancel anytime in Google Play'
-                : 'One-time purchase · Credits never expire',
-            textAlign: TextAlign.center,
-            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-          ),
+          const SizedBox(height: AppSpacing.xxs),
+          if (isCurrent && onManage != null)
+            Center(
+              child: AppButton.text(
+                key: const ValueKey('paywall-manage-plan'),
+                onPressed: onManage,
+                leading: const Icon(Icons.open_in_new, size: 18),
+                label: 'Manage or cancel in Google Play',
+              ),
+            )
+          else
+            Text(
+              covered
+                  ? 'Return to your book and try again.'
+                  : storeDown
+                  ? 'Google Play is not reachable right now.'
+                  : subscription
+                  ? 'Renews monthly · Cancel anytime in Google Play'
+                  : 'One-time purchase · Credits never expire',
+              textAlign: TextAlign.center,
+              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
           if (!covered && after != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xxs),
             Text(
               'Balance after this pack: ${formatCredits(after)}'
               '${remaining == null

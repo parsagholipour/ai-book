@@ -173,15 +173,15 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
         : 'Saved edit · pages ${pageIndexes.join(", ")}';
 
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: AlignmentDirectional.centerStart,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: Container(
           margin: const EdgeInsets.only(top: 2, bottom: 6),
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(AppSpacing.sm + 2),
           decoration: BoxDecoration(
             color: colors.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(AppRadii.card - 2),
             border: Border.all(color: colors.outlineVariant),
           ),
           child: Column(
@@ -211,7 +211,10 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
                   children: [
                     const SizedBox.square(
                       dimension: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        semanticsLabel: 'Rebuilding your files',
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -249,7 +252,10 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
     );
   }
 
-  Widget _exportButton(MobileExportAvailability export, MobileBilling? billing) {
+  Widget _exportButton(
+    MobileExportAvailability export,
+    MobileBilling? billing,
+  ) {
     final action = projectExportDownloadAction(export);
     final isDownloading = _busyAction == action;
     final locked = projectExportLockedBySubscription(export, billing);

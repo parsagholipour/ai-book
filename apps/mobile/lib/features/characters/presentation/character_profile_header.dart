@@ -7,11 +7,17 @@ import '../domain/character_image_models.dart';
 import '../domain/character_models.dart';
 import 'character_identity.dart';
 import 'character_network_image.dart';
+import 'character_portrait_drawing.dart';
 
-/// The character's picture at the size it deserves.
+/// The character's picture at the size it deserves, and every state that
+/// picture can be in.
 ///
 /// The library drew this face at 72px and nowhere else, which is why the
-/// illustration a reader paid for could never actually be looked at.
+/// illustration a reader paid for could never actually be looked at. Each state
+/// here is its own composition rather than a spinner laid over the last one:
+/// a picture (tap to zoom), a drawing in progress, an upload in flight, or — for
+/// a character with nothing yet — the initials plate with the two ways out of
+/// it.
 class CharacterProfileHeader extends StatelessWidget {
   const CharacterProfileHeader({
     required this.character,
@@ -21,6 +27,7 @@ class CharacterProfileHeader extends StatelessWidget {
     required this.uploadProgress,
     required this.onTapPicture,
     required this.onAddPicture,
+    this.onDescribe,
     super.key,
   });
 
@@ -45,104 +52,266 @@ class CharacterProfileHeader extends StatelessWidget {
   final VoidCallback onTapPicture;
   final VoidCallback onAddPicture;
 
+  /// The second way out of an empty plate: write them down, then have them
+  /// drawn. Absent, the plate offers only the photo.
+  final VoidCallback? onDescribe;
+
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final pending = pendingUpload;
+    final drawing = character.portraitStatus.isBusy;
+    final hasPicture =
+        pending != null || mainImage != null || fallbackImageUrl != null;
 
     Widget picture;
     if (pending != null) {
-      picture = Image.memory(pending, fit: BoxFit.cover);
+      picture = Image.memory(
+        pending,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+      );
     } else if (mainImage != null || fallbackImageUrl != null) {
       picture = CharacterNetworkImage(
         url: mainImage?.url ?? fallbackImageUrl!,
         semanticLabel: character.name,
         decodeWidth: MediaQuery.sizeOf(context).width,
+        fill: true,
       );
     } else {
-      picture = _InitialsPlate(character: character, onAdd: onAddPicture);
+      picture = _EmptyPlate(
+        character: character,
+        drawing: drawing,
+        onAdd: onAddPicture,
+        onDescribe: onDescribe,
+      );
     }
 
+    final canView = mainImage != null && pending == null;
     return Stack(
       fit: StackFit.expand,
       children: [
         GestureDetector(
           key: const ValueKey('character-profile-picture'),
           behavior: HitTestBehavior.opaque,
-          onTap: mainImage == null || pending != null ? null : onTapPicture,
+          onTap: canView ? onTapPicture : null,
           child: Semantics(
-            button: mainImage != null,
-            label: mainImage == null
-                ? 'No picture yet'
-                : 'View ${character.name}',
+            button: canView,
+            label: hasPicture ? 'View ${character.name}' : 'No picture yet',
             child: picture,
           ),
         ),
-        if (mainImage != null && pending == null)
+        if (canView && !drawing)
           PositionedDirectional(
             bottom: AppSpacing.sm,
             end: AppSpacing.sm,
-            child: IconButton.filledTonal(
+            child: _OverlayButton(
+              icon: Icons.open_in_full_rounded,
               tooltip: 'View full picture',
               onPressed: onTapPicture,
-              icon: const Icon(Icons.open_in_full_rounded),
             ),
           ),
-        if (character.portraitStatus.isBusy)
-          IgnorePointer(
-            child: ColoredBox(
-              color: colors.surface.withValues(alpha: 0.45),
-              child: const Center(
-                child: SizedBox.square(
-                  dimension: 36,
-                  child: CircularProgressIndicator(
-                    semanticsLabel: 'Drawing the illustration',
-                  ),
-                ),
-              ),
+        if (canView && !drawing && character.usedInBooks)
+          const PositionedDirectional(
+            top: AppSpacing.sm,
+            start: AppSpacing.sm,
+            child: AppStatusBadge(
+              label: 'Ready for books',
+              icon: Icons.check_circle_outline_rounded,
+              tone: AppTone.success,
+            ),
+          )
+        else if (canView &&
+            !drawing &&
+            characterPictureStatus(character) ==
+                CharacterPictureStatus.photoOnly)
+          const PositionedDirectional(
+            top: AppSpacing.sm,
+            start: AppSpacing.sm,
+            child: AppStatusBadge(
+              label: 'Photo only',
+              icon: Icons.photo_camera_outlined,
+              tone: AppTone.info,
             ),
           ),
-        if (pending != null)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: AppAnimatedProgressBar(
-              value: uploadProgress ?? 0,
-              semanticLabel: 'Uploading your picture',
+        if (drawing)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CharacterDrawingOverlay(name: character.name),
             ),
           ),
+        if (pending != null) _UploadOverlay(progress: uploadProgress),
       ],
     );
   }
 }
 
-/// What a character with no picture at all shows: their initials, and the ask.
-class _InitialsPlate extends StatelessWidget {
-  const _InitialsPlate({required this.character, required this.onAdd});
+/// The round, translucent control every overlay on a picture uses, so it reads
+/// on a dark photograph and a pale plate alike.
+class _OverlayButton extends StatelessWidget {
+  const _OverlayButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
 
-  final LibraryCharacter character;
-  final VoidCallback onAdd;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        CharacterIdentityArt(character: character),
-        Positioned(
-          left: AppSpacing.md,
-          right: AppSpacing.md,
-          bottom: AppSpacing.md,
-          child: Center(
-            child: AppButton.tonal(
-              key: const ValueKey('character-header-add-picture'),
-              label: 'Add a picture',
-              leading: const Icon(Icons.add_photo_alternate_outlined),
-              onPressed: onAdd,
+    final colors = Theme.of(context).colorScheme;
+    return IconButton.filled(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        backgroundColor: colors.surface.withValues(alpha: 0.92),
+        foregroundColor: colors.onSurface,
+      ),
+      icon: Icon(icon),
+    );
+  }
+}
+
+/// The frame the reader just approved, going up.
+class _UploadOverlay extends StatelessWidget {
+  const _UploadOverlay({required this.progress});
+
+  final double? progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final percent = ((progress ?? 0) * 100).round();
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Semantics(
+          liveRegion: true,
+          label: 'Uploading your picture',
+          value: '$percent percent',
+          child: ExcludeSemantics(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(color: colors.surface.withValues(alpha: 0.4)),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.surface.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(AppRadii.control),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              'Uploading your picture · $percent%',
+                              style: theme.textTheme.labelLarge,
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            AppAnimatedProgressBar(value: progress ?? 0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// What a character with no picture at all shows: their initials, and the two
+/// ways out — a photo, or a description to draw from.
+///
+/// One pair of buttons here, and none repeated further down the page: the
+/// reference card under it only prices the drawing.
+class _EmptyPlate extends StatelessWidget {
+  const _EmptyPlate({
+    required this.character,
+    required this.drawing,
+    required this.onAdd,
+    required this.onDescribe,
+  });
+
+  final LibraryCharacter character;
+  final bool drawing;
+  final VoidCallback onAdd;
+  final VoidCallback? onDescribe;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = characterPalette(theme.colorScheme, character.id);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        CharacterIdentityArt(character: character, showInitials: false),
+        Align(
+          alignment: const Alignment(0, -0.36),
+          child: Text(
+            character.initials,
+            textScaler: TextScaler.noScaling,
+            style: TextStyle(
+              fontSize: 84,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -2,
+              color: palette.foreground,
+            ),
+          ),
+        ),
+        if (!drawing) ...[
+          const PositionedDirectional(
+            top: AppSpacing.sm,
+            start: AppSpacing.sm,
+            child: AppStatusBadge(
+              label: 'No picture yet',
+              icon: Icons.add_photo_alternate_outlined,
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppButton.primary(
+                    key: const ValueKey('character-header-add-picture'),
+                    label: 'Add a photo',
+                    leading: const Icon(Icons.add_photo_alternate_outlined),
+                    expanded: true,
+                    onPressed: onAdd,
+                  ),
+                  if (onDescribe != null) ...[
+                    const SizedBox(height: AppSpacing.xxs),
+                    AppButton.text(
+                      key: const ValueKey('character-header-describe'),
+                      label: character.description.trim().isEmpty
+                          ? 'Describe them'
+                          : 'Edit their description',
+                      leading: const Icon(Icons.notes_outlined),
+                      expanded: true,
+                      onPressed: onDescribe,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

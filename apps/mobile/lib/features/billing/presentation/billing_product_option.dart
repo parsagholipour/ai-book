@@ -1,11 +1,23 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/motion.dart';
 import '../domain/billing_models.dart';
 import 'billing_plan_tiles.dart';
+import 'billing_shared_parts.dart';
 import 'billing_tier_style.dart';
 
-/// Compact, fully visible plan rows replace a separate sales card per tier.
+/// One choice in a plan or credit-pack list: a radio, what it is, what it
+/// gives, and the price.
+///
+/// Selecting only marks the row; the purchase happens from the checkout bar, so
+/// a stray tap never opens Google Play. The selected row differs by shape (a
+/// filled check where the others have an empty ring), by border weight and by
+/// fill, so it does not depend on colour alone.
+///
+/// [detailed] adds the line saying who a plan is for. The export offer leaves it
+/// off: there every plan does the same thing and the sheet has to fit three of
+/// them beside a checkout bar on a small phone.
 class BillingProductOption extends StatelessWidget {
   const BillingProductOption({
     required this.product,
@@ -15,6 +27,8 @@ class BillingProductOption extends StatelessWidget {
     this.format,
     this.bestValue = false,
     this.recommendation,
+    this.savingsPercent,
+    this.detailed = false,
     required this.onSelect,
     super.key,
   });
@@ -26,6 +40,11 @@ class BillingProductOption extends StatelessWidget {
   final String? format;
   final String? recommendation;
   final bool bestValue;
+
+  /// Percent more credits per unit of currency than the entry plan, when it is
+  /// worth saying. Comes from `billingPlanValue`, never computed here.
+  final int? savingsPercent;
+  final bool detailed;
   final VoidCallback? onSelect;
 
   @override
@@ -45,124 +64,279 @@ class BillingProductOption extends StatelessWidget {
                   : null);
     final price = storeProduct?.price ?? fallbackPrice(product);
     final enabled = onSelect != null && storeProduct != null && !isCurrent;
+    // A row Play cannot sell is never drawn as chosen: the ring would promise a
+    // purchase the checkout bar cannot make.
+    final chosen = selected && (storeProduct != null || isCurrent);
+    final subscription = product.isSubscription;
+    final tagline = detailed && subscription ? style.tagline : null;
+    final creditsLine = subscription
+        ? '${formatCredits(product.creditAmount)} credits / month'
+        : 'Yours until you use them';
+    final savings = savingsPercent == null
+        ? null
+        : 'Save $savingsPercent% per credit';
+    final large = billingLargeText(context);
+    final period = subscription ? '/ month' : 'one time';
+
+    final titleRow = Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xxs,
+      children: [
+        Text(
+          subscription
+              ? billingPlanName(product)
+              : '${formatCredits(product.creditAmount)} credits',
+          style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        if (badge != null)
+          _OptionBadge(
+            label: badge,
+            current: isCurrent,
+            muted: storeProduct == null && !isCurrent,
+            style: style,
+          ),
+      ],
+    );
+
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (tagline != null)
+          Text(
+            tagline,
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        Text(
+          creditsLine,
+          style: subscription && detailed
+              ? text.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.onSurface,
+                )
+              : text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        if (savings != null)
+          Text(
+            savings,
+            style: text.labelMedium?.copyWith(
+              color: style.accent(colors),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+      ],
+    );
+
+    final priceBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          price,
+          maxLines: 1,
+          softWrap: false,
+          textAlign: TextAlign.end,
+          style: text.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        Text(
+          period,
+          maxLines: 1,
+          softWrap: false,
+          style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ],
+    );
 
     return Semantics(
       container: true,
       button: true,
-      selected: selected,
+      selected: chosen,
       enabled: enabled,
       inMutuallyExclusiveGroup: true,
       onTap: enabled ? onSelect : null,
       label:
-          '${product.title}, $price ${product.isSubscription ? 'per month' : 'one time'}, '
+          '${product.title}, $price ${subscription ? 'per month' : 'one time'}, '
           '${formatCredits(product.creditAmount)} credits'
+          '${tagline == null ? '' : ', $tagline'}'
+          '${savings == null ? '' : ', $savings'}'
           '${format == null ? '' : ', $format export included'}'
           '${badge == null ? '' : ', $badge'}',
       child: ExcludeSemantics(
         child: Material(
-          color: selected
+          color: chosen
               ? colors.primaryContainer
               : colors.surfaceContainerLowest,
+          animationDuration: AppMotion.reducedMotion(context)
+              ? Duration.zero
+              : AppMotion.fast,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadii.card),
             side: BorderSide(
-              color: selected ? colors.primary : colors.outlineVariant,
-              width: selected ? 2 : 1,
+              color: chosen ? colors.primary : colors.outlineVariant,
+              width: chosen ? 2 : 1,
             ),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: enabled ? onSelect : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    selected
-                        ? Icons.check_circle_rounded
-                        : Icons.circle_outlined,
-                    size: 22,
-                    color: selected ? colors.primary : colors.outline,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 5,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            Text(
-                              product.isSubscription
-                                  ? billingPlanName(product)
-                                  : '${formatCredits(product.creditAmount)} credits',
-                              style: text.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            if (badge != null)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: colors.surfaceContainerLowest,
-                                  borderRadius: BorderRadius.circular(
-                                    AppRadii.pill,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: AppSizes.minimumTouchTarget + AppSpacing.md,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md - 2,
+                  vertical: AppSpacing.sm,
+                ),
+                child: Opacity(
+                  opacity: storeProduct == null && !isCurrent ? 0.7 : 1,
+                  child: Row(
+                    crossAxisAlignment: large
+                        ? CrossAxisAlignment.start
+                        : CrossAxisAlignment.center,
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.only(top: large ? 2 : 0),
+                        child: Icon(
+                          chosen
+                              ? Icons.check_circle_rounded
+                              : Icons.circle_outlined,
+                          size: 24,
+                          color: chosen ? colors.primary : colors.outline,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: large
+                            // Big type: the price goes under the name instead
+                            // of beside it, so it always has the full row.
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  titleRow,
+                                  const SizedBox(height: AppSpacing.xxs),
+                                  Wrap(
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: AppSpacing.xs,
+                                    children: [
+                                      Text(
+                                        price,
+                                        style: text.titleLarge?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      Text(
+                                        period,
+                                        style: text.bodySmall?.copyWith(
+                                          color: colors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                                child: Text(
-                                  badge,
-                                  style: text.labelSmall?.copyWith(
-                                    color: style.accent(colors),
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  const SizedBox(height: AppSpacing.xxs),
+                                  details,
+                                ],
+                              )
+                            : LayoutBuilder(
+                                builder: (context, constraints) => Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          titleRow,
+                                          const SizedBox(height: 2),
+                                          details,
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.xs),
+                                    // The price shrinks before it ever wraps:
+                                    // a price broken over two lines is unreadable.
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: constraints.maxWidth * 0.42,
+                                      ),
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment:
+                                            AlignmentDirectional.centerEnd,
+                                        child: priceBlock,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          product.isSubscription
-                              ? '${formatCredits(product.creditAmount)} credits / month'
-                              : 'Yours until you use them',
-                          style: text.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    flex: 3,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          price,
-                          textAlign: TextAlign.end,
-                          style: text.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          product.isSubscription ? '/ month' : 'one time',
-                          style: text.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small label on a row: what it is (your plan), or why to look at it.
+class _OptionBadge extends StatelessWidget {
+  const _OptionBadge({
+    required this.label,
+    required this.current,
+    required this.muted,
+    required this.style,
+  });
+
+  final String label;
+  final bool current;
+  final bool muted;
+  final BillingTierStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final Color background;
+    final Color foreground;
+    if (muted) {
+      background = colors.surfaceContainerHigh;
+      foreground = colors.onSurfaceVariant;
+    } else if (current) {
+      background = colors.surfaceContainerLowest;
+      foreground = colors.onSurface;
+    } else {
+      background = style.accentContainer(colors);
+      foreground = style.onAccentContainer(colors);
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: current
+            ? Border.all(color: colors.outline.withValues(alpha: 0.5))
+            : null,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (current) ...[
+              Icon(Icons.check_rounded, size: 12, color: foreground),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
       ),
     );

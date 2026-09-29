@@ -105,7 +105,7 @@ void main() {
     expect(find.text('Set the promise'), findsOneWidget);
   });
 
-  testWidgets('a finished book shows the payoff and the exports', (
+  testWidgets('a finished book is one hero: the facts once, and its actions', (
     tester,
   ) async {
     await _useTallSurface(tester);
@@ -113,7 +113,11 @@ void main() {
     await tester.pumpWidget(
       _app(
         BookScreenBody(
-          project: _project(status: 'complete', plan: _plan(approved: true)),
+          project: _project(
+            status: 'complete',
+            plan: _plan(approved: true),
+            pageCount: 28,
+          ),
           status: _status(
             status: 'complete',
             progressPercent: 100,
@@ -130,12 +134,49 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Your book is ready'), findsOneWidget);
-    expect(find.text('Exports'), findsOneWidget);
-    expect(find.text('Read in Tomeza'), findsOneWidget);
+    // The cover, title, pages and type are said once, in one line — not again
+    // in a second banner and a row of chips.
+    expect(find.byKey(const ValueKey('project-header-title')), findsOneWidget);
+    expect(find.text('1 chapter · 28 pages · Workbook'), findsOneWidget);
+    expect(find.text('Ready to read'), findsOneWidget);
+    expect(find.text('Your book is ready'), findsNothing);
+    // One primary action, and the rest beside it; the files open from Export.
+    expect(find.text('Read'), findsOneWidget);
+    expect(find.text('Listen'), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.text('Export'), findsOneWidget);
+    expect(find.text('PDF'), findsNothing);
     expect(find.text('Book plan'), findsOneWidget);
-    expect(find.text('Type: Workbook'), findsOneWidget);
-    expect(find.text('Length: Standard'), findsOneWidget);
+
+    await tester.tap(find.text('Export'));
+    await tester.pumpAndSettle();
+    expect(find.text('PDF'), findsOneWidget);
+    expect(find.text('EPUB'), findsOneWidget);
+  });
+
+  testWidgets('a finished book with no PDF yet waits on Read', (tester) async {
+    await _useTallSurface(tester);
+
+    await tester.pumpWidget(
+      _app(
+        BookScreenBody(
+          project: _project(status: 'complete', plan: _plan(approved: true)),
+          status: _status(status: 'complete', progressPercent: 100),
+          billing: _billing,
+          revisionController: TextEditingController(),
+          onRefresh: () async {},
+          onOpen: (_) async {},
+          onDownload: (_) async {},
+          onOpenPaywall: (_) async {},
+        ),
+      ),
+    );
+    // Settles: a wait over a file that may never come must not animate
+    // forever.
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparing your book'), findsOneWidget);
+    expect(find.text('Read'), findsNothing);
   });
 
   testWidgets(
@@ -170,9 +211,11 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Length: 8 pages'), findsOneWidget);
-      expect(find.text('Type: Book'), findsNothing);
-      expect(find.text('Length: Custom'), findsNothing);
+      // A generic "Book" says nothing, so the effort it was written at stands
+      // in for the type.
+      expect(find.text('1 chapter · 8 pages · Balanced'), findsOneWidget);
+      expect(find.textContaining('Custom'), findsNothing);
+      expect(find.textContaining('· Book'), findsNothing);
     },
   );
 

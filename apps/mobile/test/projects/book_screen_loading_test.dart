@@ -39,13 +39,18 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
 
     expect(repository.getProjectCalls, 2);
+    // Still on screen while the refetch is in flight: the title is matched by
+    // key, because it is also drawn on the cover beside it.
+    expect(find.byKey(const ValueKey('project-header-title')), findsOneWidget);
 
     repository.completePending(planReadyProject());
     await tester.pump();
+    await tester.pump();
 
-    // Matched by key, not by text: the title is now also drawn on the book
-    // cover beside the header, so a bare text finder matches twice.
-    expect(find.byKey(const ValueKey('project-header-title')), findsOneWidget);
+    // The plan's own heading carries the title now, so the hero says what state
+    // the book is in instead of saying the title twice.
+    expect(find.text('Plan ready to review'), findsOneWidget);
+    expect(find.byKey(const ValueKey('project-header-title')), findsNothing);
   });
 }
 

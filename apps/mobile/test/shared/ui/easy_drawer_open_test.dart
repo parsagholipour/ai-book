@@ -8,9 +8,7 @@ Widget _app(GlobalKey<EasyDrawerControllerState> drawerKey) {
       fit: StackFit.expand,
       children: [
         Scaffold(
-          appBar: AppBar(
-            leading: EasyDrawerButton(controllerKey: drawerKey),
-          ),
+          appBar: AppBar(leading: EasyDrawerButton(controllerKey: drawerKey)),
           body: ListView(
             children: List.generate(
               40,

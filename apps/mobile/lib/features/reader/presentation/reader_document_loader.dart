@@ -101,6 +101,12 @@ class ReaderDocumentLoader extends ChangeNotifier {
     return (_received / _total).clamp(0.0, 1.0);
   }
 
+  /// Bytes received so far, and the size the server announced — 0 while it has
+  /// not. Read by the opening screen so a slow connection shows a number that
+  /// moves rather than a percentage that looks stuck.
+  int get receivedBytes => _received;
+  int get totalBytes => _total;
+
   /// Whether a newer compile of the book is available than the one on screen.
   bool isStale(
     MobileExportAvailability export, {

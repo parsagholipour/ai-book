@@ -24,6 +24,7 @@ class BillingOffers extends StatefulWidget {
     required this.onRetry,
     required this.onCustomAmount,
     required this.onSwitchToFree,
+    this.onManagePlan,
     this.title,
     this.message,
     this.creditsNeeded,
@@ -37,6 +38,9 @@ class BillingOffers extends StatefulWidget {
   final VoidCallback onRetry;
   final void Function(int? shortfall, VoidCallback onSeePlans) onCustomAmount;
   final VoidCallback? onSwitchToFree;
+
+  /// Opens Google Play's subscription centre for the plan the reader is on.
+  final VoidCallback? onManagePlan;
   final String? title;
   final String? message;
   final PaywallCreditsNeeded? creditsNeeded;
@@ -73,8 +77,6 @@ class _BillingOffersState extends State<BillingOffers> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
     final billing = state.billing;
     final plans =
         billing?.products.where((p) => p.isSubscription).toList() ?? [];
@@ -127,6 +129,12 @@ class _BillingOffersState extends State<BillingOffers> {
         ? billingPlanValue(pricedPlans, state.storeProducts)
         : BillingPlanValue.empty;
 
+    final storeDown = !state.loading && !state.storeAvailable;
+    final loadFailed = !state.loading && billing == null && state.error != null;
+    // A failed load already says why in the list; saying it again in the
+    // checkout bar would be the same sentence twice.
+    final checkoutState = loadFailed ? state.copyWith(clearError: true) : state;
+
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.94,
@@ -151,7 +159,7 @@ class _BillingOffersState extends State<BillingOffers> {
                     message: widget.message,
                     onClose: widget.onClose,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: AppSpacing.md),
                   SizedBox(
                     width: double.infinity,
                     child: SegmentedButton<bool>(
@@ -162,6 +170,7 @@ class _BillingOffersState extends State<BillingOffers> {
                           label: Text(
                             'Monthly plans',
                             key: ValueKey('paywall-upgrade-plan'),
+                            textAlign: TextAlign.center,
                           ),
                         ),
                         ButtonSegment(
@@ -169,6 +178,7 @@ class _BillingOffersState extends State<BillingOffers> {
                           label: Text(
                             'One-time credits',
                             key: ValueKey('paywall-buy-credits'),
+                            textAlign: TextAlign.center,
                           ),
                         ),
                       ],
@@ -178,18 +188,31 @@ class _BillingOffersState extends State<BillingOffers> {
                           : (selection) => _chooseMode(selection.single),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    monthly
-                        ? 'Monthly credits + Word export + manuscript import'
-                        : 'Pay once. Keep your credits until you need them.',
-                    style: text.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
+                  const SizedBox(height: AppSpacing.sm),
+                  if (storeDown) ...[
+                    // The reason every price below is greyed out, said before
+                    // the prices rather than under them. The checkout bar's
+                    // button is the retry.
+                    const AppInlineNotice(
+                      tone: AppTone.warning,
+                      icon: Icons.cloud_off_outlined,
+                      title: 'Google Play is unavailable',
+                      message:
+                          'Purchases are temporarily unavailable. Your current credits and books are still here.',
                     ),
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
                   if (state.loading)
-                    const BillingPlanSkeleton(cards: 1)
+                    BillingPlanSkeleton(cards: monthly ? 3 : 2)
+                  else if (loadFailed)
+                    AppInlineNotice(
+                      tone: AppTone.error,
+                      icon: Icons.wifi_off_rounded,
+                      title: 'Could not load purchase options',
+                      message: state.error!,
+                      actionLabel: 'Try again',
+                      onAction: widget.onRetry,
+                    )
                   else if (options.isEmpty)
                     AppInlineNotice(
                       title:
@@ -208,7 +231,11 @@ class _BillingOffersState extends State<BillingOffers> {
                         storeProduct: state.storeProducts[product.sku],
                         selected: selected?.sku == product.sku,
                         isCurrent: _isCurrent(product),
+                        detailed: monthly,
                         bestValue: monthly && product.sku == value.bestValueSku,
+                        savingsPercent: monthly
+                            ? value.savingsFor(product.sku)
+                            : null,
                         recommendation: monthly
                             ? product.sku == defaultPlan?.sku
                                   ? 'Recommended'
@@ -233,21 +260,11 @@ class _BillingOffersState extends State<BillingOffers> {
                                 });
                               },
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.xs),
                     ],
-                  if (!state.loading && !state.storeAvailable) ...[
-                    const SizedBox(height: 4),
-                    AppInlineNotice(
-                      title: 'Google Play is unavailable',
-                      message:
-                          'Purchases are temporarily unavailable. Your current credits and books are still here.',
-                      actionLabel: 'Try again',
-                      onAction: widget.onRetry,
-                    ),
-                  ],
                   if (!monthly && choices.isNotEmpty) ...[
                     Align(
-                      alignment: Alignment.centerLeft,
+                      alignment: AlignmentDirectional.centerStart,
                       child: AppButton.text(
                         key: const ValueKey('paywall-choose-amount'),
                         onPressed: busy
@@ -259,7 +276,7 @@ class _BillingOffersState extends State<BillingOffers> {
                       ),
                     ),
                     if (plans.isNotEmpty) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.xs),
                       AppInlineNotice(
                         icon: Icons.auto_stories_outlined,
                         title: quote.betterPlan != null
@@ -273,10 +290,10 @@ class _BillingOffersState extends State<BillingOffers> {
                       ),
                     ],
                   ],
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.md),
                   BillingOfferDetails(monthly: monthly),
                   if (monthly) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.md),
                     BillingFreePlanCard(
                       key: const ValueKey('paywall-plan-free'),
                       freeTier: billing?.freeTier ?? const MobileFreeTier(),
@@ -287,7 +304,7 @@ class _BillingOffersState extends State<BillingOffers> {
                     for (final product in topUps.where(
                       (p) => p.productType != 'CREDIT_PACK',
                     )) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: AppSpacing.sm),
                       BillingTopUpTile(
                         key: ValueKey('paywall-topup-${product.sku}'),
                         product: product,
@@ -297,7 +314,7 @@ class _BillingOffersState extends State<BillingOffers> {
                       ),
                     ],
                   ],
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.sm),
                   BillingOfferFooter(
                     restoring: state.restoring,
                     onRestore: busy || state.loading ? null : widget.onRestore,
@@ -307,12 +324,14 @@ class _BillingOffersState extends State<BillingOffers> {
             ),
             BillingOfferCheckout(
               key: const ValueKey('paywall-checkout'),
-              state: state,
+              state: checkoutState,
               product: selected,
               requiredCredits: widget.creditsNeeded?.credits,
               isCurrent: selected != null && _isCurrent(selected),
               covered: shortfall == 0,
               onDone: widget.onClose,
+              onRetry: widget.onRetry,
+              onManage: widget.onManagePlan,
               onBuy: selected == null ? null : () => widget.onBuy(selected),
             ),
           ],

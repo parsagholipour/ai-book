@@ -4,11 +4,20 @@ import 'package:flutter/material.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
+import '../../projects/presentation/plan_build_progress.dart'
+    show PlanBuildSparkle;
 import '../domain/character_image_models.dart';
 import 'character_network_image.dart';
 
-const double _tile = 84;
-const double _row = 96;
+const double _tile = 88;
+
+/// The tile's frame plus the room its caption needs at the reader's text size.
+///
+/// The caption is text, so the row is no longer a fixed height: it is the tile
+/// and one line of `labelSmall` scaled by whatever the reader chose. Nothing
+/// *inside* a tile is text, which is what keeps the picture's own square fixed.
+double _rowHeight(BuildContext context) =>
+    _tile + 8 + MediaQuery.textScalerOf(context).scale(11) * 1.5;
 const EdgeInsets _gutter = EdgeInsets.symmetric(horizontal: 18);
 
 /// Every picture this character has ever had, newest first.
@@ -74,7 +83,7 @@ class CharacterImageStrip extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         SizedBox(
-          height: _row,
+          height: _rowHeight(context),
           child: loading && images.isEmpty
               ? _skeletons()
               : ListView(
@@ -96,7 +105,9 @@ class CharacterImageStrip extends StatelessWidget {
                       AppEntrance(
                         index: index,
                         child: _PictureTile(
-                          key: ValueKey('character-image-tile-${images[index].id}'),
+                          key: ValueKey(
+                            'character-image-tile-${images[index].id}',
+                          ),
                           image: images[index],
                           position: index + 1,
                           total: images.length,
@@ -170,8 +181,17 @@ class _PictureTile extends StatelessWidget {
   final VoidCallback onLongPress;
 
   String get _kindLabel {
-    if (image.source == CharacterImageSource.generated) return 'AI illustration';
+    if (image.source == CharacterImageSource.generated) {
+      return 'AI illustration';
+    }
     return image.isOwnArtwork ? 'Your artwork' : 'Your photo';
+  }
+
+  /// The one word under the picture. The full sentence is in the semantics.
+  String get _caption {
+    if (image.isMain) return 'Main';
+    if (image.source == CharacterImageSource.generated) return 'Drawing';
+    return image.isOwnArtwork ? 'Artwork' : 'Photo';
   }
 
   @override
@@ -183,42 +203,59 @@ class _PictureTile extends StatelessWidget {
       label:
           '$_kindLabel, $position of $total'
           '${image.isMain ? ', main picture' : ''}. Double tap to view.',
+      onLongPressHint: 'Picture options',
+      onTap: onTap,
+      onLongPress: onLongPress,
       child: GestureDetector(
+        // The Semantics above names and activates the tile; the detector's own
+        // node would be a second, unnamed one.
+        excludeFromSemantics: true,
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         onLongPress: onLongPress,
         child: ExcludeSemantics(
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              _TileFrame(
-                // The main marker is two cues on purpose: a ring alone
-                // disappears against a dark photograph, and a chip alone
-                // competes with the source badge in the other corner.
-                border: image.isMain
-                    ? Border.all(color: colors.primary, width: 2.5)
-                    : null,
-                child: CharacterNetworkImage(
-                  url: image.url,
-                  decodeWidth: _tile,
+          child: SizedBox(
+            width: _tile,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _TileFrame(
+                      // The main marker is two cues on purpose: a ring alone
+                      // disappears against a dark photograph, and a chip alone
+                      // competes with the source badge in the other corner.
+                      border: image.isMain
+                          ? Border.all(color: colors.primary, width: 2.5)
+                          : null,
+                      child: CharacterNetworkImage(
+                        url: image.url,
+                        decodeWidth: _tile,
+                        fill: true,
+                      ),
+                    ),
+                    if (image.isMain)
+                      PositionedDirectional(
+                        top: -4,
+                        end: -4,
+                        child: _Badge(
+                          icon: Icons.check,
+                          background: colors.primary,
+                          foreground: colors.onPrimary,
+                        ),
+                      ),
+                    PositionedDirectional(
+                      bottom: -4,
+                      end: -4,
+                      child: _sourceBadge(colors),
+                    ),
+                  ],
                 ),
-              ),
-              if (image.isMain)
-                PositionedDirectional(
-                  top: -4,
-                  end: -4,
-                  child: _Badge(
-                    icon: Icons.check,
-                    background: colors.primary,
-                    foreground: colors.onPrimary,
-                  ),
-                ),
-              PositionedDirectional(
-                bottom: -4,
-                end: -4,
-                child: _sourceBadge(colors),
-              ),
-            ],
+                const SizedBox(height: AppSpacing.xxs),
+                _Caption(_caption, emphasised: image.isMain),
+              ],
+            ),
           ),
         ),
       ),
@@ -248,6 +285,31 @@ class _PictureTile extends StatelessWidget {
   }
 }
 
+/// The single word under a tile.
+class _Caption extends StatelessWidget {
+  const _Caption(this.text, {this.emphasised = false});
+
+  final String text;
+  final bool emphasised;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: emphasised
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
+        fontWeight: emphasised ? FontWeight.w800 : FontWeight.w600,
+      ),
+    );
+  }
+}
+
 class _PendingTile extends StatelessWidget {
   const _PendingTile({required this.bytes, required this.progress});
 
@@ -258,48 +320,79 @@ class _PendingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       label: 'Uploading your picture',
-      child: _TileFrame(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.memory(bytes, fit: BoxFit.cover),
-            ColoredBox(
-              color: Theme.of(
-                context,
-              ).colorScheme.surface.withValues(alpha: 0.45),
-            ),
-            Center(
-              child: SizedBox.square(
-                dimension: 26,
-                child: CircularProgressIndicator(strokeWidth: 3, value: progress),
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: _tile,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TileFrame(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.memory(
+                      bytes,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
+                    ColoredBox(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.45),
+                    ),
+                    Center(
+                      child: SizedBox.square(
+                        dimension: 26,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          value: progress,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.xxs),
+              const _Caption('Uploading'),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// The place a drawing will land, held while it is being made.
 class _DrawingTile extends StatelessWidget {
   const _DrawingTile();
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Semantics(
       label: 'Drawing the illustration',
-      child: const _TileFrame(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _TileShimmer(),
-            Center(
-              child: SizedBox.square(
-                dimension: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: _tile,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _TileFrame(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const _TileShimmer(),
+                    Center(
+                      child: PlanBuildSparkle(color: colors.primary, size: 30),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.xxs),
+              const _Caption('Drawing'),
+            ],
+          ),
         ),
       ),
     );
@@ -327,33 +420,42 @@ class _AddTile extends StatelessWidget {
           onTap();
         },
         child: ExcludeSemantics(
-          child: Container(
-            width: wide ? 190 : _tile,
-            height: _tile,
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(AppRadii.control),
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: wide
-                ? Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.add_photo_alternate_outlined, color: colors.primary),
-                      const SizedBox(width: AppSpacing.xs),
-                      Flexible(
-                        child: Text(
-                          'Add a picture',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: colors.primary,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+          child: Align(
+            alignment: AlignmentDirectional.topStart,
+            child: Container(
+              width: wide ? 190 : _tile,
+              height: _tile,
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(AppRadii.control),
+                border: Border.all(color: colors.outlineVariant),
+              ),
+              child: wide
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.add_photo_alternate_outlined,
+                          color: colors.primary,
                         ),
-                      ),
-                    ],
-                  )
-                : Icon(Icons.add_photo_alternate_outlined, color: colors.primary),
+                        const SizedBox(width: AppSpacing.xs),
+                        Flexible(
+                          child: Text(
+                            'Add a picture',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: colors.primary,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: colors.primary,
+                    ),
+            ),
           ),
         ),
       ),
@@ -418,7 +520,10 @@ class _Badge extends StatelessWidget {
       decoration: BoxDecoration(
         color: background,
         shape: BoxShape.circle,
-        border: Border.all(color: Theme.of(context).colorScheme.surface, width: 2),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.surface,
+          width: 2,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(3),

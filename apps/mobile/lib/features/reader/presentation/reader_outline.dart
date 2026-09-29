@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/feedback/app_feedback.dart';
 import '../domain/reader_models.dart';
+import 'reader_sheet_parts.dart';
 
 /// Builds the reader's table of contents from a document's PDF bookmarks.
 ///
@@ -127,12 +131,18 @@ Future<List<ReaderOutlineEntry>> readerOutlineFromLinks(
 }
 
 /// The table of contents sheet.
-class ReaderOutlineSheet extends StatelessWidget {
+///
+/// Opens on the chapter the reader is in — highlighted, and scrolled to — rather
+/// than at the top of a list that may be forty entries long. A book with no
+/// outline still gets a sheet worth opening: a way to go to a page by its
+/// number, which is the one thing every book has.
+class ReaderOutlineSheet extends StatefulWidget {
   const ReaderOutlineSheet({
     required this.entries,
     required this.currentPage,
     required this.onSelect,
     this.hasCoverPage = false,
+    this.pageCount = 0,
     super.key,
   });
 
@@ -144,83 +154,273 @@ class ReaderOutlineSheet extends StatelessWidget {
   /// [onSelect] still receives the physical destination.
   final bool hasCoverPage;
 
+  /// How many physical pages the open file has, or 0 before that is known. The
+  /// page jump and the "pages left" line are only offered once it is.
+  final int pageCount;
+
+  @override
+  State<ReaderOutlineSheet> createState() => _ReaderOutlineSheetState();
+}
+
+class _ReaderOutlineSheetState extends State<ReaderOutlineSheet> {
+  final _currentKey = GlobalKey();
+  late final ScrollController _scroll;
+  late final int _currentIndex = readerOutlineCurrentIndex(
+    widget.entries,
+    widget.currentPage,
+  );
+
+  /// Roughly how tall a row is, for landing near the current one before the
+  /// rows above it have been measured. `ensureVisible` does the exact part.
+  static double _estimatedExtent(ReaderOutlineEntry entry) =>
+      entry.depth == 0 ? 56 : 44;
+
+  @override
+  void initState() {
+    super.initState();
+    var offset = 0.0;
+    for (var i = 0; i < _currentIndex; i++) {
+      offset += _estimatedExtent(widget.entries[i]);
+    }
+    _scroll = ScrollController(
+      initialScrollOffset: (offset - 96).clamp(0, offset),
+    );
+    if (_currentIndex >= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = _currentKey.currentContext;
+        if (context == null || !mounted) return;
+        Scrollable.ensureVisible(context, alignment: 0.3);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  String? get _subtitle {
+    if (widget.pageCount < 1) return null;
+    final position = printedPagePositionLabel(
+      widget.currentPage.clamp(1, widget.pageCount),
+      widget.pageCount,
+      hasCoverPage: widget.hasCoverPage,
+    );
+    final left = readerPagesLeftLabel(
+      widget.currentPage.clamp(1, widget.pageCount),
+      widget.pageCount,
+      hasCoverPage: widget.hasCoverPage,
+    );
+    return left == null ? position : '$position · $left';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    if (entries.isEmpty) {
-      return _sheet(
-        context,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 32),
-          child: Center(
-            child: Text(
-              'This book has no chapter list yet. It gets one the next time '
-              'the book is compiled.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
+    final entries = widget.entries;
+    // The sheet lifts with the keyboard so the page field stays in view.
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ReaderSheetHeader(title: 'Contents', subtitle: _subtitle),
+            if (widget.pageCount > 0)
+              _GoToPage(
+                pageCount: widget.pageCount,
+                hasCoverPage: widget.hasCoverPage,
+                onGo: widget.onSelect,
+              ),
+            if (entries.isEmpty)
+              const AppEmptyState(
+                icon: Icons.toc,
+                title: 'No chapter list yet',
+                message:
+                    'This book does not have chapters to jump between. You '
+                    'can still go to a page by its number above, or drag the '
+                    'handle on the right edge of the page.',
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  controller: _scroll,
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  itemCount: entries.length,
+                  itemBuilder: (context, index) => _row(context, index),
+                ),
+              ),
+          ],
         ),
-      );
-    }
-
-    return _sheet(
-      context,
-      child: ListView.builder(
-        shrinkWrap: true,
-        itemCount: entries.length,
-        itemBuilder: (context, index) {
-          final entry = entries[index];
-          final page = entry.pageNumber;
-          final isCurrent = page != null && page == currentPage;
-          final trailing = entry.displayedPageText(hasCoverPage: hasCoverPage);
-          return ListTile(
-            dense: entry.depth > 0,
-            contentPadding: EdgeInsets.only(
-              left: 16.0 + entry.depth * 16.0,
-              right: 16,
-            ),
-            title: Text(
-              entry.displayedTitle(hasCoverPage: hasCoverPage),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: entry.depth == 0
-                  ? theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    )
-                  : theme.textTheme.bodyMedium,
-            ),
-            trailing: trailing == null
-                ? null
-                : Text(
-                    trailing,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-            selected: isCurrent,
-            enabled: page != null,
-            onTap: page == null ? null : () => onSelect(page),
-          );
-        },
       ),
     );
   }
 
-  Widget _sheet(BuildContext context, {required Widget child}) {
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-            child: Text(
-              'Contents',
-              style: Theme.of(context).textTheme.titleMedium,
+  Widget _row(BuildContext context, int index) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final entry = widget.entries[index];
+    final page = entry.pageNumber;
+    final isCurrent = index == _currentIndex;
+    final trailing = entry.displayedPageText(hasCoverPage: widget.hasCoverPage);
+    final title = entry.displayedTitle(hasCoverPage: widget.hasCoverPage);
+    final topLevel = entry.depth == 0;
+
+    return Semantics(
+      button: page != null,
+      selected: isCurrent,
+      enabled: page != null,
+      hint: isCurrent ? 'You are here' : null,
+      child: InkWell(
+        key: isCurrent ? _currentKey : null,
+        onTap: page == null ? null : () => widget.onSelect(page),
+        child: Container(
+          constraints: const BoxConstraints(
+            minHeight: AppSizes.minimumTouchTarget,
+          ),
+          decoration: BoxDecoration(
+            color: isCurrent
+                ? colors.primaryContainer.withValues(alpha: 0.55)
+                : null,
+            border: BorderDirectional(
+              start: BorderSide(
+                color: isCurrent ? colors.primary : Colors.transparent,
+                width: 4,
+              ),
             ),
           ),
-          Flexible(child: child),
+          padding: EdgeInsetsDirectional.only(
+            start: AppSpacing.md + entry.depth * AppSpacing.md,
+            end: AppSpacing.md,
+            top: topLevel ? AppSpacing.xs : 2,
+            bottom: topLevel ? AppSpacing.xs : 2,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      (topLevel
+                              ? theme.textTheme.bodyLarge
+                              : theme.textTheme.bodyMedium)
+                          ?.copyWith(
+                            fontWeight: isCurrent
+                                ? FontWeight.w800
+                                : topLevel
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: page == null
+                                ? colors.onSurface.withValues(alpha: 0.38)
+                                : topLevel || isCurrent
+                                ? colors.onSurface
+                                : colors.onSurfaceVariant,
+                          ),
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  trailing,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: isCurrent ? colors.primary : colors.onSurfaceVariant,
+                    fontWeight: isCurrent ? FontWeight.w800 : null,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The entry the reader is inside: the last one that starts on or before
+/// [page], or -1 when none does.
+///
+/// Every depth counts, not only chapters. A recovered outline is sorted by page
+/// and a compiled one is in reading order, so the last match is the closest
+/// heading above the reader.
+int readerOutlineCurrentIndex(List<ReaderOutlineEntry> entries, int page) {
+  var current = -1;
+  for (var i = 0; i < entries.length; i++) {
+    final entryPage = entries[i].pageNumber;
+    if (entryPage != null && entryPage <= page) current = i;
+  }
+  return current;
+}
+
+/// A field for going to a page by its number.
+///
+/// The number is the one the footer prints, so a book with a cover does not
+/// make the reader add one to it. What the sheet hands back is the physical
+/// sheet, like every other way of getting somewhere in the book.
+class _GoToPage extends StatefulWidget {
+  const _GoToPage({
+    required this.pageCount,
+    required this.hasCoverPage,
+    required this.onGo,
+  });
+
+  final int pageCount;
+  final bool hasCoverPage;
+  final void Function(int pageNumber) onGo;
+
+  @override
+  State<_GoToPage> createState() => _GoToPageState();
+}
+
+class _GoToPageState extends State<_GoToPage> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  int get _printedCount =>
+      printedPageCount(widget.pageCount, hasCoverPage: widget.hasCoverPage);
+
+  void _go() {
+    final typed = int.tryParse(_controller.text.trim());
+    if (typed == null || _printedCount < 1) return;
+    final printed = typed.clamp(1, _printedCount);
+    widget.onGo(widget.hasCoverPage ? printed + 1 : printed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(
+        AppSpacing.lg - 4,
+        AppSpacing.xxs,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.go,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: 'Go to page',
+                hintText: '1–$_printedCount',
+                isDense: true,
+              ),
+              onSubmitted: (_) => _go(),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          AppButton.outlined(label: 'Go', onPressed: _go),
         ],
       ),
     );

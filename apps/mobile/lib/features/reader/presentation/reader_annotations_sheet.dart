@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/feedback/app_feedback.dart';
 import '../domain/reader_annotation.dart';
 import '../domain/reader_models.dart';
 import 'reader_annotation_painter.dart';
+import 'reader_sheet_parts.dart';
 
 /// Everything the reader has marked in a book, in page order.
 ///
@@ -52,39 +55,35 @@ class ReaderAnnotationsSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 12, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'My markup',
-                    style: theme.textTheme.titleMedium,
-                  ),
+          ReaderSheetHeader(
+            title: 'My markup',
+            subtitle: switch (annotations.length) {
+              0 => null,
+              1 => '1 item',
+              final count => '$count items',
+            },
+            actions: [
+              if (canUndo)
+                IconButton(
+                  onPressed: onUndo,
+                  icon: const Icon(Icons.undo),
+                  tooltip: 'Undo',
                 ),
-                if (canUndo)
-                  IconButton(
-                    onPressed: onUndo,
-                    icon: const Icon(Icons.undo),
-                    tooltip: 'Undo',
-                  ),
-                if (annotations.isNotEmpty)
-                  TextButton.icon(
-                    onPressed: onShareAll,
-                    icon: const Icon(Icons.ios_share_outlined, size: 18),
-                    label: const Text('Share'),
-                  ),
-              ],
-            ),
+              if (annotations.isNotEmpty)
+                TextButton.icon(
+                  onPressed: onShareAll,
+                  icon: const Icon(Icons.ios_share_outlined, size: 18),
+                  label: const Text('Share'),
+                ),
+            ],
           ),
           if (annotations.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-              child: Text(
-                'Select a passage to highlight it, or open the markup tools to '
-                'draw and pin notes.',
-                style: theme.textTheme.bodyMedium,
-              ),
+            const AppEmptyState(
+              icon: Icons.draw_outlined,
+              title: 'No markup yet',
+              message:
+                  'Select a passage to highlight it, or open the markup tools '
+                  'to draw and pin notes.',
             )
           else
             Flexible(
@@ -173,13 +172,14 @@ class _AnnotationTile extends StatelessWidget {
     final subtitle = body.isNotEmpty && quote.isNotEmpty ? quote : null;
 
     return ListTile(
-      leading: Container(
-        width: 10,
-        height: 34,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(5),
-        ),
+      // The kind of markup and its colour, in one mark: the colour alone said
+      // which highlighter but not whether this was a highlight, an underline,
+      // a note or a drawing.
+      leading: _KindChip(
+        icon: _kindIcon(annotation.kind),
+        color: annotation.orphaned
+            ? Theme.of(context).colorScheme.onSurfaceVariant
+            : color,
       ),
       title: Text(
         annotation.preview,
@@ -195,11 +195,47 @@ class _AnnotationTile extends StatelessWidget {
         ),
       ),
       trailing: IconButton(
-        icon: const Icon(Icons.close),
+        icon: const Icon(Icons.delete_outline),
         tooltip: 'Delete',
         onPressed: () => onRemove(annotation),
       ),
       onTap: annotation.orphaned ? null : () => onSelect(annotation),
+    );
+  }
+}
+
+IconData _kindIcon(ReaderAnnotationKind kind) => switch (kind) {
+  ReaderAnnotationKind.highlight => Icons.brush_outlined,
+  ReaderAnnotationKind.underline => Icons.format_underlined,
+  ReaderAnnotationKind.strikethrough => Icons.format_strikethrough,
+  ReaderAnnotationKind.note => Icons.sticky_note_2_outlined,
+  ReaderAnnotationKind.ink => Icons.gesture,
+  ReaderAnnotationKind.text => Icons.title,
+};
+
+/// A rounded tile in the markup's own colour, wearing the icon for its kind.
+class _KindChip extends StatelessWidget {
+  const _KindChip({required this.icon, required this.color});
+
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    // Full strength, so it is the colour the reader picked and not a washed-out
+    // cousin of it; the icon takes whichever of black and white reads on it.
+    final iconColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadii.compact),
+      ),
+      child: Icon(icon, size: 20, color: iconColor),
     );
   }
 }
@@ -214,10 +250,11 @@ String readerMarkupShareText({
   required List<ReaderAnnotation> annotations,
   bool hasCoverPage = false,
 }) {
-  final sorted = [...annotations]..sort((a, b) {
-    final byPage = a.page.compareTo(b.page);
-    return byPage != 0 ? byPage : a.createdAt.compareTo(b.createdAt);
-  });
+  final sorted = [...annotations]
+    ..sort((a, b) {
+      final byPage = a.page.compareTo(b.page);
+      return byPage != 0 ? byPage : a.createdAt.compareTo(b.createdAt);
+    });
 
   final buffer = StringBuffer()
     ..writeln(bookTitle.isEmpty ? 'My notes' : '$bookTitle — my notes');

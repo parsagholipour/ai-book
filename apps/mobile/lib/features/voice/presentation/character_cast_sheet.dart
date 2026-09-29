@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/motion.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
 import '../data/voice_repository.dart';
 import '../domain/voice_models.dart';
@@ -69,10 +70,7 @@ class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet>
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
           child: castValue.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 48),
-              child: Center(child: CircularProgressIndicator()),
-            ),
+            loading: () => const _CastSkeleton(),
             error: (error, stackTrace) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: AppErrorState(
@@ -130,6 +128,26 @@ class _CastList extends StatelessWidget {
             color: colors.onSurfaceVariant,
           ),
         ),
+        const SizedBox(height: 10),
+        // The two numbers a caller wants before dialling, both from the cast
+        // read: what they have, and how long one call can run.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            AppMetricChip(
+              icon: Icons.toll_outlined,
+              label: 'Balance',
+              value: '${cast.availableCredits} credits',
+            ),
+            if (cast.maxCallSeconds > 0)
+              AppMetricChip(
+                icon: Icons.timer_outlined,
+                label: 'Each call',
+                value: 'up to ${cast.maxCallSeconds ~/ 60} min',
+              ),
+          ],
+        ),
         const SizedBox(height: 12),
         Flexible(
           child: ListView.separated(
@@ -181,48 +199,85 @@ class _CastRow extends ConsumerWidget {
     // The toast is what names the number.
     final enabled = character.callable;
 
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
+    final ready = enabled && affordable;
+    return Semantics(
+      button: true,
       enabled: enabled,
-      leading: VoiceCallAvatar(
-        character: character,
-        speaking: false,
-        connected: false,
-        diameter: 44,
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              character.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+      label:
+          'Call ${character.name}${_subtitle().isEmpty ? '' : ', ${_subtitle()}'}',
+      child: ExcludeSemantics(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          onTap: enabled ? () => _placeCall(context, ref) : null,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  VoiceCallAvatar(
+                    character: character,
+                    speaking: false,
+                    connected: false,
+                    diameter: 44,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          character.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: enabled
+                                ? colors.onSurface
+                                : colors.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          _subtitle(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                        // Under the name rather than beside it, where it took
+                        // the room a long name needed.
+                        if (character.fromLibrary) ...[
+                          const SizedBox(height: 4),
+                          const _FromLibraryBadge(),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ready
+                          ? colors.primaryContainer
+                          : colors.surfaceContainerHigh,
+                    ),
+                    child: Icon(
+                      Icons.call,
+                      size: 22,
+                      color: ready
+                          ? colors.onPrimaryContainer
+                          : colors.onSurfaceVariant.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          if (character.fromLibrary) ...[
-            const SizedBox(width: 8),
-            const _FromLibraryBadge(),
-          ],
-        ],
-      ),
-      subtitle: Text(
-        _subtitle(),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: colors.onSurfaceVariant,
         ),
       ),
-      trailing: Icon(
-        Icons.call,
-        color: enabled && affordable
-            ? colors.primary
-            : colors.onSurfaceVariant.withValues(alpha: 0.4),
-      ),
-      onTap: enabled ? () => _placeCall(context, ref) : null,
     );
   }
 
@@ -321,6 +376,61 @@ class _NoCharacters extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Rows in the shape of the real ones while the cast is on its way.
+class _CastSkeleton extends StatelessWidget {
+  const _CastSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    Widget block(double width, double height, {double radius = 8}) => Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Loading characters',
+      child: ExcludeSemantics(
+        child: AppShimmer(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              children: [
+                for (var i = 0; i < 3; i += 1)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        block(44, 44, radius: 22),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              block(120, 16),
+                              const SizedBox(height: 8),
+                              block(200, 12),
+                            ],
+                          ),
+                        ),
+                        block(44, 44, radius: 22),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

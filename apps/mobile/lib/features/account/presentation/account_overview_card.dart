@@ -3,35 +3,34 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/motion.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_plan_tiles.dart';
 import '../../billing/presentation/billing_tier_style.dart';
 import 'account_billing_copy.dart';
 
+/// The balance at a glance: which plan, how many credits, and the one thing to
+/// do about it. Everything else about billing lives a tap deeper, in the Plan
+/// and billing rows beneath, so this card carries a single action.
 class AccountOverviewCard extends StatelessWidget {
   const AccountOverviewCard({
     required this.billing,
-    required this.onAddCredits,
-    required this.onManagePlan,
+    required this.onGetCredits,
     required this.onRetry,
     super.key,
   });
 
   final AsyncValue<MobileBilling> billing;
-  final VoidCallback onAddCredits;
-  final VoidCallback onManagePlan;
+
+  /// Opens the plans and credit packs.
+  final VoidCallback onGetCredits;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     return billing.when(
       skipLoadingOnReload: true,
-      loading: () => const AppCard(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-          child: Text('Checking your plan'),
-        ),
-      ),
+      loading: () => const _OverviewSkeleton(),
       error: (error, _) => AppInlineNotice(
         title: 'Could not load your plan',
         message: userFacingError(error),
@@ -39,25 +38,17 @@ class AccountOverviewCard extends StatelessWidget {
         actionLabel: 'Retry',
         onAction: onRetry,
       ),
-      data: (value) => _OverviewBody(
-        billing: value,
-        onAddCredits: onAddCredits,
-        onManagePlan: onManagePlan,
-      ),
+      data: (value) =>
+          _OverviewBody(billing: value, onGetCredits: onGetCredits),
     );
   }
 }
 
 class _OverviewBody extends StatelessWidget {
-  const _OverviewBody({
-    required this.billing,
-    required this.onAddCredits,
-    required this.onManagePlan,
-  });
+  const _OverviewBody({required this.billing, required this.onGetCredits});
 
   final MobileBilling billing;
-  final VoidCallback onAddCredits;
-  final VoidCallback onManagePlan;
+  final VoidCallback onGetCredits;
 
   @override
   Widget build(BuildContext context) {
@@ -66,44 +57,84 @@ class _OverviewBody extends StatelessWidget {
     final plan = billing.plan;
     final style = billingTierStyleForTier(billing.planTier);
     final contextLine = _overviewContext(context, billing);
+    final reserved = billing.credits.reserved;
+    final allowance = billing.allowance;
+    final showAllowance =
+        billing.isPaidPlan && allowance != null && allowance.monthlyCredits > 0;
 
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _TierPill(style: style, label: plan?.label ?? 'Free'),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.sm),
           Semantics(
             container: true,
             label: '${billing.credits.available} credits available',
             child: ExcludeSemantics(
-              child: Text(
-                formatCredits(billing.credits.available),
-                style: text.displaySmall?.copyWith(fontWeight: FontWeight.w800),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.end,
+                spacing: AppSpacing.xs,
+                children: [
+                  Text(
+                    formatCredits(billing.credits.available),
+                    style: text.displaySmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      'credits',
+                      style: text.titleSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+          if (showAllowance) ...[
+            const SizedBox(height: AppSpacing.xs),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+              child: LinearProgressIndicator(
+                value: (allowance.planCredits / allowance.monthlyCredits).clamp(
+                  0.0,
+                  1.0,
+                ),
+                minHeight: 6,
+              ),
+            ),
+          ],
           if (contextLine != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               contextLine,
               style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
             ),
           ],
-          const SizedBox(height: AppSpacing.md),
-          AppActionGroup(
-            primary: AppButton.primary(
-              onPressed: onAddCredits,
-              leading: const Icon(Icons.add_card_outlined),
-              label: 'Add credits',
+          if (reserved > 0) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              '${formatCredits(reserved)} on hold for books in progress',
+              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
             ),
-            secondary: [
-              AppButton.outlined(
-                onPressed: onManagePlan,
-                leading: const Icon(Icons.workspace_premium_outlined),
-                label: 'Manage plan',
-              ),
-            ],
+          ],
+          const SizedBox(height: AppSpacing.md),
+          // A free reader is offered the ladder; anyone already on it is
+          // offered more credits. Both open the same plans-and-packs sheet.
+          AppButton.primary(
+            onPressed: onGetCredits,
+            leading: Icon(
+              billing.isPaidPlan
+                  ? Icons.add_card_outlined
+                  : Icons.workspace_premium_outlined,
+            ),
+            label: billing.isPaidPlan ? 'Add credits' : 'Upgrade',
+            expanded: true,
           ),
         ],
       ),
@@ -132,6 +163,49 @@ class _TierPill extends StatelessWidget {
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
             color: style.onAccentContainer(colors),
             fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The card's own shape while the plan loads: pill, balance, line, button.
+class _OverviewSkeleton extends StatelessWidget {
+  const _OverviewSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final block = Theme.of(context).colorScheme.surfaceContainerHigh;
+
+    Widget bar(double? width, double height, {double radius = 6}) => Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: block,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Checking your plan',
+      child: ExcludeSemantics(
+        child: AppShimmer(
+          child: AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                bar(64, 26, radius: AppRadii.pill),
+                const SizedBox(height: AppSpacing.sm),
+                bar(128, 40, radius: 10),
+                const SizedBox(height: AppSpacing.xs),
+                bar(220, 12),
+                const SizedBox(height: AppSpacing.md),
+                bar(double.infinity, AppSizes.controlHeight, radius: 14),
+              ],
+            ),
           ),
         ),
       ),

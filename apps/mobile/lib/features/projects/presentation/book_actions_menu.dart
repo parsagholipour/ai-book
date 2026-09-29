@@ -91,9 +91,7 @@ Future<void> showBookActionsMenu({
             children: [
               Icon(Icons.headphones_outlined),
               SizedBox(width: 12),
-              Flexible(
-                child: Text('Listen', overflow: TextOverflow.ellipsis),
-              ),
+              Flexible(child: Text('Listen', overflow: TextOverflow.ellipsis)),
             ],
           ),
         ),

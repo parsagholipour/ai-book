@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../domain/reader_models.dart';
 import 'reader_annotation_controller.dart';
 import 'reader_annotation_painter.dart';
@@ -58,6 +59,9 @@ class ReaderBottomChrome extends StatelessWidget {
   /// The progress line drawn along the bar's top edge.
   static const progressLineHeight = 2.0;
 
+  /// The bar while the markup tray is open and it has only a readout to hold.
+  static const slimBarHeight = 30.0;
+
   /// Everything the bar covers, safe-area padding included.
   ///
   /// The page is laid out with exactly this much blank space after its last
@@ -67,20 +71,21 @@ class ReaderBottomChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bar = _bar(context);
     if (!annotations.isMarkingUp) {
-      return bar;
+      return _bar(context);
     }
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // The readout and its buttons stay reachable while marking up, but the
-        // safe-area padding at the bottom of the screen belongs to the tray
-        // below it now.
+        // The place in the book stays — panning is off while drawing, so the
+        // reader steers by the handle and needs to see where it lands — but the
+        // buttons do not. Contents, bookmarks and listening are all in the
+        // menu above, and the tray below is about to need every pixel it can
+        // get: a row of three icons over a row of tools is two toolbars deep.
         MediaQuery.removePadding(
           context: context,
           removeBottom: true,
-          child: bar,
+          child: _slimBar(context),
         ),
         _toolbar(),
       ],
@@ -107,7 +112,7 @@ class ReaderBottomChrome extends StatelessWidget {
                   IconButton(
                     tooltip: 'Contents',
                     onPressed: onContents,
-                    icon: const Icon(Icons.list_alt_outlined),
+                    icon: const Icon(Icons.toc),
                   ),
                   Expanded(child: _readout(context)),
                   IconButton(
@@ -132,6 +137,27 @@ class ReaderBottomChrome extends StatelessWidget {
     );
   }
 
+  /// The bar while the tray is open: progress and position, nothing to press.
+  Widget _slimBar(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(top: BorderSide(color: colors.outlineVariant)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _progressLine(colors),
+          SizedBox(
+            height: slimBarHeight,
+            child: Center(child: _positionText(context, slim: true)),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// How far through the book, drawn along the top edge of the bar.
   Widget _progressLine(ColorScheme colors) {
     return SizedBox(
@@ -139,7 +165,9 @@ class ReaderBottomChrome extends StatelessWidget {
       child: LinearProgressIndicator(
         value: pageCount < 1 ? 0 : (currentPage / pageCount).clamp(0.0, 1.0),
         minHeight: progressLineHeight,
-        backgroundColor: Colors.transparent,
+        // The part still to read is drawn as well, faintly, so the line reads
+        // as a length with a position on it rather than as a stub.
+        backgroundColor: colors.outlineVariant.withValues(alpha: 0.45),
         valueColor: AlwaysStoppedAnimation(colors.primary),
       ),
     );
@@ -147,42 +175,79 @@ class ReaderBottomChrome extends StatelessWidget {
 
   /// Where the reader is, in the two units that mean something: the chapter
   /// they are in and how far through the book that is.
+  ///
+  /// Also the way to the table of contents: a line that names a chapter is the
+  /// first thing a reader taps to change it.
   Widget _readout(BuildContext context) {
     // Before the viewer reports its page count there is no position to state,
     // and inventing "page 0 of 0" is worse than the buttons standing alone.
     if (pageCount < 1) {
       return const SizedBox.shrink();
     }
+    return Semantics(
+      button: true,
+      hint: 'Opens the contents',
+      child: InkWell(
+        onTap: onContents,
+        borderRadius: BorderRadius.circular(AppRadii.compact),
+        child: Center(child: _positionText(context)),
+      ),
+    );
+  }
+
+  /// The chapter over "Page 7 of 13 · 54%", or — [slim], when the tray has taken
+  /// the second line — the two side by side.
+  ///
+  /// The bar is a fixed height, so the words in it are held at a size that fits
+  /// two lines however large the reader has set their text — the controls
+  /// around it still grow — rather than the readout being what overflows.
+  Widget _positionText(BuildContext context, {bool slim = false}) {
+    if (pageCount < 1) {
+      return const SizedBox.shrink();
+    }
     final theme = Theme.of(context);
     final page = currentPage.clamp(1, pageCount);
     final percent = ((page / pageCount) * 100).round();
-    final position = printedPagePositionLabel(
-      page,
-      pageCount,
-      hasCoverPage: hasCoverPage,
+    final position = Text(
+      '${printedPagePositionLabel(page, pageCount, hasCoverPage: hasCoverPage)}'
+      ' · $percent%',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
     );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (chapterTitle != null)
-          Text(
-            chapterTitle!,
+    final title = chapterTitle;
+    final chapter = title == null
+        ? null
+        : Text(
+            title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: theme.textTheme.labelMedium,
-          ),
-        Text(
-          '$position · $percent%',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      ],
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          );
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: slim
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (chapter != null) ...[
+                  Flexible(child: chapter),
+                  const SizedBox(width: AppSpacing.sm),
+                ],
+                Flexible(child: position),
+              ],
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [?chapter, position],
+            ),
     );
   }
 

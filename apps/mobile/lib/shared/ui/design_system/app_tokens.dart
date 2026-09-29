@@ -34,3 +34,45 @@ abstract final class AppSizes {
 abstract final class AppInsets {
   static const EdgeInsets screen = EdgeInsets.fromLTRB(18, 8, 18, 32);
 }
+
+/// Shadows for surfaces a feature paints itself (a `DecoratedBox`, not a
+/// `Card`, which already takes its lift from the theme).
+///
+/// Light surfaces get a soft, teal-tinted lift; dark surfaces get none, because
+/// a shadow cannot show on a dark page and a dark surface climbs by tone
+/// instead (`surfaceContainerLowest` -> `Highest`).
+abstract final class AppElevation {
+  /// A card at rest: barely off the page.
+  static List<BoxShadow> resting(ColorScheme scheme) =>
+      scheme.brightness == Brightness.dark
+      ? const []
+      : const [
+          BoxShadow(
+            color: Color(0x140F3D34),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          ),
+          BoxShadow(
+            color: Color(0x0F0F3D34),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ];
+
+  /// Something floating over the page: a cover, a pinned bar, a toast.
+  static List<BoxShadow> raised(ColorScheme scheme) =>
+      scheme.brightness == Brightness.dark
+      ? const []
+      : const [
+          BoxShadow(
+            color: Color(0x1A0F3D34),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+          BoxShadow(
+            color: Color(0x1F0F3D34),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ];
+}

@@ -35,14 +35,16 @@ void main() {
     libraryPortraitUrl: portraitUrl,
   );
 
-  VoiceCast cast({List<VoiceCharacter>? characters, int availableCredits = 600}) =>
-      VoiceCast(
-        characters: characters ?? [mina()],
-        creditsPerMinute: 60,
-        creditsToStart: 180,
-        availableCredits: availableCredits,
-        maxCallSeconds: 1800,
-      );
+  VoiceCast cast({
+    List<VoiceCharacter>? characters,
+    int availableCredits = 600,
+  }) => VoiceCast(
+    characters: characters ?? [mina()],
+    creditsPerMinute: 60,
+    creditsToStart: 180,
+    availableCredits: availableCredits,
+    maxCallSeconds: 1800,
+  );
 
   Future<_FakeVoiceRepository> pumpProfile(
     WidgetTester tester, {
@@ -78,53 +80,68 @@ void main() {
     return voice;
   }
 
-  testWidgets('the profile offers a call, and it opens the call screen for this character', (
-    tester,
-  ) async {
-    final voice = await pumpProfile(
-      tester,
-      cast: cast(characters: [mina(portraitUrl: '/api/mobile/characters/char-1/images/img-1')]),
-    );
+  testWidgets(
+    'the profile offers a call, and it opens the call screen for this character',
+    (tester) async {
+      final voice = await pumpProfile(
+        tester,
+        cast: cast(
+          characters: [
+            mina(portraitUrl: '/api/mobile/characters/char-1/images/img-1'),
+          ],
+        ),
+      );
 
-    await tester.tap(find.byKey(const ValueKey('character-profile-call')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('character-profile-call')));
+      await tester.pumpAndSettle();
 
-    expect(find.byType(VoiceCallScreen), findsOneWidget);
-    final screen = tester.widget<VoiceCallScreen>(find.byType(VoiceCallScreen));
-    // A library call: no book, and the server's own entry for the character,
-    // picture included.
-    expect(screen.projectId, isNull);
-    expect(screen.character.id, 'char-1');
-    expect(screen.character.libraryPortraitUrl, '/api/mobile/characters/char-1/images/img-1');
-    // Read fresh on the tap, from the library rather than from any book.
-    expect(voice.castRequests, [null]);
-  });
+      expect(find.byType(VoiceCallScreen), findsOneWidget);
+      final screen = tester.widget<VoiceCallScreen>(
+        find.byType(VoiceCallScreen),
+      );
+      // A library call: no book, and the server's own entry for the character,
+      // picture included.
+      expect(screen.projectId, isNull);
+      expect(screen.character.id, 'char-1');
+      expect(
+        screen.character.libraryPortraitUrl,
+        '/api/mobile/characters/char-1/images/img-1',
+      );
+      // Read fresh on the tap, from the library rather than from any book.
+      expect(voice.castRequests, [null]);
+    },
+  );
 
-  testWidgets('names the credits a call needs when the balance cannot cover it', (
-    tester,
-  ) async {
-    await pumpProfile(tester, cast: cast(availableCredits: 20));
+  testWidgets(
+    'names the credits a call needs when the balance cannot cover it',
+    (tester) async {
+      await pumpProfile(tester, cast: cast(availableCredits: 20));
 
-    await tester.tap(find.byKey(const ValueKey('character-profile-call')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('character-profile-call')));
+      await tester.pumpAndSettle();
 
-    expect(find.byType(VoiceCallScreen), findsNothing);
-    expect(find.text('You need 180 credits to start a call.'), findsOneWidget);
-  });
+      expect(find.byType(VoiceCallScreen), findsNothing);
+      expect(
+        find.text('You need 180 credits to start a call.'),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('shows the microphone disclosure before the first call, wherever it is placed', (
-    tester,
-  ) async {
-    await pumpProfile(tester, cast: cast(), disclosed: false);
+  testWidgets(
+    'shows the microphone disclosure before the first call, wherever it is placed',
+    (tester) async {
+      await pumpProfile(tester, cast: cast(), disclosed: false);
 
-    await tester.tap(find.byKey(const ValueKey('character-profile-call')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('character-profile-call')));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Before your first voice call'), findsOneWidget);
-    await tester.tap(find.text('Not now'));
-    await tester.pumpAndSettle();
-    expect(find.byType(VoiceCallScreen), findsNothing);
-  });
+      expect(find.text('Before your first voice call'), findsOneWidget);
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      expect(find.byType(VoiceCallScreen), findsNothing);
+    },
+  );
 
   test('a character the cast has not caught up with is still callable', () {
     final built = voiceCharacterFor(

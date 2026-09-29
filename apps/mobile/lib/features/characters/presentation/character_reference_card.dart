@@ -22,7 +22,6 @@ class CharacterReferenceCard extends StatelessWidget {
     required this.portraitBusy,
     required this.waitGaveUp,
     required this.onGeneratePortrait,
-    required this.onAddPicture,
     required this.onPromote,
     required this.onCheckAgain,
     super.key,
@@ -41,7 +40,6 @@ class CharacterReferenceCard extends StatelessWidget {
   final bool waitGaveUp;
 
   final VoidCallback onGeneratePortrait;
-  final VoidCallback onAddPicture;
   final void Function(CharacterImage image) onPromote;
   final VoidCallback onCheckAgain;
 
@@ -60,7 +58,28 @@ class CharacterReferenceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppSwitcher(child: _card(context));
+    // Not `AppSwitcher`: its size transition clips to the card's bounds, which
+    // cuts the card's own shadow off at the corners.
+    final duration = AppMotion.reducedMotion(context)
+        ? Duration.zero
+        : AppMotion.medium;
+    return AnimatedSize(
+      duration: duration,
+      curve: AppMotion.standard,
+      alignment: Alignment.topCenter,
+      clipBehavior: Clip.none,
+      child: AnimatedSwitcher(
+        duration: duration,
+        switchInCurve: AppMotion.enter,
+        switchOutCurve: AppMotion.exit,
+        layoutBuilder: (current, previous) => Stack(
+          alignment: Alignment.topCenter,
+          clipBehavior: Clip.none,
+          children: [...previous, ?current],
+        ),
+        child: _card(context),
+      ),
+    );
   }
 
   Widget _card(BuildContext context) {
@@ -70,6 +89,8 @@ class CharacterReferenceCard extends StatelessWidget {
     );
 
     if (character.portraitStatus.isBusy) {
+      // The picture itself carries the animation, so this says what is
+      // happening and that leaving is fine — not a second bar stuck at zero.
       return AppCard(
         key: const ValueKey('character-reference-drawing'),
         child: Column(
@@ -78,7 +99,7 @@ class CharacterReferenceCard extends StatelessWidget {
             const Align(
               alignment: AlignmentDirectional.centerStart,
               child: AppStatusBadge(
-                label: 'Drawing the illustration — this takes a minute',
+                label: 'Drawing the illustration',
                 icon: Icons.hourglass_bottom,
                 tone: AppTone.info,
               ),
@@ -89,15 +110,17 @@ class CharacterReferenceCard extends StatelessWidget {
               const SizedBox(height: AppSpacing.xs),
               Align(
                 alignment: AlignmentDirectional.centerStart,
-                child: AppButton.text(
+                child: AppButton.outlined(
                   label: 'Check again',
+                  leading: const Icon(Icons.refresh),
                   onPressed: onCheckAgain,
                 ),
               ),
             ] else
-              const AppAnimatedProgressBar(
-                value: 0,
-                semanticLabel: 'Drawing the illustration',
+              Text(
+                'You can leave this page. It keeps drawing in the background, '
+                'and a failed drawing is refunded.',
+                style: captionStyle,
               ),
           ],
         ),
@@ -105,16 +128,49 @@ class CharacterReferenceCard extends StatelessWidget {
     }
 
     if (character.portraitStatus == CharacterPortraitStatus.failed) {
-      return AppInlineNotice(
+      return AppCard(
         key: const ValueKey('character-reference-failed'),
-        icon: Icons.error_outline,
         tone: AppTone.error,
-        title: 'Illustration failed',
-        message:
-            character.portraitError ??
-            'It could not be drawn. The credits were refunded.',
-        actionLabel: 'Retry',
-        onAction: busy ? null : onGeneratePortrait,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.error_outline),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Illustration failed',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        character.portraitError ??
+                            'It could not be drawn. The credits were refunded.',
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppButton.primary(
+              label: 'Retry',
+              leading: const Icon(Icons.refresh_rounded),
+              expanded: true,
+              onPressed: busy ? null : onGeneratePortrait,
+            ),
+          ],
+        ),
       );
     }
 
@@ -161,17 +217,6 @@ class CharacterReferenceCard extends StatelessWidget {
                 onPressed: busy ? null : () => onPromote(artwork),
               ),
               secondary: [priced],
-            )
-          else if (!character.hasPhoto && images.isEmpty)
-            AppActionGroup(
-              primary: priced,
-              secondary: [
-                AppButton.text(
-                  label: 'Add a picture',
-                  leading: const Icon(Icons.add_photo_alternate_outlined),
-                  onPressed: busy ? null : onAddPicture,
-                ),
-              ],
             )
           else
             Align(alignment: AlignmentDirectional.centerStart, child: priced),

@@ -60,9 +60,34 @@ class _BriefDetails extends StatelessWidget {
           ),
           const SizedBox(height: 10),
         ],
+        // What the book is about comes first: the settings and the price only
+        // mean something once the idea they apply to is on screen.
+        for (final row in rows) ...[
+          Text(row.label, style: sectionStyle),
+          const SizedBox(height: 2),
+          Text(row.value),
+          const SizedBox(height: 10),
+        ],
+        Row(
+          children: [
+            Expanded(child: Text('Settings', style: sectionStyle)),
+            if (onChipTap != null)
+              // The chips below open the same sheet, but nothing about a chip
+              // says so; a named action does.
+              TextButton(
+                onPressed: onChipTap,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, AppSizes.minimumTouchTarget),
+                ),
+                child: const Text('Change'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
         Wrap(
           spacing: 8,
-          runSpacing: 8,
+          // Each chip is a 48dp touch target around a 32dp pill.
+          runSpacing: 0,
           children: [
             if (onEditTitle != null)
               _TappableBriefChip(
@@ -116,7 +141,7 @@ class _BriefDetails extends StatelessWidget {
           ),
         ],
         if (!built && state.shapePreview.isNotEmpty) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text('Shape', style: sectionStyle),
           const SizedBox(height: 4),
           for (final item in state.shapePreview)
@@ -150,13 +175,9 @@ class _BriefDetails extends StatelessWidget {
         ],
         if (!built) ...[
           const SizedBox(height: 12),
+          Text('What it costs', style: sectionStyle),
+          const SizedBox(height: 6),
           _BriefCreditEstimate(presets: presets),
-        ],
-        for (final row in rows) ...[
-          const SizedBox(height: 10),
-          Text(row.label, style: sectionStyle),
-          const SizedBox(height: 2),
-          Text(row.value),
         ],
         if (!built && state.readiness.missing.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -209,7 +230,13 @@ class _TappableBriefChip extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadii.pill),
           onTap: onTap,
-          child: chip,
+          // The chip stays compact; the tap area is a full touch target tall.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: AppSizes.minimumTouchTarget,
+            ),
+            child: Center(widthFactor: 1, child: chip),
+          ),
         ),
       ),
     );
@@ -286,8 +313,10 @@ class _BriefQuickActionsState extends ConsumerState<_BriefQuickActions> {
             export: downloadExport,
             busyAction: _busyAction,
             onDownload: _downloadExport,
+            // Read book is the primary; a download beside it is not.
+            primary: !exports.pdf.available,
           ),
-        _ViewProgressButton(projectId: widget.projectId),
+        _ViewProgressButton(projectId: widget.projectId, finished: complete),
       ],
     );
   }
@@ -348,10 +377,7 @@ class _BriefCreditEstimate extends ConsumerWidget {
           credits: bookCredits,
         ),
         const SizedBox(height: 6),
-        _EstimateChargeRow(
-          label: 'Total reader journey',
-          credits: planCredits + bookCredits,
-        ),
+        _EstimateChargeRow(label: 'Total', credits: planCredits + bookCredits),
       ],
     );
   }

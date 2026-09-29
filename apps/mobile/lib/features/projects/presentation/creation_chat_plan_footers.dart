@@ -224,7 +224,24 @@ class _PlanBuildingFooter extends StatelessWidget {
                   semanticLabel: 'Book plan progress',
                 ),
                 const SizedBox(height: 12),
-                for (final step in steps) ProgressStepRow(step: step),
+                AnimatedSize(
+                  duration: AppMotion.reducedMotion(context)
+                      ? Duration.zero
+                      : AppMotion.medium,
+                  curve: AppMotion.enter,
+                  alignment: Alignment.topCenter,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final step in steps)
+                        ProgressStepRow(
+                          step: step,
+                          showDetail: true,
+                          inlineDetail: !step.isActive,
+                        ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 6),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -495,12 +512,47 @@ class _PlanFooterState extends State<_PlanFooter> {
                     ),
                   ),
                 ),
-              _RevisionComposer(
-                controller: widget.revisionController,
-                focusNode: _revisionFocus,
-                enabled: !widget.isBusy,
-                onSend: widget.onRevise,
-              ),
+              // Ideas for the empty box, only once the questions are through
+              // and only while the keyboard is down: a stalled reader gets a
+              // start, and one who is typing keeps the room. Once the questions
+              // are through this pair is what gives way when the footer runs
+              // out of height (a small phone at a large text size): it scrolls
+              // from the bottom, so the box stays in view and the ideas leave
+              // first, while Approve stays pinned below it.
+              if (widget.hasMoreQuestions)
+                _RevisionComposer(
+                  controller: widget.revisionController,
+                  focusNode: _revisionFocus,
+                  enabled: !widget.isBusy,
+                  onSend: widget.onRevise,
+                )
+              else
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: SingleChildScrollView(
+                    reverse: true,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!keyboardOpen) ...[
+                          _RevisionSuggestions(
+                            controller: widget.revisionController,
+                            focusNode: _revisionFocus,
+                            enabled: !widget.isBusy,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        _RevisionComposer(
+                          controller: widget.revisionController,
+                          focusNode: _revisionFocus,
+                          enabled: !widget.isBusy,
+                          onSend: widget.onRevise,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               _ApproveButton(
                 approving: busyAction == 'approve',
@@ -508,214 +560,14 @@ class _PlanFooterState extends State<_PlanFooter> {
                     ? widget.onApprove
                     : null,
               ),
+              // Like the suggestions, only once the questions are through: while
+              // one is open every pixel of the footer belongs to its answers.
+              if (!widget.hasMoreQuestions && !keyboardOpen)
+                _ApprovalCaption(projectId: plan.projectId),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-class _PlanQuestionPanel extends StatefulWidget {
-  const _PlanQuestionPanel({
-    required this.plan,
-    required this.questionIndex,
-    required this.collapsed,
-    required this.minimized,
-    required this.keyboardOpen,
-    required this.isBusy,
-    required this.onMinimizedChanged,
-    required this.onSelect,
-    required this.onSkip,
-    super.key,
-  });
-
-  final MobilePlan plan;
-  final int questionIndex;
-
-  /// While typing a revision below, only the prompt shows so the composer
-  /// stays visible above the keyboard.
-  final bool collapsed;
-  final bool minimized;
-  final bool keyboardOpen;
-  final bool isBusy;
-  final ValueChanged<bool> onMinimizedChanged;
-  final ValueChanged<String> onSelect;
-  final VoidCallback onSkip;
-
-  @override
-  State<_PlanQuestionPanel> createState() => _PlanQuestionPanelState();
-}
-
-class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
-  final _customController = TextEditingController();
-  bool _showCustomField = false;
-
-  /// The field only steals focus when the reader asked for it with "Custom…".
-  /// A question that has no options opens the field on its own, and raising the
-  /// keyboard there would collapse the question it is meant to answer.
-  bool _autofocusCustomField = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncCustomFieldToQuestion();
-  }
-
-  @override
-  void didUpdateWidget(covariant _PlanQuestionPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.questionIndex != widget.questionIndex) {
-      // Typing state belongs to one question, not to the panel.
-      _customController.clear();
-      _showCustomField = false;
-      _autofocusCustomField = false;
-      _syncCustomFieldToQuestion();
-    }
-  }
-
-  /// An open question (no premade answers) is answered by typing, so show the
-  /// field instead of hiding it behind a "Custom…" tap.
-  void _syncCustomFieldToQuestion() {
-    final question = widget.plan.questions.elementAtOrNull(
-      widget.questionIndex,
-    );
-    if (question != null && question.options.isEmpty && question.allowCustom) {
-      _showCustomField = true;
-    }
-  }
-
-  @override
-  void dispose() {
-    _customController.dispose();
-    super.dispose();
-  }
-
-  void _submitCustom() {
-    final text = _customController.text.trim();
-    if (text.isNotEmpty) widget.onSelect(text);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final question = widget.plan.questions[widget.questionIndex];
-    final total = widget.plan.questions.length;
-    final colors = Theme.of(context).colorScheme;
-    final collapsed = widget.collapsed || widget.minimized;
-    // While typing a custom answer, hide the option chips (via Visibility so
-    // the field's slot doesn't shift and drop focus) to keep it visible
-    // above the keyboard.
-    final typingCustom = _showCustomField && widget.keyboardOpen && !collapsed;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Question ${widget.questionIndex + 1} of $total',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: widget.minimized
-                  ? 'Expand question'
-                  : 'Minimize question',
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              padding: EdgeInsets.zero,
-              iconSize: 22,
-              visualDensity: VisualDensity.compact,
-              onPressed: widget.collapsed
-                  ? null
-                  : () => widget.onMinimizedChanged(!widget.minimized),
-              icon: Icon(
-                widget.minimized
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          question.prompt,
-          maxLines: (collapsed || typingCustom) ? 2 : null,
-          overflow: (collapsed || typingCustom) ? TextOverflow.ellipsis : null,
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        if (!collapsed) ...[
-          const SizedBox(height: 8),
-          Visibility(
-            visible: !typingCustom,
-            child: _QuestionOptionList(
-              options: question.options,
-              multiSelect: question.answerKind.allowsMultiple,
-              enabled: !widget.isBusy,
-              onSelect: widget.onSelect,
-              onCustom: question.allowCustom && !_showCustomField
-                  ? () => setState(() {
-                      _showCustomField = true;
-                      _autofocusCustomField = true;
-                    })
-                  : null,
-              onSkip: widget.onSkip,
-              openAnswerHint: _showCustomField
-                  ? null
-                  : 'Type your answer below.',
-            ),
-          ),
-        ],
-        if (!collapsed && _showCustomField) ...[
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _customController,
-                  enabled: !widget.isBusy,
-                  autofocus: _autofocusCustomField,
-                  minLines: 1,
-                  maxLines: 3,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _submitCustom(),
-                  decoration: InputDecoration(
-                    hintText: 'Type your own answer…',
-                    filled: true,
-                    fillColor: colors.surfaceContainerHigh,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _customController,
-                builder: (context, value, _) {
-                  return IconButton.filled(
-                    tooltip: 'Submit answer',
-                    onPressed: (!widget.isBusy && value.text.trim().isNotEmpty)
-                        ? _submitCustom
-                        : null,
-                    icon: const Icon(Icons.send_rounded),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
-      ],
     );
   }
 }
@@ -780,6 +632,122 @@ class _RevisionComposer extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+/// One line of ideas for a plan change, shown while the box is empty. Tapping
+/// one fills the box for editing — it never sends on its own.
+class _RevisionSuggestions extends StatelessWidget {
+  const _RevisionSuggestions({
+    required this.controller,
+    required this.focusNode,
+    required this.enabled,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        if (value.text.trim().isNotEmpty) {
+          return const SizedBox.shrink();
+        }
+        // A plain scroll view, not a ListView: the transcript is the screen's
+        // only list, and other code (and tests) finds it by that type.
+        return SizedBox(
+          // Chips grow with the text; a fixed 40 clips their labels.
+          height: MediaQuery.textScalerOf(context).scale(40),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final suggestion in planRevisionSuggestions) ...[
+                  ActionChip(
+                    label: Text(suggestion),
+                    onPressed: enabled
+                        ? () {
+                            controller.text = suggestion;
+                            controller.selection = TextSelection.collapsed(
+                              offset: suggestion.length,
+                            );
+                            focusNode.requestFocus();
+                          }
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// What the Approve button will cost, said beside it rather than after the
+/// tap. The quote is the same `estimateApprovalCredits` the confirmation
+/// dialog uses; until billing has loaded there is nothing to say and nothing is
+/// drawn, so the footer never jumps to make room for a placeholder.
+class _ApprovalCaption extends ConsumerWidget {
+  const _ApprovalCaption({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final project = ref.watch(projectDetailProvider(projectId)).asData?.value;
+    final billing = ref.watch(billingProvider).asData?.value;
+    if (project == null || billing == null) {
+      return const SizedBox.shrink();
+    }
+    final estimate = estimateApprovalCredits(project, billing.creditCosts);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Text(
+        'Book after approval: ≈ $estimate credits · You have '
+        '${billing.credits.available}',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// Holds the footer while it changes kind — the Build pill's progress, the plan
+/// review, the writing composer — so each arrives by cross-fading over the one
+/// it replaces, anchored to the bottom edge, instead of cutting to it in one
+/// frame.
+///
+/// Deliberately fade-only: the incoming footer is laid out at its real size at
+/// once, so every control in it is there and tappable from the first frame. An
+/// animated height would have to hold the controls hostage while it settled.
+class _FooterHandoff extends StatelessWidget {
+  const _FooterHandoff({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppMotion.reducedMotion(context)) {
+      return child;
+    }
+    return AnimatedSwitcher(
+      duration: AppMotion.fast,
+      switchInCurve: AppMotion.enter,
+      switchOutCurve: AppMotion.exit,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: Alignment.bottomCenter,
+        children: [...previousChildren, ?currentChild],
+      ),
+      child: KeyedSubtree(key: ValueKey(child.runtimeType), child: child),
     );
   }
 }

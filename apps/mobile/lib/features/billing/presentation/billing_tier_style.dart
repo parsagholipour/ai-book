@@ -111,6 +111,16 @@ String billingTierForSku(String sku) => switch (sku) {
 BillingTierStyle billingTierStyleForTier(String tier) =>
     _tierStyles[tier] ?? _freeStyle;
 
+/// The tier's name as the reader knows it. Mirrors
+/// `MobileSubscriptionPlan.label`, for the places that have a tier string and
+/// no plan object in hand.
+String billingTierLabel(String tier) => switch (tier) {
+  'creator' => 'Creator',
+  'pro' => 'Pro',
+  'max' => 'Max',
+  _ => 'Free',
+};
+
 /// The rung directly above the one this account is on.
 ///
 /// "Upgrade" is a direction, not a shelf: someone on Creator who ran out of

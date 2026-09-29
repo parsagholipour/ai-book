@@ -44,11 +44,14 @@ import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
+import 'chat_assistant_avatar.dart';
+import 'chat_composer_field.dart';
 import 'chat_media_preview.dart';
 import 'chat_message_text.dart';
 import 'chat_reply_quote.dart';
 import 'chat_thinking_bubble.dart';
 import 'creation_chat_controller.dart';
+import 'creation_chat_helpers.dart';
 import 'creation_cover_glimpse.dart';
 import 'creation_labels.dart';
 import 'credit_cost_badge.dart';
@@ -88,8 +91,13 @@ part 'creation_chat_resume.dart';
 part 'creation_chat_liveness.dart';
 part 'creation_chat_transcript_actions.dart';
 part 'creation_chat_attachments.dart';
+part 'creation_chat_pending_attachments.dart';
 part 'creation_chat_mentions.dart';
 part 'creation_chat_plan_actions.dart';
+part 'creation_chat_app_bar.dart';
+part 'creation_chat_welcome.dart';
+part 'creation_chat_bubble_chrome.dart';
+part 'creation_chat_jump_latest.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({
@@ -317,8 +325,105 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final keyboardOpen = keyboardInset > 0;
     final footerMaxHeight = math.max(
-      (MediaQuery.sizeOf(context).height - keyboardInset) * 0.5,
+      (MediaQuery.sizeOf(context).height - keyboardInset) *
+          _footerShare(context),
       96.0,
+    );
+
+    final transcript = _Transcript(
+      state: state,
+      controller: _scrollController,
+      messageAnchorKey: _messageAnchors.keyFor,
+      planValue: planValue,
+      projectChatValue: projectChatValue,
+      generationStatusValue: generationStatusValue,
+      planBusyAction: _planBusyAction,
+      activeProjectId: activeProjectId,
+      switchingProjectBranch: _projectChatBranchSwitching,
+      pendingProjectEcho: _pendingProjectEcho,
+      projectChatSending: _projectChatSending,
+      awaitingRebuildStatus: _rebuildHandoff.awaiting,
+      rebuildOperationId: _rebuildHandoff.operationId,
+      onRetryPendingProjectEcho: activeProjectId == null
+          ? null
+          : () => unawaited(_retryPendingProjectEcho(activeProjectId)),
+      onDismissPendingProjectEcho: _dismissPendingProjectEcho,
+      onSwitchProjectBranch: _switchProjectBranch,
+      onEditProjectMessage: _startProjectMessageEdit,
+      onReplyToMessage: _startReply,
+      onOpenReplanCopy: _openReplanCopy,
+      onOpenPaywall: (message) => unawaited(
+        _openProjectChatPaywall(
+          projectId: activeProjectId,
+          project: planValue?.asData?.value,
+          credits: message.insufficientCreditsRequired,
+          resumeProposalId: message.editProposal?.id,
+        ),
+      ),
+      creditsReady: activeProjectId != null && _creditsReadyProposalId != null,
+      onProceedCreditsReady: activeProjectId == null
+          ? null
+          : () => _proceedWithCreditsReadyEdit(activeProjectId),
+      onDismissCreditsReady: () =>
+          setState(() => _creditsReadyProposalId = null),
+      onApplyEditProposal: activeProjectId == null
+          ? null
+          : (proposalId) => unawaited(
+              _applyProjectEditProposal(
+                projectId: activeProjectId,
+                proposalId: proposalId,
+              ),
+            ),
+      onCancelEditProposal: activeProjectId == null
+          ? null
+          : (proposalId) => unawaited(
+              _cancelProjectEditProposal(
+                projectId: activeProjectId,
+                proposalId: proposalId,
+              ),
+            ),
+      onUndoProjectEdit: activeProjectId == null
+          ? null
+          : () => unawaited(_undoProjectEdit(projectId: activeProjectId)),
+      undoingProjectEdit: _undoingProjectEdit,
+      onRedoProjectEdit: activeProjectId == null
+          ? null
+          : () => unawaited(_redoProjectEdit(projectId: activeProjectId)),
+      redoingProjectEdit: _redoingProjectEdit,
+      onRetryFailedMessage: (localId) => unawaited(() async {
+        if (!await ensureMessageAllowance(context, ref) || !mounted) {
+          return;
+        }
+        try {
+          await ref
+              .read(creationChatControllerProvider.notifier)
+              .retryFailedMessage(localId);
+        } catch (error) {
+          if (context.mounted) {
+            await handleMessageAllowanceError(context, ref, error);
+          }
+        }
+      }()),
+      onDismissFailedMessage: (localId) => ref
+          .read(creationChatControllerProvider.notifier)
+          .dismissFailedMessage(localId),
+      onEditCreationMessage: _startCreationMessageEdit,
+      onSwitchCreationBranch: (message, direction) {
+        final messageId = message.id;
+        if (messageId == null) return;
+        unawaited(
+          ref
+              .read(creationChatControllerProvider.notifier)
+              .switchBranch(messageId: messageId, direction: direction),
+        );
+      },
+      onRetryFailedOperation: (operation) => unawaited(
+        _retryFailedOperation(
+          project: planValue?.asData?.value,
+          operation: operation,
+        ),
+      ),
+      onRetryGeneration: _retryBookGeneration,
     );
 
     // Material DrawerController fork: same finger-following drag, but snaps
@@ -328,45 +433,25 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       fit: StackFit.expand,
       children: [
         Scaffold(
-          // No title: the book is named by the brief header below, which is
-          // always present — naming it twice a few pixels apart said nothing.
-          appBar: AppBar(
-            leading: EasyDrawerButton(controllerKey: _drawerKey),
-            actions: [
-              IconButton(
-                tooltip: 'New book chat',
-                onPressed: () => context.go(newBookChatLocation()),
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-              if (isInOutputStage) ...[
-                IconButton(
-                  tooltip: 'Book progress',
-                  onPressed: () => context.push('/projects/$activeProjectId'),
-                  icon: const Icon(Icons.menu_book_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: () => _refreshOutput(activeProjectId),
-                  icon: const Icon(Icons.refresh),
-                ),
-              ] else ...[
-                IconButton(
-                  tooltip: 'Advanced settings',
-                  onPressed: !state.initializing ? openAdvancedSheet : null,
-                  icon: const Icon(Icons.tune),
-                ),
-              ],
-              IconButton(
-                tooltip: 'Account',
-                onPressed: () => context.push('/account'),
-                icon: const Icon(Icons.account_circle_outlined),
-              ),
-            ],
+          appBar: _CreationChatAppBar(
+            drawerKey: _drawerKey,
+            loading: state.initializing,
+            activeProjectId: activeProjectId,
+            onNewBook: () => context.go(newBookChatLocation()),
+            onAccount: () => context.push('/account'),
+            onOpenBook: () => context.push('/projects/$activeProjectId'),
+            onOpenAdvanced: !state.initializing ? openAdvancedSheet : null,
+            onRefresh: activeProjectId == null
+                ? null
+                : () => _refreshOutput(activeProjectId),
           ),
           body: SafeArea(
             bottom: false,
             child: state.initializing
-                ? const AppLoadingState(message: 'Loading chat')
+                ? const AppLoadingState(
+                    message: 'Loading chat',
+                    skeleton: _ChatSkeleton(),
+                  )
                 : state.initError != null && state.messages.isEmpty
                 ? AppErrorState(
                     title: 'Chat unavailable',
@@ -430,135 +515,50 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       if (state.warnings.isNotEmpty)
                         _ChatWarningsBanner(warnings: state.warnings),
                       Expanded(
-                        child: NotificationListener<Notification>(
-                          onNotification: _onTranscriptScrollNotification,
-                          child: _Transcript(
-                            state: state,
-                            controller: _scrollController,
-                            messageAnchorKey: _messageAnchors.keyFor,
-                            planValue: planValue,
-                            projectChatValue: projectChatValue,
-                            generationStatusValue: generationStatusValue,
-                            planBusyAction: _planBusyAction,
-                            activeProjectId: activeProjectId,
-                            switchingProjectBranch: _projectChatBranchSwitching,
-                            pendingProjectEcho: _pendingProjectEcho,
-                            projectChatSending: _projectChatSending,
-                            awaitingRebuildStatus: _rebuildHandoff.awaiting,
-                            rebuildOperationId: _rebuildHandoff.operationId,
-                            onRetryPendingProjectEcho: activeProjectId == null
-                                ? null
-                                : () => unawaited(
-                                    _retryPendingProjectEcho(activeProjectId),
-                                  ),
-                            onDismissPendingProjectEcho:
-                                _dismissPendingProjectEcho,
-                            onSwitchProjectBranch: _switchProjectBranch,
-                            onEditProjectMessage: _startProjectMessageEdit,
-                            onReplyToMessage: _startReply,
-                            onOpenReplanCopy: _openReplanCopy,
-                            onOpenPaywall: (message) => unawaited(
-                              _openProjectChatPaywall(
-                                projectId: activeProjectId,
-                                project: planValue?.asData?.value,
-                                credits: message.insufficientCreditsRequired,
-                                resumeProposalId: message.editProposal?.id,
-                              ),
-                            ),
-                            creditsReady:
-                                activeProjectId != null &&
-                                _creditsReadyProposalId != null,
-                            onProceedCreditsReady: activeProjectId == null
-                                ? null
-                                : () => _proceedWithCreditsReadyEdit(
-                                    activeProjectId,
-                                  ),
-                            onDismissCreditsReady: () =>
-                                setState(() => _creditsReadyProposalId = null),
-                            onApplyEditProposal: activeProjectId == null
-                                ? null
-                                : (proposalId) => unawaited(
-                                    _applyProjectEditProposal(
-                                      projectId: activeProjectId,
-                                      proposalId: proposalId,
-                                    ),
-                                  ),
-                            onCancelEditProposal: activeProjectId == null
-                                ? null
-                                : (proposalId) => unawaited(
-                                    _cancelProjectEditProposal(
-                                      projectId: activeProjectId,
-                                      proposalId: proposalId,
-                                    ),
-                                  ),
-                            onUndoProjectEdit: activeProjectId == null
-                                ? null
-                                : () => unawaited(
-                                    _undoProjectEdit(
-                                      projectId: activeProjectId,
-                                    ),
-                                  ),
-                            undoingProjectEdit: _undoingProjectEdit,
-                            onRedoProjectEdit: activeProjectId == null
-                                ? null
-                                : () => unawaited(
-                                    _redoProjectEdit(
-                                      projectId: activeProjectId,
-                                    ),
-                                  ),
-                            redoingProjectEdit: _redoingProjectEdit,
-                            onRetryFailedMessage: (localId) => unawaited(
-                              () async {
-                                if (!await ensureMessageAllowance(
-                                      context,
-                                      ref,
-                                    ) ||
-                                    !mounted) {
-                                  return;
-                                }
-                                try {
-                                  await ref
-                                      .read(
-                                        creationChatControllerProvider.notifier,
-                                      )
-                                      .retryFailedMessage(localId);
-                                } catch (error) {
-                                  if (context.mounted) {
-                                    await handleMessageAllowanceError(
-                                      context,
-                                      ref,
-                                      error,
-                                    );
-                                  }
-                                }
-                              }(),
-                            ),
-                            onDismissFailedMessage: (localId) => ref
-                                .read(creationChatControllerProvider.notifier)
-                                .dismissFailedMessage(localId),
-                            onEditCreationMessage: _startCreationMessageEdit,
-                            onSwitchCreationBranch: (message, direction) {
-                              final messageId = message.id;
-                              if (messageId == null) return;
-                              unawaited(
-                                ref
-                                    .read(
-                                      creationChatControllerProvider.notifier,
-                                    )
-                                    .switchBranch(
-                                      messageId: messageId,
-                                      direction: direction,
-                                    ),
-                              );
-                            },
-                            onRetryFailedOperation: (operation) => unawaited(
-                              _retryFailedOperation(
-                                project: planValue?.asData?.value,
-                                operation: operation,
-                              ),
-                            ),
-                            onRetryGeneration: _retryBookGeneration,
+                        child: AnimatedSwitcher(
+                          duration: AppMotion.reducedMotion(context)
+                              ? Duration.zero
+                              : AppMotion.fast,
+                          layoutBuilder: (current, previous) => Stack(
+                            fit: StackFit.expand,
+                            children: [...previous, ?current],
                           ),
+                          child:
+                              _showsWelcome(
+                                state,
+                                isInOutputStage: isInOutputStage,
+                              )
+                              ? _ChatWelcome(
+                                  key: const ValueKey('welcome'),
+                                  greeting: _welcomeGreeting(state),
+                                  ideas: _welcomeIdeas(state),
+                                  onPickIdea: _send,
+                                  onAttach: () => _openAttachMenu(state),
+                                  onMention: _beginMention,
+                                )
+                              : Stack(
+                                  key: const ValueKey('transcript'),
+                                  children: [
+                                    Positioned.fill(
+                                      child: NotificationListener<Notification>(
+                                        onNotification:
+                                            _onTranscriptScrollNotification,
+                                        child: transcript,
+                                      ),
+                                    ),
+                                    PositionedDirectional(
+                                      end: 12,
+                                      bottom: 8,
+                                      child: _JumpToLatestButton(
+                                        controller: _scrollController,
+                                        itemCount:
+                                            state.messages.length +
+                                            (chat?.messages.length ?? 0),
+                                        onPressed: _resumeStickToBottom,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
                       if (_editingProjectMessageId != null)
@@ -596,11 +596,13 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       if (isInOutputStage)
                         _FooterLimiter(
                           maxHeight: footerMaxHeight,
-                          child: _buildOutputFooter(
-                            planValue!,
-                            activeProjectId,
-                            planningStatusValue: generationStatusValue,
-                            keyboardOpen: keyboardOpen,
+                          child: _FooterHandoff(
+                            child: _buildOutputFooter(
+                              planValue!,
+                              activeProjectId,
+                              planningStatusValue: generationStatusValue,
+                              keyboardOpen: keyboardOpen,
+                            ),
                           ),
                         )
                       else

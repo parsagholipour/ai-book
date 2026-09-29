@@ -197,7 +197,7 @@ void main() {
     player.emitCompleted();
     await settle(tester);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
-    expect(find.text('waiting for the next chapter'), findsOneWidget);
+    expect(find.text('Waiting for the next chapter'), findsOneWidget);
 
     // Back into narrated audio the player resumes on its own — play was never
     // released — and the button has to notice.

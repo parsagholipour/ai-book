@@ -8,11 +8,22 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/motion.dart';
 import 'auth_controller.dart';
+import 'auth_legal_checks.dart';
+import 'auth_widgets.dart';
 import 'sample_book_screen.dart';
 
 enum AuthScreenMode { signIn, signUp }
 
+/// Sign in and create account: one form, two routes.
+///
+/// Validation is quiet while a field is being filled in — it speaks when the
+/// reader leaves the field or presses the button, and after that keeps pace
+/// with their edits so a fixed mistake stops shouting at once. A refusal from
+/// the server lands in an inline notice beside the button rather than in a
+/// snack bar that would be gone before it was read.
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({required this.mode, super.key});
 
@@ -27,20 +38,56 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _displayNameController = TextEditingController();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  final _noticeKey = GlobalKey();
 
   bool _obscurePassword = true;
   bool _termsAccepted = false;
   bool _ageGuardianAttested = false;
   bool _showLegalError = false;
+  bool _emailLeft = false;
+  bool _passwordLeft = false;
+  bool _submitted = false;
+  String? _serverError;
 
   bool get _isSignUp => widget.mode == AuthScreenMode.signUp;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailFocus.addListener(() {
+      if (!_emailFocus.hasFocus &&
+          !_emailLeft &&
+          _emailController.text.isNotEmpty) {
+        setState(() => _emailLeft = true);
+      }
+    });
+    _passwordFocus.addListener(() {
+      if (!_passwordFocus.hasFocus &&
+          !_passwordLeft &&
+          _passwordController.text.isNotEmpty) {
+        setState(() => _passwordLeft = true);
+      }
+    });
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _displayNameController.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
+  }
+
+  AutovalidateMode _validateWhen(bool left) => left || _submitted
+      ? AutovalidateMode.onUserInteraction
+      : AutovalidateMode.disabled;
+
+  void _clearServerError([String? _]) {
+    if (_serverError != null) setState(() => _serverError = null);
   }
 
   @override
@@ -50,130 +97,124 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     ref.listen(authControllerProvider, (previous, next) {
       final error = next.error;
-      if (error != null && mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      // Sign-in sits beneath sign-up in the stack and hears the same failure;
+      // only the screen the reader is looking at reports it.
+      if (error == null ||
+          !mounted ||
+          !(ModalRoute.of(context)?.isCurrent ?? true)) {
+        return;
       }
+      AppHaptics.error();
+      setState(() => _serverError = userFacingError(error));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final noticeContext = _noticeKey.currentContext;
+        if (noticeContext != null && noticeContext.mounted) {
+          Scrollable.ensureVisible(
+            noticeContext,
+            duration: AppMotion.reducedMotion(noticeContext)
+                ? Duration.zero
+                : AppMotion.medium,
+            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+          );
+        }
+      });
     });
 
+    final text = Theme.of(context).textTheme;
     final colors = Theme.of(context).colorScheme;
+    final sampleAvailable =
+        ref.watch(sampleBookAvailableProvider).value ?? false;
 
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: const Alignment(0, -0.1),
-            colors: [
-              colors.primary.withValues(alpha: 0.10),
-              colors.surface.withValues(alpha: 0),
-            ],
-          ),
+    return AuthPageShell(
+      builder: (context, compact) => [
+        AuthBrandHeader(compact: compact || _isSignUp),
+        SizedBox(height: compact || _isSignUp ? AppSpacing.md : AppSpacing.xl),
+        AuthHeading(
+          title: _isSignUp ? 'Create your account' : 'Welcome back',
+          subtitle: _isSignUp
+              ? 'Start turning ideas into finished books.'
+              : 'Sign in to continue your books.',
         ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _BrandMark(),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Tomeza',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Practical books for creators and teachers.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              _isSignUp
-                                  ? 'Create your account'
-                                  : 'Welcome back',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _isSignUp
-                                  ? 'Start turning ideas into finished books.'
-                                  : 'Sign in to continue your books.',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: colors.onSurfaceVariant),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildForm(isSubmitting),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    AppButton.text(
-                      onPressed: isSubmitting ? null : _toggleMode,
-                      label: _isSignUp
-                          ? 'I already have an account'
-                          : 'Create account',
-                    ),
-                    // Only when the server publishes one; a probe failure
-                    // simply draws nothing.
-                    if (ref.watch(sampleBookAvailableProvider).value ?? false)
-                      AppButton.text(
-                        onPressed: isSubmitting
-                            ? null
-                            : () => context.push('/sample-book'),
-                        leading: const Icon(Icons.menu_book_outlined, size: 18),
-                        label: 'See a sample book first',
-                      ),
-                  ],
+        const SizedBox(height: AppSpacing.lg),
+        _buildForm(isSubmitting),
+        const SizedBox(height: AppSpacing.md),
+        if (_isSignUp)
+          Center(
+            child: AppButton.text(
+              onPressed: isSubmitting ? null : _toggleMode,
+              label: 'I already have an account',
+            ),
+          )
+        else
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'New to Tomeza?',
+                style: text.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
                 ),
               ),
+              AppButton.text(
+                onPressed: isSubmitting ? null : _toggleMode,
+                label: 'Create account',
+              ),
+            ],
+          ),
+        // Only when the server publishes one; a probe failure simply draws
+        // nothing.
+        if (sampleAvailable)
+          Center(
+            child: AppButton.text(
+              onPressed: isSubmitting
+                  ? null
+                  : () => context.push('/sample-book'),
+              leading: const Icon(Icons.menu_book_outlined, size: 18),
+              label: 'See a sample book first',
             ),
           ),
-        ),
-      ),
+      ],
     );
   }
 
   Widget _buildForm(bool isSubmitting) {
+    final config = ref.read(appConfigProvider);
     return Form(
       key: _formKey,
       child: AutofillGroup(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (_isSignUp) ...[
               TextFormField(
                 controller: _displayNameController,
+                readOnly: isSubmitting,
                 textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.words,
                 autofillHints: const [AutofillHints.name],
+                onChanged: _clearServerError,
                 decoration: const InputDecoration(
-                  labelText: 'Name',
+                  labelText: 'Name (optional)',
                   prefixIcon: Icon(Icons.badge_outlined),
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: AppSpacing.sm),
             ],
             TextFormField(
               controller: _emailController,
+              focusNode: _emailFocus,
+              readOnly: isSubmitting,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.email],
+              autocorrect: false,
+              enableSuggestions: false,
+              autofillHints: [
+                if (!_isSignUp) AutofillHints.username,
+                AutofillHints.email,
+              ],
+              autovalidateMode: _validateWhen(_emailLeft),
+              onChanged: _clearServerError,
               decoration: const InputDecoration(
                 labelText: 'Email',
                 prefixIcon: Icon(Icons.mail_outline),
@@ -186,14 +227,20 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppSpacing.sm),
             TextFormField(
               controller: _passwordController,
+              focusNode: _passwordFocus,
+              readOnly: isSubmitting,
               obscureText: _obscurePassword,
               textInputAction: TextInputAction.done,
+              autocorrect: false,
+              enableSuggestions: false,
               autofillHints: [
                 _isSignUp ? AutofillHints.newPassword : AutofillHints.password,
               ],
+              autovalidateMode: _validateWhen(_passwordLeft),
+              onChanged: _clearServerError,
               decoration: InputDecoration(
                 labelText: 'Password',
                 helperText: _isSignUp ? 'Use at least 8 characters.' : null,
@@ -221,8 +268,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               },
               onFieldSubmitted: (_) => _submit(),
             ),
-            if (!_isSignUp) ...[
-              const SizedBox(height: 6),
+            if (!_isSignUp)
               Align(
                 alignment: AlignmentDirectional.centerEnd,
                 child: AppButton.text(
@@ -235,58 +281,40 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   label: 'Forgot password?',
                 ),
               ),
-            ],
             if (_isSignUp) ...[
-              const SizedBox(height: 14),
-              _LegalAttestation(
-                checked: _termsAccepted,
-                onChanged: isSubmitting
-                    ? null
-                    : (value) => setState(() {
-                        _termsAccepted = value;
-                        _showLegalError = false;
-                      }),
-                label:
-                    'I agree to the Terms and acknowledge the Privacy Policy.',
-                links: [
-                  _LegalLink(
-                    label: 'Terms',
-                    onTap: () => _openLegalUrl(
-                      ref.read(appConfigProvider).termsOfServiceUrl,
-                    ),
-                  ),
-                  _LegalLink(
-                    label: 'Privacy Policy',
-                    onTap: () => _openLegalUrl(
-                      ref.read(appConfigProvider).privacyPolicyUrl,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: AppSpacing.md),
+              AuthLegalAttestations(
+                termsAccepted: _termsAccepted,
+                ageGuardianAttested: _ageGuardianAttested,
+                showError: _showLegalError,
+                enabled: !isSubmitting,
+                onTermsChanged: (value) => setState(() {
+                  _termsAccepted = value;
+                  _showLegalError = false;
+                }),
+                onAgeGuardianChanged: (value) => setState(() {
+                  _ageGuardianAttested = value;
+                  _showLegalError = false;
+                }),
+                onOpenTerms: () => _openLegalUrl(config.termsOfServiceUrl),
+                onOpenPrivacy: () => _openLegalUrl(config.privacyPolicyUrl),
               ),
-              const SizedBox(height: 8),
-              _LegalAttestation(
-                checked: _ageGuardianAttested,
-                onChanged: isSubmitting
-                    ? null
-                    : (value) => setState(() {
-                        _ageGuardianAttested = value;
-                        _showLegalError = false;
-                      }),
-                label:
-                    'I confirm that I am at least 13 and, if I am under the age of majority, my parent or guardian has agreed.',
-              ),
-              if (_showLegalError) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Accept both statements to create your account.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
             ],
-            const SizedBox(height: 22),
+            const SizedBox(height: AppSpacing.md),
+            if (_serverError != null) ...[
+              KeyedSubtree(
+                key: _noticeKey,
+                child: AppInlineNotice(
+                  icon: Icons.error_outline,
+                  tone: AppTone.error,
+                  title: _isSignUp
+                      ? 'Could not create your account'
+                      : 'Could not sign in',
+                  message: _serverError!,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
             AppButton.primary(
               onPressed: isSubmitting ? null : _submit,
               loading: isSubmitting,
@@ -302,12 +330,18 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   Future<void> _submit() async {
+    setState(() {
+      _submitted = true;
+      _serverError = null;
+    });
     if (!_formKey.currentState!.validate()) {
+      AppHaptics.warning();
       return;
     }
     final notifier = ref.read(authControllerProvider.notifier);
     if (_isSignUp) {
       if (!_termsAccepted || !_ageGuardianAttested) {
+        AppHaptics.warning();
         setState(() => _showLegalError = true);
         return;
       }
@@ -349,106 +383,5 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
 
     context.push('/auth/sign-up');
-  }
-}
-
-class _LegalAttestation extends StatelessWidget {
-  const _LegalAttestation({
-    required this.checked,
-    required this.onChanged,
-    required this.label,
-    this.links = const [],
-  });
-
-  final bool checked;
-  final ValueChanged<bool>? onChanged;
-  final String label;
-  final List<_LegalLink> links;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onChanged == null ? null : () => onChanged!(!checked),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 10, 10, 10),
-        decoration: BoxDecoration(
-          border: Border.all(color: colors.outlineVariant),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Checkbox(
-              value: checked,
-              onChanged: onChanged == null
-                  ? null
-                  : (value) => onChanged!(value ?? false),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: Theme.of(context).textTheme.bodySmall),
-                  if (links.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 4,
-                      children: links
-                          .map(
-                            (link) => TextButton(
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                minimumSize: const Size(0, 32),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onPressed: link.onTap,
-                              child: Text(link.label),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LegalLink {
-  const _LegalLink({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-}
-
-class _BrandMark extends StatelessWidget {
-  const _BrandMark();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return ExcludeSemantics(
-      child: Center(
-        child: Container(
-          width: 72,
-          height: 72,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: colors.surface,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: TomezaBrandMark(color: colors.primary, size: 52),
-        ),
-      ),
-    );
   }
 }

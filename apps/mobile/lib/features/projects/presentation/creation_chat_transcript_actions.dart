@@ -56,6 +56,10 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
       final target = _scrollController.position.maxScrollExtent;
       final distance = (target - _scrollController.position.pixels).abs();
       if (distance <= 1) return;
+      if (AppMotion.reducedMotion(context)) {
+        _scrollController.jumpTo(target);
+        return;
+      }
       // Short glide for small growth (export expand); longer for new messages.
       final durationMs = distance < 120 ? 180 : 260;
       _scrollController.animateTo(

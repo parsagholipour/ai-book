@@ -33,11 +33,15 @@ Future<T?> showZoomableImageViewer<T>({
 }
 
 /// A translucent fade-in route that can be dismissed by tapping the barrier.
+///
+/// The route paints no backdrop of its own: a barrier colour is fixed for the
+/// life of the route, and the viewer needs its backdrop to lighten as the
+/// picture is dragged away. [ZoomableImageViewer] paints it.
 Future<T?> showDismissibleFadeRoute<T>(BuildContext context, Widget page) {
   return Navigator.of(context).push<T>(
     PageRouteBuilder<T>(
       opaque: false,
-      barrierColor: Colors.black.withValues(alpha: 0.92),
+      barrierColor: Colors.transparent,
       barrierDismissible: true,
       transitionDuration: AppMotion.medium,
       reverseTransitionDuration: AppMotion.fast,
@@ -79,7 +83,8 @@ class ZoomableImageViewer extends StatefulWidget {
   State<ZoomableImageViewer> createState() => _ZoomableImageViewerState();
 }
 
-class _ZoomableImageViewerState extends State<ZoomableImageViewer> {
+class _ZoomableImageViewerState extends State<ZoomableImageViewer>
+    with TickerProviderStateMixin {
   late final PageController _pages = PageController(
     initialPage: widget.initialIndex,
   );
@@ -91,6 +96,15 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer> {
 
   bool _chromeVisible = true;
   double _dragOffset = 0;
+
+  /// Eases a released, too-short dismiss drag back to rest.
+  late final AnimationController _snapBack;
+  double _snapFrom = 0;
+
+  /// Eases a double tap between the resting and the zoomed picture.
+  late final AnimationController _zoomAnim;
+  Matrix4Tween? _zoomTween;
+  Matrix4? _zoomTarget;
 
   /// The pager's own drag and hold, driven by hand — see [_pager].
   Drag? _pageDrag;
@@ -109,13 +123,47 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer> {
   /// moving on the same pixel a pager of its own would have started on.
   static const double _axisSlop = 6;
 
+  // Built here, not lazily: a lazy controller that was never used would first
+  // be created in dispose(), when asking for a ticker is no longer allowed.
+  @override
+  void initState() {
+    super.initState();
+    _snapBack = AnimationController(vsync: this, duration: AppMotion.fast)
+      ..addListener(_snapBackTick);
+    _zoomAnim = AnimationController(vsync: this, duration: AppMotion.medium)
+      ..addListener(_zoomTick);
+  }
+
   @override
   void dispose() {
     _releasePageDrag();
     _releasePageHold();
+    _snapBack.dispose();
+    _zoomAnim.dispose();
     _pages.dispose();
     _zoom.dispose();
     super.dispose();
+  }
+
+  void _snapBackTick() {
+    final eased = AppMotion.enter.transform(_snapBack.value);
+    setState(() => _dragOffset = _snapFrom * (1 - eased));
+  }
+
+  void _zoomTick() {
+    final tween = _zoomTween;
+    final target = _zoomTarget;
+    if (tween == null || target == null) return;
+    // Land on the exact target: a tween's last step is only approximately it.
+    _zoom.value = _zoomAnim.value >= 1
+        ? target
+        : tween.transform(AppMotion.enter.transform(_zoomAnim.value));
+  }
+
+  /// A finger landing again takes over from whatever the viewer was easing.
+  void _stopEasing() {
+    _snapBack.stop();
+    _zoomAnim.stop();
   }
 
   bool get _zoomed => _zoom.value.getMaxScaleOnAxis() > 1.01;
@@ -154,6 +202,7 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer> {
   }
 
   void _interactionStart(ScaleStartDetails details) {
+    _stopEasing();
     _sinceStart = Offset.zero;
     if (details.pointerCount > 1 || _zoomed) {
       _handOverToZoom();
@@ -294,45 +343,143 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer> {
       Navigator.of(context).pop();
       return;
     }
-    setState(() => _dragOffset = 0);
+    if (AppMotion.reducedMotion(context) || _dragOffset == 0) {
+      setState(() => _dragOffset = 0);
+      return;
+    }
+    _snapFrom = _dragOffset;
+    _snapBack.forward(from: 0);
   }
 
   void _doubleTap(TapDownDetails details) {
-    final controller = _zoom;
-    setState(() {
-      if (controller.value.getMaxScaleOnAxis() > 1.01) {
-        controller.value = Matrix4.identity();
-        return;
-      }
+    final Matrix4 target;
+    if (_zoomed) {
+      target = Matrix4.identity();
+    } else {
       // Anchored on the tap, because pinching a square avatar is fiddly.
       final position = details.localPosition;
-      controller.value = Matrix4.identity()
+      target = Matrix4.identity()
         ..translateByDouble(-position.dx * 1.5, -position.dy * 1.5, 0, 1)
         ..scaleByDouble(2.5, 2.5, 2.5, 1);
-    });
+    }
+    _zoomAnim.stop();
+    if (AppMotion.reducedMotion(context)) {
+      setState(() => _zoom.value = target);
+      return;
+    }
+    _zoomTween = Matrix4Tween(begin: _zoom.value.clone(), end: target);
+    _zoomTarget = target;
+    _zoomAnim.forward(from: 0);
   }
+
+  /// How far a dismiss drag has got, 0 at rest and 1 at (or past) the point the
+  /// picture is fully gone.
+  double get _dragProgress => (_dragOffset.abs() / 400).clamp(0.0, 1.0);
 
   @override
   Widget build(BuildContext context) {
-    final fade = (1 - (_dragOffset.abs() / 400)).clamp(0.0, 1.0);
+    final progress = _dragProgress;
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Opacity(
-        opacity: fade,
-        child: Transform.translate(
-          offset: Offset(0, _dragOffset),
-          child: Stack(
-            children: [
-              Positioned.fill(child: _pager()),
-              if (_chromeVisible) ...[
-                Positioned(top: 0, left: 0, right: 0, child: _topBar()),
+      body: Stack(
+        children: [
+          // The backdrop is what fades as the picture is pulled away: the
+          // picture itself stays fully opaque until it is gone, so the
+          // gesture reads as lifting a photo off a table rather than as the
+          // photo dissolving. (The whole page used to fade, picture included.)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black.withValues(alpha: 0.94 * (1 - progress)),
+            ),
+          ),
+          Positioned.fill(
+            child: Transform.translate(
+              offset: Offset(0, _dragOffset),
+              child: Transform.scale(
+                // Shrinks a little as it leaves, so the drag has depth.
+                scale: 1 - 0.14 * progress,
+                child: _pager(),
+              ),
+            ),
+          ),
+          // Chrome goes at the first sign of a dismiss drag: it would only be
+          // dragged along, and it is the wrong thing to be looking at then.
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: progress > 0,
+              child: Opacity(
+                opacity: (1 - progress * 4).clamp(0.0, 1.0),
+                child: _chrome(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The bars, faded in and out as a single tap toggles them. The hidden state
+  /// is an empty box, not a transparent bar, so nothing invisible is left to
+  /// take a tap or be read out.
+  Widget _chrome() {
+    return AnimatedSwitcher(
+      duration: AppMotion.adapt(context, AppMotion.fast),
+      switchInCurve: AppMotion.enter,
+      switchOutCurve: AppMotion.exit,
+      child: !_chromeVisible
+          ? const SizedBox.expand(key: ValueKey('viewer-chrome-hidden'))
+          : Stack(
+              key: const ValueKey('viewer-chrome'),
+              children: [
+                PositionedDirectional(
+                  top: 0,
+                  start: 0,
+                  end: 0,
+                  child: _scrimmed(
+                    begin: Alignment.topCenter,
+                    child: _topBar(),
+                  ),
+                ),
                 if (widget.bottomBar != null)
-                  Positioned(bottom: 0, left: 0, right: 0, child: _bottomBar()),
+                  PositionedDirectional(
+                    bottom: 0,
+                    start: 0,
+                    end: 0,
+                    child: _scrimmed(
+                      begin: Alignment.bottomCenter,
+                      child: _bottomBar(),
+                    ),
+                  ),
               ],
-            ],
+            ),
+    );
+  }
+
+  /// Fades a bar in from the black of the backdrop, so white icons and text
+  /// stay legible over a bright picture.
+  Widget _scrimmed({required Alignment begin, required Widget child}) {
+    return Stack(
+      children: [
+        // Painted only: the wash must not take the taps and swipes that begin
+        // beneath a bar, which belong to the picture.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: begin,
+                  end: -begin,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.55),
+                    Colors.black.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
-      ),
+        child,
+      ],
     );
   }
 
@@ -405,29 +552,49 @@ class _ZoomableImageViewerState extends State<ZoomableImageViewer> {
 
   Widget _topBar() {
     return SafeArea(
+      bottom: false,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
         child: Row(
           children: [
-            const CloseButton(color: Colors.white),
+            // A dark disc behind the glyph: a bare white cross disappears on a
+            // white picture, and this is the only way out.
+            CloseButton(
+              color: Colors.white,
+              style: IconButton.styleFrom(backgroundColor: Colors.black38),
+            ),
             Expanded(
-              child: Semantics(
-                liveRegion: true,
-                label: 'Picture ${_index + 1} of ${widget.itemCount}',
-                child: ExcludeSemantics(
-                  child: Text(
-                    '${_index + 1} of ${widget.itemCount}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
+              child: Center(
+                child: Semantics(
+                  liveRegion: true,
+                  label: 'Picture ${_index + 1} of ${widget.itemCount}',
+                  child: ExcludeSemantics(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(AppRadii.pill),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          '${_index + 1} of ${widget.itemCount}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
             widget.topBarTrailing?.call(context, _index) ??
-                const SizedBox(width: 48),
+                const SizedBox(width: AppSizes.minimumTouchTarget),
           ],
         ),
       ),

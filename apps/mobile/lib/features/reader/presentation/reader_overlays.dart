@@ -4,6 +4,7 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/motion.dart';
 import 'reader_document_loader.dart';
+import 'reader_opening_state.dart';
 
 /// Positions the selection action bar and animates it in and out.
 ///
@@ -121,6 +122,7 @@ class ReaderDownloadState extends StatelessWidget {
     required this.loader,
     required this.onRetry,
     required this.onOpenPaywall,
+    this.title,
     super.key,
   });
 
@@ -128,24 +130,35 @@ class ReaderDownloadState extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onOpenPaywall;
 
+  /// The book's name, shown on the opening screen so the wait is about
+  /// something.
+  final String? title;
+
   @override
   Widget build(BuildContext context) {
     final error = loader.error;
     if (loader.stage != ReaderLoadStage.failed || error == null) {
-      return ReaderDownloadProgress(progress: loader.progress);
+      return ReaderDownloadProgress(
+        progress: loader.progress,
+        stage: loader.stage,
+        title: title,
+        receivedBytes: loader.receivedBytes,
+        totalBytes: loader.totalBytes,
+      );
     }
     // A download the balance could not pay for is not something retrying
     // fixes — the same call refuses again — so it offers the paywall instead.
     // The screen decided credits were enough before starting, so this is the
-    // balance moving underneath the reader rather than a locked book.
+    // balance moving underneath the reader rather than a locked book. It is a
+    // question for the reader, not a fault, so it wears the calm tone of the
+    // other locked states rather than the error one.
     if (_isPaymentFailure(error)) {
-      return AppErrorState(
+      return AppEmptyState(
         icon: Icons.lock_outline,
         title: 'Credits needed to open this book',
         message: userFacingError(error),
         actionLabel: 'Get credits',
-        actionIcon: Icons.bolt_outlined,
-        onRetry: onOpenPaywall,
+        onAction: onOpenPaywall,
       );
     }
     // The file is being rebuilt, not missing. This is reachable in the window
@@ -157,15 +170,16 @@ class ReaderDownloadState extends StatelessWidget {
     // rebuild that already failed is not retried until its five-minute window
     // rolls, so "your changes are being compiled" would be a claim this screen
     // cannot make. "Try again" always re-checks the file, and picks the book up
-    // the moment one lands.
+    // the moment one lands. For the same reason it holds still: an animation
+    // here would say work is in flight when nothing on this screen knows it.
     if (_isRebuilding(error)) {
-      return AppErrorState(
+      return AppEmptyState(
         icon: Icons.hourglass_empty,
         title: 'Still preparing this book',
         message:
             'This book is being rebuilt after your latest changes. It is usually ready within a few minutes.',
         actionLabel: 'Try again',
-        onRetry: onRetry,
+        onAction: onRetry,
       );
     }
     return AppErrorState(
@@ -190,30 +204,36 @@ class ReaderDownloadState extends StatelessWidget {
   }
 }
 
-/// The download bar shown before the book can be opened.
+/// The opening screen, worded for the step the download is on.
 class ReaderDownloadProgress extends StatelessWidget {
-  const ReaderDownloadProgress({this.progress, super.key});
+  const ReaderDownloadProgress({
+    this.progress,
+    this.stage = ReaderLoadStage.idle,
+    this.title,
+    this.receivedBytes = 0,
+    this.totalBytes = 0,
+    super.key,
+  });
 
   final double? progress;
+  final ReaderLoadStage stage;
+  final String? title;
+  final int receivedBytes;
+  final int totalBytes;
 
   @override
   Widget build(BuildContext context) {
-    if (progress == null) {
-      return const AppLoadingState(message: 'Opening your book');
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 48),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          LinearProgressIndicator(value: progress),
-          const SizedBox(height: 14),
-          Text(
-            'Downloading your book — ${(progress! * 100).round()}%',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ],
-      ),
+    // Before a byte has moved the reader is waiting on the check for the latest
+    // version, which is what the screen says. Once bytes are coming it is a
+    // download whether or not the size is known yet.
+    final downloading = stage == ReaderLoadStage.downloading;
+    return ReaderOpeningState(
+      title: title,
+      headline: downloading ? 'Downloading your book' : 'Opening your book',
+      detail: downloading ? null : 'Checking for the latest version',
+      progress: progress,
+      receivedBytes: receivedBytes,
+      totalBytes: totalBytes,
     );
   }
 }

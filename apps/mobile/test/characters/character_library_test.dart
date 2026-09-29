@@ -7,6 +7,7 @@ import 'package:tomeza/features/characters/domain/character_models.dart';
 import 'package:tomeza/features/characters/presentation/character_library_card.dart';
 import 'package:tomeza/features/characters/presentation/character_library_controls.dart';
 import 'package:tomeza/features/characters/presentation/character_library_screen.dart';
+import 'package:tomeza/features/characters/presentation/character_portrait_drawing.dart';
 import 'package:tomeza/features/characters/presentation/character_profile_screen.dart';
 
 import 'character_test_support.dart';
@@ -27,6 +28,20 @@ void main() {
     description: 'A mischievous fox.',
     photoKind: CharacterPhotoKind.photograph,
   ).copyWith(updatedAt: DateTime.utc(2026, 9));
+  // Search and sort only appear once the cast is a screenful, so most of these
+  // suites run over five.
+  final bram = testCharacter(
+    id: 'char-4',
+    name: 'Bram',
+    description: '',
+    hasPhoto: false,
+  );
+  final cora = testCharacter(
+    id: 'char-5',
+    name: 'Cora',
+    description: '',
+    hasPhoto: false,
+  );
 
   Future<void> pumpLibrary(
     WidgetTester tester, {
@@ -44,7 +59,7 @@ void main() {
           charactersRepositoryProvider.overrideWithValue(
             FakeCharactersRepository(
               mina,
-              libraryCharacters: characters ?? [mina, fern, otto],
+              libraryCharacters: characters ?? [mina, fern, otto, bram, cora],
             ),
           ),
         ],
@@ -86,15 +101,79 @@ void main() {
     expect(visibleCards(tester), ['Captain Fern']);
     await tester.tap(find.byTooltip('Clear search'));
     await tester.pumpAndSettle();
-    expect(visibleCards(tester).length, 3);
+    expect(visibleCards(tester).length, 5);
   });
 
   testWidgets('a photo-only card is labelled separately from book artwork', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     await pumpLibrary(tester);
-    expect(find.text('Photo only · Illustrate next'), findsOneWidget);
-    expect(find.text('Illustration ready'), findsOneWidget);
+    // A photo is a face to browse, not artwork a book can use, and the card
+    // says so in words; a finished character carries a check instead of text.
+    expect(find.text('Photo only'), findsOneWidget);
+    expect(find.text('Illustration ready'), findsNothing);
+    expect(
+      find.bySemanticsLabel(RegExp('Captain Fern.*Illustration ready')),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(RegExp('Otto.*Photo only, not illustrated yet')),
+      findsOneWidget,
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('a portrait being drawn is on the card, not only in its label', (
+    tester,
+  ) async {
+    final drawing = testCharacter(
+      id: 'char-6',
+      name: 'Nova',
+      hasPhoto: false,
+      portraitStatus: CharacterPortraitStatus.generating,
+    );
+    // The veil animates for as long as the server says work is in flight, so
+    // this never settles: pump frames instead.
+    tester.view.physicalSize = const Size(390, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          charactersRepositoryProvider.overrideWithValue(
+            FakeCharactersRepository(drawing, libraryCharacters: [drawing]),
+          ),
+        ],
+        child: MaterialApp(
+          theme: buildTomezaLightTheme(),
+          home: const CharacterLibraryScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Drawing'), findsOneWidget);
+    expect(find.byType(CharacterDrawingOverlay), findsOneWidget);
+  });
+
+  testWidgets('a small cast has no search box or sort menu', (tester) async {
+    await pumpLibrary(tester, characters: [mina, fern, otto]);
+    expect(find.byKey(const ValueKey('character-search')), findsNothing);
+    expect(find.byTooltip('Sort characters'), findsNothing);
+    expect(visibleCards(tester).length, 3);
+  });
+
+  testWidgets('the layout toggle swaps cards for rows', (tester) async {
+    await pumpLibrary(tester);
+    expect(find.byType(CharacterLibraryCard), findsWidgets);
+    await tester.tap(find.byTooltip('Show as list'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CharacterLibraryCard), findsNothing);
+    expect(find.byType(CharacterLibraryRow), findsWidgets);
+    await tester.tap(find.byTooltip('Show as grid'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CharacterLibraryCard), findsWidgets);
   });
 
   testWidgets('no results can reset search', (tester) async {
@@ -108,7 +187,7 @@ void main() {
     await tester.ensureVisible(find.text('Reset search'));
     await tester.tap(find.text('Reset search'));
     await tester.pumpAndSettle();
-    expect(visibleCards(tester).length, 3);
+    expect(visibleCards(tester).length, 5);
     expect(
       tester
           .widget<TextField>(find.byKey(const ValueKey('character-search')))
@@ -122,8 +201,16 @@ void main() {
     tester,
   ) async {
     await pumpLibrary(tester);
-    expect(visibleCards(tester), ['Otto', 'Mina Park', 'Captain Fern']);
-    await tester.tap(find.text('Recently updated'));
+    expect(visibleCards(tester), [
+      'Otto',
+      'Mina Park',
+      'Captain Fern',
+      'Bram',
+      'Cora',
+    ]);
+    // The current sort is named beside the count.
+    expect(find.textContaining('Recently updated'), findsOneWidget);
+    await tester.tap(find.byTooltip('Sort characters'));
     await tester.pumpAndSettle();
     await tester.tap(
       find.widgetWithText(
@@ -132,7 +219,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(visibleCards(tester), ['Captain Fern', 'Mina Park', 'Otto']);
+    expect(visibleCards(tester), [
+      'Bram',
+      'Captain Fern',
+      'Cora',
+      'Mina Park',
+      'Otto',
+    ]);
+    expect(find.textContaining('Name A–Z'), findsOneWidget);
   });
 
   testWidgets('a card opens the character and its menu opens the editor', (
@@ -176,7 +270,7 @@ void main() {
         await tester.drag(find.byType(CustomScrollView), const Offset(0, -450));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        expect(find.text('New character').hitTestable(), findsOneWidget);
+        expect(find.text('Add character').hitTestable(), findsOneWidget);
       },
     );
   }

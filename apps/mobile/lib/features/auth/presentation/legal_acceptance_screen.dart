@@ -9,6 +9,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../domain/legal_gate.dart';
 import 'auth_controller.dart';
+import 'auth_widgets.dart';
 
 /// Shown when the account's accepted Terms or Privacy Policy version is no
 /// longer the current one. New accounts attest at signup and never see this;
@@ -32,95 +33,105 @@ class _LegalAcceptanceScreenState extends ConsumerState<LegalAcceptanceScreen> {
   Widget build(BuildContext context) {
     final config = ref.watch(appConfigProvider);
     final colors = Theme.of(context).colorScheme;
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Icon(
-                        Icons.policy_outlined,
-                        size: 42,
-                        color: colors.primary,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'The terms have been updated',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'By continuing, you agree to the updated Terms and acknowledge the Privacy Policy.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 8,
-                        children: [
-                          AppButton.text(
-                            onPressed: () => _open(config.termsOfServiceUrl),
-                            leading: const Icon(Icons.open_in_new, size: 16),
-                            label: 'Terms',
-                          ),
-                          AppButton.text(
-                            onPressed: () => _open(config.privacyPolicyUrl),
-                            leading: const Icon(Icons.open_in_new, size: 16),
-                            label: 'Privacy Policy',
-                          ),
-                        ],
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          _error!,
-                          style: TextStyle(color: colors.error),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      AppButton.primary(
-                        onPressed: _busy ? null : _accept,
-                        loading: _busy,
-                        loadingLabel: 'Agreeing and continuing',
-                        leading: const Icon(Icons.check),
-                        label: 'Agree and continue',
-                        expanded: true,
-                      ),
-                      const SizedBox(height: 10),
-                      AppButton.outlined(
-                        onPressed: _busy ? null : _notNow,
-                        label: 'Not now',
-                        expanded: true,
-                      ),
-                      AppButton.text(
-                        onPressed: _busy
-                            ? null
-                            : () => ref
-                                  .read(authControllerProvider.notifier)
-                                  .logout(),
-                        label: 'Log out',
-                        expanded: true,
-                      ),
-                    ],
-                  ),
-                ),
+    final text = Theme.of(context).textTheme;
+
+    return AuthPageShell(
+      maxWidth: 520,
+      builder: (context, compact) => [
+        Center(
+          child: ExcludeSemantics(
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                Icons.policy_outlined,
+                size: 32,
+                color: colors.onPrimaryContainer,
               ),
             ),
           ),
         ),
-      ),
+        const SizedBox(height: AppSpacing.md),
+        Semantics(
+          header: true,
+          child: Text(
+            'The terms have been updated',
+            textAlign: TextAlign.center,
+            style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'By continuing, you agree to the updated Terms and acknowledge the Privacy Policy.',
+          textAlign: TextAlign.center,
+          style: text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              AppSettingsRow(
+                icon: Icons.description_outlined,
+                title: 'Terms of Service',
+                subtitle: 'The rules for using Tomeza',
+                external: true,
+                onTap: () => _open(config.termsOfServiceUrl),
+              ),
+              const Divider(height: 1),
+              AppSettingsRow(
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy Policy',
+                subtitle: 'What we collect and how it is used',
+                external: true,
+                onTap: () => _open(config.privacyPolicyUrl),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (_error != null) ...[
+          AppInlineNotice(
+            icon: Icons.error_outline,
+            tone: AppTone.error,
+            title: 'Could not save your agreement',
+            message: _error!,
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        AppButton.primary(
+          onPressed: _busy ? null : _accept,
+          loading: _busy,
+          loadingLabel: 'Agreeing and continuing',
+          leading: const Icon(Icons.check),
+          label: 'Agree and continue',
+          expanded: true,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        AppButton.outlined(
+          onPressed: _busy ? null : _notNow,
+          label: 'Not now',
+          expanded: true,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'You can keep reading your books without agreeing. Creating and '
+          'editing wait until you do.',
+          textAlign: TextAlign.center,
+          style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        AppButton.text(
+          onPressed: _busy
+              ? null
+              : () => ref.read(authControllerProvider.notifier).logout(),
+          label: 'Log out',
+          expanded: true,
+        ),
+      ],
     );
   }
 

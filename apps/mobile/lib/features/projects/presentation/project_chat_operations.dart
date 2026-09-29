@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
+import 'edit_changes_screen.dart';
+import 'plan_build_progress.dart';
 import 'progress_step_row.dart';
 import 'project_chat_bubbles.dart';
 
@@ -284,10 +287,43 @@ class ProjectChatOperationBubble extends StatelessWidget {
       // is for getting the book back on track — Retry, not a diff. Snapshots
       // already exist once applied, so the diff stays offered during rebuild.
       onSeeChanges: operation.isApplied && operation.changesAvailable
-          ? () => context.push('/projects/$projectId/changes/${operation.id}')
+          ? () => _openChanges(context)
           : null,
     );
   }
+
+  /// Opens the diff, and carries out the Undo or Redo the reader chose there.
+  ///
+  /// The diff is where a reader decides whether an edit was right, so it offers
+  /// the way back — but the request itself stays with the chat that owns the
+  /// rebuild it starts, which is why the screen only answers with the choice.
+  /// Offered only where this card would have offered it.
+  Future<void> _openChanges(BuildContext context) async {
+    final action = await openEditChanges(
+      context,
+      projectId: projectId,
+      operationId: operation.id,
+    );
+    if (!context.mounted || action == null) return;
+    switch (action) {
+      case EditChangesAction.undo:
+        if (operation.isApplied && operation.canUndo) onUndo?.call();
+      case EditChangesAction.redo:
+        if (operation.isApplied && operation.canRedo) onRedo?.call();
+    }
+  }
+}
+
+/// Opens the diff for one edit and returns what the reader chose there besides
+/// reading it: null for "just looking", or the Undo/Redo they asked for.
+Future<EditChangesAction?> openEditChanges(
+  BuildContext context, {
+  required String projectId,
+  required String operationId,
+}) {
+  return context.push<EditChangesAction>(
+    '/projects/$projectId/changes/$operationId',
+  );
 }
 
 Widget? _liveEditProgress({
@@ -391,14 +427,18 @@ class _LiveEditOperationProgressState extends State<LiveEditOperationProgress> {
           children: [
             Expanded(
               child: showCurrent
+                  // A full-width box so the text sits at the reading edge in
+                  // either direction; the switcher only aligns left/right.
                   ? AppSwitcher(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        current,
+                      child: SizedBox(
                         key: ValueKey(current),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colors.onSecondaryContainer,
-                          fontWeight: FontWeight.w600,
+                        width: double.infinity,
+                        child: Text(
+                          current,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     )
@@ -407,23 +447,21 @@ class _LiveEditOperationProgressState extends State<LiveEditOperationProgress> {
             AppAnimatedCount(
               value: percent,
               style: theme.textTheme.labelMedium?.copyWith(
-                color: colors.onSecondaryContainer,
+                color: colors.onSurface,
                 fontWeight: FontWeight.w700,
               ),
               builder: (value) => '$value%',
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: AppAnimatedProgressBar(
-            value: percent / 100,
-            semanticLabel: showCurrent ? current : widget.overallAction,
-          ),
+        const SizedBox(height: AppSpacing.xs),
+        PlanBuildProgressBar(
+          value: percent / 100,
+          semanticLabel: showCurrent ? current : widget.overallAction,
+          trackColor: colors.surface.withValues(alpha: 0.7),
         ),
         if (steps.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xs),
           for (final step in steps)
             ProgressStepRow(step: step, showDetail: true),
         ],

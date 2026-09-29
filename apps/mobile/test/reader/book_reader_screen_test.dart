@@ -133,7 +133,8 @@ void main() {
 
     expect(find.textContaining('Downloading your book'), findsNothing);
     expect(find.text(pdfAt(1)), findsOneWidget);
-    expect(find.text('the-race'), findsOneWidget);
+    // The filename's hyphens are separators, not part of the title.
+    expect(find.text('the race'), findsOneWidget);
   });
 
   testWidgets('hands the viewer the same params across rebuilds', (
@@ -291,11 +292,7 @@ void main() {
         revision: 1,
         lastPage: 17,
         bookmarks: [
-          ReaderBookmark(
-            page: 4,
-            createdAt: DateTime.utc(2026),
-            revision: 1,
-          ),
+          ReaderBookmark(page: 4, createdAt: DateTime.utc(2026), revision: 1),
         ],
       );
 
@@ -356,12 +353,7 @@ void main() {
     expect(
       repository.state
           .copyWith(
-            bookmarks: [
-              ReaderBookmark(
-                page: 9,
-                createdAt: DateTime.utc(2026),
-              ),
-            ],
+            bookmarks: [ReaderBookmark(page: 9, createdAt: DateTime.utc(2026))],
           )
           .bookmarks
           .single

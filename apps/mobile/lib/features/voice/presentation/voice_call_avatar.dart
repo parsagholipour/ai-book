@@ -94,7 +94,10 @@ class _VoiceCallAvatarState extends State<VoiceCallAvatar>
           child: child,
         );
       },
-      child: _AvatarFace(character: widget.character, diameter: widget.diameter),
+      child: VoiceCallFace(
+        character: widget.character,
+        diameter: widget.diameter,
+      ),
     );
   }
 }
@@ -107,8 +110,12 @@ class _VoiceCallAvatarState extends State<VoiceCallAvatar>
 /// saved character's own portrait (a character asset). The library one keeps
 /// going through [CharacterNetworkImage] so its immutable URL and retained-
 /// picture behavior remain explicit.
-class _AvatarFace extends StatelessWidget {
-  const _AvatarFace({required this.character, required this.diameter});
+class VoiceCallFace extends StatelessWidget {
+  const VoiceCallFace({
+    required this.character,
+    required this.diameter,
+    super.key,
+  });
 
   final VoiceCharacter character;
   final double diameter;
@@ -116,7 +123,7 @@ class _AvatarFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = character.image;
-    final initials = _Initials(name: character.name);
+    final initials = _Initials(name: character.name, diameter: diameter);
     final standIn = character.standInPortraitUrl;
 
     Widget face = initials;
@@ -139,14 +146,17 @@ class _AvatarFace extends StatelessWidget {
       );
     }
 
-    return ClipOval(child: SizedBox.square(dimension: diameter, child: face));
+    return ClipOval(
+      child: SizedBox.square(dimension: diameter, child: face),
+    );
   }
 }
 
 class _Initials extends StatelessWidget {
-  const _Initials({required this.name});
+  const _Initials({required this.name, required this.diameter});
 
   final String name;
+  final double diameter;
 
   @override
   Widget build(BuildContext context) {
@@ -154,9 +164,14 @@ class _Initials extends StatelessWidget {
     return ColoredBox(
       color: theme.colorScheme.surfaceContainerHighest,
       child: Center(
+        // Sized from the circle, not from the theme: a display-sized "IB" is
+        // wider than the 44dp avatar in the cast list and was clipped there.
         child: Text(
           initialsForName(name),
-          style: theme.textTheme.displaySmall?.copyWith(
+          maxLines: 1,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontSize: diameter * 0.36,
+            height: 1,
             fontWeight: FontWeight.w700,
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -167,8 +182,12 @@ class _Initials extends StatelessWidget {
 }
 
 String initialsForName(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((part) => part.isNotEmpty);
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty);
   if (parts.isEmpty) return '?';
   if (parts.length == 1) return parts.first.characters.first.toUpperCase();
-  return '${parts.first.characters.first}${parts.last.characters.first}'.toUpperCase();
+  return '${parts.first.characters.first}${parts.last.characters.first}'
+      .toUpperCase();
 }

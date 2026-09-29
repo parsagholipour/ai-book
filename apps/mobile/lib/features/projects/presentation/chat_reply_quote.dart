@@ -108,33 +108,54 @@ class ChatQuotedMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = foreground.withValues(alpha: 0.55);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.only(left: 10),
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: accent, width: 3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            target.isUser ? 'You' : 'Assistant',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: accent,
-              fontWeight: FontWeight.w600,
+    // A tinted chip with an accent edge on the reading side: the quote reads as
+    // something lifted from elsewhere, not as a second paragraph. The edge is a
+    // directional bar rather than a border because a border cannot be rounded
+    // on one side only.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: foreground.withValues(alpha: 0.08)),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(width: 3, child: ColoredBox(color: accent)),
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(10, 6, 10, 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          target.isUser ? 'You' : 'Assistant',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: foreground.withValues(alpha: 0.75),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          target.excerpt,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: foreground.withValues(alpha: 0.8),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            target.excerpt,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: foreground.withValues(alpha: 0.75),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -178,7 +199,7 @@ class ChatComposerContextBanner extends StatelessWidget {
               child: InkWell(
                 onTap: onOpen,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+                  padding: const EdgeInsetsDirectional.fromSTEB(14, 6, 8, 6),
                   child: Row(
                     children: [
                       Icon(

@@ -5,8 +5,41 @@ part of 'creation_chat_screen.dart';
 // takes its current value and a callback, and the sheet in
 // `creation_chat_sheets.dart` is what knows the controller.
 
-class _BookTypeDropdown extends StatelessWidget {
-  const _BookTypeDropdown({
+/// A section's title, with the "Your choice" mark beside it when the reader
+/// overrode what the studio proposed. Every control below opens with one.
+class _FieldTitle extends StatelessWidget {
+  const _FieldTitle(this.title, {this.yourChoice = false});
+
+  final String title;
+  final bool yourChoice;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Semantics(
+            header: true,
+            child: Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
+        if (yourChoice)
+          const AppStatusBadge(label: 'Your choice', icon: Icons.tune_outlined),
+      ],
+    );
+  }
+}
+
+/// Book type as chips: eight short names are all visible at once, where the
+/// dropdown this replaced hid seven of them behind a tap. The chosen option's
+/// one-line description sits under the row.
+class _BookTypePicker extends StatelessWidget {
+  const _BookTypePicker({
     required this.title,
     required this.yourChoice,
     required this.options,
@@ -22,6 +55,7 @@ class _BookTypeDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final selectedOption = options.firstWhere(
       (option) => option.value == selected,
       orElse: () => options.first,
@@ -29,55 +63,41 @@ class _BookTypeDropdown extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        _FieldTitle(title, yourChoice: yourChoice),
+        const SizedBox(height: AppSpacing.xs),
+        Wrap(
+          key: ValueKey('book-type-${selectedOption.value}'),
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
           children: [
-            Expanded(
-              child: Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ),
-            if (yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
+            for (final option in options)
+              ChoiceChip(
+                avatar: Icon(option.icon, size: 18),
+                label: Text(option.title),
+                selected: option.value == selectedOption.value,
+                showCheckmark: false,
+                onSelected: (_) => onChanged(option.value),
               ),
           ],
         ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          key: ValueKey('book-type-$selected'),
-          initialValue: selectedOption.value,
-          isExpanded: true,
-          decoration: InputDecoration(
-            helperText: selectedOption.subtitle,
-            // Subtitles are whole sentences; one line ellipsizes mid-word.
-            helperMaxLines: 3,
+        const SizedBox(height: AppSpacing.xs),
+        // Subtitles are whole sentences; the line wraps rather than clipping.
+        AppSwitcher(
+          child: Text(
+            selectedOption.subtitle,
+            key: ValueKey(selectedOption.value),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
           ),
-          items: [
-            for (final option in options)
-              DropdownMenuItem(
-                value: option.value,
-                child: Row(
-                  children: [
-                    Icon(option.icon, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text(option.title)),
-                  ],
-                ),
-              ),
-          ],
-          onChanged: (value) {
-            if (value != null) onChanged(value);
-          },
         ),
       ],
     );
   }
 }
 
+/// Page count as presets first, an exact number second. Most readers want "a
+/// short one" or "about forty", and a bare number field asked them to know.
 class _PageCountControl extends StatefulWidget {
   const _PageCountControl({
     required this.title,
@@ -100,31 +120,40 @@ class _PageCountControl extends StatefulWidget {
 }
 
 class _PageCountControlState extends State<_PageCountControl> {
+  /// Common lengths, from a lead magnet to a full guide. Not a price table:
+  /// each one is quoted through the same estimate as any typed count.
+  static const _presetPages = [12, 24, 40, 60];
+
   late final TextEditingController _controller;
-  late bool _customSelected;
+
+  /// Whether the exact-number field is open. A count that is not one of the
+  /// presets keeps it open, since the field is the only place it can be read.
+  late bool _customOpen;
+
+  int? get _committedPages => widget.presets.pageCountMode == 'custom'
+      ? widget.presets.targetPages
+      : null;
 
   @override
   void initState() {
     super.initState();
-    _customSelected = widget.presets.pageCountMode == 'custom';
-    _controller = TextEditingController(
-      text: widget.presets.targetPages?.toString() ?? '',
-    );
+    final pages = _committedPages;
+    _customOpen = pages != null && !_presetPages.contains(pages);
+    _controller = TextEditingController(text: _customOpen ? '$pages' : '');
   }
 
   @override
   void didUpdateWidget(covariant _PageCountControl oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final nextCustom = widget.presets.pageCountMode == 'custom';
-    if (nextCustom != _customSelected) {
-      _customSelected = nextCustom;
+    final pages = _committedPages;
+    if (pages == null) {
+      if (!_customOpen && _controller.text.isNotEmpty) _controller.clear();
+      return;
     }
-    final nextText = widget.presets.targetPages?.toString() ?? '';
-    if (nextText != _controller.text && nextText.isNotEmpty) {
-      _controller.text = nextText;
-    }
-    if (!nextCustom && _controller.text.isNotEmpty) {
-      _controller.clear();
+    if (_customOpen &&
+        '$pages' != _controller.text &&
+        _controller.text.isEmpty) {
+      _controller.text = '$pages';
     }
   }
 
@@ -134,85 +163,88 @@ class _PageCountControlState extends State<_PageCountControl> {
     super.dispose();
   }
 
-  void _onCustomChanged(String value) {
+  int? _validPages(String value) {
     final pages = int.tryParse(value.trim());
-    if (pages == null || pages < 1 || pages > 600) {
-      return;
-    }
-    widget.onCustom(pages);
+    if (pages == null || pages < 1 || pages > 600) return null;
+    return pages;
   }
 
-  /// Estimated package cost for the currently entered custom page count, in
-  /// the same terms as the plan-approval dialog.
-  String? _customEstimateHelper() {
-    final estimateCredits = widget.estimateCredits;
-    final pages = int.tryParse(_controller.text.trim());
-    if (estimateCredits == null || pages == null || pages < 1 || pages > 600) {
-      return null;
+  void _onCustomChanged(String value) {
+    final pages = _validPages(value);
+    if (pages != null) widget.onCustom(pages);
+  }
+
+  /// The one place the cost of the chosen count is said, in the same terms as
+  /// the plan-approval dialog.
+  String _caption(int? pages, bool auto) {
+    if (auto) return 'Ask me before building if the chat does not say pages.';
+    final estimate = widget.estimateCredits;
+    if (pages == null || estimate == null) {
+      return 'Enter a number from 1 to 600.';
     }
-    return 'Book after approval: ≈ ${estimateCredits(pages)} credits for '
+    return 'Book after approval: ≈ ${estimate(pages)} credits for '
         '$pages pages, charged only after plan approval.';
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final committed = _committedPages;
+    final auto = !_customOpen && committed == null;
+    final typed = _validPages(_controller.text);
+    final captionPages = _customOpen ? typed : committed;
+    final invalid =
+        _controller.text.isNotEmpty && _validPages(_controller.text) == null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        _FieldTitle(widget.title, yourChoice: widget.yourChoice),
+        const SizedBox(height: AppSpacing.xs),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
           children: [
-            Expanded(
-              child: Text(
-                widget.title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
+            ChoiceChip(
+              avatar: const Icon(Icons.auto_awesome_outlined, size: 18),
+              label: const Text('Auto'),
+              selected: auto,
+              showCheckmark: false,
+              onSelected: (_) {
+                setState(() => _customOpen = false);
+                widget.onAuto();
+              },
             ),
-            if (widget.yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
+            for (final pages in _presetPages)
+              ChoiceChip(
+                label: Text('$pages pages'),
+                selected: !_customOpen && committed == pages,
+                showCheckmark: false,
+                onSelected: (_) {
+                  setState(() => _customOpen = false);
+                  _controller.clear();
+                  widget.onCustom(pages);
+                },
               ),
+            ChoiceChip(
+              avatar: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Custom'),
+              selected:
+                  _customOpen ||
+                  (committed != null && !_presetPages.contains(committed)),
+              showCheckmark: false,
+              onSelected: (_) => setState(() => _customOpen = true),
+            ),
           ],
         ),
-        const SizedBox(height: 8),
-        AppChoiceTile(
-          selected: !_customSelected,
-          icon: Icons.auto_awesome_outlined,
-          title: 'Auto',
-          subtitle: 'Ask me before building if the chat does not say pages.',
-          onTap: () {
-            setState(() => _customSelected = false);
-            widget.onAuto();
-          },
-        ),
-        const SizedBox(height: 8),
-        AppChoiceTile(
-          selected: _customSelected,
-          icon: Icons.format_list_numbered,
-          title: 'Custom',
-          subtitle: 'Use an exact page count.',
-          onTap: () => setState(() => _customSelected = true),
-        ),
-        if (_customSelected) ...[
-          const SizedBox(height: 8),
+        if (_customOpen) ...[
+          const SizedBox(height: AppSpacing.xs),
           TextField(
             controller: _controller,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: InputDecoration(
               labelText: 'Pages',
-              helperText:
-                  _customEstimateHelper() ?? 'Enter a number from 1 to 600.',
-              errorText:
-                  _controller.text.isNotEmpty &&
-                      (int.tryParse(_controller.text) == null ||
-                          int.parse(_controller.text) < 1 ||
-                          int.parse(_controller.text) > 600)
-                  ? 'Use 1 to 600 pages.'
-                  : null,
+              errorText: invalid ? 'Use 1 to 600 pages.' : null,
               filled: true,
               fillColor: colors.surface,
             ),
@@ -222,11 +254,21 @@ class _PageCountControlState extends State<_PageCountControl> {
             },
           ),
         ],
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          _caption(captionPages, auto),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
       ],
     );
   }
 }
 
+/// The effort tiers as compact cards: the name and one plain line about what
+/// you get, then what it costs. All four prices stay on screen because the
+/// choice *is* a choice of price — but they sit under the words, not in them.
 class _AdvancedGroup extends StatelessWidget {
   const _AdvancedGroup({
     required this.title,
@@ -257,19 +299,22 @@ class _AdvancedGroup extends StatelessWidget {
   final int Function(String value)? creditsPerPage;
   final int Function(String value)? planCredits;
 
-  /// The price leads, because it is the part that differs between options the
-  /// blurbs all describe as good. Written into the subtitle rather than a
-  /// trailing widget so `AppChoiceTile` reads it into its semantic label too.
-  String _subtitleFor(CreationPresetOption option) {
+  /// One plain line per tier. The presets' own subtitles are the fallback for a
+  /// tier this map does not know.
+  static const _blurbs = {
+    'fast': 'Fastest. A solid first pass to judge the shape.',
+    'balanced': 'Our everyday choice: clear, useful, well checked.',
+    'premium': 'Stronger writing, with an extra review pass.',
+    'ultra': 'Our best: extra drafts, the strongest one polished.',
+  };
+
+  String? _priceFor(CreationPresetOption option) {
     final rate = creditsPerPage?.call(option.value);
     final planning = planCredits?.call(option.value);
-    if (rate == null && planning == null) {
-      return option.subtitle;
-    }
+    if (rate == null && planning == null) return null;
     return [
       if (planning != null) 'Plan now: $planning credits',
       if (rate != null) 'Book after approval: ≈ $rate credits per page',
-      option.subtitle,
     ].join(' · ');
   }
 
@@ -278,35 +323,138 @@ class _AdvancedGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ),
-            if (yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
+        _FieldTitle(title, yourChoice: yourChoice),
+        const SizedBox(height: AppSpacing.xs),
         for (final option in options) ...[
-          AppChoiceTile(
+          _CompactChoiceTile(
             selected: selected == option.value,
             icon: option.icon,
             title: option.title,
-            subtitle: _subtitleFor(option),
+            blurb: _blurbs[option.value] ?? option.subtitle,
+            detail: _priceFor(option),
             onTap: () => onChanged(option.value),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xs),
         ],
       ],
+    );
+  }
+}
+
+/// A radio-style card that fits three short lines in about 80dp: the compact
+/// sibling of [AppChoiceTile], which is sized for a one-of-two decision, not a
+/// column of four. Announces itself the same way, detail included.
+class _CompactChoiceTile extends StatelessWidget {
+  const _CompactChoiceTile({
+    required this.selected,
+    required this.icon,
+    required this.title,
+    required this.blurb,
+    required this.onTap,
+    this.detail,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String title;
+  final String blurb;
+  final String? detail;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final foreground = selected ? colors.onPrimaryContainer : colors.onSurface;
+    final support = selected
+        ? colors.onPrimaryContainer
+        : colors.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      label: [title, blurb, ?detail].join('. '),
+      child: ExcludeSemantics(
+        child: Card(
+          margin: EdgeInsets.zero,
+          color: selected ? colors.primaryContainer : null,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            side: selected
+                ? BorderSide(
+                    color: colors.primary.withValues(alpha: 0.45),
+                    width: 1.4,
+                  )
+                : BorderSide(color: colors.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: AppSizes.minimumTouchTarget,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: AppSpacing.sm,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(
+                        icon,
+                        size: 22,
+                        color: selected ? foreground : colors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: text.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: foreground,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            blurb,
+                            style: text.bodySmall?.copyWith(color: support),
+                          ),
+                          if (detail != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              detail!,
+                              style: text.labelSmall?.copyWith(
+                                color: selected ? foreground : colors.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Icon(
+                      selected
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 22,
+                      color: selected ? foreground : colors.outline,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -328,23 +476,7 @@ class _LanguageField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Language',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ),
-            if (yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
-              ),
-          ],
-        ),
+        _FieldTitle('Language', yourChoice: yourChoice),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: language.isEmpty ? 'en' : language,
@@ -400,23 +532,7 @@ class _ToneField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Tone',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ),
-            if (yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
-              ),
-          ],
-        ),
+        _FieldTitle('Tone', yourChoice: yourChoice),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -471,12 +587,7 @@ class _AuthorNameFieldState extends State<_AuthorNameField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Author name',
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-        ),
+        const _FieldTitle('Author name'),
         const SizedBox(height: 8),
         TextField(
           key: const ValueKey('author-name-field'),
@@ -493,6 +604,110 @@ class _AuthorNameFieldState extends State<_AuthorNameField> {
             fillColor: Theme.of(context).colorScheme.surface,
           ),
           onChanged: widget.onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+/// The rarely-touched settings — language, tone, author name — folded behind
+/// one row so the sheet opens on the choices that change a book's shape and
+/// price. Opens by itself when any of them is already set, so a value the
+/// reader (or the chat) chose is never hidden.
+class _MoreOptions extends StatefulWidget {
+  const _MoreOptions({
+    required this.summary,
+    required this.initiallyOpen,
+    required this.children,
+  });
+
+  /// What is set inside, in a few words, shown while folded.
+  final String summary;
+  final bool initiallyOpen;
+  final List<Widget> children;
+
+  @override
+  State<_MoreOptions> createState() => _MoreOptionsState();
+}
+
+class _MoreOptionsState extends State<_MoreOptions> {
+  late bool _open = widget.initiallyOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final reduced = AppMotion.reducedMotion(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          button: true,
+          expanded: _open,
+          label: 'More options. ${widget.summary}',
+          child: ExcludeSemantics(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadii.control),
+              onTap: () => setState(() => _open = !_open),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: AppSizes.minimumTouchTarget,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'More options',
+                            style: text.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            widget.summary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _open ? 0.5 : 0,
+                      duration: reduced ? Duration.zero : AppMotion.medium,
+                      child: Icon(
+                        Icons.expand_more,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: reduced ? Duration.zero : AppMotion.medium,
+          curve: AppMotion.enter,
+          alignment: Alignment.topCenter,
+          child: _open
+              ? Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < widget.children.length; i++) ...[
+                        if (i > 0) const SizedBox(height: AppSpacing.md),
+                        widget.children[i],
+                      ],
+                    ],
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
         ),
       ],
     );

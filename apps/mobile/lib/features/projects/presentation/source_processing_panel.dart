@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_client.dart';
+import '../../../shared/ui/app_components.dart';
 import '../domain/creation_message_models.dart';
 
 /// Processing updates have their own endpoint and never overwrite chat revisions.
@@ -110,61 +111,162 @@ class _SourceProcessingPanelState extends ConsumerState<SourceProcessingPanel> {
   @override
   Widget build(BuildContext context) {
     if (_files.isEmpty && _error == null) return const SizedBox.shrink();
+    final colors = Theme.of(context).colorScheme;
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 180),
+      constraints: const BoxConstraints(maxHeight: 220),
       child: SingleChildScrollView(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_error != null) Text(_error!),
-            for (final file in _files)
-              ListTile(
-                dense: true,
-                title: Text(
-                  file.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    _error!,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: colors.error),
+                  ),
                 ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+            for (final file in _files) ...[
+              _SourceFileRow(
+                file: file,
+                onRetry: () => _act(file, 'retry'),
+                onUseReadable: () => _act(file, 'use-readable'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One uploaded file and how far the server has got with reading it: its name,
+/// one line of state, a bar while it is moving, and the way out when it is not.
+class _SourceFileRow extends StatelessWidget {
+  const _SourceFileRow({
+    required this.file,
+    required this.onRetry,
+    required this.onUseReadable,
+  });
+
+  final MobileCreationAttachment file;
+  final VoidCallback onRetry;
+  final VoidCallback onUseReadable;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final semantic = AppSemanticColors.of(context);
+    final processing = file.processing;
+    final status = processing?['status'];
+    final failed = status == 'failed';
+    final partial = status == 'partial' || status == 'limited';
+    final accent = failed
+        ? colors.error
+        : partial
+        ? semantic.warning
+        : colors.primary;
+    final icon = file.isProcessing
+        ? Icons.hourglass_top_rounded
+        : failed
+        ? Icons.error_outline
+        : partial
+        ? Icons.info_outline
+        : Icons.check_circle_outline;
+    final progress = ((processing?['progress'] as num?) ?? 0) / 100;
+    final unreadable =
+        (processing?['unreadable'] as List<dynamic>?) ?? const [];
+    final error = processing?['error'];
+
+    return Semantics(
+      container: true,
+      label: '${file.name}. ${file.processingLabel}',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadii.compact),
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  ExcludeSemantics(child: Icon(icon, size: 20, color: accent)),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      file.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Padding(
+                padding: const EdgeInsetsDirectional.only(
+                  start: 20 + AppSpacing.xs,
+                ),
+                child: Text(
+                  file.processingLabel,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (file.isProcessing) ...[
+                const SizedBox(height: AppSpacing.xs),
+                ExcludeSemantics(
+                  child: LinearProgressIndicator(
+                    value: progress.clamp(0.0, 1.0).toDouble(),
+                    minHeight: 4,
+                  ),
+                ),
+              ],
+              if (error is String) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  error,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.error,
+                  ),
+                ),
+              ],
+              if (unreadable.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  unreadable.join('\n'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              if (processing?['retryable'] == true)
+                Wrap(
                   children: [
-                    Text(file.processingLabel),
-                    if (file.isProcessing)
-                      LinearProgressIndicator(
-                        value:
-                            ((file.processing?['progress'] as num?) ?? 0) / 100,
-                      ),
-                    if (file.processing?['error'] is String)
-                      Text(file.processing!['error'] as String),
-                    if ((file.processing?['unreadable'] as List<dynamic>?)
-                            ?.isNotEmpty ??
-                        false)
-                      Text(
-                        (file.processing!['unreadable'] as List<dynamic>).join(
-                          '\n',
-                        ),
-                      ),
-                    if (file.processing?['retryable'] == true)
-                      Wrap(
-                        children: [
-                          TextButton(
-                            onPressed: () => _act(file, 'retry'),
-                            child: const Text('Retry reading'),
-                          ),
-                          if ([
-                                'partial',
-                                'limited',
-                              ].contains(file.processing?['status']) &&
-                              file.processing?['acceptedPartial'] != true)
-                            TextButton(
-                              onPressed: () => _act(file, 'use-readable'),
-                              child: const Text('Use readable content'),
-                            ),
-                        ],
+                    AppButton.text(onPressed: onRetry, label: 'Retry reading'),
+                    if (partial && processing?['acceptedPartial'] != true)
+                      AppButton.text(
+                        onPressed: onUseReadable,
+                        label: 'Use readable content',
                       ),
                   ],
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

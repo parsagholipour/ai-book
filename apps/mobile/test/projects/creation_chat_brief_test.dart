@@ -157,7 +157,9 @@ void main() {
     await tester.pumpWidget(app(creation: creation, projects: projects));
     await _buildBook(tester);
 
-    expect(_inHeader(find.text('Ready to read · 28 pages')), findsOneWidget);
+    // One word of state (the badge) and one of size (the line), not the same
+    // "Ready" twice in the same row.
+    expect(_inHeader(find.text('28 pages')), findsOneWidget);
     expect(_inHeader(find.text('Ready')), findsOneWidget);
 
     await _expandHeader(tester);
@@ -165,7 +167,9 @@ void main() {
     expect(_inDetails(find.text('Read book')), findsOneWidget);
     expect(_inDetails(find.text('Listen')), findsOneWidget);
     expect(_inDetails(find.text('Open PDF')), findsOneWidget);
-    expect(_inDetails(find.text('View progress')), findsOneWidget);
+    // Nothing is in progress any more; the shortcut names the page it opens.
+    expect(_inDetails(find.text('Book details')), findsOneWidget);
+    expect(_inDetails(find.text('View progress')), findsNothing);
 
     await tester.teardownScreen();
   });
@@ -369,7 +373,7 @@ void main() {
       _inDetails(find.text('Book after approval · ~12 pages')),
       findsOneWidget,
     );
-    expect(_inDetails(find.text('Total reader journey')), findsOneWidget);
+    expect(_inDetails(find.text('Total')), findsOneWidget);
     // 350 base + 12·8 pages + 45 cover + 2·45 interiors + 150 unlock, from
     // the harness billing costs — plus the separate 40-credit Balanced plan.
     expect(_inDetails(find.text('40')), findsOneWidget);

@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/media/photo_picker.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../data/characters_repository.dart';
@@ -9,6 +12,8 @@ import '../domain/character_models.dart';
 import '../domain/library_mentions.dart';
 import 'character_editor_fields.dart';
 import 'character_editor_layout.dart';
+import 'character_editor_photo.dart';
+import 'character_photo_pick.dart';
 
 part 'character_editor_mentions.dart';
 
@@ -85,6 +90,16 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
   bool _suggestionBusy = false;
   String? _nameError;
 
+  /// The frame the reader approved for a new character. Held here and sent once
+  /// the character exists, because there is nothing to attach it to before.
+  Uint8List? _photo;
+
+  /// The character is made and its photo is on the way up.
+  bool _uploadingPhoto = false;
+
+  /// The detail rows a save refused, and which half of each is missing.
+  final Map<CharacterDetailRow, ({bool key, bool value})> _rowErrors = {};
+
   /// Set the moment the reader taps "Use this", so the card goes away without
   /// waiting for the PATCH that retires it server-side — which only happens
   /// when they save.
@@ -125,6 +140,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
   bool get _busy => _saving || _suggestionBusy;
 
   bool get _hasUnsavedChanges {
+    if (_photo != null) return true;
     final original = widget.character;
     if (_nameController.text.trim() != (original?.name ?? '')) return true;
     if (_descriptionEdited &&
@@ -192,25 +208,42 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     });
   }
 
-  /// Trimmed rows ready to send, or null after telling the user about a row
-  /// that is only half filled — dropping typed text silently is worse than
-  /// asking.
+  /// Trimmed rows ready to send, or null after marking every row that is only
+  /// half filled — dropping typed text silently is worse than asking, and the
+  /// mark goes on the half that is missing, where the reader will look.
   List<CharacterField>? _collectFields() {
     final collected = <CharacterField>[];
+    final refused = <CharacterDetailRow, ({bool key, bool value})>{};
     for (final row in _fields) {
       final key = row.key.text.trim();
       final value = row.value.text.trim();
       if (key.isEmpty && value.isEmpty) continue;
       if (key.isEmpty || value.isEmpty) {
-        ScaffoldMessenger.of(context).showAppSnackBar(
-          const SnackBar(
-            content: Text('Each detail needs both a label and a value.'),
-          ),
-        );
-        return null;
+        refused[row] = (key: key.isEmpty, value: value.isEmpty);
+        continue;
       }
       collected.add(CharacterField(key: key, value: value));
     }
+    if (refused.isNotEmpty) {
+      setState(() {
+        _rowErrors
+          ..clear()
+          ..addAll(refused);
+      });
+      // After the frame that draws the errors, so the row is where it will be.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final target = refused.keys.first.anchor.currentContext;
+        if (target != null && mounted) {
+          Scrollable.ensureVisible(
+            target,
+            duration: const Duration(milliseconds: 200),
+            alignment: 0.3,
+          );
+        }
+      });
+      return null;
+    }
+    if (_rowErrors.isNotEmpty) setState(_rowErrors.clear);
     return collected;
   }
 
@@ -226,7 +259,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     final messenger = ScaffoldMessenger.of(context);
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      setState(() => _nameError = 'Give the character a name.');
+      setState(() => _nameError = 'Add a name so you can find them later.');
       _nameFocus.requestFocus();
       return;
     }
@@ -320,8 +353,37 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
             );
         if (!mounted) return;
         ref.invalidate(charactersProvider);
-        // Closes and hands the character back: their page is where a face gets
-        // added, so staying open with newly-unlocked sections was a waypoint.
+        final photo = _photo;
+        if (photo != null) {
+          // The character exists now, so the photo has somewhere to go. It is a
+          // courtesy on top of a save that has already worked: a failure here
+          // is said, not thrown, because the character is made either way and
+          // their page is where the picture can be tried again.
+          setState(() => _uploadingPhoto = true);
+          try {
+            await ref
+                .read(charactersRepositoryProvider)
+                .uploadPhoto(
+                  id: created.id,
+                  filename: 'photo.jpg',
+                  bytes: photo,
+                  mimeType: 'image/jpeg',
+                );
+          } catch (_) {
+            messenger.showAppSnackBar(
+              SnackBar(
+                content: Text(
+                  '${created.name} is saved, but the photo did not upload. '
+                  'Add it from their page.',
+                ),
+              ),
+            );
+          }
+          if (!mounted) return;
+          ref.invalidate(charactersProvider);
+        }
+        // Closes and hands the character back: their page is where the rest of
+        // their pictures are, so staying open would be a waypoint.
         await _finish(created);
       } else {
         final updated = await ref
@@ -348,6 +410,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
       if (!mounted) return;
       setState(() {
         _saving = false;
+        _uploadingPhoto = false;
         if (error.code == 'CHARACTER_NAME_TAKEN') {
           _nameError = error.message;
         }
@@ -357,11 +420,27 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _saving = false);
+      setState(() {
+        _saving = false;
+        _uploadingPhoto = false;
+      });
       messenger.showAppSnackBar(
         SnackBar(content: Text(userFacingError(error))),
       );
     }
+  }
+
+  Future<void> _choosePhoto() async {
+    if (_busy) return;
+    final action = await showCharacterPhotoActions(context);
+    if (action == null || !mounted) return;
+    final cropped = await pickAndCropCharacterPhoto(
+      context,
+      action: action,
+      photoPicker: ref.read(photoPickerProvider),
+    );
+    if (cropped == null || !mounted) return;
+    setState(() => _photo = cropped);
   }
 
   /// Accepting a suggestion only fills the field. Nothing is sent: the reader
@@ -445,9 +524,23 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
         creating: creating,
         busy: _busy,
         saving: _saving,
+        savingLabel: _uploadingPhoto ? 'Uploading photo…' : null,
         onClose: _requestClose,
         onSave: _save,
         children: [
+          // Their face first: it is what the rest of the form describes, and it
+          // is only asked for once — an existing character's pictures live on
+          // their own page.
+          if (creating) ...[
+            CharacterEditorPhoto(
+              nameController: _nameController,
+              photo: _photo,
+              busy: _busy,
+              onChoose: _choosePhoto,
+              onRemove: () => setState(() => _photo = null),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
           TextField(
             controller: _nameController,
             focusNode: _nameFocus,
@@ -486,7 +579,11 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
           ],
           if (_mentionQuery != null) ...[
             const SizedBox(height: 8),
-            _mentionSuggestions(_mentionQuery!),
+            // The strip appears under the field the reader is typing in, which
+            // on a short screen with the keyboard up can be below the fold of
+            // the form: it scrolls itself into view rather than offering picks
+            // nobody can see.
+            _EnsureVisibleOnAppear(child: _mentionSuggestions(_mentionQuery!)),
           ],
           if (_attachedMentions.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -511,20 +608,40 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
               onDismiss: _busy ? null : _dismissSuggestion,
             ),
           ],
-          const SizedBox(height: 16),
-          Text(
-            'Details · optional',
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w800,
+          const SizedBox(height: AppSpacing.lg),
+          Semantics(
+            header: true,
+            child: Text(
+              'Details · optional',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'Small facts every book will remember.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
           for (final row in _fields)
             CharacterDetailRowField(
               row: row,
               keyMax: _fieldKeyMax,
               valueMax: _fieldValueMax,
               onRemove: () => _removeField(row),
+              // Typing in either half is what answers the refusal.
+              onChanged: () {
+                if (_rowErrors.remove(row) != null) setState(() {});
+              },
+              keyError: _rowErrors[row]?.key == true
+                  ? 'Add a label, like Personality.'
+                  : null,
+              valueError: _rowErrors[row]?.value == true
+                  ? 'Add what your stories should remember.'
+                  : null,
             ),
           Wrap(
             spacing: 8,
@@ -546,10 +663,11 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
               ),
             ],
           ),
-          if (creating) ...[
+          if (creating && _photo == null) ...[
             const SizedBox(height: AppSpacing.md),
             Text(
-              'Next, add a picture or create their illustration.',
+              'No photo yet? You can add a picture, or have one drawn, from '
+              'their page after you create them.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -559,4 +677,32 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
       ),
     );
   }
+}
+
+/// Scrolls [child] into view once, the frame after it first appears.
+class _EnsureVisibleOnAppear extends StatefulWidget {
+  const _EnsureVisibleOnAppear({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_EnsureVisibleOnAppear> createState() => _EnsureVisibleOnAppearState();
+}
+
+class _EnsureVisibleOnAppearState extends State<_EnsureVisibleOnAppear> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 150),
+        alignment: 1,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

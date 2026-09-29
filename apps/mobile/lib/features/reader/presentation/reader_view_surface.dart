@@ -30,7 +30,6 @@ extension _ReaderViewSurface on _ReaderViewState {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: colors.surfaceContainerLowest,
-      floatingActionButton: _exitFullScreenButton(context),
       body: Column(
         children: [
           _statusBarBand(context),
@@ -50,6 +49,20 @@ extension _ReaderViewSurface on _ReaderViewState {
                   right: 0,
                   child: _bottomChrome(),
                 ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: _pageBadge(context),
+                ),
+                if (_coachShowing)
+                  PositionedDirectional(
+                    start: AppSpacing.md,
+                    end: AppSpacing.md,
+                    bottom:
+                        ReaderBottomChrome.heightFor(context) + AppSpacing.sm,
+                    child: ReaderCoachCard(onDismiss: _dismissCoach),
+                  ),
               ],
             ),
           ),
@@ -81,25 +94,6 @@ extension _ReaderViewSurface on _ReaderViewState {
         height: MediaQuery.paddingOf(context).top,
         color: colors.surfaceContainerLowest,
       ),
-    );
-  }
-
-  /// The way back out of full screen.
-  ///
-  /// Full screen is entered from the menu, and the menu is behind the bar it
-  /// just hid — so the way back has to be on the page. It is the same control
-  /// either way round: tap it and the bars come back.
-  Widget? _exitFullScreenButton(BuildContext context) {
-    if (!_immersive) return null;
-    return FloatingActionButton.small(
-      tooltip: 'Exit full screen',
-      // Immersive chrome stays circular primary; the shared FAB theme is for
-      // ordinary app surfaces, not the reader's exit control.
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-      shape: const CircleBorder(),
-      onPressed: () => _setImmersive(false),
-      child: const Icon(Icons.fullscreen_exit),
     );
   }
 
@@ -178,12 +172,18 @@ extension _ReaderViewSurface on _ReaderViewState {
     );
   }
 
-  /// The top bar and anything stacked under it.
+  /// The top bar and, under it, the notice about the book changing.
   ///
   /// The status-bar inset is removed for the whole group: the band above has
   /// already reserved that strip, and every piece in here — the app bar's
   /// `primary` padding, the search bar's and the banner's `SafeArea` — would
   /// otherwise add it a second time.
+  ///
+  /// The bar and the banner are separate layers on purpose. The bar goes away
+  /// with the rest of the controls; the banner does not, because a reader with
+  /// the controls put away is as much in need of "your edits are in" as anyone.
+  /// The bar therefore collapses out of the group as it leaves, so the banner
+  /// rises to the top of the page instead of hanging under a gap.
   Widget _topChrome(BuildContext context) {
     final searcher = _searcher;
     final selecting = _selection != null;
@@ -191,31 +191,32 @@ extension _ReaderViewSurface on _ReaderViewState {
     // anywhere else — including in full screen, because someone who has just
     // selected text has asked for tools.
     final showTopBar = selecting || !(_immersive || _searching);
-    return _ChromeLayer(
-      visible: showTopBar || (_searching && searcher != null),
-      fromTop: true,
-      child: MediaQuery.removePadding(
-        context: context,
-        removeTop: true,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_searching && searcher != null)
-              ReaderSearchBar(
-                searcher: searcher,
-                onClose: () => _setSearching(false),
-              )
-            else if (selecting)
-              _markupBar()
-            else if (showTopBar)
-              _appBar(searcher),
-            ReaderUpdateBanner(
-              status: _updateStatus,
-              onReload: () => unawaited(_reload()),
-              onDismiss: _dismissUpdate,
-            ),
-          ],
-        ),
+    final searchBar = _searching && searcher != null;
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ChromeLayer(
+            visible: showTopBar || searchBar,
+            fromTop: true,
+            collapse: true,
+            child: searchBar
+                ? ReaderSearchBar(
+                    searcher: searcher,
+                    onClose: () => _setSearching(false),
+                  )
+                : selecting
+                ? _markupBar()
+                : _appBar(searcher),
+          ),
+          ReaderUpdateBanner(
+            status: _updateStatus,
+            onReload: () => unawaited(_reload()),
+            onDismiss: _dismissUpdate,
+          ),
+        ],
       ),
     );
   }
@@ -225,6 +226,28 @@ extension _ReaderViewSurface on _ReaderViewState {
       visible: !(_immersive || _searching),
       fromTop: false,
       child: _bottomBar(),
+    );
+  }
+
+  /// Where the reader is, for as long as the bar that says so is away.
+  Widget _pageBadge(BuildContext context) {
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Center(
+        child: ReaderPageBadge(
+          visible: _immersive || _searching,
+          currentPage: _state.lastPage,
+          pageCount: _pageCount,
+          hasCoverPage: _hasCoverPage,
+          chapterTitle: _chapterFor(_state.lastPage),
+          onDarkPage: _onDarkPage,
+          onTap: () {
+            if (_searching) return;
+            _setImmersive(false);
+          },
+        ),
+      ),
     );
   }
 
@@ -250,6 +273,7 @@ extension _ReaderViewSurface on _ReaderViewState {
   Widget _loadingBody(ReaderDocumentLoader loader) {
     return ReaderDownloadState(
       loader: loader,
+      title: _title,
       onRetry: () => unawaited(_retryDownload()),
       onOpenPaywall: widget.onOpenPaywall,
     );
@@ -282,42 +306,59 @@ extension _ReaderViewSurface on _ReaderViewState {
 /// changes the size of the box the book is laid out in moves that line. It
 /// keeps its space in the layer either way — nothing else is laid out against
 /// it, because the page is a sibling filling the whole screen.
+///
+/// A layer with something stacked *under* it, the top bar, sets [collapse]: its
+/// height then closes up as it leaves, so what is under it moves up to the edge
+/// rather than being left hanging where the bar was. That is layout inside the
+/// overlay only — the page beneath is a sibling and never feels it.
 class _ChromeLayer extends StatelessWidget {
   const _ChromeLayer({
     required this.visible,
     required this.fromTop,
     required this.child,
+    this.collapse = false,
   });
 
   final bool visible;
 
   /// Which edge it leaves by. The top bar goes up, the bottom bar goes down.
   final bool fromTop;
+  final bool collapse;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final reduced = AppMotion.reducedMotion(context);
     final duration = reduced ? Duration.zero : AppMotion.medium;
+    final curve = visible ? AppMotion.enter : AppMotion.exit;
+    Widget layer = AnimatedSlide(
+      offset: visible ? Offset.zero : Offset(0, fromTop ? -1 : 1),
+      duration: duration,
+      curve: curve,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: duration,
+        curve: curve,
+        child: child,
+      ),
+    );
+    if (collapse) {
+      layer = ClipRect(
+        child: AnimatedAlign(
+          alignment: Alignment.topCenter,
+          heightFactor: visible ? 1 : 0,
+          duration: duration,
+          curve: curve,
+          child: layer,
+        ),
+      );
+    }
     return IgnorePointer(
       ignoring: !visible,
       // A bar that has slid off the top is still in the tree, so it has to be
       // taken out of the semantics tree by hand or a screen reader would offer
       // controls that are not on screen.
-      child: ExcludeSemantics(
-        excluding: !visible,
-        child: AnimatedSlide(
-          offset: visible ? Offset.zero : Offset(0, fromTop ? -1 : 1),
-          duration: duration,
-          curve: visible ? AppMotion.enter : AppMotion.exit,
-          child: AnimatedOpacity(
-            opacity: visible ? 1 : 0,
-            duration: duration,
-            curve: visible ? AppMotion.enter : AppMotion.exit,
-            child: child,
-          ),
-        ),
-      ),
+      child: ExcludeSemantics(excluding: !visible, child: layer),
     );
   }
 }

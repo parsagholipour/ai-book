@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,7 +46,10 @@ class MentionChipsRow extends ConsumerWidget {
         child: Material(
           color: colors.surface,
           child: SizedBox(
-            height: 42,
+            height: math.max(
+              42,
+              MediaQuery.textScalerOf(context).scale(20) + 22,
+            ),
             child: ListView.separated(
               key: const ValueKey('attached-mentions-row'),
               scrollDirection: Axis.horizontal,
@@ -82,7 +87,7 @@ class _MentionChip extends StatelessWidget {
     final colors = theme.colorScheme;
     final saved = character;
     return Container(
-      padding: const EdgeInsets.fromLTRB(6, 4, 10, 4),
+      padding: const EdgeInsetsDirectional.fromSTEB(6, 4, 10, 4),
       decoration: BoxDecoration(
         // A surface tone, never the primary fill: this reports state next to
         // the composer, it is not a control and not a chat bubble.

@@ -108,6 +108,70 @@ void main() {
     expect(revisionMessage, contains('Answer: Forgiveness, Justice'));
   });
 
+  testWidgets('the approval bar quotes the cost and says when the reader is '
+      'short, without blocking the tap', (tester) async {
+    var approved = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlanApprovalBar(
+            estimate: 420,
+            available: 300,
+            onApprove: () => approved++,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('≈ 420 credits'), findsOneWidget);
+    expect(
+      find.text(
+        'Book after approval: 420 credits. You have 300 available. Planning is not charged again.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('You are 120 credits short — approving opens the top-up.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Approve and start writing'));
+    expect(approved, 1);
+  });
+
+  testWidgets('a revision suggestion fills the box for editing, it does not '
+      'send', (tester) async {
+    final controller = TextEditingController();
+    final sent = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              ProjectPlanReview(
+                project: fakeProjectWithPlan(),
+                plan: fakePlan(),
+                billing: fakeBilling(),
+                revisionController: controller,
+                busyAction: null,
+                onQuestionAnswers: (_) async {},
+                onRevisionRequest: (message) async => sent.add(message),
+                onApprovePlan: () async {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.ensureVisible(find.text('Make it shorter'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Make it shorter'));
+    await tester.pump();
+
+    expect(controller.text, 'Make it shorter');
+    expect(sent, isEmpty);
+  });
+
   // A continuation whose outline call failed appends chapters with no title —
   // stored empty on purpose, rather than named in English for a book written in
   // another language. The tile rendered that as a blank heading over the summary.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import 'chat_reply_quote.dart';
+import 'plan_build_progress.dart';
 
 // The chat's text-entry widgets: the bottom composer with the strip that names
 // what it is replying to, and the inline editor a sent message turns into when
@@ -21,6 +22,7 @@ class ProjectChatComposerBar extends StatelessWidget {
     this.replyTarget,
     this.onOpenReply,
     this.onCancelReply,
+    this.focusNode,
     super.key,
   });
 
@@ -31,6 +33,10 @@ class ProjectChatComposerBar extends StatelessWidget {
   final ChatReplyTarget? replyTarget;
   final VoidCallback? onOpenReply;
   final VoidCallback? onCancelReply;
+
+  /// Lets the screen put the cursor in the field after filling it from a
+  /// suggestion.
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +55,7 @@ class ProjectChatComposerBar extends StatelessWidget {
           sending: sending,
           onSend: onSend,
           lockedLabel: lockedLabel,
+          focusNode: focusNode,
         ),
       ],
     );
@@ -79,6 +86,7 @@ class InlineMessageEditor extends StatelessWidget {
           autofocus: true,
           minLines: 1,
           maxLines: 6,
+          textCapitalization: TextCapitalization.sentences,
           textInputAction: TextInputAction.newline,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
@@ -115,12 +123,14 @@ class ProjectChatComposer extends StatelessWidget {
     required this.sending,
     required this.onSend,
     this.lockedLabel,
+    this.focusNode,
     super.key,
   });
 
   final TextEditingController controller;
   final bool sending;
   final VoidCallback onSend;
+  final FocusNode? focusNode;
 
   /// Why the composer is closed, or null while it is open.
   ///
@@ -133,6 +143,10 @@ class ProjectChatComposer extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final locked = lockedLabel != null;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppRadii.card + 6),
+      borderSide: BorderSide(color: colors.outlineVariant),
+    );
     return SafeArea(
       top: false,
       child: DecoratedBox(
@@ -141,39 +155,94 @@ class ProjectChatComposer extends StatelessWidget {
           border: Border(top: BorderSide(color: colors.outlineVariant)),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            AppSpacing.xs + 2,
+            AppSpacing.sm,
+            AppSpacing.sm,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: TextField(
                   controller: controller,
+                  focusNode: focusNode,
                   enabled: !locked,
                   minLines: 1,
                   maxLines: 5,
+                  textCapitalization: TextCapitalization.sentences,
                   textInputAction: TextInputAction.newline,
                   decoration: InputDecoration(
                     hintText: lockedLabel ?? 'Ask or request an edit…',
-                    border: const OutlineInputBorder(),
+                    filled: true,
+                    fillColor: locked
+                        ? colors.surfaceContainerLow
+                        : colors.surfaceContainerLowest,
+                    contentPadding: const EdgeInsetsDirectional.fromSTEB(
+                      AppSpacing.md,
+                      14,
+                      AppSpacing.md,
+                      14,
+                    ),
+                    // While the book is being rebuilt the field says so, and
+                    // the sparkle only turns for as long as that is true.
+                    prefixIcon: locked
+                        ? Padding(
+                            padding: const EdgeInsetsDirectional.only(
+                              start: AppSpacing.sm,
+                              end: AppSpacing.xs,
+                            ),
+                            child: Center(
+                              widthFactor: 1,
+                              child: ExcludeSemantics(
+                                child: PlanBuildSparkle(
+                                  color: colors.primary,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          )
+                        : null,
+                    border: border,
+                    enabledBorder: border,
+                    disabledBorder: border,
+                    focusedBorder: border.copyWith(
+                      borderSide: BorderSide(color: colors.primary, width: 1.6),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.xs),
+              // The label lives on the button's own child, not on a wrapper: a
+              // FilledButton is its own semantics container, so a label on a
+              // parent lands on a node nobody can activate and leaves the real
+              // button unnamed to a screen reader.
               Tooltip(
                 message: 'Send message',
-                child: Semantics(
-                  label: sending ? 'Sending message' : 'Send message',
+                excludeFromSemantics: true,
+                child: SizedBox.square(
+                  dimension: AppSizes.minimumTouchTarget + 4,
                   child: FilledButton(
                     // Compact icon-only composer control: its geometry is
                     // intentionally distinct from ordinary labelled actions.
+                    style: FilledButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.square(AppSizes.minimumTouchTarget + 4),
+                      shape: const CircleBorder(),
+                    ),
                     onPressed: sending || locked ? null : onSend,
                     child: sending
                         ? const SizedBox.square(
                             dimension: AppSizes.buttonProgressIndicator,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              semanticsLabel: 'Sending message',
+                            ),
                           )
-                        : const ExcludeSemantics(
-                            child: Icon(Icons.send_outlined),
+                        : const Icon(
+                            Icons.send_outlined,
+                            semanticLabel: 'Send message',
                           ),
                   ),
                 ),

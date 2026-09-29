@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../../../shared/ui/haptics.dart';
 
 enum _MessageAction { copy, reply, edit }
 
@@ -14,6 +15,7 @@ Future<void> showMessageActionsMenu({
 }) async {
   final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
   if (overlay is! RenderBox) return;
+  AppHaptics.longPress();
 
   final action = await showMenu<_MessageAction>(
     context: context,

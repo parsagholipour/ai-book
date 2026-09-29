@@ -31,7 +31,10 @@ const int _jpegQuality = 92;
 Uint8List? prepareCharacterCropSource(Uint8List raw) {
   final decoded = img.decodeImage(raw);
   if (decoded == null) return null;
-  return img.encodeJpg(_fitted(img.bakeOrientation(decoded)), quality: _jpegQuality);
+  return img.encodeJpg(
+    _fitted(img.bakeOrientation(decoded)),
+    quality: _jpegQuality,
+  );
 }
 
 /// What a rotate button asks for: [CharacterCropRotation.source] is always the

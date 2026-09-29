@@ -68,6 +68,7 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
     final colors = Theme.of(context).colorScheme;
     final theme = Theme.of(context).textTheme;
     final multi = widget.multiSelect && widget.options.length > 1;
+    final picked = _selected.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -76,14 +77,14 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
             children: [
               Icon(
                 Icons.keyboard_outlined,
-                size: 16,
+                size: 18,
                 color: colors.onSurfaceVariant,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   widget.openAnswerHint!,
-                  style: theme.bodySmall?.copyWith(
+                  style: theme.bodyMedium?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
                 ),
@@ -91,14 +92,44 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
             ],
           ),
         if (multi) ...[
-          Text(
-            widget.multiSelectHint ?? 'Pick as many as you like.',
-            style: theme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          // How many it takes is the thing a multi question has to say up
+          // front, and how many are chosen so far is the thing the button
+          // below it repeats — so the count sits here, beside the rule.
+          Row(
+            children: [
+              Icon(
+                Icons.checklist_rounded,
+                size: 18,
+                color: colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.multiSelectHint ?? 'Pick as many as you like.',
+                  style: theme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (picked > 0) ...[
+                const SizedBox(width: 8),
+                Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    '$picked selected',
+                    style: theme.labelMedium?.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
         ],
         for (var i = 0; i < widget.options.length; i++) ...[
-          if (i > 0) const SizedBox(height: 4),
+          if (i > 0) const SizedBox(height: 6),
           _QuestionOptionRow(
             option: widget.options[i],
             leading: multi
@@ -113,26 +144,40 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
             selected: multi && _selected.contains(widget.options[i]),
             enabled: widget.enabled,
             onTap: multi
-                ? () => _toggle(widget.options[i])
-                : () => widget.onSelect(widget.options[i]),
+                ? () {
+                    AppHaptics.selection();
+                    _toggle(widget.options[i]);
+                  }
+                : () {
+                    AppHaptics.selection();
+                    widget.onSelect(widget.options[i]);
+                  },
           ),
         ],
-        const SizedBox(height: 4),
-        Row(
+        const SizedBox(height: 6),
+        // A Wrap, not a Row: Custom, Skip and Send outgrow one line at a large
+        // text size, and Send drops below them instead of overflowing.
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            if (widget.onCustom != null)
-              AppButton.text(
-                onPressed: widget.enabled ? widget.onCustom : null,
-                leading: const Icon(Icons.edit_outlined, size: 16),
-                label: 'Custom…',
-              ),
-            AppButton.text(
-              onPressed: widget.enabled ? widget.onSkip : null,
-              leading: const Icon(Icons.skip_next_outlined, size: 18),
-              label: 'Skip',
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.onCustom != null)
+                  AppButton.text(
+                    onPressed: widget.enabled ? widget.onCustom : null,
+                    leading: const Icon(Icons.edit_outlined, size: 16),
+                    label: 'Custom…',
+                  ),
+                AppButton.text(
+                  onPressed: widget.enabled ? widget.onSkip : null,
+                  leading: const Icon(Icons.skip_next_outlined, size: 18),
+                  label: 'Skip',
+                ),
+              ],
             ),
-            if (multi) ...[
-              const Spacer(),
+            if (multi)
               AppButton.primary(
                 onPressed: widget.enabled && _selected.isNotEmpty
                     ? () => widget.onSelect(_sendableAnswer())
@@ -142,7 +187,6 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
                     ? 'Send answer'
                     : 'Send ${_selected.length} answers',
               ),
-            ],
           ],
         ),
       ],
@@ -176,43 +220,65 @@ class _QuestionOptionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final theme = Theme.of(context).textTheme;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadii.control),
+      side: BorderSide(
+        color: selected
+            ? colors.primary.withValues(alpha: 0.7)
+            : colors.outlineVariant,
+        width: selected ? 1.6 : 1,
+      ),
+    );
     return Semantics(
       button: leading != null,
       checked: leading == null ? selected : null,
-      child: Material(
-        color: selected ? colors.primaryContainer : colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: enabled ? onTap : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 22,
-                  child:
-                      leading ??
-                      Icon(
-                        selected
-                            ? Icons.check_box_rounded
-                            : Icons.check_box_outline_blank_rounded,
-                        size: 20,
-                        color: selected ? colors.primary : colors.outline,
-                      ),
+      child: AnimatedContainer(
+        duration: AppMotion.fast,
+        curve: AppMotion.standard,
+        decoration: ShapeDecoration(
+          color: selected ? colors.primaryContainer : colors.surfaceContainer,
+          shape: shape,
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            customBorder: shape,
+            onTap: enabled ? onTap : null,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 46),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    option,
-                    style: theme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: selected ? colors.onPrimaryContainer : null,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      child:
+                          leading ??
+                          Icon(
+                            selected
+                                ? Icons.check_box_rounded
+                                : Icons.check_box_outline_blank_rounded,
+                            size: 22,
+                            color: selected ? colors.primary : colors.outline,
+                          ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        option,
+                        style: theme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: selected ? colors.onPrimaryContainer : null,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

@@ -170,6 +170,12 @@ class _ScrollableFooterContextState extends State<_ScrollableFooterContext> {
   }
 }
 
+/// The share of the space above the keyboard the footer may take: half, and a
+/// little more as the text grows, because the composer and the Build pill are
+/// pinned and grow with it (at 2x on a 568dp phone they alone outrun half).
+double _footerShare(BuildContext context) =>
+    0.5 + 0.1 * (MediaQuery.textScalerOf(context).scale(1) - 1).clamp(0.0, 1.0);
+
 /// Hard cap on footer height so the transcript always keeps usable space.
 /// Interactive footers split their scrollable context from pinned controls.
 class _FooterLimiter extends StatelessWidget {
@@ -240,8 +246,12 @@ class _ConversationFooterState extends State<_ConversationFooter> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final question = widget.state.question;
-    final disabled = widget.state.isBusy;
+    final building = widget.state.building;
     final keyboardOpen = widget.keyboardOpen;
+    // On a blank page the welcome offers the examples and there is nothing to
+    // build yet; the quick replies and the button would only repeat and dead-end.
+    final blankPage = _showsWelcome(widget.state, isInOutputStage: false);
+    final disabled = widget.state.isBusy;
 
     return Material(
       color: colors.surface,
@@ -255,7 +265,7 @@ class _ConversationFooterState extends State<_ConversationFooter> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (question != null ||
-                  widget.state.quickReplies.isNotEmpty ||
+                  (widget.state.quickReplies.isNotEmpty && !blankPage) ||
                   widget.state.pendingAttachments.isNotEmpty)
                 Flexible(
                   fit: FlexFit.loose,
@@ -278,7 +288,8 @@ class _ConversationFooterState extends State<_ConversationFooter> {
                             onSelect: widget.onAnswerOption,
                             onSkipQuestion: widget.onSkipQuestion,
                           )
-                        else if (widget.state.quickReplies.isNotEmpty)
+                        else if (widget.state.quickReplies.isNotEmpty &&
+                            !blankPage)
                           Visibility(
                             visible: !keyboardOpen,
                             child: _ChipRow(
@@ -290,7 +301,8 @@ class _ConversationFooterState extends State<_ConversationFooter> {
                           ),
                         if (question != null)
                           const SizedBox(height: 6)
-                        else if (widget.state.quickReplies.isNotEmpty)
+                        else if (widget.state.quickReplies.isNotEmpty &&
+                            !blankPage)
                           const SizedBox(height: 8),
                         if (widget.state.pendingAttachments.isNotEmpty) ...[
                           _PendingAttachmentsRow(
@@ -307,9 +319,11 @@ class _ConversationFooterState extends State<_ConversationFooter> {
               _Composer(
                 controller: widget.composerController,
                 focusNode: widget.composerFocusNode,
-                enabled: !disabled,
+                enabled: !building,
+                busy: widget.state.assistantTyping,
                 hasQuestion: question != null,
                 hasAttachments: widget.state.pendingAttachments.isNotEmpty,
+                hasStarted: !blankPage,
                 canSendWithoutText:
                     widget.state.hasReadyAttachments &&
                     !widget.state.hasUploadingAttachments,
@@ -317,209 +331,33 @@ class _ConversationFooterState extends State<_ConversationFooter> {
                 onAttach: widget.onAttach,
                 onSend: widget.onSend,
               ),
-              const SizedBox(height: 8),
-              _BuildButton(
-                canBuild: widget.state.canBuild,
-                phase: widget.state.buildPhase,
-                skipsQuestion: question != null,
-                onBuild: widget.onBuild,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PendingAttachmentsRow extends StatelessWidget {
-  const _PendingAttachmentsRow({
-    required this.attachments,
-    required this.onRetry,
-    required this.onRemove,
-  });
-
-  final List<PendingCreationAttachment> attachments;
-  final ValueChanged<String> onRetry;
-  final ValueChanged<String> onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 52,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: attachments.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final attachment = attachments[index];
-          return _PendingAttachmentChip(
-            attachment: attachment,
-            onRetry: () => onRetry(attachment.localId),
-            onRemove: () => onRemove(attachment.localId),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _PendingAttachmentChip extends ConsumerWidget {
-  const _PendingAttachmentChip({
-    required this.attachment,
-    required this.onRetry,
-    required this.onRemove,
-  });
-
-  final PendingCreationAttachment attachment;
-  final VoidCallback onRetry;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = Theme.of(context).colorScheme;
-    final theme = Theme.of(context).textTheme;
-    final failedDetail = attachment.error?.trim();
-    final statusLabel = attachment.isUploading
-        ? 'Reading…'
-        : attachment.isFailed
-        ? (failedDetail == null || failedDetail.isEmpty
-              ? 'Failed — tap to retry'
-              : failedDetail)
-        : attachment.attachment?.pages != null
-        ? '${attachment.attachment!.pages} pages read'
-        : 'Ready to send';
-    return Semantics(
-      label: 'Attachment ${attachment.name}, $statusLabel',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: attachment.isFailed
-            ? onRetry
-            : attachment.isReady
-            ? () => unawaited(_previewOrOpen(context, ref))
-            : null,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: attachment.isFailed
-                ? colors.errorContainer
-                : colors.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _attachmentLeading(colors, ref),
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 140),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      attachment.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.labelMedium,
-                    ),
-                    Text(
-                      statusLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.labelSmall?.copyWith(
-                        color: attachment.isFailed
-                            ? colors.onErrorContainer
-                            : colors.onSurfaceVariant,
+              // Comes in with the first message instead of sitting greyed out
+              // under an empty chat.
+              AnimatedSize(
+                duration: AppMotion.reducedMotion(context)
+                    ? Duration.zero
+                    : AppMotion.medium,
+                curve: AppMotion.enter,
+                alignment: Alignment.topCenter,
+                child: blankPage
+                    ? const SizedBox(width: double.infinity)
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 8),
+                          _BuildButton(
+                            canBuild: widget.state.canBuild,
+                            phase: widget.state.buildPhase,
+                            skipsQuestion: question != null,
+                            onBuild: widget.onBuild,
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 4),
-              InkWell(
-                customBorder: const CircleBorder(),
-                onTap: onRemove,
-                child: const Padding(
-                  padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close, size: 16),
-                ),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Future<void> _previewOrOpen(BuildContext context, WidgetRef ref) async {
-    final localPath = attachment.localPath;
-    final remoteUrl = attachment.attachment?.url;
-    if (attachment.isPhoto) {
-      final resolved = resolveChatAssetUri(ref: ref, remoteUrl: remoteUrl);
-      await showChatImagePreview(
-        context: context,
-        localPath: localPath,
-        remoteUrl: resolved?.uri,
-        headers: resolved?.headers,
-        semanticLabel: attachment.name,
-      );
-      return;
-    }
-    await openChatAttachment(
-      context: context,
-      ref: ref,
-      name: attachment.name,
-      localPath: localPath,
-      remoteUrl: remoteUrl,
-      mimeType: attachment.mimeType,
-    );
-  }
-
-  Widget _attachmentLeading(ColorScheme colors, WidgetRef ref) {
-    if (attachment.isUploading) {
-      return const SizedBox.square(
-        dimension: 20,
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
-    }
-    if (attachment.isFailed) {
-      return Icon(Icons.refresh, size: 20, color: colors.onErrorContainer);
-    }
-    final localPath = attachment.localPath;
-    if (attachment.isPhoto &&
-        localPath != null &&
-        File(localPath).existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: Image.file(
-          File(localPath),
-          width: 32,
-          height: 32,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => const Icon(Icons.photo_outlined, size: 20),
-        ),
-      );
-    }
-    final remoteUrl = attachment.attachment?.url;
-    if (attachment.isPhoto && remoteUrl != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: AuthedNetworkImage(
-          url: remoteUrl,
-          cacheBuster: null,
-          width: 32,
-          height: 32,
-          fit: BoxFit.cover,
-          logicalDecodeWidth: 32,
-          loadingPlaceholder: const Icon(Icons.photo_outlined, size: 20),
-          errorPlaceholder: const Icon(Icons.photo_outlined, size: 20),
-        ),
-      );
-    }
-    return Icon(
-      attachment.isPhoto ? Icons.photo_outlined : Icons.description_outlined,
-      size: 20,
     );
   }
 }
@@ -654,7 +492,8 @@ class _ChipRowState extends State<_ChipRow> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return SizedBox(
-      height: 40,
+      // Grows with the text, or a chip at large sizes is clipped top and bottom.
+      height: math.max(40, MediaQuery.textScalerOf(context).scale(24) + 16),
       child: ShaderMask(
         shaderCallback: (bounds) => LinearGradient(
           begin: AlignmentDirectional.centerStart,
@@ -697,13 +536,21 @@ class _ChipRowState extends State<_ChipRow> {
   }
 }
 
+/// What the server accepts in one creation-chat message (`message` in the
+/// creation message and session-start bodies). There is no route to ask, so this
+/// mirrors it: past it the send button closes and the counter says why, instead
+/// of the request coming back as a 400.
+const _creationMessageMaxLength = 4000;
+
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.focusNode,
     required this.enabled,
+    required this.busy,
     required this.hasQuestion,
     required this.hasAttachments,
+    required this.hasStarted,
     required this.canSendWithoutText,
     required this.waitingOnAttachments,
     required this.onAttach,
@@ -712,9 +559,19 @@ class _Composer extends StatelessWidget {
 
   final TextEditingController controller;
   final FocusNode focusNode;
+
+  /// Whether the box takes text. It stays open while a reply is on its way, so
+  /// the next thought can be typed ahead; only the send button waits.
   final bool enabled;
+
+  /// A reply is being written: the send button shows progress.
+  final bool busy;
   final bool hasQuestion;
   final bool hasAttachments;
+
+  /// The reader has already said something, so the box is for the next turn
+  /// rather than for the opening idea.
+  final bool hasStarted;
 
   /// Ready attachments allow sending with an empty message.
   final bool canSendWithoutText;
@@ -726,61 +583,26 @@ class _Composer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        IconButton(
-          tooltip: 'Attach a photo, document, or notes',
-          onPressed: enabled ? onAttach : null,
-          icon: Icon(
-            hasAttachments ? Icons.attach_file : Icons.attach_file_outlined,
-            color: hasAttachments ? colors.primary : null,
-          ),
-        ),
-        Expanded(
-          child: TextField(
-            controller: controller,
-            focusNode: focusNode,
-            enabled: enabled,
-            minLines: 1,
-            maxLines: 5,
-            textInputAction: TextInputAction.newline,
-            decoration: InputDecoration(
-              hintText: hasAttachments
-                  ? 'Add a note about the file…'
-                  : hasQuestion
-                  ? 'Answer the question above…'
-                  : 'Describe your book…',
-              filled: true,
-              fillColor: colors.surfaceContainerHigh,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 6),
-        ValueListenableBuilder<TextEditingValue>(
-          valueListenable: controller,
-          builder: (context, value, _) {
-            final canSend =
-                enabled &&
-                !waitingOnAttachments &&
-                (value.text.trim().isNotEmpty || canSendWithoutText);
-            return IconButton.filled(
-              tooltip: waitingOnAttachments ? 'Reading your file…' : 'Send',
-              onPressed: canSend ? () => onSend(controller.text) : null,
-              icon: const Icon(Icons.send_rounded),
-            );
-          },
-        ),
-      ],
+    return ChatComposerField(
+      controller: controller,
+      focusNode: focusNode,
+      enabled: enabled,
+      busy: busy,
+      canSendWithoutText: canSendWithoutText,
+      holdSend: waitingOnAttachments,
+      sendTooltip: waitingOnAttachments ? 'Reading your file…' : 'Send',
+      onAttach: onAttach,
+      attachEnabled: !busy,
+      attachActive: hasAttachments,
+      maxLength: _creationMessageMaxLength,
+      hintText: hasAttachments
+          ? 'Add a note about the file…'
+          : hasQuestion
+          ? 'Answer the question above…'
+          : hasStarted
+          ? 'Reply, or add more detail…'
+          : 'Describe your book…',
+      onSend: onSend,
     );
   }
 }

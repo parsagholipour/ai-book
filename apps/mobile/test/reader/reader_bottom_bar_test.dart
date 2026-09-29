@@ -120,7 +120,7 @@ void main() {
 
     expect(find.text('Page 2 of 13 · 15%'), findsOneWidget);
     // Buttons still there — the chapter is what is missing, not the bar.
-    expect(find.byIcon(Icons.list_alt_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.toc), findsOneWidget);
   });
 
   testWidgets('skips the cover in displayed numbers', (tester) async {
@@ -173,7 +173,7 @@ void main() {
       onListen: () => listen++,
     );
 
-    await tester.tap(find.byIcon(Icons.list_alt_outlined));
+    await tester.tap(find.byIcon(Icons.toc));
     await tester.tap(find.byIcon(Icons.bookmark_outline));
     await tester.tap(find.byIcon(Icons.headphones_outlined));
     await tester.pumpAndSettle();

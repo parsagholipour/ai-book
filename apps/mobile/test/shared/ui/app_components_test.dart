@@ -148,7 +148,7 @@ void main() {
 
     expect(find.text('Plan requested'), findsOneWidget);
     final filled = tester.widget<FilledButton>(find.byType(FilledButton));
-    expect(filled.style?.alignment, Alignment.centerLeft);
+    expect(filled.style?.alignment, AlignmentDirectional.centerStart);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('waiting-action')),
@@ -449,7 +449,12 @@ void main() {
     );
     semanticsHandle.dispose();
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Start book'));
+    await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Start book'));
+    await tester.ensureVisible(
+      find.widgetWithText(OutlinedButton, 'Try again'),
+    );
     await tester.tap(find.widgetWithText(OutlinedButton, 'Try again'));
     await tester.pump();
 

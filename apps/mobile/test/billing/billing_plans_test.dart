@@ -384,7 +384,7 @@ void main() {
       expect(find.text('3 of 3 illustrated books used this month'), findsOneWidget);
       expect(
         find.text(
-          'Free includes 1000 welcome credits, 1000 credits every month, '
+          'Free includes 1,000 welcome credits, 1,000 credits every month, '
           'and 3 illustrated books each month',
         ),
         findsOneWidget,
@@ -418,7 +418,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Max plan'), findsOneWidget);
-      expect(find.text('74000 of 80000 monthly credits left'), findsOneWidget);
+      expect(find.text('74,000 of 80,000 monthly credits left'), findsOneWidget);
       expect(find.textContaining('Renews'), findsOneWidget);
       // Cancelling belongs to Play, so the card sends them there rather than
       // pretending the app can do it.

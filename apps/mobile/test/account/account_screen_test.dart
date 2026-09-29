@@ -8,6 +8,7 @@ import 'package:tomeza/features/account/data/app_version.dart';
 import 'package:tomeza/features/account/data/appearance_store.dart';
 import 'package:tomeza/features/account/domain/appearance_prefs.dart';
 import 'package:tomeza/features/account/presentation/account_plan_screen.dart';
+import 'package:tomeza/features/account/presentation/account_privacy_screen.dart';
 import 'package:tomeza/features/account/presentation/account_screen.dart';
 import 'package:tomeza/features/account/presentation/archived_chats_screen.dart';
 import 'package:tomeza/features/auth/data/auth_repository.dart';
@@ -53,6 +54,51 @@ void main() {
     expect(find.text('https://example.com/privacy'), findsOneWidget);
     expect(find.text('https://example.com/terms'), findsOneWidget);
     expect(find.text('Tomeza 1.0.0 (1)'), findsOneWidget);
+  });
+
+  testWidgets('the overview card carries one action, and it is the upgrade', (
+    tester,
+  ) async {
+    await _pumpHub(tester);
+
+    expect(find.widgetWithText(FilledButton, 'Upgrade'), findsOneWidget);
+    expect(find.text('Manage plan'), findsNothing);
+    expect(find.text('Add credits'), findsNothing);
+  });
+
+  testWidgets('the deletion dialog sends nothing until it is confirmed', (
+    tester,
+  ) async {
+    String? result = 'untouched';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildTomezaLightTheme(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () async => result = await showDialog<String>(
+                context: context,
+                builder: (_) => const AccountDeletionRequestDialog(),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(result, isNull);
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'moving on');
+    await tester.tap(find.text('Send request'));
+    await tester.pumpAndSettle();
+    expect(result, 'moving on');
   });
 
   testWidgets('the plan row opens Plan & billing', (tester) async {

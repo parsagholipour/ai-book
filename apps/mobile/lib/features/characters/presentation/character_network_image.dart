@@ -21,6 +21,7 @@ class CharacterNetworkImage extends StatelessWidget {
     this.semanticLabel,
     this.placeholder,
     this.errorPlaceholder,
+    this.fill = false,
     super.key,
   });
 
@@ -33,6 +34,14 @@ class CharacterNetworkImage extends StatelessWidget {
   final Widget? placeholder;
   final Widget? errorPlaceholder;
 
+  /// Fills whatever box it is given. The cross-fade below wraps the image in an
+  /// `AnimatedSwitcher`, whose stack hands its child *loose* constraints — so
+  /// without an explicit size a picture whose aspect differs from the box is
+  /// drawn at its own aspect, centred, with the box's colour showing either
+  /// side. Header and strip tiles set this; the fullscreen viewer, which wants
+  /// `contain` inside an unbounded pager page, does not.
+  final bool fill;
+
   @override
   Widget build(BuildContext context) {
     final waiting = placeholder ?? const _PictureShimmer();
@@ -41,6 +50,8 @@ class CharacterNetworkImage extends StatelessWidget {
       url: url,
       cacheBuster: null,
       fit: fit,
+      width: fill ? double.infinity : null,
+      height: fill ? double.infinity : null,
       logicalDecodeWidth: decodeWidth,
       semanticLabel: semanticLabel,
       loadingPlaceholder: waiting,

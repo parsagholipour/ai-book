@@ -110,6 +110,130 @@ void main() {
     },
   );
 
+  testWidgets('each book says its state in a chip under a two-line title', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      shelfTestApp([
+        shelfProject(
+          id: 'done',
+          title: 'A Long Title About The Sea And Everything In It',
+          status: 'complete',
+          hasPlan: true,
+          exportsReady: true,
+          updatedAt: DateTime.utc(2026, 6, 3),
+        ),
+        shelfProject(
+          id: 'broken',
+          title: 'Broken Book',
+          status: 'failed',
+          hasPlan: true,
+          updatedAt: DateTime.utc(2026, 6, 2),
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ready'), findsOneWidget);
+    expect(find.text('Needs attention'), findsOneWidget);
+    final title = tester.widget<Text>(
+      find.text('A Long Title About The Sea And Everything In It').last,
+    );
+    expect(title.maxLines, 2);
+  });
+
+  testWidgets('a long shelf ends in a See all tile that opens the library', (
+    tester,
+  ) async {
+    // The shelf lives in the drawer, which is closed on the way out: host it on
+    // a route above a base page so that close has something to land on.
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(path: '/', builder: (context, state) => const Text('Home')),
+        GoRoute(
+          path: '/shelf',
+          builder: (context, state) =>
+              const Scaffold(body: SizedBox(width: 400, child: BookShelf())),
+        ),
+        GoRoute(
+          path: '/books',
+          builder: (context, state) => const Text('The library'),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    final books = [
+      for (var i = 0; i < 30; i++)
+        shelfProject(
+          id: 'book-$i',
+          title: 'Book $i',
+          status: 'complete',
+          hasPlan: true,
+          exportsReady: true,
+          updatedAt: DateTime.utc(2026, 6, 1).add(Duration(days: i)),
+        ),
+    ];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          projectsProvider.overrideWith((ref) async => books),
+          projectStatusProvider.overrideWith(
+            (ref, id) => const Stream<MobileProjectStatus>.empty(),
+          ),
+          billingProvider.overrideWith((ref) async => billingWith(900)),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    unawaited(router.push('/shelf'));
+    await tester.pumpAndSettle();
+
+    // The count on the destination row is the whole library; the strip lays out
+    // only the most recent dozen and hands over to the last tile.
+    expect(find.text('30'), findsWidgets);
+    expect(find.byType(BookCover), findsNWidgets(12));
+    expect(find.bySemanticsLabel('See all 30 books'), findsOneWidget);
+    await tester.ensureVisible(find.text('See all'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('See all'));
+    await tester.pumpAndSettle();
+    expect(find.text('The library'), findsOneWidget);
+  });
+
+  testWidgets('the shelf lays out at large text without overflowing', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      shelfTestApp([
+        shelfProject(
+          id: 'broken',
+          title: 'A Book With A Fairly Long Name',
+          status: 'failed',
+          hasPlan: true,
+        ),
+        shelfProject(
+          id: 'writing',
+          title: 'Still Writing',
+          status: 'generating',
+          hasPlan: true,
+          progressPercent: 42,
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('42% complete'), findsOneWidget);
+  });
+
   testWidgets('ideas without a plan are not shelved as books', (tester) async {
     await tester.pumpWidget(
       shelfTestApp([
@@ -201,21 +325,18 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      shelfTestApp(
-        [
-          shelfProject(
-            id: 'done',
-            title: 'Finished Book',
-            status: 'complete',
-            hasPlan: true,
-            exportsReady: true,
-            epubReady: true,
-            docxReady: true,
-            includeDocx: true,
-          ),
-        ],
-        creator: true,
-      ),
+      shelfTestApp([
+        shelfProject(
+          id: 'done',
+          title: 'Finished Book',
+          status: 'complete',
+          hasPlan: true,
+          exportsReady: true,
+          epubReady: true,
+          docxReady: true,
+          includeDocx: true,
+        ),
+      ], creator: true),
     );
     await tester.pumpAndSettle();
 

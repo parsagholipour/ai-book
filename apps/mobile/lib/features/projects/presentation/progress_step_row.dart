@@ -14,6 +14,7 @@ class ProgressStepRow extends StatelessWidget {
     required this.step,
     this.dense = true,
     this.showDetail = false,
+    this.inlineDetail = false,
     super.key,
   });
 
@@ -25,10 +26,16 @@ class ProgressStepRow extends StatelessWidget {
   /// Renders [MobileProjectStatusStep.detail] as a second line.
   final bool showDetail;
 
+  /// Draws the detail at the end of the label's own line instead of under it.
+  /// A step that has landed (or has not begun) is one quiet line, so the list
+  /// collapses to the step that is actually moving. The semantics are unchanged.
+  final bool inlineDetail;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final detail = showDetail ? step.detail : null;
+    final inline = inlineDetail && detail != null;
     final stateLabel = step.isDone
         ? 'Done'
         : step.isFailed
@@ -62,7 +69,7 @@ class ProgressStepRow extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: dense ? 3 : 5),
           child: Row(
-            crossAxisAlignment: detail == null
+            crossAxisAlignment: detail == null || inline
                 ? CrossAxisAlignment.center
                 : CrossAxisAlignment.start,
             children: [
@@ -81,22 +88,21 @@ class ProgressStepRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      step.label,
-                      style: dense
-                          ? Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: step.isActive
-                                  ? colors.onSurface
-                                  : colors.onSurfaceVariant,
-                              fontWeight: step.isActive
-                                  ? FontWeight.w700
-                                  : null,
-                            )
-                          : Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                    ),
-                    if (detail != null)
+                    if (inline)
+                      Row(
+                        children: [
+                          Expanded(child: _label(context, colors)),
+                          const SizedBox(width: 8),
+                          Text(
+                            detail,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: colors.onSurfaceVariant),
+                          ),
+                        ],
+                      )
+                    else
+                      _label(context, colors),
+                    if (detail != null && !inline)
                       Text(
                         detail,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -110,6 +116,19 @@ class ProgressStepRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _label(BuildContext context, ColorScheme colors) {
+    final text = Theme.of(context).textTheme;
+    return Text(
+      step.label,
+      style: dense
+          ? text.bodySmall?.copyWith(
+              color: step.isActive ? colors.onSurface : colors.onSurfaceVariant,
+              fontWeight: step.isActive ? FontWeight.w700 : null,
+            )
+          : text.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
     );
   }
 }

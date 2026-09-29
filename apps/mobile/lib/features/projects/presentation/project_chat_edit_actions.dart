@@ -52,6 +52,17 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
 
   // Provided by the screen this mixin is applied to.
   TextEditingController get _controller;
+  FocusNode get _composerFocus;
+
+  /// The proposal whose Apply request is in flight, so its own card can show
+  /// the work starting rather than every card going quietly grey.
+  String? get _applyingProposalId;
+  set _applyingProposalId(String? value);
+
+  /// How each proposal ended in this session. The transcript stores no outcome
+  /// on a spent card, so this is the only place "Applied" versus "Cancelled"
+  /// exists; after a restart a spent card reads as closed.
+  Map<String, EditProposalOutcome> get _proposalOutcomes;
   bool get _sending;
   set _sending(bool value);
   bool get _editing;
@@ -135,6 +146,7 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
     final requestId = _newRequestId('proposal-apply');
     setState(() {
       _sending = true;
+      _applyingProposalId = proposalId;
       _clearCreditsReadyPrompt();
     });
     // Move to where the progress will appear before the request even returns.
@@ -149,7 +161,16 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
           );
       if (!mounted) return;
       _armFallingEdge(result.operation);
-      setState(() => _sending = false);
+      setState(() {
+        _sending = false;
+        _applyingProposalId = null;
+        // Only work that was actually queued settles the proposal: a reply
+        // that could not run it (credits, a book that moved on) leaves the
+        // card open to be tried again.
+        if (result.operation != null) {
+          _proposalOutcomes[proposalId] = EditProposalOutcome.applied;
+        }
+      });
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectStatusProvider(widget.projectId));
       ref.invalidate(billingProvider);
@@ -163,7 +184,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _sending = false);
+      setState(() {
+        _sending = false;
+        _applyingProposalId = null;
+      });
       ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
@@ -190,7 +214,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
             requestId: requestId,
           );
       if (!mounted) return;
-      setState(() => _sending = false);
+      setState(() {
+        _sending = false;
+        _proposalOutcomes[proposalId] = EditProposalOutcome.cancelled;
+      });
       ref.invalidate(projectChatProvider(widget.projectId));
       _scrollToBottomSoon();
     } catch (error) {
@@ -264,6 +291,34 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  /// Opens the edit history and carries out whatever the reader picked there.
+  Future<void> _openEditHistory() async {
+    final choice = await showEditHistorySheet(
+      context,
+      projectId: widget.projectId,
+    );
+    if (!mounted || choice == null) return;
+    final operation = choice.operation;
+    switch (choice.kind) {
+      case EditHistoryChoiceKind.seeChanges:
+        if (operation == null) return;
+        final action = await openEditChanges(
+          context,
+          projectId: widget.projectId,
+          operationId: operation.id,
+        );
+        if (!mounted) return;
+        if (action == EditChangesAction.undo) unawaited(_undoLastEdit());
+        if (action == EditChangesAction.redo) unawaited(_redoLastEdit());
+      case EditHistoryChoiceKind.undo:
+        unawaited(_undoLastEdit());
+      case EditHistoryChoiceKind.redo:
+        unawaited(_redoLastEdit());
+      case EditHistoryChoiceKind.askForChange:
+        _composerFocus.requestFocus();
     }
   }
 

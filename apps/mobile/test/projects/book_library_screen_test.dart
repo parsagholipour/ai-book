@@ -11,6 +11,7 @@ import 'package:tomeza/features/projects/domain/book_library.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/book_library_card.dart';
 import 'package:tomeza/features/projects/presentation/book_library_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_library_skeleton.dart';
 
 import 'book_shelf_test.dart' show billingWith, shelfExports;
 
@@ -49,16 +50,13 @@ void main() {
       await tester.pumpWidget(_app(_Repository(_books)));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Ready to read'));
-      await tester.pumpAndSettle();
+      await _tapFilter(tester, 'Ready to read');
       expect(_visibleIds(tester), ['garden']);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'In progress'));
-      await tester.pumpAndSettle();
+      await _tapFilter(tester, 'In progress');
       expect(_visibleIds(tester), ['ocean']);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Needs attention'));
-      await tester.pumpAndSettle();
+      await _tapFilter(tester, 'Needs attention');
       expect(_visibleIds(tester), ['stars']);
 
       await tester.enterText(find.byType(TextField), 'ocean');
@@ -162,7 +160,10 @@ void main() {
       final request = Completer<List<MobileProjectSummary>>();
       final repository = _Repository(_books)..pending = request.future;
       await tester.pumpWidget(_app(repository));
-      expect(find.text('Loading your books'), findsOneWidget);
+      // A skeleton shaped like the list, announced as loading — not an empty
+      // library and not a bare spinner.
+      expect(find.byType(BookLibrarySkeleton), findsOneWidget);
+      expect(find.bySemanticsLabel('Loading your books'), findsOneWidget);
       expect(find.text('No books yet'), findsNothing);
 
       request.completeError(Exception('offline'));
@@ -211,6 +212,54 @@ void main() {
     },
   );
 
+  testWidgets('cards say their state; status chips only offer real choices', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_Repository(_books)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Needs attention'), findsWidgets);
+    expect(find.text('Ready to read'), findsWidgets);
+    // Ocean Atlas is being written: the card shows the server's words and %.
+    expect(find.text('Writing your book · 50%'), findsOneWidget);
+    expect(find.text('Open it to see what happened.'), findsOneWidget);
+
+    // With every book in one state the chips would only repeat "All books".
+    await tester.pumpWidget(
+      _app(
+        _Repository([
+          _book(id: 'a', title: 'A', ready: true),
+          _book(id: 'b', title: 'B', ready: true),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(ChoiceChip), findsNothing);
+  });
+
+  testWidgets('a book being edited says so even though its file is readable', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _Repository([
+          _book(
+            id: 'edit',
+            title: 'Being Edited',
+            status: 'editing',
+            exportsReady: true,
+          ),
+          _book(id: 'done', title: 'Finished', ready: true),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The filter files it under "in progress"; the card must not contradict it.
+    expect(find.text('Applying your edit · 50%'), findsOneWidget);
+    expect(find.text('Ready to read'), findsWidgets);
+  });
+
   testWidgets('the library stays usable at narrow widths and larger text', (
     tester,
   ) async {
@@ -225,6 +274,15 @@ void main() {
     expect(_visibleIds(tester), ['ocean']);
     expect(tester.takeException(), isNull);
   });
+}
+
+/// The chips scroll sideways, so one can sit off-screen at this test width.
+Future<void> _tapFilter(WidgetTester tester, String label) async {
+  final chip = find.widgetWithText(ChoiceChip, label);
+  await tester.ensureVisible(chip);
+  await tester.pumpAndSettle();
+  await tester.tap(chip);
+  await tester.pumpAndSettle();
 }
 
 List<String> _visibleIds(WidgetTester tester) => tester
@@ -304,6 +362,7 @@ MobileProjectSummary _book({
   String topic = '',
   String status = 'paused',
   bool ready = false,
+  bool exportsReady = false,
   int pages = 12,
   int updatedDay = 1,
   int createdDay = 1,
@@ -316,7 +375,11 @@ MobileProjectSummary _book({
   lengthPreset: 'standard',
   qualityPreset: 'balanced',
   status: ready ? 'complete' : status,
-  statusLabel: status == 'generating' ? 'Writing your book' : status,
+  statusLabel: switch (status) {
+    'generating' => 'Writing your book',
+    'editing' => 'Applying your edit',
+    _ => status,
+  },
   progressPercent: ready ? 100 : 50,
   currentAction: '',
   promptPreview: topic,
@@ -324,7 +387,7 @@ MobileProjectSummary _book({
   pageCount: pages,
   imageCount: 0,
   hasPlan: pages > 0,
-  exports: shelfExports(ready: ready),
+  exports: shelfExports(ready: ready || exportsReady),
   createdAt: DateTime.utc(2026, 6, createdDay),
   updatedAt: DateTime.utc(2026, 7, updatedDay),
 );

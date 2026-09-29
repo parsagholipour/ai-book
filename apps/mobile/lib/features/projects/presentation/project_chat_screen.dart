@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../billing/presentation/message_allowance_banner.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../billing/data/billing_repository.dart';
@@ -15,14 +16,20 @@ import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'chat_reply_quote.dart';
 import 'chat_thinking_bubble.dart';
+import 'edit_changes_screen.dart';
+import 'edit_history_sheet.dart';
+import 'edit_proposal_card.dart';
 import 'generation_retry_confirmation.dart';
 import 'plan_revision_retry.dart';
 import 'project_chat_bubbles.dart';
 import 'project_chat_composer.dart';
+import 'project_chat_identity.dart';
 import 'project_chat_operations.dart';
+import 'project_chat_welcome.dart';
 import 'project_route_error.dart';
 
 part 'project_chat_edit_actions.dart';
+part 'project_chat_transcript_view.dart';
 
 /// What a screen wants the book chat to do when it opens.
 ///
@@ -73,13 +80,17 @@ class ProjectChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
-    with _ProjectChatEditActions {
+    with _ProjectChatEditActions, _ProjectChatTranscriptView {
   @override
   late final _controller = TextEditingController(
     text: widget.initialDraft ?? '',
   );
+  @override
   final _editController = TextEditingController();
+  @override
+  final _composerFocus = FocusNode();
   final _scrollController = ScrollController();
+  @override
   final _messageAnchors = ChatMessageAnchorController(
     debugLabel: 'project-chat',
   );
@@ -87,9 +98,21 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   bool _sending = false;
   @override
   bool _editing = false;
+  @override
   bool _switchingBranch = false;
+  @override
   bool _loadingEarlier = false;
+  @override
   String? _editingMessageId;
+
+  /// Whether the reader has scrolled away from the newest message. Drives the
+  /// pill that keeps a running edit in reach; flipped only when it changes.
+  bool _scrolledAway = false;
+
+  @override
+  String? _applyingProposalId;
+  @override
+  final Map<String, EditProposalOutcome> _proposalOutcomes = {};
   String? _pendingSendRequestId;
   String? _pendingSendMessage;
 
@@ -112,6 +135,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   bool _initialScrollDone = false;
   ProviderSubscription<AsyncValue<MobileProjectStatus>>? _statusSubscription;
   bool _wasLive = false;
+  @override
   PendingEcho? _pendingEcho;
   final List<MobileProjectChatMessage> _olderMessages = [];
 
@@ -119,6 +143,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   /// set when a paywall opened from an insufficient-credits reply closed with
   /// a purchase that covers the blocked edit. Local by design: after a restart
   /// the reply's own proposal card is the way to proceed.
+  @override
   String? _creditsReadyProposalId;
 
   @override
@@ -132,6 +157,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       (previous, next) => _onStatusChanged(next),
       fireImmediately: true,
     );
+    _scrollController.addListener(_onScroll);
     final message = widget.initialMessage?.trim();
     if (message == null || message.isEmpty) {
       return;
@@ -216,7 +242,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     _statusSubscription?.close();
     _controller.dispose();
     _editController.dispose();
-    _scrollController.dispose();
+    _composerFocus.dispose();
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
     super.dispose();
   }
 
@@ -245,14 +274,18 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
         .asData
         ?.value;
     final liveStatus = status != null && status.isLive ? status : null;
+    final project = projectValue.asData?.value;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(projectValue.asData?.value.title ?? 'Book chat'),
+        title: ProjectChatBookIdentity(
+          project: project,
+          live: liveStatus != null,
+        ),
         actions: [
           // Only offered once the book is finished: characters do not exist
           // until the manuscript they come from does.
-          if (projectValue.asData?.value.status == 'complete')
+          if (project?.status == 'complete')
             IconButton(
               tooltip: 'Call a character',
               onPressed: () => showCharacterCastSheet(
@@ -266,10 +299,28 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
             onPressed: () => context.push('/projects/${widget.projectId}'),
             icon: const Icon(Icons.menu_book_outlined),
           ),
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh),
+          PopupMenuButton<_ChatMenuAction>(
+            tooltip: 'More',
+            onSelected: (action) => switch (action) {
+              _ChatMenuAction.history => unawaited(_openEditHistory()),
+              _ChatMenuAction.refresh => _refresh(),
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _ChatMenuAction.history,
+                child: ListTile(
+                  leading: Icon(Icons.history),
+                  title: Text('Edit history'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _ChatMenuAction.refresh,
+                child: ListTile(
+                  leading: Icon(Icons.refresh),
+                  title: Text('Refresh'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -286,160 +337,42 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
           return Column(
             children: [
               Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async => _refresh(),
-                  child: ListView(
-                    controller: _scrollController,
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    children: [
-                      ChatIntroCard(project: projectValue.asData?.value),
-                      const SizedBox(height: 12),
-                      if (_canLoadEarlier(chat)) ...[
-                        Center(
-                          child: TextButton.icon(
-                            onPressed: _loadingEarlier
-                                ? null
-                                : () => _loadEarlier(chat),
-                            icon: _loadingEarlier
-                                ? const SizedBox.square(
-                                    dimension: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.history),
-                            label: const Text('Load earlier messages'),
+                child: Stack(
+                  children: [
+                    RefreshIndicator(
+                      onRefresh: () async => _refresh(),
+                      child: ListView(
+                        controller: _scrollController,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        children: _transcriptChildren(
+                          chat: chat,
+                          project: project,
+                          liveStatus: liveStatus,
+                          operations: operations,
+                          rebuild: rebuild,
+                        ),
+                      ),
+                    ),
+                    if (liveStatus != null && _scrolledAway)
+                      PositionedDirectional(
+                        top: AppSpacing.xs,
+                        start: AppSpacing.md,
+                        end: AppSpacing.md,
+                        child: Center(
+                          child: ChatLiveBanner(
+                            status: liveStatus,
+                            onTap: _scrollToBottom,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                      ],
-                      if (_visibleMessages(chat).isEmpty &&
-                          _pendingEcho == null)
-                        const EmptyProjectChat()
-                      else
-                        for (final message in _visibleMessages(chat)) ...[
-                          ProjectMessageBubble(
-                            key: _messageAnchors.keyFor(message.id),
-                            message: message,
-                            editController: _editController,
-                            editing: _editingMessageId == message.id,
-                            submittingEdit:
-                                _editing && _editingMessageId == message.id,
-                            switchingBranch: _switchingBranch,
-                            // Only a proposal the server would still accept
-                            // shows Apply/Cancel. Applying or cancelling one
-                            // settles it there, so a card left asking after
-                            // that invites a tap the API can only replay.
-                            showProposalActions:
-                                message.editProposal != null &&
-                                message.editProposal!.id == chat.openProposalId,
-                            // A live job closes the proposal card's Apply for
-                            // the same reason it closes the composer: it would
-                            // queue a second edit the API has to refuse.
-                            sending: _sending || _editing || liveStatus != null,
-                            // While the edit runs it has no card yet, so the
-                            // reply itself carries the charge; once the card
-                            // appears it owns the number.
-                            showCreditCost: operations
-                                .anchoredTo(message.id)
-                                .isEmpty,
-                            onStartEdit: message.isUser && liveStatus == null
-                                ? () => _startEdit(message)
-                                : null,
-                            onReply: () => _startReply(message),
-                            onCancelEdit: _cancelEdit,
-                            onSubmitEdit: _submitEdit,
-                            onSwitchBranch: (direction) =>
-                                _switchBranch(message, direction),
-                            onOpenPaywall: message.hasInsufficientCredits
-                                ? () => _openPaywall(
-                                    projectValue.asData?.value,
-                                    credits:
-                                        message.insufficientCreditsRequired,
-                                    resumeProposalId: message.editProposal?.id,
-                                  )
-                                : null,
-                            onOpenReplanCopy:
-                                _replanCopyTargetProjectId(message) == null
-                                ? null
-                                : () => context.push(
-                                    '/projects/${_replanCopyTargetProjectId(message)}/chat',
-                                  ),
-                            onApplyProposal: message.editProposal == null
-                                ? null
-                                : () => unawaited(
-                                    _applyProposal(message.editProposal!.id),
-                                  ),
-                            onCancelProposal: message.editProposal == null
-                                ? null
-                                : () => unawaited(
-                                    _cancelProposal(message.editProposal!.id),
-                                  ),
-                          ),
-                          const SizedBox(height: 10),
-                          for (final operation in operations.anchoredTo(
-                            message.id,
-                          )) ...[
-                            _operationBubble(
-                              operation,
-                              liveStatus,
-                              rebuilding: rebuild.isRebuilding(operation.id),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
-                        ],
-                      if (_pendingEcho != null) ...[
-                        PendingEchoBubble(
-                          echo: _pendingEcho!,
-                          onRetry: _retryPendingEcho,
-                          onDismiss: _dismissPendingEcho,
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                      if (_creditsReadyProposalId != null) ...[
-                        CreditsReadyBubble(
-                          onProceed: _sending || _editing || liveStatus != null
-                              ? null
-                              : _proceedWithCreditsReadyEdit,
-                          onDismiss: () =>
-                              setState(() => _creditsReadyProposalId = null),
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                      // Reading the message and working out what it asks for
-                      // takes a model call or two, and until this the wait was
-                      // silent. Suppressed once the work is live: the progress
-                      // card below says the same thing with real numbers, and
-                      // two busy indicators read as two things happening.
-                      if (_showThinking(liveStatus)) ...[
-                        const ChatThinkingBubble(
-                          stages: bookChatThinkingStages,
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                      for (final operation in operations.unanchored)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _operationBubble(
-                            operation,
-                            liveStatus,
-                            rebuilding: rebuild.isRebuilding(operation.id),
-                          ),
-                        ),
-                      if (liveStatus != null &&
-                          !(rebuild.inFlight && !operations.hasRunning)) ...[
-                        const SizedBox(height: 4),
-                        ChatOperationProgressCard(status: liveStatus),
-                        const SizedBox(height: 8),
-                      ],
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
               ProjectChatComposerBar(
                 controller: _controller,
+                focusNode: _composerFocus,
                 sending: _sending || _editing,
                 onSend: _send,
                 lockedLabel: _composerLockLabel(liveStatus),
@@ -461,6 +394,28 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     );
   }
 
+  /// Flips [_scrolledAway] only when it changes, so scrolling costs no rebuilds.
+  void _onScroll() {
+    final away = !_isNearBottom;
+    if (away != _scrolledAway && mounted) {
+      setState(() => _scrolledAway = away);
+    }
+  }
+
+  /// Fills the composer from a suggestion and puts the cursor where the reader
+  /// finishes the sentence. Sends nothing.
+  @override
+  void _fillComposer(ChatSuggestion suggestion) {
+    final text = '${suggestion.prefix}${suggestion.suffix}';
+    setState(() {
+      _controller.text = text;
+      _controller.selection = TextSelection.collapsed(
+        offset: suggestion.prefix.length,
+      );
+    });
+    _composerFocus.requestFocus();
+  }
+
   @override
   void _refresh() {
     if (mounted) {
@@ -475,6 +430,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     ref.invalidate(projectStatusProvider(widget.projectId));
   }
 
+  @override
   String? _replanCopyTargetProjectId(MobileProjectChatMessage message) {
     if (!message.isAssistant) return null;
     final targetProjectId = message.replanCopyTargetProjectId;
@@ -505,6 +461,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   /// Quotes a message in the composer. Starting a reply cancels an in-progress
   /// edit: the two share the composer, and an edit rewrites its own message
   /// rather than adding a new one.
+  @override
   void _startReply(MobileProjectChatMessage message) {
     final target = ChatReplyTarget.from(
       messageId: message.id,
@@ -526,6 +483,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     });
   }
 
+  @override
   Future<void> _retryPendingEcho() async {
     final echo = _pendingEcho;
     if (echo == null || _sending || _bookIsBusy) return;
@@ -536,6 +494,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     );
   }
 
+  @override
   void _dismissPendingEcho() {
     final echo = _pendingEcho;
     if (echo == null || _sending) return;
@@ -634,6 +593,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     }
   }
 
+  @override
   void _startEdit(MobileProjectChatMessage message) {
     if (_sending || _editing || _bookIsBusy) return;
     setState(() {
@@ -650,6 +610,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     });
   }
 
+  @override
   void _cancelEdit() {
     setState(() {
       _editingMessageId = null;
@@ -659,6 +620,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     });
   }
 
+  @override
   Future<void> _submitEdit() async {
     final messageId = _editingMessageId;
     final message = _editController.text.trim();
@@ -713,6 +675,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     }
   }
 
+  @override
   Future<void> _switchBranch(
     MobileProjectChatMessage message,
     String direction,
@@ -739,6 +702,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     }
   }
 
+  @override
   Future<void> _openPaywall(
     MobileProjectDetail? project, {
     int? credits,
@@ -784,6 +748,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   @override
   void _clearCreditsReadyPrompt() => _creditsReadyProposalId = null;
 
+  @override
   void _proceedWithCreditsReadyEdit() {
     final proposalId = _creditsReadyProposalId;
     if (proposalId == null) return;
@@ -842,6 +807,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$_requestSequence';
   }
 
+  @override
   bool _canLoadEarlier(MobileProjectChat chat) =>
       _historyHasMore ?? chat.hasMore;
 
@@ -856,6 +822,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     return messages;
   }
 
+  @override
   Future<void> _loadEarlier(MobileProjectChat chat) async {
     if (_loadingEarlier || !_canLoadEarlier(chat)) return;
     final cursor = _historyNextCursor ?? chat.nextCursor;
@@ -885,3 +852,5 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     }
   }
 }
+
+enum _ChatMenuAction { history, refresh }

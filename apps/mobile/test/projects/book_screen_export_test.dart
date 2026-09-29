@@ -6,7 +6,7 @@ import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
 import 'package:tomeza/features/projects/presentation/project_export_panel.dart';
 
 void main() {
-  testWidgets('the book page renders progress, pages, visuals, and retry', (
+  testWidgets('a stopped book says what happened, keeps its pages, and retries', (
     tester,
   ) async {
     var retried = false;
@@ -40,14 +40,15 @@ void main() {
       ),
     );
 
-    expect(find.text('Generating your book'), findsOneWidget);
-    expect(find.text('Writing your book pages.'), findsOneWidget);
-    expect(find.text('38%'), findsOneWidget);
-    expect(find.text('3/10 pages'), findsWidgets);
-    expect(find.text('1 visuals'), findsWidgets);
+    // A book that stopped leads with what happened and how much is safe, not
+    // with the running checklist: nothing above the failure is worth ticking.
+    expect(find.text('Writing stopped'), findsOneWidget);
+    expect(find.text('What is written so far is saved.'), findsOneWidget);
+    expect(find.text('3 of 10 pages saved'), findsOneWidget);
     expect(find.text('Book preview'), findsOneWidget);
     expect(find.text('Set the promise'), findsOneWidget);
     expect(find.textContaining('draft timed out'), findsOneWidget);
+    expect(find.text('Stopped at: Write · 3/10 pages'), findsOneWidget);
 
     await tester.tap(find.text('Retry generation'));
     await tester.pump();
@@ -124,22 +125,17 @@ void main() {
       ),
     );
 
-    expect(find.text('Unlock PDF'), findsOneWidget);
-    expect(find.text('Open EPUB'), findsOneWidget);
-    expect(find.text('Download'), findsOneWidget);
-    expect(
-      find.text(
-        'Ready after export unlock. This uses 150 credits if not already included.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Ready to open or download.'), findsOneWidget);
+    expect(find.text('Unlock'), findsOneWidget);
+    expect(find.text('Open'), findsOneWidget);
+    expect(find.byTooltip('Share EPUB'), findsOneWidget);
+    expect(find.text('Unlock for 150 credits'), findsOneWidget);
+    expect(find.text('Ready'), findsOneWidget);
 
-    await tester.tap(find.text('Unlock PDF'));
+    await tester.tap(find.text('Unlock'));
     await tester.pump();
-    await tester.tap(find.text('Open EPUB'));
+    await tester.tap(find.text('Open'));
     await tester.pump();
-    await tester.tap(find.text('Download'));
+    await tester.tap(find.byTooltip('Share EPUB'));
     await tester.pump();
 
     expect(openedFormats, ['pdf', 'epub']);
@@ -183,13 +179,13 @@ void main() {
       expect(find.text('Quality checks flagged pages'), findsOneWidget);
       expect(find.text('Page 3 contains placeholder text.'), findsOneWidget);
       expect(find.textContaining('Pages 3 · Open Edit Mode'), findsOneWidget);
-      // The warning never withholds the book: exports stay available.
-      await tester.dragUntilVisible(
-        find.text('Exports'),
-        find.byType(ListView),
-        const Offset(0, -120),
-      );
-      expect(find.text('Exports'), findsOneWidget);
+      // The warning never withholds the book: Read and the export list are
+      // right there in the hero.
+      expect(find.text('Read'), findsOneWidget);
+      await tester.tap(find.text('Export'));
+      await tester.pumpAndSettle();
+      expect(find.text('PDF'), findsOneWidget);
+      expect(find.text('EPUB'), findsOneWidget);
     },
   );
 
@@ -214,14 +210,18 @@ void main() {
     );
 
     expect(find.text('Word'), findsOneWidget);
-    expect(find.text('Upgrade for Word'), findsOneWidget);
-    expect(find.text('Word export is part of the Creator plan.'), findsOneWidget);
-    expect(find.byIcon(Icons.lock_outline), findsOneWidget);
-    // The unlocked PDF and EPUB keep their Download buttons; the locked Word
+    expect(find.text('Upgrade'), findsOneWidget);
+    expect(find.text('Included with the Creator plan'), findsOneWidget);
+    // An upgrade path, not a refusal: no padlock on it.
+    expect(find.byIcon(Icons.lock_outline), findsNothing);
+    expect(find.byIcon(Icons.workspace_premium_outlined), findsOneWidget);
+    // The unlocked PDF and EPUB keep their Share buttons; the locked Word
     // file offers none.
-    expect(find.text('Download'), findsNWidgets(2));
+    expect(find.byTooltip('Share PDF'), findsOneWidget);
+    expect(find.byTooltip('Share EPUB'), findsOneWidget);
+    expect(find.byTooltip('Share Word'), findsNothing);
 
-    await tester.tap(find.text('Upgrade for Word'));
+    await tester.tap(find.text('Upgrade'));
     await tester.pump();
 
     expect(paywalledFormats, ['docx']);
@@ -246,11 +246,11 @@ void main() {
       ),
     );
 
-    expect(find.text('Open Word'), findsOneWidget);
-    expect(find.byIcon(Icons.lock_outline), findsNothing);
-    expect(find.text('Download'), findsNWidgets(3));
+    expect(find.text('Open'), findsNWidgets(3));
+    expect(find.text('Upgrade'), findsNothing);
+    expect(find.byTooltip('Share Word'), findsOneWidget);
 
-    await tester.tap(find.text('Open Word'));
+    await tester.tap(find.text('Open').last);
     await tester.pump();
 
     expect(openedFormats, ['docx']);
@@ -304,10 +304,7 @@ void main() {
     );
 
     expect(find.text('Get credits'), findsNWidgets(2));
-    expect(
-      find.text('Ready after export unlock. You need 150 credits and have 25.'),
-      findsNWidgets(2),
-    );
+    expect(find.text('Unlock for 150 credits · you have 25'), findsNWidgets(2));
 
     await tester.tap(find.text('Get credits').first);
     await tester.pump();

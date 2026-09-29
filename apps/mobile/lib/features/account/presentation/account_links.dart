@@ -8,7 +8,14 @@ Future<void> openAccountUri(
   Uri uri,
   String failedLaunchLabel,
 ) async {
-  final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  // A device with no mail app or browser can answer with an exception rather
+  // than a plain false; either way the reader is told, not left with a dead tap.
+  var opened = false;
+  try {
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    opened = false;
+  }
   if (!opened && context.mounted) {
     ScaffoldMessenger.of(context).showAppSnackBar(
       SnackBar(content: Text('Could not open $failedLaunchLabel.')),

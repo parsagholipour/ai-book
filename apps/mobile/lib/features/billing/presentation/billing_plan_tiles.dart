@@ -457,10 +457,11 @@ class BillingTopUpTile extends StatelessWidget {
   }
 }
 
-/// Card-shaped placeholders while the store and the balance are still loading.
+/// Row-shaped placeholders while the store and the balance are still loading.
 ///
-/// Keeping the shape of the real ladder makes the wait read as shorter than a
-/// spinner does, because the layout is already legible.
+/// They copy the real plan row — a radio, two lines of text, a price — so the
+/// list keeps its height and its rhythm when the prices arrive, and the wait
+/// reads as shorter than a spinner does because the layout is already legible.
 class BillingPlanSkeleton extends StatelessWidget {
   const BillingPlanSkeleton({this.cards = 3, super.key});
 
@@ -469,6 +470,14 @@ class BillingPlanSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    Widget bar(double width, double height) => Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadii.compact),
+      ),
+    );
     return Semantics(
       label: 'Loading purchase options',
       child: ExcludeSemantics(
@@ -477,13 +486,53 @@ class BillingPlanSkeleton extends StatelessWidget {
             children: [
               for (var index = 0; index < cards; index += 1) ...[
                 Container(
-                  height: 210,
+                  height: 92,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md - 2,
+                  ),
                   decoration: BoxDecoration(
-                    color: colors.surfaceContainerHigh,
+                    color: colors.surfaceContainerLowest,
                     borderRadius: BorderRadius.circular(AppRadii.card),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: colors.surfaceContainerHigh,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            bar(96, 16),
+                            const SizedBox(height: 8),
+                            bar(150, 12),
+                            const SizedBox(height: 6),
+                            bar(110, 12),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          bar(64, 20),
+                          const SizedBox(height: 6),
+                          bar(40, 12),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                if (index != cards - 1) const SizedBox(height: 14),
+                if (index != cards - 1) const SizedBox(height: AppSpacing.xs),
               ],
             ],
           ),

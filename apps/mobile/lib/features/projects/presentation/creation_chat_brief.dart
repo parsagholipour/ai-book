@@ -128,8 +128,11 @@ _BuiltHeaderView? _builtHeaderView(
     final pageCount = projectPages > 0
         ? projectPages
         : liveStatus?.pageProgress.completed ?? 0;
+    // The badge already says Ready; the line under the title says how big.
     return _BuiltHeaderView(
-      pitch: pageCount > 0 ? 'Ready to read · $pageCount pages' : 'Ready to read',
+      pitch: pageCount > 0
+          ? (pageCount == 1 ? '1 page' : '$pageCount pages')
+          : 'Ready to read',
       badgeLabel: 'Ready',
       badgeIcon: Icons.check_circle_outline,
       badgeTone: AppTone.success,
@@ -213,6 +216,34 @@ class _BriefHeaderState extends State<_BriefHeader> {
     return null;
   }
 
+  /// A third of the space the keyboard leaves, but never more than what the
+  /// pinned pieces around it leave: the app bar, this header row (and the
+  /// warnings banner when one is up) grow with the text, and the footer takes
+  /// its own share. Without the second bound an expanded brief over an open
+  /// question overflowed the column on a small phone at a large text size.
+  double _detailsMaxHeight(BuildContext context) {
+    final available =
+        MediaQuery.sizeOf(context).height -
+        MediaQuery.viewInsetsOf(context).bottom;
+    final scale = MediaQuery.textScalerOf(context).scale(1);
+    // The warnings banner is the one pinned piece whose height depends on its
+    // words: estimate its lines from their length and the width they wrap at.
+    final warningChars = widget.state.warnings.join(' ').length;
+    final banner = warningChars == 0
+        ? 0
+        : 20 +
+              (warningChars *
+                          6.8 *
+                          scale /
+                          (MediaQuery.sizeOf(context).width - 62))
+                      .ceil() *
+                  17 *
+                  scale;
+    final chrome = 116 + 50 * (scale - 1) + banner;
+    final room = available * (1 - _footerShare(context)) - chrome;
+    return math.max(math.min(available * 0.3, room), 0.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
@@ -264,7 +295,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
             key: const ValueKey('creationBriefHeader'),
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+              padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 12, 8),
               child: Row(
                 children: [
                   CreationCoverGlimpse(
@@ -305,7 +336,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     _ReadinessPill(readiness: state.readiness)
                   else if (builtView?.badgeLabel != null)
                     Padding(
-                      padding: const EdgeInsets.only(right: 4),
+                      padding: const EdgeInsetsDirectional.only(end: 4),
                       child: AppStatusBadge(
                         label: builtView!.badgeLabel!,
                         icon: builtView.badgeIcon,
@@ -330,12 +361,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
             ConstrainedBox(
               key: const ValueKey('creationBriefDetails'),
               constraints: BoxConstraints(
-                maxHeight: math.max(
-                  (MediaQuery.sizeOf(context).height -
-                          MediaQuery.viewInsetsOf(context).bottom) *
-                      0.3,
-                  120.0,
-                ),
+                maxHeight: _detailsMaxHeight(context),
               ),
               // The same visible scrollbar and "Scroll for more" cue the
               // question drawer uses, so a clipped list is never mistaken
@@ -373,7 +399,7 @@ class _ReadinessPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final ready = readiness.canBuild;
     return Padding(
-      padding: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsetsDirectional.only(end: 4),
       child: AppStatusBadge(
         label: ready ? 'Ready' : '${readiness.score}%',
         icon: ready ? Icons.check_circle_outline : Icons.timelapse_outlined,

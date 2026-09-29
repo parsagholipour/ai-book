@@ -12,6 +12,7 @@ import 'billing_credits_needed.dart';
 import 'billing_export_offer.dart';
 import 'billing_offers.dart';
 import 'billing_purchase_success_dialog.dart';
+import 'play_subscriptions_link.dart';
 
 export 'billing_credits_needed.dart' show PaywallCreditsNeeded;
 
@@ -244,6 +245,13 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                   billing: state.billing!,
                   projectId: widget.projectId,
                 ),
+          onManagePlan: state.billing?.isPaidPlan == true
+              ? () => unawaited(
+                  ref.read(playSubscriptionsLauncherProvider)(
+                    state.billing?.plan?.productSku,
+                  ),
+                )
+              : null,
         );
       },
     );

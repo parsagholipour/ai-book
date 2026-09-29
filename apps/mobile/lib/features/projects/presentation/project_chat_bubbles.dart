@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_theme.dart';
-import '../../../shared/ui/motion.dart';
-
-import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/app_components.dart';
 import '../domain/chat_markdown.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
@@ -13,13 +11,16 @@ import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
-import 'progress_step_row.dart';
 import 'project_chat_composer.dart';
 import 'saved_export_card.dart';
 
-// The book chat's message widgets: the intro and empty states, the bubbles for
-// user and assistant turns, the in-flight echo, and the running/failed edit
-// operation cards.
+// The operation card and the live progress card moved to their own files; the
+// creation chat imports them through here, so they stay reachable from this one.
+export 'project_chat_operation_card.dart';
+export 'project_chat_progress.dart';
+
+// The book chat's message widgets: the bubbles for user and assistant turns,
+// the in-flight echo, and the follow-up after a top-up.
 
 /// A just-sent user message shown optimistically until the refreshed
 /// transcript (or a failure) replaces it.
@@ -29,50 +30,6 @@ class PendingEcho {
   final String text;
   final bool failed;
   final String? error;
-}
-
-class ChatIntroCard extends StatelessWidget {
-  const ChatIntroCard({this.project, super.key});
-
-  final MobileProjectDetail? project;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final status = project?.status;
-    final hint = status == 'plan_ready'
-        ? 'Ask questions or request plan changes. Plan edits use credits.'
-        : status == 'complete'
-        ? 'Ask questions or request edits to the latest generated book. Real edits show a credit price and need your confirmation before they run.'
-        : 'You can ask questions now. Editing unlocks after planning or generation reaches the right stage.';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.auto_fix_high_outlined, color: colors.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Edit in chat',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(hint),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// The follow-up drawn after a top-up bought from an insufficient-credits
@@ -94,29 +51,49 @@ class CreditsReadyBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: AlignmentDirectional.centerStart,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: colors.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(18),
+            color: colors.primaryContainer.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.all(AppSpacing.sm + 2),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'You now have enough credits.',
-                  style: TextStyle(color: colors.onSurface),
-                ),
-                const SizedBox(height: 10),
                 Row(
                   mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 20,
+                      color: colors.onPrimaryContainer,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Flexible(
+                      child: Text(
+                        'You now have enough credits.',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colors.onPrimaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xxs,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     FilledButton.icon(
                       key: const ValueKey('credits-ready-proceed'),
@@ -124,14 +101,12 @@ class CreditsReadyBubble extends StatelessWidget {
                       icon: const Icon(Icons.play_arrow_outlined, size: 18),
                       label: const Text('Proceed'),
                     ),
-                    if (onDismiss != null) ...[
-                      const SizedBox(width: 8),
+                    if (onDismiss != null)
                       TextButton(
                         key: const ValueKey('credits-ready-dismiss'),
                         onPressed: onDismiss,
                         child: const Text('Not now'),
                       ),
-                    ],
                   ],
                 ),
               ],
@@ -143,211 +118,11 @@ class CreditsReadyBubble extends StatelessWidget {
   }
 }
 
-class EmptyProjectChat extends StatelessWidget {
-  const EmptyProjectChat({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const AppEmptyState(
-      title: 'No messages yet',
-      message:
-          'Ask “What should I improve?” or “Rewrite page 3 to sound warmer.”',
-      icon: Icons.chat_bubble_outline,
-    );
-  }
-}
-
-class OperationBubble extends StatelessWidget {
-  const OperationBubble({
-    required this.operation,
-    required this.retrying,
-    this.undoing = false,
-    this.redoing = false,
-    this.rebuilding = false,
-    this.liveProgress,
-    this.onRetry,
-    this.onUndo,
-    this.onRedo,
-    this.onViewPlan,
-    this.onOpenBook,
-    this.onSeeChanges,
-    super.key,
-  });
-
-  final MobileBookEditOperation operation;
-  final bool retrying;
-  final bool undoing;
-  final bool redoing;
-
-  /// Applied, but the free recompile has not published yet.
-  final bool rebuilding;
-
-  /// Live bar, percent and steps while this edit is still running.
-  final Widget? liveProgress;
-  final VoidCallback? onRetry;
-  final VoidCallback? onUndo;
-  final VoidCallback? onRedo;
-  final VoidCallback? onViewPlan;
-
-  /// Opens the book at the first page this edit touched.
-  final VoidCallback? onOpenBook;
-
-  /// Opens the before/after diff of what this edit did.
-  final VoidCallback? onSeeChanges;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final waitingForRetry = operation.isAutomaticRetryPending;
-    final failed = operation.isFailed && !waitingForRetry;
-    final applied = operation.isApplied && !failed && !rebuilding;
-    return Card(
-      color: failed ? colors.errorContainer : colors.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (failed)
-                  Icon(Icons.error_outline, color: colors.onErrorContainer)
-                else if (applied)
-                  Icon(Icons.check_circle_outline, color: colors.primary)
-                else
-                  const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    failed && operation.isPlanRevision
-                        ? 'Plan revision failed. Your current plan is unchanged.'
-                        : operation.displayAction,
-                  ),
-                ),
-                if (operation.creditsCharged > 0) ...[
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      if (!operation.creditsRefunded ||
-                          operation.effectiveCreditsRefundedAmount == 0)
-                        CreditCostBadge(
-                          credits:
-                              operation.creditsCharged -
-                              operation.effectiveCreditsRefundedAmount,
-                          kind: CreditCostKind.charged,
-                          foreground: failed ? colors.onErrorContainer : null,
-                        ),
-                      if (operation.effectiveCreditsRefundedAmount > 0) ...[
-                        if (!operation.creditsRefunded)
-                          const SizedBox(height: 4),
-                        CreditCostBadge(
-                          credits: operation.effectiveCreditsRefundedAmount,
-                          kind: CreditCostKind.refunded,
-                          foreground: failed ? colors.onErrorContainer : null,
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ],
-            ),
-            if (liveProgress != null) ...[
-              const SizedBox(height: 10),
-              liveProgress!,
-            ],
-            if (failed ||
-                onUndo != null ||
-                onRedo != null ||
-                onOpenBook != null ||
-                onSeeChanges != null) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  if (onOpenBook != null)
-                    TextButton.icon(
-                      onPressed: onOpenBook,
-                      icon: const Icon(Icons.menu_book_outlined),
-                      label: const Text('Open book'),
-                    ),
-                  if (onSeeChanges != null)
-                    TextButton.icon(
-                      onPressed: onSeeChanges,
-                      icon: const Icon(Icons.difference_outlined),
-                      label: const Text('See changes'),
-                    ),
-                  if (onRetry != null)
-                    FilledButton.tonalIcon(
-                      onPressed: retrying ? null : onRetry,
-                      icon: retrying
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(
-                              operation.retryAvailable
-                                  ? Icons.refresh
-                                  : Icons.edit_outlined,
-                            ),
-                      label: Text(
-                        operation.retryAvailable
-                            ? operation.isPlanRevision
-                                  ? 'Retry revision'
-                                  : 'Retry update'
-                            : 'Edit request',
-                      ),
-                    ),
-                  // Screen-level flags: Redo spinning on B has to disable Undo
-                  // on A too, or the two unawaited writes race the manuscript.
-                  // A compile still in flight after Undo is the same race.
-                  if (onUndo != null)
-                    TextButton.icon(
-                      onPressed: undoing || redoing || rebuilding
-                          ? null
-                          : onUndo,
-                      icon: undoing
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.undo),
-                      label: const Text('Undo'),
-                    ),
-                  if (onRedo != null)
-                    TextButton.icon(
-                      onPressed: redoing || undoing || rebuilding
-                          ? null
-                          : onRedo,
-                      icon: redoing
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.redo),
-                      label: const Text('Redo'),
-                    ),
-                  if (onViewPlan != null)
-                    TextButton.icon(
-                      onPressed: onViewPlan,
-                      icon: const Icon(Icons.article_outlined),
-                      label: const Text('View current plan'),
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// The optimistic bubble for a message that is still in flight or has failed.
+///
+/// A failed send keeps the words the reader wrote and says, underneath them and
+/// in its own card, that it did not go — with the two things they can do about
+/// it. The message is never lost: Dismiss hands it back to the composer.
 class PendingEchoBubble extends StatelessWidget {
   const PendingEchoBubble({
     required this.echo,
@@ -362,77 +137,117 @@ class PendingEchoBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final sent = userChatBubbleColors(colors);
-    final background = echo.failed ? colors.errorContainer : sent.background;
-    final foreground = echo.failed ? colors.onErrorContainer : sent.foreground;
     return Align(
-      alignment: Alignment.centerRight,
+      alignment: AlignmentDirectional.centerEnd,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        echo.text,
-                        style: TextStyle(color: foreground),
-                      ),
-                    ),
-                    if (!echo.failed) ...[
-                      const SizedBox(width: 8),
-                      SizedBox.square(
-                        dimension: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: foreground,
-                        ),
-                      ),
-                    ],
-                  ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Opacity(
+              opacity: echo.failed ? 0.7 : 0.92,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: sent.background,
+                  borderRadius: BorderRadius.circular(AppRadii.card),
                 ),
-                if (echo.failed) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    echo.error ?? 'The message could not be sent.',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: foreground),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
                   ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 4,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextButton(
-                        onPressed: onDismiss,
+                      Flexible(
                         child: Text(
-                          'Dismiss',
-                          style: TextStyle(color: foreground),
+                          echo.text,
+                          style: TextStyle(color: sent.foreground),
                         ),
                       ),
-                      FilledButton.tonalIcon(
-                        onPressed: onRetry,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Retry'),
+                      if (!echo.failed) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: sent.foreground,
+                              semanticsLabel: 'Sending',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (echo.failed) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Semantics(
+                container: true,
+                liveRegion: true,
+                child: Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: colors.errorContainer,
+                    borderRadius: BorderRadius.circular(AppRadii.control),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 20,
+                            color: colors.onErrorContainer,
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Expanded(
+                            child: Text(
+                              echo.error ?? 'The message could not be sent.',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colors.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xxs,
+                        children: [
+                          TextButton(
+                            onPressed: onDismiss,
+                            style: TextButton.styleFrom(
+                              foregroundColor: colors.onErrorContainer,
+                            ),
+                            child: const Text('Dismiss'),
+                          ),
+                          FilledButton.icon(
+                            onPressed: onRetry,
+                            icon: const Icon(Icons.refresh, size: 18),
+                            label: const Text('Retry'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ],
-            ),
-          ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -450,6 +265,8 @@ class ProjectMessageBubble extends StatelessWidget {
     required this.showProposalActions,
     required this.sending,
     this.showCreditCost = true,
+    this.applyingProposal = false,
+    this.proposalOutcome,
     this.onReply,
     this.onStartEdit,
     this.onCancelEdit,
@@ -468,6 +285,12 @@ class ProjectMessageBubble extends StatelessWidget {
   final bool switchingBranch;
   final bool showProposalActions;
   final bool sending;
+
+  /// This message's proposal is the one being applied right now.
+  final bool applyingProposal;
+
+  /// How this message's proposal ended in this session, if it did.
+  final EditProposalOutcome? proposalOutcome;
 
   /// False when this turn's edit already has an operation card underneath it:
   /// that card carries the charge (and knows whether it was refunded), so the
@@ -523,7 +346,7 @@ class ProjectMessageBubble extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: background,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(AppRadii.card),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -590,10 +413,9 @@ class ProjectMessageBubble extends StatelessWidget {
                 ],
                 if (onOpenPaywall != null) ...[
                   const SizedBox(height: 10),
-                  FilledButton.icon(
-                    onPressed: onOpenPaywall,
-                    icon: const Icon(Icons.add_card_outlined),
-                    label: const Text('Add credits'),
+                  _AddCreditsRow(
+                    credits: message.insufficientCreditsRequired,
+                    onPressed: onOpenPaywall!,
                   ),
                 ],
                 if (onOpenReplanCopy != null) ...[
@@ -620,13 +442,17 @@ class ProjectMessageBubble extends StatelessWidget {
         EditProposalCard(
           proposal: editProposal,
           enabled: !sending,
+          applying: applyingProposal,
+          outcome: proposalOutcome,
           onApply: showProposalActions ? onApplyProposal : null,
           onCancel: showProposalActions ? onCancelProposal : null,
         ),
       if (manualEdit != null) SavedExportCard(message: message),
     ];
     return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: isUser
+          ? AlignmentDirectional.centerEnd
+          : AlignmentDirectional.centerStart,
       child: extras.isEmpty
           ? bubble
           : Column(
@@ -634,6 +460,35 @@ class ProjectMessageBubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [bubble, ...extras],
             ),
+    );
+  }
+}
+
+/// The way forward from a reply that could not run an edit for want of credits.
+///
+/// The button is the whole point of the block; the amount, when the server
+/// named one, rides beside it as a badge rather than as a sentence.
+class _AddCreditsRow extends StatelessWidget {
+  const _AddCreditsRow({required this.credits, required this.onPressed});
+
+  final int? credits;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FilledButton.icon(
+          onPressed: onPressed,
+          icon: const Icon(Icons.add_card_outlined),
+          label: const Text('Add credits'),
+        ),
+        if (credits != null)
+          CreditCostBadge(credits: credits!, kind: CreditCostKind.quoted),
+      ],
     );
   }
 }
@@ -678,155 +533,4 @@ class StandaloneContentCard extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Live progress for the edit that is running right now.
-///
-/// Applying a proposal hands the work to the worker, which can take a while.
-/// Without this the chat went quiet: a message appeared and nothing moved
-/// again until the user thought to pull-to-refresh. This card is driven by the
-/// project status stream, so it advances on its own and says what is happening.
-class ChatOperationProgressCard extends StatefulWidget {
-  const ChatOperationProgressCard({required this.status, super.key});
-
-  final MobileProjectStatus status;
-
-  @override
-  State<ChatOperationProgressCard> createState() =>
-      _ChatOperationProgressCardState();
-}
-
-class _ChatOperationProgressCardState extends State<ChatOperationProgressCard> {
-  /// The highest percent this card has drawn for the current piece of work.
-  ///
-  /// The server's number climbs on its own, but a reconnecting status stream
-  /// can deliver a stale tick, and a bar that animates backwards reads as work
-  /// being undone. Reset when the project changes phase, because each phase
-  /// numbers itself from its own start — an edit that follows a finished book
-  /// begins near zero again. Held outside setState: it is resolved in build.
-  int _shownPercent = 0;
-  String? _shownStatus;
-
-  int _monotonicPercent(String phase, int next) {
-    if (phase != _shownStatus) {
-      _shownStatus = phase;
-      _shownPercent = next;
-      return _shownPercent;
-    }
-    if (next > _shownPercent) {
-      _shownPercent = next;
-    }
-    return _shownPercent;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final status = widget.status;
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    // The step list's own number when there is one: it is what the bar sits
-    // next to, and the two must never read differently.
-    final steps = _liveSteps(status);
-    final progress = _monotonicPercent(
-      status.status,
-      (status.editProgress?.percent ??
-              status.generationProgress?.percent ??
-              status.planningProgress?.percent ??
-              status.progressPercent)
-          .clamp(0, 100)
-          .toInt(),
-    );
-    final pages = status.pageProgress;
-    // During an edit that count is the whole book's, which says nothing about
-    // the handful of pages being rewritten and reads as though the edit is
-    // rewriting everything.
-    final showPages =
-        status.status != 'editing' &&
-        pages.target > 0 &&
-        pages.completed <= pages.target;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.primaryContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.25)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              SizedBox.square(
-                dimension: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: colors.onPrimaryContainer,
-                  semanticsLabel: 'Working on your book',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: AppSwitcher(
-                  child: Text(
-                    status.currentAction,
-                    key: ValueKey(status.currentAction),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colors.onPrimaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              AppAnimatedCount(
-                value: progress,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: colors.onPrimaryContainer,
-                ),
-                builder: (value) => '$value%',
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: AppAnimatedProgressBar(
-              value: progress / 100,
-              semanticLabel: status.currentAction,
-            ),
-          ),
-          if (steps.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            // With the detail line: an edit's steps carry counts ("3 of 7
-            // pages") that are the only thing moving while one long step runs.
-            for (final step in steps)
-              ProgressStepRow(step: step, showDetail: true),
-          ],
-          if (showPages) ...[
-            const SizedBox(height: 8),
-            Text(
-              '${pages.completed} of ${pages.target} pages',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: colors.onPrimaryContainer.withValues(alpha: 0.8),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// The milestones for whatever the book is doing right now.
-///
-/// One list rather than three branches: an edit, a plan revision and a
-/// continuation all reach this card, they are never live at the same time, and
-/// they all arrive as the same step shape.
-List<MobileProjectStatusStep> _liveSteps(MobileProjectStatus status) {
-  final steps =
-      status.editProgress?.steps ??
-      status.generationProgress?.steps ??
-      status.planningProgress?.steps;
-  return steps ?? const <MobileProjectStatusStep>[];
 }

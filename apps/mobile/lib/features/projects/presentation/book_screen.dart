@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
-import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/motion.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
@@ -16,6 +16,7 @@ import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'book_preview_section.dart';
 import 'book_screen_body.dart';
+import 'book_screen_skeleton.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'project_export_actions.dart';
@@ -42,6 +43,9 @@ class BookScreen extends ConsumerStatefulWidget {
   ConsumerState<BookScreen> createState() => _BookScreenState();
 }
 
+/// Roughly where the hero's title has left the top of the page.
+const double _heroExtent = 120;
+
 class _BookScreenState extends ConsumerState<BookScreen>
     with PollingStateMixin<BookScreen> {
   final _revisionController = TextEditingController();
@@ -50,6 +54,10 @@ class _BookScreenState extends ConsumerState<BookScreen>
   bool _notifiedFailure = false;
   String? _revisionRequestId;
   String? _revisionRequestText;
+
+  /// Whether the page has scrolled past its hero. The hero already says the
+  /// book's title, so the app bar only repeats it once the hero is gone.
+  final _pastHero = ValueNotifier<bool>(false);
   ProviderSubscription<AsyncValue<MobileProjectStatus>>? _statusSubscription;
 
   @override
@@ -69,6 +77,7 @@ class _BookScreenState extends ConsumerState<BookScreen>
   void dispose() {
     _statusSubscription?.close();
     _revisionController.dispose();
+    _pastHero.dispose();
     super.dispose();
   }
 
@@ -95,7 +104,16 @@ class _BookScreenState extends ConsumerState<BookScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(project?.title ?? 'Your book'),
+        title: ValueListenableBuilder<bool>(
+          valueListenable: _pastHero,
+          builder: (context, pastHero, _) => AnimatedOpacity(
+            opacity: project == null || pastHero ? 1 : 0,
+            duration: AppMotion.reducedMotion(context)
+                ? Duration.zero
+                : AppMotion.fast,
+            child: Text(project?.title ?? 'Your book'),
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'Book chat',
@@ -109,12 +127,21 @@ class _BookScreenState extends ConsumerState<BookScreen>
           ),
         ],
       ),
-      body: _body(
-        projectValue: projectValue,
-        project: project,
-        status: status,
-        billing: billingValue.value,
-        failedRevision: failedRevision,
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.depth == 0 &&
+              notification.metrics.axis == Axis.vertical) {
+            _pastHero.value = notification.metrics.pixels > _heroExtent;
+          }
+          return false;
+        },
+        child: _body(
+          projectValue: projectValue,
+          project: project,
+          status: status,
+          billing: billingValue.value,
+          failedRevision: failedRevision,
+        ),
       ),
     );
   }
@@ -137,7 +164,7 @@ class _BookScreenState extends ConsumerState<BookScreen>
       );
     }
     if (project == null && status == null) {
-      return const AppLoadingState(message: 'Opening your book');
+      return const BookScreenSkeleton();
     }
 
     return BookScreenBody(

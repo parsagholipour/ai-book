@@ -73,10 +73,31 @@ Future<bool> ensureVoiceDisclosureAcknowledged(
     builder: (context) => AlertDialog(
       icon: const Icon(Icons.mic_outlined),
       title: const Text('Before your first voice call'),
-      content: const Text(
-        'Your microphone audio is sent in real time to the selected AI voice provider. '
-        'Ravanix does not retain live-call audio on its server, but transcript text, call duration, billing records, and call telemetry may be stored with the project. '
-        'Your device will ask for microphone permission next.',
+      scrollable: true,
+      // Three plain facts, one per row, instead of one paragraph nobody reads.
+      // The wording is the disclosure the store requires; only its shape is new.
+      content: const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _DisclosureRow(
+            icon: Icons.graphic_eq,
+            heading: 'Live, with an AI voice',
+            body:
+                'Your microphone audio is sent in real time to the selected AI voice provider.',
+          ),
+          _DisclosureRow(
+            icon: Icons.description_outlined,
+            heading: 'What is kept',
+            body:
+                'Ravanix does not retain live-call audio on its server, but transcript text, call duration, billing records, and call telemetry may be stored with the project.',
+          ),
+          _DisclosureRow(
+            icon: Icons.mic_none,
+            heading: 'Your permission',
+            body: 'Your device will ask for microphone permission next.',
+          ),
+        ],
       ),
       actions: [
         AppButton.text(
@@ -93,4 +114,62 @@ Future<bool> ensureVoiceDisclosureAcknowledged(
   if (accepted != true) return false;
   await store.acknowledge();
   return true;
+}
+
+class _DisclosureRow extends StatelessWidget {
+  const _DisclosureRow({
+    required this.icon,
+    required this.heading,
+    required this.body,
+  });
+
+  final IconData icon;
+  final String heading;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ExcludeSemantics(
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: colors.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, size: 20, color: colors.onPrimaryContainer),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  heading,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  body,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

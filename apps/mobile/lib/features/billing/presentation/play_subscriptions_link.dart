@@ -13,7 +13,9 @@ Uri playSubscriptionsUrl(String? sku) {
     if (sku != null) 'sku=$sku',
     'package=$androidPackageName',
   ].join('&');
-  return Uri.parse('https://play.google.com/store/account/subscriptions?$query');
+  return Uri.parse(
+    'https://play.google.com/store/account/subscriptions?$query',
+  );
 }
 
 Future<bool> openPlaySubscriptions(String? sku) {

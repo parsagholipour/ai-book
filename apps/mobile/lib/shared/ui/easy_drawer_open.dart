@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'haptics.dart';
+import 'motion.dart';
+
 // Easier-open drawer: swipe left-to-right anywhere on the page, snaps open at
 // ~18% width (Material needs 50%) and on a light fling.
 //
@@ -13,7 +16,7 @@ const double _kWidth = 304.0;
 // Material uses 0.5 (~152px). ~55px is enough to snap open.
 const double _kOpenThreshold = 0.18;
 const double _kMinFlingVelocity = 180.0;
-const Duration _kBaseSettleDuration = Duration(milliseconds: 246);
+const Duration _kBaseSettleDuration = AppMotion.medium;
 // Drags starting in this start-edge strip open the drawer at normal touch
 // slop, like Material's 20px edge zone.
 const double _kEdgeDragWidth = 24.0;
@@ -172,6 +175,9 @@ class EasyDrawerControllerState extends State<EasyDrawerController>
     if (opened != _previouslyOpened) {
       widget.drawerCallback?.call(opened);
       _previouslyOpened = opened;
+      // The same tick a switch gives at its detent: letting go now will (or
+      // will no longer) open the drawer, and the reader can feel where that is.
+      AppHaptics.selection();
     }
   }
 
@@ -204,8 +210,10 @@ class EasyDrawerControllerState extends State<EasyDrawerController>
         widget.scrimColor ??
         DrawerTheme.of(context).scrimColor ??
         Colors.black54;
+    // Eased, so the page dims as the drawer arrives rather than in lockstep
+    // with a finger that started out slow.
     final effectiveScrim = scrimColor.withValues(
-      alpha: scrimColor.a * _controller.value,
+      alpha: scrimColor.a * AppMotion.enter.transform(_controller.value),
     );
     final platformHasBackButton =
         defaultTargetPlatform == TargetPlatform.android;

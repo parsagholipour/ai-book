@@ -53,7 +53,7 @@ void main() {
     await tester.tap(find.text('Report book'));
     await tester.pump();
     final reportVisualButton = find
-        .widgetWithText(OutlinedButton, 'Report visual')
+        .widgetWithText(TextButton, 'Report visual')
         .first;
     await tester.ensureVisible(reportVisualButton);
     await tester.pump();

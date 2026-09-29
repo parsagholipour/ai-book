@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/motion.dart';
+import '../../projects/presentation/plan_build_progress.dart';
+
 /// What the reader shows about the book's compile state, if anything.
 enum ReaderUpdateStatus {
   /// Nothing to say — what is on screen is current.
@@ -13,7 +17,14 @@ enum ReaderUpdateStatus {
   updated,
 }
 
-/// The strip above the page telling the reader their edits have landed.
+/// The card over the page telling the reader their edits have landed.
+///
+/// A card rather than a strip glued under the top bar: it has to be there
+/// whether or not the bars are, because the reader who asked for an edit and
+/// came back to a book with the controls put away is exactly the reader who
+/// needs to be told it is ready. It says what has happened, what the button will
+/// do — reloading is the one action that moves the page under the reader — and
+/// that it will not lose their place.
 class ReaderUpdateBanner extends StatelessWidget {
   const ReaderUpdateBanner({
     required this.status,
@@ -28,55 +39,124 @@ class ReaderUpdateBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (status == ReaderUpdateStatus.none) {
-      return const SizedBox.shrink();
-    }
-    final theme = Theme.of(context);
-    final rebuilding = status == ReaderUpdateStatus.rebuilding;
+    return AppSwitcher(
+      child: status == ReaderUpdateStatus.none
+          ? const SizedBox.shrink(key: ValueKey('reader-update-none'))
+          : _card(context, key: ValueKey(status)),
+    );
+  }
 
-    return Material(
-      color: rebuilding
-          ? theme.colorScheme.surfaceContainerHighest
-          : theme.colorScheme.primaryContainer,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-          child: Row(
-            children: [
-              if (rebuilding)
-                const SizedBox.square(
-                  dimension: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Icon(
-                  Icons.auto_awesome,
-                  size: 18,
-                  color: theme.colorScheme.onPrimaryContainer,
-                ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  rebuilding
-                      ? 'Updating this book with your changes…'
-                      : 'Your edits are in. Reload to see them.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: rebuilding
-                        ? theme.colorScheme.onSurfaceVariant
-                        : theme.colorScheme.onPrimaryContainer,
+  Widget _card(BuildContext context, {required Key key}) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final rebuilding = status == ReaderUpdateStatus.rebuilding;
+    final background = rebuilding
+        ? colors.surfaceContainerHigh
+        : colors.primaryContainer;
+    final foreground = rebuilding
+        ? colors.onSurface
+        : colors.onPrimaryContainer;
+
+    return SafeArea(
+      key: key,
+      bottom: false,
+      minimum: const EdgeInsets.only(top: AppSpacing.xs),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          0,
+          AppSpacing.sm,
+          AppSpacing.xs,
+        ),
+        child: Semantics(
+          container: true,
+          liveRegion: true,
+          child: Material(
+            color: background,
+            elevation: 2,
+            shadowColor: Colors.black.withValues(alpha: 0.25),
+            borderRadius: BorderRadius.circular(AppRadii.control),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                    AppSpacing.xs,
+                    AppSpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      ExcludeSemantics(
+                        child: Icon(
+                          rebuilding ? Icons.autorenew : Icons.auto_awesome,
+                          size: 20,
+                          color: foreground,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              rebuilding
+                                  ? 'Updating this book with your changes…'
+                                  : 'Your edits are in. Reload to see them.',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: foreground,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              rebuilding
+                                  ? 'You can keep reading while it finishes.'
+                                  : 'Reloading keeps your place.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: foreground.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (!rebuilding) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        FilledButton(
+                          onPressed: onReload,
+                          style: FilledButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            minimumSize: const Size(
+                              64,
+                              AppSizes.minimumTouchTarget - 8,
+                            ),
+                          ),
+                          child: const Text('Reload'),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          tooltip: 'Dismiss',
+                          color: foreground,
+                          onPressed: onDismiss,
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              ),
-              if (!rebuilding) ...[
-                TextButton(onPressed: onReload, child: const Text('Reload')),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  tooltip: 'Dismiss',
-                  onPressed: onDismiss,
-                ),
+                // Work is in flight for exactly as long as this state lasts,
+                // which is the only reason it is allowed to keep moving.
+                if (rebuilding)
+                  PlanBuildProgressBar(
+                    value: null,
+                    height: 3,
+                    trackColor: colors.outlineVariant.withValues(alpha: 0.4),
+                    semanticLabel: 'Updating this book',
+                  ),
               ],
-            ],
+            ),
           ),
         ),
       ),

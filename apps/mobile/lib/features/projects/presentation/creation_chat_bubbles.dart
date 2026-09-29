@@ -7,6 +7,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   const _ProjectChatMessageBubble({
     required this.message,
     required this.switchingBranch,
+    this.placement = _BubblePlacement.alone,
     this.activeProjectId,
     this.onSwitchBranch,
     this.onEdit,
@@ -23,6 +24,9 @@ class _ProjectChatMessageBubble extends StatelessWidget {
 
   final MobileProjectChatMessage message;
   final bool switchingBranch;
+
+  /// Its run: whether it opens or closes one, and the day it starts, if any.
+  final _BubblePlacement placement;
 
   /// False when this turn's edit already has an operation card in the
   /// transcript: that card carries the charge (and knows whether it was
@@ -58,7 +62,6 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         ? message.creditsCharged
         : null;
     final branch = message.branch;
-    final timestamp = _formatChatTimestamp(message.createdAt);
     final replanCopyTargetProjectId = message.isAssistant
         ? message.replanCopyTargetProjectId
         : null;
@@ -68,7 +71,22 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         onOpenReplanCopy != null;
     final replyTo = message.replyTo;
     final startReply = onReply == null ? null : () => onReply!(message);
-    final bubble = MessageHoldFeedback(
+    final manualEdit = message.isAssistant ? message.manualEdit : null;
+    // A card under the bubble belongs to the same turn, so the bubble is not
+    // the end of its run: the card is, and it draws the time itself.
+    final hasAttachedCard =
+        contentCard != null || manualEdit != null || editProposal != null;
+    final bubble = _ChatBubbleShell(
+      isUser: isUser,
+      background: background,
+      placement: hasAttachedCard
+          ? _BubblePlacement(
+              first: placement.first,
+              last: true,
+              dayStart: placement.dayStart,
+            )
+          : placement,
+      timestamp: _chatTimeLabel(context, message.createdAt),
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
         position: details.globalPosition,
@@ -76,112 +94,92 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         onEdit: isUser && onEdit != null ? () => onEdit!(message) : null,
         onReply: startReply,
       ),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
-        ),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isUser ? 16 : 4),
-            bottomRight: Radius.circular(isUser ? 4 : 16),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (replyTo != null)
-              ChatQuotedMessage(target: replyTo, foreground: foreground),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Flexible(
-                  child: ChatMessageText.forRole(
-                    message.content,
-                    role: message.role,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.copyWith(color: foreground),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (replyTo != null)
+            ChatQuotedMessage(target: replyTo, foreground: foreground),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Flexible(
+                child: ChatMessageText.forRole(
+                  message.content,
+                  role: message.role,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: foreground,
+                    height: 1.4,
                   ),
                 ),
-                // The reply no longer names its price; the badge does, and it
-                // explains what credits buy when tapped.
-                if (creditsCharged != null) ...[
-                  const SizedBox(width: 8),
-                  CreditCostBadge(
-                    credits: creditsCharged,
-                    foreground: foreground,
-                  ),
-                ],
+              ),
+              // The reply no longer names its price; the badge does, and it
+              // explains what credits buy when tapped.
+              if (creditsCharged != null) ...[
+                const SizedBox(width: 8),
+                CreditCostBadge(
+                  credits: creditsCharged,
+                  foreground: foreground,
+                ),
               ],
+            ],
+          ),
+          if (branch != null && onSwitchBranch != null) ...[
+            const SizedBox(height: 8),
+            BranchNavigator(
+              branch: branch,
+              foreground: foreground,
+              switching: switchingBranch,
+              onPrevious: () => onSwitchBranch!(message, 'previous'),
+              onNext: () => onSwitchBranch!(message, 'next'),
             ),
-            if (timestamp != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                timestamp,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: foreground.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-            if (branch != null && onSwitchBranch != null) ...[
-              const SizedBox(height: 8),
-              BranchNavigator(
-                branch: branch,
-                foreground: foreground,
-                switching: switchingBranch,
-                onPrevious: () => onSwitchBranch!(message, 'previous'),
-                onNext: () => onSwitchBranch!(message, 'next'),
-              ),
-            ],
-            if (onOpenPaywall != null) ...[
-              const SizedBox(height: 10),
-              AppButton.primary(
-                onPressed: () => onOpenPaywall!(message),
-                leading: const Icon(Icons.add_card_outlined),
-                label: 'Add credits',
-              ),
-            ],
-            if (showReplanCopyLink) ...[
-              const SizedBox(height: 10),
-              ActionChip(
-                avatar: const Icon(Icons.open_in_new_outlined, size: 18),
-                label: const Text('Open the new book'),
-                onPressed: () => onOpenReplanCopy!(replanCopyTargetProjectId),
-              ),
-            ],
           ],
-        ),
+          if (onOpenPaywall != null) ...[
+            const SizedBox(height: 10),
+            AppButton.primary(
+              onPressed: () => onOpenPaywall!(message),
+              leading: const Icon(Icons.add_card_outlined),
+              label: 'Add credits',
+            ),
+          ],
+          if (showReplanCopyLink) ...[
+            const SizedBox(height: 10),
+            ActionChip(
+              avatar: const Icon(Icons.open_in_new_outlined, size: 18),
+              label: const Text('Open the new book'),
+              onPressed: () => onOpenReplanCopy!(replanCopyTargetProjectId),
+            ),
+          ],
+        ],
       ),
     );
-    final manualEdit = message.isAssistant ? message.manualEdit : null;
-    if (contentCard == null && manualEdit == null && editProposal == null) {
-      return Align(
-        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-        child: bubble,
-      );
-    }
+    if (!hasAttachedCard) return _withDaySeparator(placement, bubble);
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: AlignmentDirectional.centerStart,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          bubble,
-          if (contentCard != null) _ContentCardBubble(card: contentCard),
-          if (editProposal != null)
-            EditProposalCard(
-              proposal: editProposal,
-              enabled: !proposalsBusy,
-              onApply: showProposalActions ? onApplyProposal : null,
-              onCancel: showProposalActions ? onCancelProposal : null,
+          _withDaySeparator(placement, bubble),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: _avatarSlot),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (contentCard != null) _ContentCardBubble(card: contentCard),
+                if (editProposal != null)
+                  EditProposalCard(
+                    proposal: editProposal,
+                    enabled: !proposalsBusy,
+                    onApply: showProposalActions ? onApplyProposal : null,
+                    onCancel: showProposalActions ? onCancelProposal : null,
+                  ),
+                if (manualEdit != null) SavedExportCard(message: message),
+              ],
             ),
-          if (manualEdit != null) SavedExportCard(message: message),
+          ),
         ],
       ),
     );
@@ -292,10 +290,23 @@ class _ChatWarningsBanner extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                warnings.join(' '),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.onTertiaryContainer,
+              // Capped, and scrollable past the cap: this banner is pinned
+              // above the transcript, so a long warning at a large text size
+              // would otherwise push the footer off a small screen.
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: math.max(
+                    MediaQuery.sizeOf(context).height * 0.16,
+                    72,
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    warnings.join(' '),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onTertiaryContainer,
+                    ),
+                  ),
                 ),
               ),
             ),

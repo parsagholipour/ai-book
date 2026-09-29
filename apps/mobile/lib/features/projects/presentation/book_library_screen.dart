@@ -14,6 +14,7 @@ import '../domain/project_models.dart';
 import 'book_actions_menu.dart';
 import 'book_library_card.dart';
 import 'book_library_controls.dart';
+import 'book_library_skeleton.dart';
 import 'creation_chat_navigation.dart';
 
 class BookLibraryScreen extends ConsumerStatefulWidget {
@@ -88,7 +89,7 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
         child: RefreshIndicator(
           onRefresh: _refresh,
           child: projects.when(
-            loading: () => const AppLoadingState(message: 'Loading your books'),
+            loading: () => const BookLibrarySkeleton(),
             error: (error, _) => ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
@@ -107,6 +108,16 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
                 filter: _filter,
                 sort: _sort,
               );
+              final counts = {
+                BookLibraryFilter.all: books.length,
+                for (final option in BookLibraryFilter.values)
+                  if (option != BookLibraryFilter.all)
+                    option: books
+                        .where(
+                          (book) => BookLibraryFilter.forBook(book) == option,
+                        )
+                        .length,
+              };
               return LayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.maxWidth.clamp(0.0, 880.0);
@@ -118,30 +129,52 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     slivers: [
                       if (books.isEmpty)
-                        SliverToBoxAdapter(
-                          child: AppEmptyState(
-                            title: 'No books yet',
-                            message:
-                                'Your books will appear here once writing begins. '
-                                'Ideas and plans are saved in your chats.',
-                            actionLabel: 'New book',
-                            onAction: () => context.push(newBookChatLocation()),
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              AppEmptyState(
+                                title: 'No books yet',
+                                message:
+                                    'Your books will appear here once writing begins. '
+                                    'Ideas and plans are saved in your chats.',
+                                actionLabel: 'New book',
+                                onAction: () =>
+                                    context.push(newBookChatLocation()),
+                              ),
+                              // The other way a book arrives: one the reader
+                              // already wrote.
+                              AppButton.text(
+                                label: 'Import a manuscript',
+                                leading: const Icon(Icons.upload_file_outlined),
+                                onPressed: () => context.push('/books/import'),
+                              ),
+                            ],
                           ),
                         )
                       else ...[
-                        SliverPadding(
-                          padding: EdgeInsets.fromLTRB(side, 12, side, 0),
-                          sliver: SliverToBoxAdapter(
-                            child: BookLibraryControls(
-                              controller: _searchController,
-                              filter: _filter,
-                              sort: _sort,
-                              totalCount: books.length,
-                              resultCount: visible.length,
-                              onSearch: () => setState(() {}),
-                              onFilter: (value) =>
-                                  setState(() => _filter = value),
-                              onSort: (value) => setState(() => _sort = value),
+                        // Reappears the moment the reader scrolls back up, so a
+                        // long list never has to be scrolled to its top to
+                        // search it.
+                        SliverFloatingHeader(
+                          child: Material(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(side, 12, side, 0),
+                              child: BookLibraryControls(
+                                controller: _searchController,
+                                filter: _filter,
+                                sort: _sort,
+                                totalCount: books.length,
+                                resultCount: visible.length,
+                                filterCounts: counts,
+                                onSearch: () => setState(() {}),
+                                onFilter: (value) =>
+                                    setState(() => _filter = value),
+                                onSort: (value) =>
+                                    setState(() => _sort = value),
+                              ),
                             ),
                           ),
                         ),

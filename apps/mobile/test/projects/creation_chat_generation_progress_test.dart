@@ -189,10 +189,102 @@ void main() {
       ),
     );
 
-    expect(find.text('Ready to export'), findsOneWidget);
+    // A finished book is a still summary, not a progress bubble: no percent,
+    // no reassurance, no checklist unless asked for.
+    expect(find.text('Ready · 3 pages · 1 image'), findsOneWidget);
+    expect(find.text('100%'), findsNothing);
+    expect(find.text('Preparing your chapters'), findsNothing);
     expect(
       find.text('You can leave this chat — we’ll keep working.'),
       findsNothing,
+    );
+  });
+
+  testWidgets('a finished book has one primary action and folds its history', (
+    tester,
+  ) async {
+    await _pumpChat(
+      tester,
+      status: _status(
+        status: 'complete',
+        statusLabel: 'Ready to export',
+        progressPercent: 100,
+        currentAction: 'Ready to download.',
+        bookGenerationDurationMs: 473000,
+        exports: _readyExports,
+        generationProgress: const MobileGenerationProgress(
+          percent: 100,
+          steps: [
+            MobileProjectStatusStep(
+              key: 'prepare',
+              label: 'Preparing your chapters',
+              status: 'done',
+              detail: '6 chapters',
+            ),
+            MobileProjectStatusStep(
+              key: 'write',
+              label: 'Writing your pages',
+              status: 'done',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Ready · 3 pages · 1 image · made in 7m 53s'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(FilledButton, 'Read book'), findsOneWidget);
+    // Everything beside Read book is quieter than it, and the stray progress
+    // link is gone.
+    expect(find.widgetWithText(FilledButton, 'Open PDF'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Open PDF'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Edit book'), findsOneWidget);
+    expect(find.text('View progress'), findsNothing);
+    expect(find.text('Preparing your chapters'), findsNothing);
+
+    await tester.ensureVisible(find.text('See how it was made'));
+    await tester.pump();
+    await tester.tap(find.text('See how it was made'));
+    await _settleEnough(tester);
+
+    expect(find.text('Preparing your chapters'), findsOneWidget);
+    expect(find.text('6 chapters'), findsOneWidget);
+  });
+
+  testWidgets('a finished book with no file yet says so instead of going '
+      'quiet', (tester) async {
+    await _pumpChat(
+      tester,
+      status: _status(
+        status: 'complete',
+        statusLabel: 'Ready to export',
+        progressPercent: 100,
+      ),
+    );
+
+    expect(find.text('Your book file is being prepared.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Read book'), findsNothing);
+  });
+
+  testWidgets('a scheduled retry says when, and that nothing is asked of '
+      'the reader', (tester) async {
+    await _pumpChat(
+      tester,
+      status: _status(
+        status: 'failed',
+        failureMessage: 'A page timed out.',
+        retryAvailable: true,
+        nextRetryAt: DateTime.now().add(const Duration(minutes: 3)),
+        retryState: 'scheduled',
+        retryMessage: 'Picking your book back up in a moment.',
+      ),
+    );
+
+    expect(
+      find.text('Trying again in about 3 min. You don’t need to do anything.'),
+      findsOneWidget,
     );
   });
 
@@ -238,6 +330,14 @@ void main() {
     expect(find.text('Needs attention'), findsOneWidget);
     expect(find.text('The writer stopped partway through.'), findsOneWidget);
 
+    // The price is said before the tap, in the card itself.
+    expect(
+      find.text(
+        'A retry uses 40 credits, and they come back if it fails again.',
+      ),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(find.text('Retry generation'));
     await tester.tap(find.text('Retry generation'));
     await _settleEnough(tester);
 
@@ -459,6 +559,8 @@ MobileProjectStatus _status({
   DateTime? nextRetryAt,
   String? retryState,
   String? retryMessage,
+  int? bookGenerationDurationMs,
+  MobileExportSet exports = _exports,
 }) {
   return MobileProjectStatus(
     projectId: 'project-1',
@@ -482,7 +584,8 @@ MobileProjectStatus _status({
     steps: const [],
     pageProgress: const MobilePageProgress(completed: 3, target: 28),
     imageCount: 1,
-    exports: _exports,
+    exports: exports,
+    bookGenerationDurationMs: bookGenerationDurationMs,
     coverEnabled: coverEnabled,
     illustrationsEnabled: illustrationsEnabled,
     updatedAt: DateTime.utc(2026, 6, 15),
@@ -504,6 +607,27 @@ const _exports = MobileExportSet(
     available: false,
     unlocked: false,
     creditsRequired: 150,
+    downloadUrl: '/api/mobile/projects/project-1/export/epub',
+    filename: 'book.epub',
+    contentType: 'application/epub+zip',
+  ),
+);
+
+const _readyExports = MobileExportSet(
+  pdf: MobileExportAvailability(
+    format: 'pdf',
+    available: true,
+    unlocked: true,
+    creditsRequired: 0,
+    downloadUrl: '/api/mobile/projects/project-1/export/pdf',
+    filename: 'book.pdf',
+    contentType: 'application/pdf',
+  ),
+  epub: MobileExportAvailability(
+    format: 'epub',
+    available: true,
+    unlocked: true,
+    creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',

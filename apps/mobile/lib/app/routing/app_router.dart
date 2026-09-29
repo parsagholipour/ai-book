@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,36 +26,109 @@ import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/audiobook/presentation/audiobook_screen.dart';
 import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../shared/api/api_error.dart';
+import '../../shared/ui/app_components.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 import '../../shared/ui/motion.dart';
-import '../../shared/ui/tomeza_brand.dart';
 import 'exit_confirmation.dart';
 
 /// Screen transition used for every route.
 ///
-/// A short fade paired with a small upward slide reads as "this screen came
-/// from the one you were on", without the latency of a full slide-across. The
-/// slide is dropped when the platform asks for reduced motion.
+/// Going deeper (library -> book -> reader) is a shared-axis move: the new page
+/// eases in from the side the reader reads toward while fading up, and the page
+/// beneath drifts a little the other way, so the two read as one surface with
+/// depth instead of two screens swapping. Top-level destinations (home, the
+/// auth screens, the splash) fade through with a barely-there scale, because
+/// nothing is "beneath" them to move away from. Both drop the movement when the
+/// platform asks for reduced motion.
+///
+/// The pages are driven by the route's own animation, which the framework also
+/// scrubs during a back gesture, so swipe-back and Android's predictive back
+/// follow the finger through the same curves. iOS keeps its native edge-swipe
+/// transition, which a custom builder would otherwise take away.
 CustomTransitionPage<void> _appPage(GoRouterState state, Widget child) {
+  return _page(state, child, _TransitionKind.sharedAxis);
+}
+
+/// A top-level destination: fades through instead of sliding, see [_appPage].
+CustomTransitionPage<void> _rootPage(GoRouterState state, Widget child) {
+  return _page(state, child, _TransitionKind.fadeThrough);
+}
+
+enum _TransitionKind { sharedAxis, fadeThrough }
+
+CustomTransitionPage<void> _page(
+  GoRouterState state,
+  Widget child,
+  _TransitionKind kind,
+) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
     child: child,
-    transitionDuration: AppMotion.medium,
-    reverseTransitionDuration: AppMotion.fast,
+    transitionDuration: AppMotion.page,
+    // Leaving is quicker than arriving: the reader has already decided.
+    reverseTransitionDuration: const Duration(milliseconds: 200),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final fade = CurvedAnimation(parent: animation, curve: AppMotion.enter);
-      if (AppMotion.reducedMotion(context)) {
+      final platform = Theme.of(context).platform;
+      final route = ModalRoute.of(context);
+      if ((platform == TargetPlatform.iOS ||
+              platform == TargetPlatform.macOS) &&
+          route is PageRoute<void>) {
+        return const CupertinoPageTransitionsBuilder().buildTransitions<void>(
+          route,
+          context,
+          animation,
+          secondaryAnimation,
+          child,
+        );
+      }
+      final reduced = AppMotion.reducedMotion(context);
+      // `drive` with a CurveTween, not a CurvedAnimation: nothing here has to be
+      // disposed, and the same curve on the way out reads as an ease-in, which
+      // is what a page leaving should do.
+      final fade = animation.drive(
+        CurveTween(curve: const Interval(0, 0.7, curve: Curves.easeOut)),
+      );
+      if (reduced) {
         return FadeTransition(opacity: fade, child: child);
       }
-      return FadeTransition(
-        opacity: fade,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.02),
-            end: Offset.zero,
-          ).animate(fade),
-          child: child,
+      final move = animation.drive(
+        CurveTween(curve: AppMotion.enterEmphasized),
+      );
+      // Toward the reading direction: left in right-to-left scripts.
+      final direction = Directionality.of(context) == TextDirection.rtl
+          ? -1.0
+          : 1.0;
+      final arriving = switch (kind) {
+        _TransitionKind.fadeThrough => FadeTransition(
+          opacity: fade,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.97, end: 1).animate(move),
+            child: child,
+          ),
         ),
+        _TransitionKind.sharedAxis => FadeTransition(
+          opacity: fade,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: Offset(0.08 * direction, 0),
+              end: Offset.zero,
+            ).animate(move),
+            child: child,
+          ),
+        ),
+      };
+      // Whatever page a new one is pushed over drifts a little the other way.
+      // It is only moved, never faded, so nothing but the page that is
+      // arriving ever shows the window behind the navigator.
+      return SlideTransition(
+        position:
+            Tween<Offset>(
+              begin: Offset.zero,
+              end: Offset(-0.06 * direction, 0),
+            ).animate(
+              secondaryAnimation.drive(CurveTween(curve: AppMotion.standard)),
+            ),
+        child: arriving,
       );
     },
   );
@@ -127,17 +203,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/splash',
-        pageBuilder: (context, state) => _appPage(state, const SplashScreen()),
+        pageBuilder: (context, state) => _rootPage(state, const SplashScreen()),
       ),
       GoRoute(
         path: '/auth/sign-in',
         pageBuilder: (context, state) =>
-            _appPage(state, const AuthScreen(mode: AuthScreenMode.signIn)),
+            _rootPage(state, const AuthScreen(mode: AuthScreenMode.signIn)),
       ),
       GoRoute(
         path: '/auth/sign-up',
         pageBuilder: (context, state) =>
-            _appPage(state, const AuthScreen(mode: AuthScreenMode.signUp)),
+            _rootPage(state, const AuthScreen(mode: AuthScreenMode.signUp)),
       ),
       GoRoute(
         path: '/auth/forgot-password',
@@ -151,7 +227,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/legal/acceptance',
         pageBuilder: (context, state) =>
-            _appPage(state, const LegalAcceptanceScreen()),
+            _rootPage(state, const LegalAcceptanceScreen()),
       ),
       GoRoute(
         path: '/sample-book',
@@ -161,7 +237,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/home',
         pageBuilder: (context, state) =>
-            _appPage(state, const CreationChatScreen()),
+            _rootPage(state, const CreationChatScreen()),
       ),
       GoRoute(
         path: '/account',
@@ -196,7 +272,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/books/new',
         pageBuilder: (context, state) {
           final fresh = state.uri.queryParameters['fresh'] == 'true';
-          return _appPage(
+          return _rootPage(
             state,
             CreationChatScreen(
               startFresh: fresh,
@@ -215,7 +291,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/books/chat/:draftId',
-        pageBuilder: (context, state) => _appPage(
+        pageBuilder: (context, state) => _rootPage(
           state,
           CreationChatScreen(draftId: state.pathParameters['draftId']),
         ),
@@ -325,50 +401,296 @@ final appBackButtonDispatcherProvider = Provider<BackButtonDispatcher>((ref) {
   return ConfirmExitBackButtonDispatcher(router.routerDelegate.navigatorKey);
 });
 
+/// The first thing every launch shows while the saved session is restored, and
+/// the place a failed restore stops with a way to try again.
 class SplashScreen extends ConsumerWidget {
   const SplashScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authControllerProvider);
+    // A retry keeps the error it is retrying, so "has an error" alone would
+    // show the same screen with no sign that anything is happening.
     final error = authState.error;
-
-    if (error != null) {
-      return Scaffold(
-        body: Center(
-          child: AppErrorState(
-            title: 'Connection problem',
-            message: userFacingError(error),
-            actionLabel: 'Retry',
-            onRetry: () => ref.invalidate(authControllerProvider),
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: error != null
+                  ? _SplashRetry(
+                      error: error,
+                      retrying: authState.isLoading,
+                      onRetry: () => ref.invalidate(authControllerProvider),
+                    )
+                  : const _SplashLoading(),
+            ),
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
+}
 
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+/// Restoring the session: the brand mark breathing, a slim bar sweeping under
+/// it, and a plainer line once it is taking longer than it should.
+///
+/// One controller drives all of it and runs for a bounded stretch, so a screen
+/// left open does not animate for ever: after half a minute it stops on the
+/// last honest sentence.
+class _SplashLoading extends StatefulWidget {
+  const _SplashLoading();
+
+  @override
+  State<_SplashLoading> createState() => _SplashLoadingState();
+}
+
+class _SplashLoadingState extends State<_SplashLoading>
+    with SingleTickerProviderStateMixin {
+  static const _span = Duration(seconds: 30);
+  static const _breath = Duration(milliseconds: 1800);
+  static const _sweep = Duration(milliseconds: 1400);
+  static const _slowAfter = Duration(seconds: 6);
+
+  late final AnimationController _clock = AnimationController(
+    vsync: this,
+    duration: _span,
+  );
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    // Reduced motion still gets the slow-connection line; it just holds the
+    // mark and the bar still.
+    _clock.forward();
+  }
+
+  @override
+  void dispose() {
+    _clock.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final reduced = AppMotion.reducedMotion(context);
+
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Restoring your session',
+      child: ExcludeSemantics(
+        child: AnimatedBuilder(
+          animation: _clock,
+          builder: (context, _) {
+            final elapsed = _span * _clock.value;
+            final breathe = reduced
+                ? 0.0
+                : 0.5 -
+                      0.5 *
+                          math.cos(
+                            2 *
+                                math.pi *
+                                elapsed.inMicroseconds /
+                                _breath.inMicroseconds,
+                          );
+            final sweep = reduced
+                ? 0.35
+                : (elapsed.inMicroseconds % _sweep.inMicroseconds) /
+                      _sweep.inMicroseconds;
+            final slow = elapsed >= _slowAfter;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox.square(
+                  dimension: 112,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // A halo that swells as the mark lifts and fades as it
+                      // settles: the "alive" cue, without a spinner.
+                      Transform.scale(
+                        scale: 0.8 + 0.2 * breathe,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: colors.primary.withValues(
+                              alpha: 0.06 + 0.06 * (1 - breathe),
+                            ),
+                          ),
+                          child: const SizedBox.square(dimension: 112),
+                        ),
+                      ),
+                      Transform.scale(
+                        scale: 1 + 0.05 * breathe,
+                        child: const TomezaBrandMark(size: 60),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Tomeza',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                _SweepBar(position: sweep),
+                const SizedBox(height: 16),
+                AnimatedSwitcher(
+                  duration: reduced ? Duration.zero : AppMotion.medium,
+                  child: Text(
+                    slow
+                        ? 'Still connecting. This is taking longer than usual.'
+                        : 'Getting your library ready',
+                    key: ValueKey(slow),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// A short bar sliding along a rounded track, cycling at the caller's pace.
+class _SweepBar extends StatelessWidget {
+  const _SweepBar({required this.position});
+
+  /// 0..1 across one sweep.
+  final double position;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    const width = 132.0;
+    const segment = 44.0;
+    // The segment enters from beyond the left edge and leaves past the right,
+    // clipped by the track, so it never pops in or out.
+    final left =
+        -segment + (width + segment) * Curves.easeInOut.transform(position);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.pill),
+      child: SizedBox(
+        width: width,
+        height: 4,
+        child: Stack(
           children: [
-            TomezaWordmark(
-              markSize: 44,
-              gap: 13,
-              textStyle: Theme.of(
-                context,
-              ).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800),
+            Positioned.fill(
+              child: ColoredBox(color: colors.primary.withValues(alpha: 0.14)),
             ),
-            const SizedBox(height: 24),
-            const SizedBox.square(
-              dimension: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                semanticsLabel: 'Restoring your session',
-              ),
+            Positioned(
+              left: left,
+              width: segment,
+              top: 0,
+              bottom: 0,
+              child: ColoredBox(color: colors.primary),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A failed restore: what happened, that nothing is lost, and one obvious way
+/// forward that shows it is working once it has been pressed.
+class _SplashRetry extends StatelessWidget {
+  const _SplashRetry({
+    required this.error,
+    required this.retrying,
+    required this.onRetry,
+  });
+
+  final Object error;
+  final bool retrying;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final offline =
+        error is ApiException &&
+        (error as ApiException).code == 'NETWORK_ERROR';
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TomezaWordmark(
+          markSize: 32,
+          textStyle: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 36),
+        ExcludeSemantics(
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: colors.errorContainer.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(AppRadii.card),
+            ),
+            child: Icon(
+              offline ? Icons.wifi_off_outlined : Icons.cloud_off_outlined,
+              color: colors.error,
+              size: 30,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Semantics(
+          header: true,
+          liveRegion: true,
+          child: Text(
+            'Connection problem',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          userFacingError(error),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 24),
+        AppButton.primary(
+          label: 'Retry',
+          loading: retrying,
+          loadingLabel: 'Retrying',
+          expanded: true,
+          leading: const Icon(Icons.refresh),
+          onPressed: onRetry,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Your books are saved and will be here as soon as you are back online.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }

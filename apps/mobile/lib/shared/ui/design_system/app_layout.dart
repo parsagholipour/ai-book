@@ -41,6 +41,8 @@ class AppSectionHeader extends StatelessWidget {
     this.icon,
     this.action,
     this.titleStyle,
+    this.subtitleStyle,
+    this.dense = false,
     super.key,
   });
 
@@ -49,10 +51,16 @@ class AppSectionHeader extends StatelessWidget {
   final IconData? icon;
   final Widget? action;
   final TextStyle? titleStyle;
+  final TextStyle? subtitleStyle;
+
+  /// A quieter header for a group inside a page rather than the page's own
+  /// section: a smaller title and a tighter gap.
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     final headerText = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -62,18 +70,18 @@ class AppSectionHeader extends StatelessWidget {
             title,
             style:
                 titleStyle ??
-                Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                (dense ? text.titleMedium : text.titleLarge)?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
           ),
         ),
         if (subtitle != null) ...[
           const SizedBox(height: AppSpacing.xxs),
           Text(
             subtitle!,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+            style:
+                subtitleStyle ??
+                text.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
           ),
         ],
       ],

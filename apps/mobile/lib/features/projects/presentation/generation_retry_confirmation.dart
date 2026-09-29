@@ -28,7 +28,6 @@ Future<MobileGenerationRecoveryQuote?> confirmPaidGenerationRetry(
   required String projectId,
   required MobileGenerationRecoveryQuote quote,
 }) async {
-
   final billing = await ref.read(billingProvider.future);
   if (!context.mounted) return null;
   if (billing.credits.available < quote.credits) {

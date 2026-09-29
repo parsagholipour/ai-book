@@ -261,14 +261,24 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('an empty history asks for a picture instead of a bare rail', (
+    testWidgets('an empty history is the header\'s job, not a bare rail', (
       tester,
     ) async {
       await pumpProfile(tester, testCharacter(hasPhoto: false));
 
-      expect(find.text('Add a photo, or have one drawn.'), findsOneWidget);
+      // One way in, said once: the header's own two buttons. A strip under it
+      // repeating "Add a picture" over nothing was the same ask three times.
+      expect(find.text('Pictures'), findsNothing);
       expect(
         find.byKey(const ValueKey('character-strip-add-tile')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('character-header-add-picture')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('character-header-describe')),
         findsOneWidget,
       );
     });
@@ -623,7 +633,8 @@ void main() {
     'the app bar names the character once the headline scrolls away',
     (tester) async {
       await pumpProfile(tester, testCharacter());
-      tester.view.physicalSize = const Size(390, 844);
+      // Short enough that the page has somewhere to scroll to.
+      tester.view.physicalSize = const Size(390, 560);
       await tester.pumpAndSettle();
       final title = find.byKey(const ValueKey('character-profile-title'));
       expect(tester.widget<AnimatedOpacity>(title).opacity, 0);

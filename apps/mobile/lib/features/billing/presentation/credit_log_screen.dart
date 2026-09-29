@@ -4,9 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/haptics.dart';
 import '../data/credit_log_repository.dart';
 import '../domain/billing_models.dart';
-import 'billing_plan_tiles.dart' show formatCredits;
+import 'credit_log_tile.dart';
+
+export 'credit_log_tile.dart'
+    show
+        creditLogAmountLabel,
+        creditLogIcon,
+        creditLogIconFor,
+        creditLogSemanticLabel,
+        dayLabelFor,
+        timeLabelFor;
 
 /// Where the credits went, newest first.
 ///
@@ -23,6 +33,25 @@ class CreditLogScreen extends ConsumerStatefulWidget {
 
 const _pageSize = 30;
 
+/// Which movements the list shows. It filters what has been loaded; the
+/// screen keeps paging in older entries while a filter still has none to show,
+/// so a filter never claims there is nothing when the answer is further back.
+enum _LogFilter {
+  all('All'),
+  spent('Spent'),
+  added('Added');
+
+  const _LogFilter(this.label);
+
+  final String label;
+
+  bool admits(CreditLogEntry entry) => switch (this) {
+    _LogFilter.all => true,
+    _LogFilter.spent => !entry.addsCredits,
+    _LogFilter.added => entry.addsCredits,
+  };
+}
+
 class _CreditLogScreenState extends ConsumerState<CreditLogScreen> {
   final _entries = <CreditLogEntry>[];
   String? _cursor;
@@ -30,6 +59,7 @@ class _CreditLogScreenState extends ConsumerState<CreditLogScreen> {
   bool _loadingMore = false;
   String? _error;
   String? _moreError;
+  _LogFilter _filter = _LogFilter.all;
 
   @override
   void initState() {
@@ -99,90 +129,161 @@ class _CreditLogScreenState extends ConsumerState<CreditLogScreen> {
     }
   }
 
+  void _choose(_LogFilter filter) {
+    if (filter == _filter) return;
+    AppHaptics.selection();
+    setState(() => _filter = filter);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final showFilters = !_loading && _error == null && _entries.isNotEmpty;
     return Scaffold(
-      appBar: AppBar(title: const Text('Credit log')),
-      body: RefreshIndicator(onRefresh: _loadFirstPage, child: _body(context)),
+      appBar: AppBar(title: const Text('Credit history')),
+      body: Column(
+        children: [
+          if (showFilters) _FilterBar(selected: _filter, onSelected: _choose),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadFirstPage,
+              child: _body(context),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _body(BuildContext context) {
     if (_loading) {
-      return const AppLoadingState(message: 'Loading your credit history');
+      return const CreditLogSkeleton();
     }
     if (_error != null) {
-      return ListView(
-        padding: const EdgeInsets.only(top: 24),
-        children: [
-          AppErrorState(
-            title: 'Could not load your credit log',
-            message: _error!,
-            onRetry: _loadFirstPage,
-          ),
-        ],
+      return _scrollable(
+        AppErrorState(
+          title: 'Could not load your credit history',
+          message: _error!,
+          onRetry: _loadFirstPage,
+        ),
       );
     }
     if (_entries.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.only(top: 24),
-        children: const [
-          AppEmptyState(
-            icon: Icons.receipt_long_outlined,
-            title: 'No credit history yet',
-            message:
-                'Credits you buy, and the ones your books use, will be listed here.',
-          ),
-        ],
+      return _scrollable(
+        const AppEmptyState(
+          icon: Icons.receipt_long_outlined,
+          title: 'No credit history yet',
+          message:
+              'Credits you get, and the ones your books use, will be listed here.',
+        ),
       );
     }
 
-    final rows = _rows(_entries);
-    // The trailing row is the loader, the retry, or the end of the history.
-    final itemCount = rows.length + 1;
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-      itemCount: itemCount,
-      itemBuilder: (context, index) {
-        if (index == rows.length) {
-          return _trailing(context);
-        }
-        return switch (rows[index]) {
-          _DayRow(:final label) => _DayHeader(label: label, first: index == 0),
-          _EntryRow(:final entry) => _CreditLogTile(entry: entry),
-        };
-      },
+    final visible = _entries.where(_filter.admits).toList();
+    if (visible.isEmpty && _cursor == null) {
+      return _scrollable(
+        AppEmptyState(
+          icon: Icons.filter_alt_off_outlined,
+          title: _filter == _LogFilter.spent
+              ? 'No credits spent yet'
+              : 'No credits added yet',
+          message: 'Nothing in your history matches this filter.',
+          actionLabel: 'Show everything',
+          onAction: () => _choose(_LogFilter.all),
+        ),
+      );
+    }
+
+    final surface = Theme.of(context).colorScheme.surface;
+    final headerExtent = MediaQuery.textScalerOf(context).scale(20) + 22;
+    final localizations = MaterialLocalizations.of(context);
+    final now = DateTime.now();
+    final groups = <(String, List<CreditLogEntry>)>[];
+    for (final entry in visible) {
+      final day = dayLabelFor(
+        entry.createdAt,
+        now,
+        localizations: localizations,
+      );
+      if (groups.isEmpty || groups.last.$1 != day) {
+        groups.add((day, [entry]));
+      } else {
+        groups.last.$2.add(entry);
+      }
+    }
+
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        for (final (index, group) in groups.indexed)
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              index == groups.length - 1 ? 28 : 0,
+            ),
+            // A group per day, so each heading sticks only while its own day
+            // is on screen and the next one takes its place.
+            sliver: SliverMainAxisGroup(
+              slivers: [
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: CreditLogDayHeader(
+                    label: group.$1,
+                    extent: headerExtent,
+                    background: surface,
+                  ),
+                ),
+                // The last group carries the trailing row as its last item: a
+                // list only builds what is in reach, and building that row is
+                // the signal to fetch the next page.
+                SliverList.builder(
+                  itemCount:
+                      group.$2.length + (index == groups.length - 1 ? 1 : 0),
+                  itemBuilder: (context, item) => item == group.$2.length
+                      ? _trailing(context)
+                      : CreditLogTile(entry: group.$2[item]),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
+  /// Pull-to-refresh needs something scrollable even when there is nothing to
+  /// list, so states that are not a list still scroll.
+  Widget _scrollable(Widget child) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(top: 24),
+      children: [child],
+    );
+  }
+
+  /// The trailing row is the loader, the retry, or the end of the history.
   Widget _trailing(BuildContext context) {
     if (_moreError != null) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: AppInlineNotice(
-          icon: Icons.wifi_off_outlined,
-          title: 'Could not load older entries',
-          message: _moreError!,
-          tone: AppTone.warning,
-          actionLabel: 'Try again',
-          onAction: () {
-            setState(() => _moreError = null);
-            _loadMore();
-          },
-        ),
+      return AppInlineNotice(
+        icon: Icons.wifi_off_outlined,
+        title: 'Could not load older entries',
+        message: _moreError!,
+        tone: AppTone.warning,
+        actionLabel: 'Try again',
+        onAction: () {
+          setState(() => _moreError = null);
+          _loadMore();
+        },
       );
     }
     if (_cursor != null) {
       // Building this row means it has scrolled into reach, which is the signal
       // to fetch the next page. The guard in `_loadMore` keeps it to one.
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
-      return const Padding(
-        padding: EdgeInsets.only(top: 8),
-        child: AppLoadingState(message: 'Loading older entries'),
-      );
+      return const _LoadingOlder();
     }
     return Padding(
-      padding: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.only(top: 12),
       child: Text(
         'Work that fails is refunded automatically, so a refund can follow a '
         'charge by a few minutes.',
@@ -195,154 +296,31 @@ class _CreditLogScreenState extends ConsumerState<CreditLogScreen> {
   }
 }
 
-/// One line of the list: a day heading, or an entry under it.
-sealed class _LogRow {
-  const _LogRow();
-}
-
-class _DayRow extends _LogRow {
-  const _DayRow(this.label);
-
-  final String label;
-}
-
-class _EntryRow extends _LogRow {
-  const _EntryRow(this.entry);
-
-  final CreditLogEntry entry;
-}
-
-List<_LogRow> _rows(List<CreditLogEntry> entries) {
-  final now = DateTime.now();
-  final rows = <_LogRow>[];
-  String? currentDay;
-  for (final entry in entries) {
-    final day = dayLabelFor(entry.createdAt, now);
-    if (day != currentDay) {
-      currentDay = day;
-      rows.add(_DayRow(day));
-    }
-    rows.add(_EntryRow(entry));
-  }
-  return rows;
-}
-
-class _DayHeader extends StatelessWidget {
-  const _DayHeader({required this.label, required this.first});
-
-  final String label;
-  final bool first;
+/// The pagination indicator: small, at the foot of the list, and named for a
+/// screen reader.
+class _LoadingOlder extends StatelessWidget {
+  const _LoadingOlder();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(top: first ? 8 : 20, bottom: 8),
-      child: Semantics(
-        header: true,
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.3,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CreditLogTile extends StatelessWidget {
-  const _CreditLogTile({required this.entry});
-
-  final CreditLogEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-    // A refunded charge left the balance exactly as it found it, so it is drawn
-    // as history rather than as money moved.
-    final muted = entry.refunded;
-    final amountColor = muted
-        ? colors.onSurfaceVariant
-        : entry.addsCredits
-        ? colors.primary
-        : colors.onSurface;
-
-    final detail = <String>[
-      if (entry.projectTitle != null && entry.projectTitle!.isNotEmpty)
-        entry.projectTitle!,
-      timeLabelFor(entry.createdAt),
-    ].join(' · ');
-
     return Semantics(
-      container: true,
-      label: creditLogSemanticLabel(entry),
+      liveRegion: true,
+      label: 'Loading older entries',
       child: ExcludeSemantics(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: colors.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  creditLogIcon(entry.kind),
-                  size: 19,
-                  color: entry.addsCredits && !muted
-                      ? colors.primary
-                      : colors.onSurfaceVariant,
-                ),
+              const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.title,
-                      style: text.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      style: text.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                    if (entry.pending || entry.refunded) ...[
-                      const SizedBox(height: 6),
-                      AppStatusBadge(
-                        label: entry.refunded ? 'Refunded' : 'On hold',
-                        icon: entry.refunded
-                            ? Icons.undo
-                            : Icons.hourglass_bottom,
-                        tone: entry.refunded
-                            ? AppTone.success
-                            : AppTone.warning,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  creditLogAmountLabel(entry),
-                  style: text.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: amountColor,
-                    decoration: muted ? TextDecoration.lineThrough : null,
-                  ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                'Loading older entries',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
@@ -353,59 +331,35 @@ class _CreditLogTile extends StatelessWidget {
   }
 }
 
-String creditLogAmountLabel(CreditLogEntry entry) {
-  return '${entry.addsCredits ? '+' : '-'}${formatCredits(entry.credits)}';
-}
+/// All / Spent / Added, above the list rather than in it so the filter stays
+/// reachable however far down the history the reader has gone.
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({required this.selected, required this.onSelected});
 
-IconData creditLogIcon(CreditLogKind kind) {
-  return switch (kind) {
-    CreditLogKind.purchase => Icons.add_card_outlined,
-    CreditLogKind.subscription => Icons.workspace_premium_outlined,
-    CreditLogKind.monthly => Icons.event_repeat_outlined,
-    CreditLogKind.bonus => Icons.card_giftcard_outlined,
-    CreditLogKind.refund => Icons.undo,
-    CreditLogKind.expired => Icons.timer_off_outlined,
-    CreditLogKind.spend => Icons.auto_stories_outlined,
-  };
-}
+  final _LogFilter selected;
+  final ValueChanged<_LogFilter> onSelected;
 
-/// Screen readers get the sign spelled out — a leading `+` or `-` is announced
-/// inconsistently, and this is the one number on the screen that must be exact.
-String creditLogSemanticLabel(CreditLogEntry entry) {
-  final credits = '${formatCredits(entry.credits)} credits';
-  final movement = entry.refunded
-      ? '$credits refunded'
-      : entry.addsCredits
-      ? '$credits added'
-      : entry.pending
-      ? '$credits on hold'
-      : '$credits used';
-  final book = entry.projectTitle;
-  return [
-    entry.title,
-    movement,
-    if (book != null && book.isNotEmpty) book,
-    timeLabelFor(entry.createdAt),
-  ].join(', ');
-}
-
-/// Days are named where a name is clearer than a date, and dated otherwise
-/// in `d/m/y` order.
-String dayLabelFor(DateTime value, DateTime now) {
-  final local = value.toLocal();
-  final day = DateTime(local.year, local.month, local.day);
-  final today = DateTime(now.year, now.month, now.day);
-  final difference = today.difference(day).inDays;
-  return switch (difference) {
-    0 => 'Today',
-    1 => 'Yesterday',
-    _ => '${day.day}/${day.month}/${day.year}',
-  };
-}
-
-String timeLabelFor(DateTime value) {
-  final local = value.toLocal();
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+        child: Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xxs,
+          children: [
+            for (final filter in _LogFilter.values)
+              FilterChip(
+                key: ValueKey('credit-log-filter-${filter.name}'),
+                label: Text(filter.label),
+                selected: filter == selected,
+                showCheckmark: true,
+                onSelected: (_) => onSelected(filter),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -64,7 +64,12 @@ class ProjectPlanReview extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            AppMetricChip(label: 'Version', value: '${plan.version}'),
+            AppMetricChip(
+              icon: Icons.format_list_numbered,
+              label: plan.chapters.length == 1
+                  ? '1 chapter'
+                  : '${plan.chapters.length} chapters',
+            ),
             AppMetricChip(
               label: 'Length',
               value: '${project.targetPages} pages',
@@ -80,6 +85,47 @@ class ProjectPlanReview extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
+        // The shape of the book comes first: it is what the reader is here to
+        // judge, and the approval sits directly under it.
+        PlanSectionCard(
+          title: 'Chapters',
+          icon: Icons.format_list_numbered,
+          child: PlanChapterList(chapters: plan.chapters),
+        ),
+        const SizedBox(height: 12),
+        PlanApprovalBar(
+          estimate: estimate,
+          available: billing?.credits.available,
+          busy: busyAction == 'approve',
+          onApprove: busyAction == null && onApprovePlan != null
+              ? () => onApprovePlan!()
+              : null,
+        ),
+        const SizedBox(height: 16),
+        Semantics(
+          header: true,
+          child: Text(
+            'Want something different?',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (plan.questions.isNotEmpty) ...[
+          PlanQuestionsCard(
+            plan: plan,
+            isBusy: busyAction == 'revise',
+            onSubmitAnswers: onQuestionAnswers,
+          ),
+          const SizedBox(height: 12),
+        ],
+        _RevisionRequestCard(
+          controller: revisionController,
+          isBusy: busyAction == 'revise',
+          onSubmit: onRevisionRequest,
+        ),
+        const SizedBox(height: 16),
         PlanSectionCard(
           title: 'Premise',
           icon: Icons.lightbulb_outline,
@@ -91,40 +137,102 @@ class ProjectPlanReview extends StatelessWidget {
           icon: Icons.groups_outlined,
           child: Text(plan.audience),
         ),
-        const SizedBox(height: 12),
-        PlanSectionCard(
-          title: 'Chapters',
-          icon: Icons.format_list_numbered,
-          child: PlanChapterList(chapters: plan.chapters),
-        ),
-        const SizedBox(height: 12),
-        PlanQuestionsCard(
-          plan: plan,
-          isBusy: busyAction == 'revise',
-          onSubmitAnswers: onQuestionAnswers,
-        ),
-        const SizedBox(height: 12),
-        _RevisionRequestCard(
-          controller: revisionController,
-          isBusy: busyAction == 'revise',
-          onSubmit: onRevisionRequest,
-        ),
-        const SizedBox(height: 16),
-        AppPrimaryActionPanel(
-          title: 'Ready to write',
-          message: estimate == null
-              ? 'Approve when this plan matches the book you want.'
-              : 'Book after approval: $estimate credits. Available: ${billing!.credits.available}. Planning is not charged again.',
-          icon: Icons.check_circle_outline,
-          actionLabel: 'Approve and start writing',
-          onAction: busyAction == null && onApprovePlan != null
-              ? () => onApprovePlan!()
-              : null,
-          actionIcon: const Icon(Icons.check_circle_outline),
-          loading: busyAction == 'approve',
-          loadingLabel: 'Approving plan',
-        ),
       ],
+    );
+  }
+}
+
+/// The decision this whole screen exists for: what writing the book costs, what
+/// the reader has, and the one button that starts it.
+///
+/// Every number is the app's existing quote (`estimateApprovalCredits`) and the
+/// balance the billing payload carries. Being short on credits is stated, not
+/// hidden — approving still works, because the flow it starts opens the top-up
+/// sheet rather than refusing.
+class PlanApprovalBar extends StatelessWidget {
+  const PlanApprovalBar({
+    required this.onApprove,
+    this.estimate,
+    this.available,
+    this.busy = false,
+    super.key,
+  });
+
+  /// Credits the book will cost after approval; null while billing loads.
+  final int? estimate;
+
+  /// The reader's balance; null while billing loads.
+  final int? available;
+  final bool busy;
+  final VoidCallback? onApprove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final quote = estimate;
+    final balance = available;
+    final short = quote != null && balance != null && balance < quote;
+    return AppCard(
+      tone: AppTone.neutral,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.check_circle_outline, color: colors.primary),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    'Ready to write',
+                    style: text.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              if (quote != null)
+                Text(
+                  '≈ $quote credits',
+                  style: text.titleSmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            quote == null
+                ? 'Approve when this plan matches the book you want.'
+                : balance == null
+                ? 'Book after approval. Planning is not charged again.'
+                : 'Book after approval: $quote credits. You have $balance available. Planning is not charged again.',
+            style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+          if (short) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'You are ${quote - balance} credits short — approving opens the top-up.',
+              style: text.bodySmall?.copyWith(
+                color: AppSemanticColors.of(context).warning,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          AppButton.primary(
+            label: 'Approve and start writing',
+            onPressed: onApprove,
+            leading: const Icon(Icons.check_circle_outline),
+            loading: busy,
+            loadingLabel: 'Approving plan',
+            expanded: true,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -561,12 +669,23 @@ class _ChapterTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     // Nothing guarantees a chapter has been named: a continuation whose outline
     // call failed stores an empty title on purpose, rather than inventing an
     // English one for a book written in another language (the server renders
     // such a chapter by its number, which this tile already shows in the badge).
     // The title row is dropped rather than left blank above the summary.
     final title = chapter.title.trim();
+    final pages = chapter.targetPages == 1
+        ? '1 page'
+        : '${chapter.targetPages} pages';
+    final pagesLabel = Text(
+      pages,
+      style: text.labelMedium?.copyWith(
+        color: colors.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+      ),
+    );
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -591,23 +710,32 @@ class _ChapterTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (title.isNotEmpty) ...[
-                Text(
-                  title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              if (title.isNotEmpty)
+                // The page count sits on the title's own line, so a column of
+                // chapters reads as a table of contents with its lengths.
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: text.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: pagesLabel,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+              if (chapter.summary.isNotEmpty) ...[
+                if (title.isNotEmpty) const SizedBox(height: 4),
+                Text(chapter.summary),
               ],
-              Text(chapter.summary),
-              const SizedBox(height: 4),
-              Text(
-                '${chapter.targetPages} pages',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
+              if (title.isEmpty) ...[const SizedBox(height: 4), pagesLabel],
             ],
           ),
         ),
@@ -615,6 +743,16 @@ class _ChapterTile extends StatelessWidget {
     );
   }
 }
+
+/// Things people commonly ask a plan for. They fill the box rather than send:
+/// a blank field is the one place a reader stalls, and a suggestion they can
+/// edit is a better start than nothing.
+const planRevisionSuggestions = <String>[
+  'Make it shorter',
+  'Add more examples',
+  'Use simpler language',
+  'Change the chapters',
+];
 
 class _RevisionRequestCard extends StatelessWidget {
   const _RevisionRequestCard({
@@ -635,6 +773,25 @@ class _RevisionRequestCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final suggestion in planRevisionSuggestions)
+                ActionChip(
+                  label: Text(suggestion),
+                  onPressed: isBusy
+                      ? null
+                      : () {
+                          controller.text = suggestion;
+                          controller.selection = TextSelection.collapsed(
+                            offset: suggestion.length,
+                          );
+                        },
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
           TextField(
             controller: controller,
             enabled: !isBusy,

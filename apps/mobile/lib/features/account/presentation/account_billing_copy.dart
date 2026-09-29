@@ -7,8 +7,12 @@ import 'account_links.dart';
 /// overview card, and plan card. Amounts stay raw unless a [formatCredits]
 /// callback is passed, so account tests can match numbers without formatting.
 
-String monthlyCreditsLeftLine(MobileAllowance allowance) {
-  return '${allowance.planCredits} of ${allowance.monthlyCredits} monthly credits left';
+String monthlyCreditsLeftLine(
+  MobileAllowance allowance, {
+  String Function(int value)? formatCredits,
+}) {
+  String credits(int value) => formatCredits?.call(value) ?? '$value';
+  return '${credits(allowance.planCredits)} of ${credits(allowance.monthlyCredits)} monthly credits left';
 }
 
 String freeTierGrantLine(

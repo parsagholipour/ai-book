@@ -19,13 +19,49 @@ Future<CharacterPhotoAction?> showCharacterPhotoActions(BuildContext context) {
   return showAppActionSheet<CharacterPhotoAction>(
     context,
     builder: (sheetContext) {
+      final theme = Theme.of(sheetContext);
       return Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.xxs,
+              AppSpacing.lg,
+              AppSpacing.xs,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  header: true,
+                  child: Text(
+                    'Add a picture',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                // Said before the picker opens, because what makes a good
+                // reference is not obvious and the crop that follows is the
+                // reader's one chance to frame it.
+                Text(
+                  'Pick one where their face is clear and well lit. You will '
+                  'crop it next.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
           ListTile(
             key: const ValueKey('character-photo-gallery'),
             leading: const Icon(Icons.photo_library_outlined),
             title: const Text('Photo library'),
+            subtitle: const Text('Choose a picture you already have'),
             onTap: () =>
                 Navigator.of(sheetContext).pop(CharacterPhotoAction.gallery),
           ),
@@ -33,6 +69,7 @@ Future<CharacterPhotoAction?> showCharacterPhotoActions(BuildContext context) {
             key: const ValueKey('character-photo-camera'),
             leading: const Icon(Icons.photo_camera_outlined),
             title: const Text('Take a photo'),
+            subtitle: const Text('Use the camera'),
             onTap: () =>
                 Navigator.of(sheetContext).pop(CharacterPhotoAction.camera),
           ),

@@ -28,6 +28,7 @@ class StubVoiceCallController extends VoiceCallController {
   final VoiceCallState _initial;
   int hangUpCalls = 0;
   int exportCalls = 0;
+  int dialCalls = 0;
 
   /// What `exportRecording` hands back. Null stands in for "there was nothing
   /// to export", which the screen has to survive without a share sheet.
@@ -44,7 +45,9 @@ class StubVoiceCallController extends VoiceCallController {
     VoiceCallAudio? audio,
     VoiceCallRecorder? recorder,
     GeminiLiveSocketConnector? socketConnector,
-  }) async {}
+  }) async {
+    dialCalls += 1;
+  }
 
   @override
   Future<File?> exportRecording() async {
@@ -81,7 +84,9 @@ Future<StubVoiceCallController> pumpCall(
 }
 
 void main() {
-  testWidgets('names the persona build rather than showing a bare spinner', (tester) async {
+  testWidgets('names the persona build rather than showing a bare spinner', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(character: marlow, phase: VoiceCallPhase.preparing),
@@ -107,10 +112,15 @@ void main() {
     expect(find.text('AI voice'), findsOneWidget);
   });
 
-  testWidgets('says the line is being redialled instead of failing quietly', (tester) async {
+  testWidgets('says the line is being redialled instead of failing quietly', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
-      const VoiceCallState(character: marlow, phase: VoiceCallPhase.reconnecting),
+      const VoiceCallState(
+        character: marlow,
+        phase: VoiceCallPhase.reconnecting,
+      ),
     );
 
     expect(find.text('Reconnecting…'), findsOneWidget);
@@ -132,7 +142,9 @@ void main() {
     expect(find.text('Out of credits — ending in 25s'), findsOneWidget);
   });
 
-  testWidgets('does not nag about time when there is plenty left', (tester) async {
+  testWidgets('does not nag about time when there is plenty left', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(
@@ -162,15 +174,23 @@ void main() {
     expect(find.text('Back to the book'), findsOneWidget);
   });
 
-  testWidgets('shows the live transcript with the caller and character apart', (tester) async {
+  testWidgets('shows the live transcript with the caller and character apart', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(
         character: marlow,
         phase: VoiceCallPhase.connected,
         captions: [
-          VoiceCallCaption(speaker: VoiceCallSpeaker.caller, text: 'Who are you?'),
-          VoiceCallCaption(speaker: VoiceCallSpeaker.character, text: 'I keep the light.'),
+          VoiceCallCaption(
+            speaker: VoiceCallSpeaker.caller,
+            text: 'Who are you?',
+          ),
+          VoiceCallCaption(
+            speaker: VoiceCallSpeaker.character,
+            text: 'I keep the light.',
+          ),
         ],
         liveCaptions: [
           VoiceCallCaption(
@@ -188,7 +208,9 @@ void main() {
     expect(find.text('Have done for thirty years'), findsOneWidget);
   });
 
-  testWidgets('warns for the whole runway once credits are known to be short', (tester) async {
+  testWidgets('warns for the whole runway once credits are known to be short', (
+    tester,
+  ) async {
     // The server knows a top-up failed a reserve block — minutes — before the
     // clock runs out. Waiting for the last sixty seconds wasted that warning.
     await pumpCall(
@@ -206,7 +228,9 @@ void main() {
     expect(find.text('Out of credits — ending in 2:30'), findsOneWidget);
   });
 
-  testWidgets('names the length cap rather than blaming credits', (tester) async {
+  testWidgets('names the length cap rather than blaming credits', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(
@@ -221,7 +245,9 @@ void main() {
     expect(find.text('Call limit reached — ending in 1:40'), findsOneWidget);
   });
 
-  testWidgets('explains a call that ended on credits and offers a top-up', (tester) async {
+  testWidgets('explains a call that ended on credits and offers a top-up', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(
@@ -233,12 +259,17 @@ void main() {
       ),
     );
 
-    expect(find.text('The call ended when your credits ran out.'), findsOneWidget);
+    expect(
+      find.text('The call ended when your credits ran out.'),
+      findsOneWidget,
+    );
     expect(find.text('Add credits'), findsOneWidget);
     expect(find.text('Back to the book'), findsOneWidget);
   });
 
-  testWidgets('explains the length cap without offering credits', (tester) async {
+  testWidgets('explains the length cap without offering credits', (
+    tester,
+  ) async {
     // Buying credits does not lift the cap, so offering it here would mislead.
     await pumpCall(
       tester,
@@ -251,7 +282,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Calls stop at 30 minutes. Call again to keep talking.'), findsOneWidget);
+    expect(
+      find.text('Calls stop at 30 minutes. Call again to keep talking.'),
+      findsOneWidget,
+    );
     expect(find.text('Add credits'), findsNothing);
     expect(find.text('Back to the book'), findsOneWidget);
   });
@@ -284,22 +318,27 @@ void main() {
     expect(find.text('Unmute'), findsOneWidget);
   });
 
-  testWidgets('keeps the reason on screen when a call failed rather than ended', (tester) async {
-    await pumpCall(
-      tester,
-      const VoiceCallState(
-        character: marlow,
-        phase: VoiceCallPhase.failed,
-        error: 'The call was disconnected.',
-      ),
-    );
+  testWidgets(
+    'keeps the reason on screen when a call failed rather than ended',
+    (tester) async {
+      await pumpCall(
+        tester,
+        const VoiceCallState(
+          character: marlow,
+          phase: VoiceCallPhase.failed,
+          error: 'The call was disconnected.',
+        ),
+      );
 
-    expect(find.text('The call was disconnected.'), findsOneWidget);
-    expect(find.textContaining('Call ended'), findsNothing);
-    expect(find.text('Back to the book'), findsOneWidget);
-  });
+      expect(find.text('The call was disconnected.'), findsOneWidget);
+      expect(find.textContaining('Call ended'), findsNothing);
+      expect(find.text('Back to the book'), findsOneWidget);
+    },
+  );
 
-  testWidgets('settles the call when the caller backs out of the screen', (tester) async {
+  testWidgets('settles the call when the caller backs out of the screen', (
+    tester,
+  ) async {
     final controller = await pumpCall(
       tester,
       const VoiceCallState(character: marlow, phase: VoiceCallPhase.connected),
@@ -313,7 +352,9 @@ void main() {
     expect(controller.hangUpCalls, 1);
   });
 
-  testWidgets('offers no menu when the call is not being recorded', (tester) async {
+  testWidgets('offers no menu when the call is not being recorded', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(character: marlow, phase: VoiceCallPhase.connected),
@@ -324,7 +365,9 @@ void main() {
     expect(find.text('AI voice'), findsOneWidget);
   });
 
-  testWidgets('discloses the recording alongside the AI voice notice', (tester) async {
+  testWidgets('discloses the recording alongside the AI voice notice', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(
@@ -338,7 +381,9 @@ void main() {
     expect(find.text('AI voice · recorded on this device'), findsOneWidget);
   });
 
-  testWidgets('asks before it shares, and does nothing on cancel', (tester) async {
+  testWidgets('asks before it shares, and does nothing on cancel', (
+    tester,
+  ) async {
     final controller = await pumpCall(
       tester,
       const VoiceCallState(
@@ -384,7 +429,9 @@ void main() {
     expect(controller.exportCalls, 1);
   });
 
-  testWidgets('keeps the recording reachable after the caller hangs up', (tester) async {
+  testWidgets('keeps the recording reachable after the caller hangs up', (
+    tester,
+  ) async {
     // Hanging up used to pop straight back to the book. With a recording on
     // disk that would throw it away a beat before the caller was offered it.
     final controller = await pumpCall(
@@ -400,11 +447,16 @@ void main() {
 
     expect(controller.hangUpCalls, 0);
     expect(find.byKey(const ValueKey('call-menu')), findsOneWidget);
-    expect(find.text('The recording is under the menu, top right.'), findsOneWidget);
+    expect(
+      find.text('The recording is under the menu, top right.'),
+      findsOneWidget,
+    );
     expect(find.text('Back to the book'), findsOneWidget);
   });
 
-  testWidgets('keeps the failure reason on screen while exporting', (tester) async {
+  testWidgets('keeps the failure reason on screen while exporting', (
+    tester,
+  ) async {
     // `copyWith` drops the error unless it is handed back, so flipping the
     // exporting flag on a failed call used to replace the real reason with the
     // generic one — while the caller was looking at it.
@@ -426,7 +478,9 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('says nothing about a recording that was never made', (tester) async {
+  testWidgets('says nothing about a recording that was never made', (
+    tester,
+  ) async {
     await pumpCall(
       tester,
       const VoiceCallState(

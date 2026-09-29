@@ -133,6 +133,14 @@ class _Transcript extends StatelessWidget {
       projectChat,
       projectOperations,
     );
+    // Who spoke when, in list order, so each bubble knows the run it sits in.
+    // The two halves are one conversation as far as grouping and day labels go.
+    final runEntries = <_RunEntry>[
+      for (final message in state.messages)
+        (isUser: message.isUser, at: message.createdAt),
+      for (final item in projectItems)
+        (isUser: item.message?.isUser, at: item.createdAt),
+    ];
     final hasLivePlanBubble =
         planValue != null &&
         _showsLivePlanBubble(planValue!, projectChat, planBusyAction);
@@ -155,13 +163,14 @@ class _Transcript extends StatelessWidget {
     return ListView.builder(
       controller: controller,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 14, 12),
       itemCount: itemCount,
       itemBuilder: (context, index) {
         final item = _buildTranscriptItem(
           context: context,
           index: index,
           projectItems: projectItems,
+          runEntries: runEntries,
           projectOperations: projectOperations,
           openProposalId: projectChat?.openProposalId,
           // A live edit closes the proposal card's Apply for the same reason it
@@ -196,6 +205,7 @@ class _Transcript extends StatelessWidget {
     required BuildContext context,
     required int index,
     required List<_ProjectTranscriptItem> projectItems,
+    required List<_RunEntry> runEntries,
     required TranscriptOperations projectOperations,
     required String? openProposalId,
     required bool proposalsBusy,
@@ -252,6 +262,7 @@ class _Transcript extends StatelessWidget {
       return _ProjectChatMessageBubble(
         key: messageAnchorKey(item.message!.id),
         message: item.message!,
+        placement: _placementAt(runEntries, index),
         // While the edit runs it has no card yet, so the reply itself carries
         // the charge; once the card appears it owns the number.
         showCreditCost: projectOperations.anchoredTo(item.message!.id).isEmpty,
@@ -306,7 +317,7 @@ class _Transcript extends StatelessWidget {
     }
     if (hasLivePlanBubble) cursor++;
     if (hasTyping && index == cursor) {
-      return const ChatThinkingBubble();
+      return const ChatThinkingBubble(showAvatar: true);
     }
     if (hasTyping) cursor++;
     // The just-sent message about the finished book, and the assistant working
@@ -333,7 +344,10 @@ class _Transcript extends StatelessWidget {
     }
     if (hasCreditsReady) cursor++;
     if (hasOutputThinking && index == cursor) {
-      return const ChatThinkingBubble(stages: bookChatThinkingStages);
+      return const ChatThinkingBubble(
+        stages: bookChatThinkingStages,
+        showAvatar: true,
+      );
     }
     return _MessageBubble(
       key: state.messages[index].id == null
@@ -342,6 +356,7 @@ class _Transcript extends StatelessWidget {
       message: state.messages[index],
       attachmentThumbnails: state.attachmentThumbnails,
       attachmentUrls: state.attachmentUrls,
+      placement: _placementAt(runEntries, index),
       onRetryFailed: onRetryFailedMessage,
       onDismissFailed: onDismissFailedMessage,
       onEdit: onEditCreationMessage,
@@ -459,19 +474,12 @@ class _ProjectTranscriptItem {
   int get sortPriority => plan != null ? 0 : 1;
 }
 
-String? _formatChatTimestamp(DateTime? value) {
-  if (value == null) return null;
-  final local = value.toLocal();
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
-}
-
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
     this.attachmentThumbnails = const <String, String>{},
     this.attachmentUrls = const <String, String>{},
+    this.placement = _BubblePlacement.alone,
     this.onRetryFailed,
     this.onDismissFailed,
     this.onEdit,
@@ -484,6 +492,9 @@ class _MessageBubble extends StatelessWidget {
   final MobileCreationMessage message;
   final Map<String, String> attachmentThumbnails;
   final Map<String, String> attachmentUrls;
+
+  /// Its run: whether it opens or closes one, and the day it starts, if any.
+  final _BubblePlacement placement;
   final ValueChanged<String>? onRetryFailed;
   final ValueChanged<String>? onDismissFailed;
   final void Function(MobileCreationMessage message)? onEdit;
@@ -509,7 +520,7 @@ class _MessageBubble extends StatelessWidget {
         ? sent.foreground
         : colors.onSurface;
     final hasText = message.content.trim().isNotEmpty;
-    final timestamp = _formatChatTimestamp(message.createdAt);
+    final createdAt = message.createdAt;
     final localId = message.localId;
     final branch = message.branch;
     final canEdit = isUser && !failed && message.id != null && onEdit != null;
@@ -519,137 +530,131 @@ class _MessageBubble extends StatelessWidget {
     final canReply =
         !failed && (message.id?.isNotEmpty ?? false) && onReply != null;
     final startReply = canReply ? () => onReply!(message) : null;
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: MessageHoldFeedback(
-        onLongPressStart: (details) => showMessageActionsMenu(
-          context: context,
-          position: details.globalPosition,
-          message: chatBubbleCopyText(message.content, role: message.role),
-          onEdit: canEdit ? () => onEdit!(message) : null,
-          onReply: startReply,
-        ),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 5),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.82,
-          ),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: Radius.circular(isUser ? 16 : 4),
-              bottomRight: Radius.circular(isUser ? 4 : 16),
+    final shell = _ChatBubbleShell(
+      isUser: isUser,
+      background: background,
+      placement: placement,
+      // A failed send has no time worth showing; its own line says why.
+      timestamp: failed || createdAt == null
+          ? null
+          : _chatTimeLabel(context, createdAt),
+      onLongPressStart: (details) => showMessageActionsMenu(
+        context: context,
+        position: details.globalPosition,
+        message: chatBubbleCopyText(message.content, role: message.role),
+        onEdit: canEdit ? () => onEdit!(message) : null,
+        onReply: startReply,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (replyTo != null)
+            ChatQuotedMessage(target: replyTo, foreground: foreground),
+          if (message.includedSourceNotes) ...[
+            Text(
+              'Included source notes',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: foreground.withValues(alpha: 0.85),
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (replyTo != null)
-                ChatQuotedMessage(target: replyTo, foreground: foreground),
-              if (message.includedSourceNotes) ...[
-                Text(
-                  'Included source notes',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: foreground.withValues(alpha: 0.85),
-                    fontWeight: FontWeight.w700,
+            const SizedBox(height: 4),
+          ],
+          if (message.hasAttachments) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final attachment in message.attachments)
+                  _MessageAttachmentChip(
+                    attachment: attachment,
+                    thumbnailPath: attachmentThumbnails[attachment.id],
+                    remoteUrl: attachmentUrls[attachment.id],
+                    foreground: foreground,
                   ),
-                ),
-                const SizedBox(height: 4),
               ],
-              if (message.hasAttachments) ...[
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final attachment in message.attachments)
-                      _MessageAttachmentChip(
-                        attachment: attachment,
-                        thumbnailPath: attachmentThumbnails[attachment.id],
-                        remoteUrl: attachmentUrls[attachment.id],
-                        foreground: foreground,
-                      ),
-                  ],
-                ),
-                if (hasText) const SizedBox(height: 6),
-              ],
-              if (hasText)
-                ChatMessageText.forRole(
-                  message.content,
-                  role: message.role,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: foreground),
-                ),
-              if (!isUser && message.research?.sources.isNotEmpty == true) ...[
-                const SizedBox(height: 10),
-                _ResearchSources(
-                  sources: message.research!.sources,
-                  foreground: foreground,
-                ),
-              ],
-              if (timestamp != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  timestamp,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: foreground.withValues(alpha: 0.7),
+            ),
+            if (hasText) const SizedBox(height: 6),
+          ],
+          if (hasText)
+            ChatMessageText.forRole(
+              message.content,
+              role: message.role,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: foreground, height: 1.4),
+            ),
+          if (!isUser && message.research?.sources.isNotEmpty == true) ...[
+            const SizedBox(height: 10),
+            _ResearchSources(
+              sources: message.research!.sources,
+              foreground: foreground,
+            ),
+          ],
+          if (branch != null && onSwitchBranch != null) ...[
+            const SizedBox(height: 8),
+            BranchNavigator(
+              branch: branch,
+              foreground: foreground,
+              switching: switchingBranch,
+              onPrevious: () => onSwitchBranch!(message, 'previous'),
+              onNext: () => onSwitchBranch!(message, 'next'),
+            ),
+          ],
+          if (failed && localId != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              message.sendError ?? 'Message failed to send.',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                if (onRetryFailed != null)
+                  TextButton(
+                    onPressed: () => onRetryFailed!(localId),
+                    style: TextButton.styleFrom(
+                      foregroundColor: foreground,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Retry'),
                   ),
-                ),
-              ],
-              if (branch != null && onSwitchBranch != null) ...[
-                const SizedBox(height: 8),
-                BranchNavigator(
-                  branch: branch,
-                  foreground: foreground,
-                  switching: switchingBranch,
-                  onPrevious: () => onSwitchBranch!(message, 'previous'),
-                  onNext: () => onSwitchBranch!(message, 'next'),
-                ),
-              ],
-              if (failed && localId != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  message.sendError ?? 'Message failed to send.',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: foreground,
-                    fontWeight: FontWeight.w600,
+                if (onDismissFailed != null)
+                  TextButton(
+                    onPressed: () => onDismissFailed!(localId),
+                    style: TextButton.styleFrom(
+                      foregroundColor: foreground,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: const Text('Dismiss'),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    if (onRetryFailed != null)
-                      TextButton(
-                        onPressed: () => onRetryFailed!(localId),
-                        style: TextButton.styleFrom(
-                          foregroundColor: foreground,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        child: const Text('Retry'),
-                      ),
-                    if (onDismissFailed != null)
-                      TextButton(
-                        onPressed: () => onDismissFailed!(localId),
-                        style: TextButton.styleFrom(
-                          foregroundColor: foreground,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        child: const Text('Dismiss'),
-                      ),
-                  ],
-                ),
               ],
-            ],
-          ),
-        ),
+            ),
+          ],
+        ],
       ),
     );
+    return _withDaySeparator(placement, shell);
   }
+}
+
+/// [bubble] under the label of the day it opens, when it opens one.
+Widget _withDaySeparator(_BubblePlacement placement, Widget bubble) {
+  final day = placement.dayStart;
+  if (day == null) return bubble;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _DaySeparator(day: day),
+      bubble,
+    ],
+  );
 }
 
 class _MessageAttachmentChip extends ConsumerWidget {

@@ -3,6 +3,20 @@ import 'package:go_router/go_router.dart';
 
 import 'reader_menu.dart';
 
+/// The book's name, as a reader would say it, from the export's filename.
+///
+/// The server files a book under its title with the spaces turned into hyphens
+/// (`The-Secret-Garden.pdf`), which is right for a URL and wrong for the top of
+/// a page someone is reading. Only the separators change — the case is the
+/// title's own.
+String readerTitleFromFilename(String filename) {
+  final bare = filename.replaceFirst(
+    RegExp(r'\.pdf$', caseSensitive: false),
+    '',
+  );
+  return bare.replaceAll(RegExp(r'[-_]+'), ' ').trim();
+}
+
 /// The reader's top bar.
 ///
 /// Three actions, not the five it grew to: search, the markup tools, and

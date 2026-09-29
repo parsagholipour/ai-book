@@ -119,7 +119,10 @@ mixin CreationChatBriefSetters on Notifier<CreationChatState> {
       choices.add(CreationChoice.tone);
     }
     state = state.copyWith(
-      optionalDetails: copyOptionalDetails(state.optionalDetails, tone: trimmed),
+      optionalDetails: copyOptionalDetails(
+        state.optionalDetails,
+        tone: trimmed,
+      ),
       userChoices: choices,
     );
   }

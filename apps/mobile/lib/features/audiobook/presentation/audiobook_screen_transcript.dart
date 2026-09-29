@@ -19,11 +19,16 @@ class _TranscriptPane extends ConsumerStatefulWidget {
     required this.projectId,
     required this.timeline,
     required this.activeSegmentIndex,
+    this.showHint = false,
   });
 
   final String projectId;
   final AudiobookChapterTimeline? timeline;
   final int? activeSegmentIndex;
+
+  /// Says that a sentence can be tapped, until the listener has pressed play:
+  /// the feature is invisible otherwise, and it is the best thing on the page.
+  final bool showHint;
 
   @override
   ConsumerState<_TranscriptPane> createState() => _TranscriptPaneState();
@@ -216,12 +221,10 @@ class _TranscriptPaneState extends ConsumerState<_TranscriptPane> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final timeline = widget.timeline;
 
     if (timeline == null) {
-      return const AppLoadingState(message: 'Loading the transcript');
+      return const _TranscriptSkeleton();
     }
 
     final controller = ref.read(
@@ -246,74 +249,221 @@ class _TranscriptPaneState extends ConsumerState<_TranscriptPane> {
         }
         return false;
       },
-      child: Stack(
+      child: Column(
         children: [
-          // Fades the top edge so text slides out of view rather than being cut.
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Colors.transparent, Colors.black, Colors.black],
-              stops: [0, 0.06, 1],
-            ).createShader(bounds),
-            blendMode: BlendMode.dstIn,
-            child: Directionality(
-              // Books are written in the reader's language, and some of them run
-              // right to left.
-              textDirection: timeline.isRightToLeft
-                  ? TextDirection.rtl
-                  : TextDirection.ltr,
-              child: ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
-                itemCount: _paragraphs.length,
-                itemBuilder: (context, index) {
-                  final key = _paragraphKeys.putIfAbsent(index, GlobalKey.new);
-                  return Padding(
-                    key: key,
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _TranscriptParagraph(
-                      segments: _paragraphs[index],
-                      activeSegmentIndex: widget.activeSegmentIndex,
-                      onTapSegment: controller.seekToSegment,
+          AppSwitcher(
+            child: widget.showHint
+                ? const _TranscriptHint(key: ValueKey('hint'))
+                : const SizedBox(
+                    key: ValueKey('no-hint'),
+                    width: double.infinity,
+                  ),
+          ),
+          Expanded(
+            child: Stack(
+              children: [
+                // Fades the top edge so text slides out of view rather than
+                // being cut.
+                ShaderMask(
+                  shaderCallback: (bounds) => const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black, Colors.black],
+                    stops: [0, 0.06, 1],
+                  ).createShader(bounds),
+                  blendMode: BlendMode.dstIn,
+                  child: Directionality(
+                    // Books are written in the reader's language, and some of
+                    // them run right to left.
+                    textDirection: timeline.isRightToLeft
+                        ? TextDirection.rtl
+                        : TextDirection.ltr,
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(22, 8, 22, 88),
+                      itemCount: _paragraphs.length,
+                      itemBuilder: (context, index) {
+                        final key = _paragraphKeys.putIfAbsent(
+                          index,
+                          GlobalKey.new,
+                        );
+                        return Padding(
+                          key: key,
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _TranscriptParagraph(
+                            segments: _paragraphs[index],
+                            activeSegmentIndex: widget.activeSegmentIndex,
+                            onTapSegment: controller.seekToSegment,
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
+                  ),
+                ),
+                if (!_following)
+                  PositionedDirectional(
+                    end: 16,
+                    bottom: 16,
+                    child: AppEntrance(
+                      offset: 10,
+                      child: _FollowPill(
+                        onPressed: () {
+                          AppHaptics.tap();
+                          // Whatever the list is doing, this tap is the newer
+                          // instruction — including a second finger still
+                          // dragging it. The first hop's jump takes the scroll
+                          // off any momentum it still had.
+                          _userDragging = false;
+                          setState(() {
+                            _following = true;
+                            _lastFollowedSegment = null;
+                          });
+                          _scheduleFollow();
+                        },
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-          if (!_following)
-            Positioned(
-              right: 16,
-              bottom: 16,
-              child: FloatingActionButton.small(
-                heroTag: 'transcript-resume',
-                tooltip: 'Back to the line being read',
-                backgroundColor: colors.primary,
-                foregroundColor: colors.onPrimary,
-                onPressed: () {
-                  AppHaptics.tap();
-                  // Whatever the list is doing, this tap is the newer
-                  // instruction — including a second finger still dragging it.
-                  // The first hop's jump takes the scroll off any momentum it
-                  // still had.
-                  _userDragging = false;
-                  setState(() {
-                    _following = true;
-                    _lastFollowedSegment = null;
-                  });
-                  _scheduleFollow();
-                },
-                child: const Icon(Icons.vertical_align_center),
-              ),
-            ),
         ],
       ),
     );
   }
 }
 
-class _TranscriptParagraph extends StatelessWidget {
+/// The way back to the line being read, named. Shown only once the reader has
+/// scrolled away: following is the default, so there is nothing to switch on
+/// until it has been switched off.
+class _FollowPill extends StatelessWidget {
+  const _FollowPill({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Semantics(
+      button: true,
+      label: 'Back to the line being read',
+      onTap: onPressed,
+      child: ExcludeSemantics(
+        child: Material(
+          color: colors.primary,
+          elevation: 3,
+          shadowColor: Colors.black54,
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: AppSizes.minimumTouchTarget,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.vertical_align_center,
+                      size: 20,
+                      color: colors.onPrimary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Follow along',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: colors.onPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TranscriptHint extends StatelessWidget {
+  const _TranscriptHint({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 0, 22, 6),
+      child: Row(
+        children: [
+          Icon(Icons.touch_app_outlined, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Tap any sentence to jump there.',
+              style: theme.textTheme.labelMedium?.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Lines of grey where the words will be, while the chapter's timings arrive.
+class _TranscriptSkeleton extends StatelessWidget {
+  const _TranscriptSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Loading the transcript',
+      child: ExcludeSemantics(
+        child: AppShimmer(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 12, 22, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final width in const [0.5, 1.0, 0.94, 0.72, 1.0, 0.86])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: FractionallySizedBox(
+                      widthFactor: width,
+                      child: Container(
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: colors.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One paragraph of sentences. Sentences already heard are dimmed, the one being
+/// spoken is lit, and the ones to come read at full strength — so the eye has
+/// somewhere to rest even when the page is a wall of text.
+///
+/// The weight never changes between those states: a bolder active sentence is
+/// wider, and re-wrapping the paragraph on every sentence is what makes a
+/// following transcript feel like it is shaking.
+class _TranscriptParagraph extends StatefulWidget {
   const _TranscriptParagraph({
     required this.segments,
     required this.activeSegmentIndex,
@@ -325,15 +475,69 @@ class _TranscriptParagraph extends StatelessWidget {
   final void Function(AudiobookSegment segment) onTapSegment;
 
   @override
+  State<_TranscriptParagraph> createState() => _TranscriptParagraphState();
+}
+
+class _TranscriptParagraphState extends State<_TranscriptParagraph> {
+  /// Owned here so they can be disposed: a recogniser built inside `build` and
+  /// never released is a leak that grows with every position tick.
+  final Map<int, TapGestureRecognizer> _taps = {};
+
+  TapGestureRecognizer _tapFor(AudiobookSegment segment) {
+    return _taps.putIfAbsent(
+      segment.index,
+      () => TapGestureRecognizer()
+        ..onTap = () {
+          AppHaptics.selection();
+          widget.onTapSegment(segment);
+        },
+    );
+  }
+
+  void _releaseTaps() {
+    for (final recognizer in _taps.values) {
+      recognizer.dispose();
+    }
+    _taps.clear();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TranscriptParagraph oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sentence numbers restart with every chapter, so a recogniser kept across
+    // a chapter change would seek to the old chapter's sentence of that number.
+    if (!identical(oldWidget.segments, widget.segments)) {
+      _releaseTaps();
+    }
+  }
+
+  @override
+  void dispose() {
+    _releaseTaps();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final segments = widget.segments;
+    final active = widget.activeSegmentIndex;
     final isTitle = segments.first.isTitle;
 
-    final base = (isTitle ? theme.textTheme.titleMedium : theme.textTheme.bodyLarge)?.copyWith(
-      height: isTitle ? 1.3 : 1.62,
-      fontWeight: isTitle ? FontWeight.w800 : FontWeight.w400,
-      color: colors.onSurfaceVariant,
+    final base =
+        (isTitle ? theme.textTheme.titleMedium : theme.textTheme.bodyLarge)
+            ?.copyWith(
+              height: isTitle ? 1.3 : 1.62,
+              fontWeight: isTitle ? FontWeight.w800 : FontWeight.w400,
+            );
+    final heard = base?.copyWith(color: colors.onSurfaceVariant);
+    final upcoming = base?.copyWith(
+      color: colors.onSurface.withValues(alpha: 0.9),
+    );
+    final speaking = base?.copyWith(
+      color: colors.onSurface,
+      backgroundColor: colors.primary.withValues(alpha: 0.18),
     );
 
     return Text.rich(
@@ -343,17 +547,14 @@ class _TranscriptParagraph extends StatelessWidget {
             if (position > 0) const TextSpan(text: ' '),
             TextSpan(
               text: segment.text,
-              style: segment.index == activeSegmentIndex
-                  ? base?.copyWith(
-                      color: colors.onSurface,
-                      backgroundColor: colors.primary.withValues(alpha: 0.16),
-                      fontWeight: isTitle ? FontWeight.w800 : FontWeight.w600,
-                    )
-                  : base,
-              recognizer: TapGestureRecognizer()..onTap = () {
-                AppHaptics.selection();
-                onTapSegment(segment);
-              },
+              style: active == null
+                  ? upcoming
+                  : segment.index == active
+                  ? speaking
+                  : segment.index < active
+                  ? heard
+                  : upcoming,
+              recognizer: _tapFor(segment),
             ),
           ],
         ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../shared/ui/design_system/app_tokens.dart';
 import '../../shared/ui/design_system/app_tones.dart';
+import 'app_component_themes.dart';
 
 /// The fill and text color of a chat bubble the reader sent.
 ///
@@ -55,8 +56,10 @@ ThemeData buildTomezaLightTheme() {
         surfaceContainer: const Color(0xFFEEF0EA),
         surfaceContainerHigh: const Color(0xFFE8EBE4),
         surfaceContainerHighest: const Color(0xFFE1E5DE),
-        outline: const Color(0xFF6F7A75),
-        outlineVariant: const Color(0xFFE1E5DF),
+        // 3:1 or better against every light surface, so input borders and
+        // outlined buttons are findable without relying on their label.
+        outline: const Color(0xFF7C8681),
+        outlineVariant: const Color(0xFFDDE2DC),
       );
 
   return _themeFromScheme(scheme);
@@ -79,18 +82,24 @@ ThemeData buildTomezaDarkTheme() {
         tertiary: const Color(0xFFA9C6F4),
         tertiaryContainer: const Color(0xFF2E4867),
         onTertiaryContainer: const Color(0xFFD6E4FB),
-        surface: const Color(0xFF101513),
+        // Dark surfaces climb by tone rather than shadow: page, card, raised
+        // card, then the highest layers (sheets, dialogs, inputs at rest).
+        // Each step is far enough from the last to read on a dim OLED.
+        surface: const Color(0xFF0F1412),
         onSurface: const Color(0xFFE3E8E4),
         onSurfaceVariant: const Color(0xFFA5B0AA),
         // Used as the card color: kept slightly lighter than the scaffold so
         // cards read as raised surfaces in dark mode.
-        surfaceContainerLowest: const Color(0xFF181E1B),
-        surfaceContainerLow: const Color(0xFF1B211E),
-        surfaceContainer: const Color(0xFF1F2622),
-        surfaceContainerHigh: const Color(0xFF242C28),
-        surfaceContainerHighest: const Color(0xFF2B342F),
+        surfaceContainerLowest: const Color(0xFF1A211E),
+        surfaceContainerLow: const Color(0xFF1E2622),
+        surfaceContainer: const Color(0xFF232B27),
+        surfaceContainerHigh: const Color(0xFF29322E),
+        surfaceContainerHighest: const Color(0xFF313A36),
+        // Material's dark error container is a saturated 93000A that shouts
+        // across a whole card; this is the same red, muted.
+        errorContainer: const Color(0xFF6A2226),
         outline: const Color(0xFF7E8983),
-        outlineVariant: const Color(0xFF2E3733),
+        outlineVariant: const Color(0xFF36413C),
       );
 
   return _themeFromScheme(scheme);
@@ -121,12 +130,26 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     visualDensity: VisualDensity.standard,
     splashFactory: InkSparkle.splashFactory,
     textTheme: textTheme,
+    pageTransitionsTheme: appPageTransitionsTheme(scheme),
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: scheme.primary,
+      selectionColor: scheme.primary.withValues(alpha: isLight ? 0.26 : 0.38),
+      selectionHandleColor: scheme.primary,
+    ),
     appBarTheme: AppBarTheme(
       centerTitle: false,
       elevation: 0,
-      scrolledUnderElevation: 0,
+      // A bar that content has scrolled beneath steps up a tone (and, in
+      // light, casts a hairline of shadow) so it reads as a layer above the
+      // page instead of text colliding with a title. At rest it is flush.
+      scrolledUnderElevation: 1,
+      shadowColor: Colors.black.withValues(alpha: isLight ? 0.10 : 0.30),
       surfaceTintColor: Colors.transparent,
-      backgroundColor: scheme.surface,
+      backgroundColor: WidgetStateColor.resolveWith(
+        (states) => states.contains(WidgetState.scrolledUnder)
+            ? scheme.surfaceContainerLow
+            : scheme.surface,
+      ),
       foregroundColor: scheme.onSurface,
       titleTextStyle: textTheme.titleLarge?.copyWith(
         fontWeight: FontWeight.w800,
@@ -134,7 +157,10 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       ),
     ),
     cardTheme: CardThemeData(
-      elevation: 0,
+      // Light: a soft, brand-tinted lift over a hairline. Dark: no shadow can
+      // show on a dark page, so the card is a lighter tone with its hairline.
+      elevation: isLight ? 1 : 0,
+      shadowColor: const Color(0xFF0F3D34).withValues(alpha: 0.40),
       margin: EdgeInsets.zero,
       color: scheme.surfaceContainerLowest,
       surfaceTintColor: Colors.transparent,
@@ -145,40 +171,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       thickness: 1,
       space: 1,
     ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        borderSide: BorderSide(color: scheme.outlineVariant),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        borderSide: BorderSide(color: scheme.primary, width: 1.6),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        borderSide: BorderSide(color: scheme.error),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        borderSide: BorderSide(color: scheme.error, width: 1.6),
-      ),
-      filled: true,
-      fillColor: scheme.surfaceContainerLowest,
-      hoverColor: Colors.transparent,
-      labelStyle: textTheme.bodyMedium?.copyWith(
-        color: scheme.onSurfaceVariant,
-      ),
-      hintStyle: textTheme.bodyMedium?.copyWith(
-        color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
-      ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.md,
-      ),
-    ),
+    inputDecorationTheme: appInputDecorationTheme(scheme, textTheme),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         shape: controlShape,
@@ -205,11 +198,9 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       style: OutlinedButton.styleFrom(
         shape: controlShape,
         minimumSize: const Size(64, AppSizes.controlHeight),
-        side: BorderSide(
-          color: isLight
-              ? scheme.outlineVariant
-              : scheme.outline.withValues(alpha: 0.55),
-        ),
+        // The border is the button's edge, so it holds 3:1 like any other
+        // control boundary. (It was the hairline colour, which is 1.2:1.)
+        side: BorderSide(color: scheme.outline),
         foregroundColor: scheme.onSurface,
         textStyle: textTheme.labelLarge?.copyWith(
           fontWeight: FontWeight.w700,
@@ -233,22 +224,15 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
         tapTargetSize: MaterialTapTargetSize.padded,
       ),
     ),
-    chipTheme: baseTheme.chipTheme.copyWith(
-      shape: const StadiumBorder(),
-      side: BorderSide(color: scheme.outlineVariant),
-      backgroundColor: scheme.surfaceContainerLowest,
-      labelStyle: textTheme.labelLarge?.copyWith(color: scheme.onSurface),
-      secondaryLabelStyle: textTheme.labelLarge?.copyWith(
-        color: scheme.onPrimaryContainer,
-      ),
-      selectedColor: scheme.primaryContainer,
-      checkmarkColor: scheme.onPrimaryContainer,
-    ),
-    listTileTheme: ListTileThemeData(
-      shape: controlShape,
-      iconColor: scheme.onSurfaceVariant,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    ),
+    chipTheme: appChipTheme(baseTheme.chipTheme, scheme, textTheme),
+    listTileTheme: appListTileTheme(scheme, textTheme, controlShape),
+    switchTheme: appSwitchTheme(scheme),
+    checkboxTheme: appCheckboxTheme(scheme),
+    radioTheme: appRadioTheme(scheme),
+    segmentedButtonTheme: appSegmentedButtonTheme(scheme, textTheme),
+    navigationBarTheme: appNavigationBarTheme(scheme, textTheme),
+    tabBarTheme: appTabBarTheme(scheme, textTheme),
+    expansionTileTheme: appExpansionTileTheme(scheme),
     progressIndicatorTheme: ProgressIndicatorThemeData(
       color: scheme.primary,
       linearTrackColor: scheme.surfaceContainerHighest,
@@ -256,43 +240,22 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       linearMinHeight: 6,
       borderRadius: BorderRadius.circular(AppRadii.pill),
     ),
-    dialogTheme: DialogThemeData(
-      backgroundColor: scheme.surfaceContainerLowest,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.sheet - AppSpacing.xxs),
-      ),
-      titleTextStyle: textTheme.titleLarge?.copyWith(
-        fontWeight: FontWeight.w800,
-        letterSpacing: -0.3,
-        color: scheme.onSurface,
-      ),
-      contentTextStyle: textTheme.bodyMedium?.copyWith(
-        color: scheme.onSurfaceVariant,
-      ),
-    ),
-    bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: scheme.surfaceContainerLowest,
-      surfaceTintColor: Colors.transparent,
-      showDragHandle: true,
-      dragHandleColor: scheme.outlineVariant,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AppRadii.sheet),
-        ),
-      ),
-    ),
+    dialogTheme: appDialogTheme(scheme, textTheme, isLight: isLight),
+    bottomSheetTheme: appBottomSheetTheme(scheme, isLight: isLight),
     drawerTheme: DrawerThemeData(
       backgroundColor: scheme.surface,
       surfaceTintColor: Colors.transparent,
+      scrimColor: Colors.black.withValues(alpha: isLight ? 0.40 : 0.60),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(
-          right: Radius.circular(AppRadii.sheet),
+        borderRadius: BorderRadiusDirectional.horizontal(
+          end: Radius.circular(AppRadii.sheet),
         ),
       ),
     ),
     popupMenuTheme: PopupMenuThemeData(
-      color: scheme.surfaceContainerLowest,
+      color: isLight
+          ? scheme.surfaceContainerLowest
+          : scheme.surfaceContainerHigh,
       surfaceTintColor: Colors.transparent,
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: isLight ? 0.16 : 0.5),
@@ -302,26 +265,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       ),
       textStyle: textTheme.bodyMedium,
     ),
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      // Lifted clear of the chat composer, which lives in the body where a
-      // floating bar would otherwise sit right on top of the text field.
-      insetPadding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        88,
-      ),
-      // Translucent on purpose: tapToDismissSnackBar backdrop-blurs the bar,
-      // so this tint composites over frosted page content.
-      backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.75),
-      elevation: 0,
-      contentTextStyle: textTheme.bodyMedium?.copyWith(color: scheme.onSurface),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-      ),
-    ),
+    snackBarTheme: appSnackBarTheme(scheme, textTheme),
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
         color: scheme.inverseSurface,
@@ -329,13 +273,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       ),
       textStyle: textTheme.bodySmall?.copyWith(color: scheme.onInverseSurface),
     ),
-    sliderTheme: baseTheme.sliderTheme.copyWith(
-      trackHeight: AppSpacing.xxs,
-      activeTrackColor: scheme.primary,
-      inactiveTrackColor: scheme.surfaceContainerHighest,
-      thumbColor: scheme.primary,
-      overlayColor: scheme.primary.withValues(alpha: 0.12),
-    ),
+    sliderTheme: appSliderTheme(baseTheme.sliderTheme, scheme),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       elevation: 2,
       focusElevation: 2,

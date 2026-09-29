@@ -562,6 +562,11 @@ void main() {
   testWidgets('says when an illustration was moved onto a page', (
     tester,
   ) async {
+    // Two sections each carry a picture frame; the list builds lazily, so the
+    // second has to be inside the viewport to be built at all.
+    tester.view.physicalSize = const Size(800, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(
       _app(
         const MobileEditChanges(

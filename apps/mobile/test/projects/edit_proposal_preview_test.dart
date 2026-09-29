@@ -52,41 +52,48 @@ void main() {
     );
   });
 
-  testWidgets('draws the before and after lines, and no credit badge when free', (tester) async {
-    final proposal = MobileEditProposal.fromJson(
-      proposalJson(
-        preview: {
-          'kind': 'exact_replace',
-          'from': 'rabbit',
-          'to': 'fly',
-          'matchCount': 2,
-          'samples': [
-            {'pageIndex': 1, 'before': 'Rabbit runs.', 'after': 'Fly runs.'},
-            {'pageIndex': 2, 'before': 'Rabbit rests.', 'after': 'Fly rests.'},
-          ],
-        },
-      ),
-    );
+  testWidgets(
+    'draws the before and after lines, and no credit badge when free',
+    (tester) async {
+      final proposal = MobileEditProposal.fromJson(
+        proposalJson(
+          preview: {
+            'kind': 'exact_replace',
+            'from': 'rabbit',
+            'to': 'fly',
+            'matchCount': 2,
+            'samples': [
+              {'pageIndex': 1, 'before': 'Rabbit runs.', 'after': 'Fly runs.'},
+              {
+                'pageIndex': 2,
+                'before': 'Rabbit rests.',
+                'after': 'Fly rests.',
+              },
+            ],
+          },
+        ),
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: EditProposalCard(
-            proposal: proposal,
-            enabled: true,
-            onApply: () {},
-            onCancel: () {},
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EditProposalCard(
+              proposal: proposal,
+              enabled: true,
+              onApply: () {},
+              onCancel: () {},
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('Rabbit runs.'), findsOneWidget);
-    expect(find.text('Fly runs.'), findsOneWidget);
-    expect(find.text('Rabbit rests.'), findsOneWidget);
-    expect(find.text('Fly rests.'), findsOneWidget);
-    expect(find.text('Apply'), findsOneWidget);
-    // Nothing is charged, so the card must not show a price.
-    expect(find.textContaining('credit'), findsNothing);
-  });
+      expect(find.text('Rabbit runs.'), findsOneWidget);
+      expect(find.text('Fly runs.'), findsOneWidget);
+      expect(find.text('Rabbit rests.'), findsOneWidget);
+      expect(find.text('Fly rests.'), findsOneWidget);
+      expect(find.text('Apply'), findsOneWidget);
+      // Nothing is charged, so the card must not show a price.
+      expect(find.textContaining('credit'), findsNothing);
+    },
+  );
 }

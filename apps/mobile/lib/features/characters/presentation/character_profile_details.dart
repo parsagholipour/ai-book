@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/motion.dart';
 import '../domain/character_models.dart';
 import '../domain/library_mentions.dart';
+
+/// How many lines of description show before "Read more".
+const int _collapsedDescriptionLines = 5;
 
 /// Who the character is: the description a book writes them from, the details
 /// beside it, and the description the server read off their photo while it is
@@ -37,15 +41,19 @@ class CharacterProfileDetails extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final suggestion = _suggestion;
+    final hasDescription = character.description.trim().isNotEmpty;
+    final hasDetails = character.fields.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // No pencil here: the app bar's is always on screen, and a second one
+        // No pencil here: the Edit action is one screen up, and a second one
         // beside the heading read as a different action.
         const AppSectionHeader(title: 'About'),
         const SizedBox(height: AppSpacing.xs),
-        if (character.description.trim().isEmpty)
+        if (!hasDescription && !hasDetails)
+          _WriteNudge(busy: busy, onEdit: onEdit)
+        else if (!hasDescription)
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: AppButton.text(
@@ -55,7 +63,10 @@ class CharacterProfileDetails extends StatelessWidget {
             ),
           )
         else
-          _descriptionText(context),
+          _ExpandableDescription(
+            character: character,
+            onOpenMention: onOpenMention,
+          ),
         if (suggestion != null) ...[
           const SizedBox(height: AppSpacing.sm),
           AppCard(
@@ -92,47 +103,12 @@ class CharacterProfileDetails extends StatelessWidget {
             ),
           ),
         ],
-        if (character.fields.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.md),
-          Text('Details', style: theme.textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.sm),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 520 ? 2 : 1;
-              final width =
-                  (constraints.maxWidth - (columns - 1) * AppSpacing.sm) /
-                  columns;
-              return Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  for (final field in character.fields)
-                    Container(
-                      width: width,
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: colors.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(AppRadii.control),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            field.key,
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xxs),
-                          Text(field.value, style: theme.textTheme.bodyMedium),
-                        ],
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ] else ...[
+        if (hasDetails) ...[
+          const SizedBox(height: AppSpacing.lg),
+          const AppSectionHeader(title: 'Details'),
+          const SizedBox(height: AppSpacing.xs),
+          _DetailsCard(fields: character.fields),
+        ] else if (hasDescription) ...[
           const SizedBox(height: AppSpacing.xs),
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -144,8 +120,9 @@ class CharacterProfileDetails extends StatelessWidget {
           ),
         ],
         if (character.usedInBooks) ...[
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.md),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
                 Icons.menu_book_outlined,
@@ -167,15 +144,217 @@ class CharacterProfileDetails extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _descriptionText(BuildContext context) {
+/// A character with nothing written about them: one prompt, not two buttons.
+class _WriteNudge extends StatelessWidget {
+  const _WriteNudge({required this.busy, required this.onEdit});
+
+  final bool busy;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Nothing written yet. A few lines about who they are help every '
+              'book write them the right way.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: AppButton.text(
+                label: 'Write a description',
+                leading: const Icon(Icons.notes_outlined),
+                onPressed: busy ? null : onEdit,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The label/value pairs, as one card of rows rather than a box apiece: a
+/// character with a dozen details reads as a list to scan, not a wall of tiles.
+class _DetailsCard extends StatelessWidget {
+  const _DetailsCard({required this.fields});
+
+  final List<CharacterField> fields;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    // A label and its value side by side need room for both; at a large text
+    // size the label goes above its value instead.
+    final stacked = MediaQuery.textScalerOf(context).scale(1) >= 1.3;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < fields.length; i++) ...[
+            if (i > 0) Divider(height: 1, color: colors.outlineVariant),
+            MergeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                child: stacked
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fields[i].key,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            fields[i].value,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              fields[i].key,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              fields[i].value,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The description, clamped to a few lines with a way to read the rest.
+///
+/// A description can run to two thousand characters, which on a phone is the
+/// whole page; the details and the pictures under it are what a reader came
+/// for, so the prose gives them the room until it is asked for.
+class _ExpandableDescription extends StatefulWidget {
+  const _ExpandableDescription({
+    required this.character,
+    required this.onOpenMention,
+  });
+
+  final LibraryCharacter character;
+  final ValueChanged<String> onOpenMention;
+
+  @override
+  State<_ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  bool _expanded = false;
+
+  /// Whether the prose is longer than the collapsed height at [width].
+  ///
+  /// Measured on the plain text: a mention is drawn as a widget, but it takes
+  /// the room its `@name` would, which is all the question needs.
+  bool _overflows(BuildContext context, double width, TextStyle? style) {
+    final painter = TextPainter(
+      text: TextSpan(text: widget.character.description, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: _collapsedDescriptionLines,
+    )..layout(maxWidth: width);
+    final exceeded = painter.didExceedMaxLines;
+    painter.dispose();
+    return exceeded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodyMedium;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final overflows = _overflows(context, constraints.maxWidth, style);
+        final collapsed = overflows && !_expanded;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AnimatedSize(
+              duration: AppMotion.reducedMotion(context)
+                  ? Duration.zero
+                  : AppMotion.medium,
+              curve: AppMotion.standard,
+              alignment: Alignment.topCenter,
+              child: _text(
+                context,
+                collapsed ? _collapsedDescriptionLines : null,
+              ),
+            ),
+            if (overflows)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: AppButton.text(
+                  key: const ValueKey('character-description-toggle'),
+                  label: _expanded ? 'Show less' : 'Read more',
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _text(BuildContext context, int? maxLines) {
+    final character = widget.character;
     final theme = Theme.of(context);
     final ranges = savedLibraryMentionRanges(
       character.description,
       character.mentions,
     );
     if (ranges.isEmpty) {
-      return Text(character.description, style: theme.textTheme.bodyMedium);
+      return Text(
+        character.description,
+        maxLines: maxLines,
+        overflow: maxLines == null ? null : TextOverflow.ellipsis,
+        style: theme.textTheme.bodyMedium,
+      );
     }
     final spans = <InlineSpan>[];
     var cursor = 0;
@@ -199,7 +378,7 @@ class CharacterProfileDetails extends StatelessWidget {
                 child: GestureDetector(
                   key: ValueKey('character-mention-${range.mention.id}'),
                   behavior: HitTestBehavior.opaque,
-                  onTap: () => onOpenMention(range.mention.id),
+                  onTap: () => widget.onOpenMention(range.mention.id),
                   child: Text(
                     token,
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -222,6 +401,8 @@ class CharacterProfileDetails extends StatelessWidget {
     return Text.rich(
       TextSpan(style: theme.textTheme.bodyMedium, children: spans),
       key: const ValueKey('character-linked-description'),
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
     );
   }
 }

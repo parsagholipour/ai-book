@@ -145,7 +145,9 @@ const creationLanguageOptions = <CreationLanguageOption>[
 /// is one tap away from making true, so an unknown code becomes its own option
 /// instead.
 List<CreationLanguageOption> creationLanguageOptionsFor(String language) {
-  final known = creationLanguageOptions.any((option) => option.code == language);
+  final known = creationLanguageOptions.any(
+    (option) => option.code == language,
+  );
   if (known || language.isEmpty) {
     return creationLanguageOptions;
   }
@@ -348,10 +350,7 @@ String? workingCreationTitle({
   required MobileCreationOptionalDetails optionalDetails,
   required MobileBookRecipe? brief,
 }) {
-  final candidates = <String>[
-    optionalDetails.title,
-    brief?.title ?? '',
-  ];
+  final candidates = <String>[optionalDetails.title, brief?.title ?? ''];
   for (final candidate in candidates) {
     final trimmed = candidate.trim();
     if (trimmed.isNotEmpty) {

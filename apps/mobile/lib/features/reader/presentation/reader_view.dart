@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../projects/data/projects_repository.dart';
@@ -26,6 +27,7 @@ import 'reader_annotation_painter.dart';
 import 'reader_app_bar.dart';
 import 'reader_book_pages.dart';
 import 'reader_bottom_bar.dart';
+import 'reader_coach.dart';
 import 'reader_departures.dart';
 import 'reader_document_loader.dart';
 import 'reader_ink_layer.dart';
@@ -35,6 +37,7 @@ import 'reader_markup_bar.dart';
 import 'reader_menu.dart';
 import 'reader_outline.dart';
 import 'reader_overlays.dart';
+import 'reader_page_badge.dart';
 import 'reader_places.dart';
 import 'reader_scroll_handle.dart';
 import 'reader_search_bar.dart';
@@ -162,6 +165,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   bool _searching = false;
   bool _immersive = false;
 
+  /// Whether the reader has yet to be shown the reading hint — set once the
+  /// store has answered, cleared the moment they show they need no telling.
+  bool _coachPending = false;
+
   /// Whether the last tap on a page was a plain one — it toggled the chrome and
   /// did nothing else — and so is still open to becoming the first half of a
   /// double tap. See [_onReadingDoubleTap].
@@ -197,6 +204,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     widget.loader.addListener(_onLoaderChanged);
     _restoreState();
     _syncDocument();
+    unawaited(_loadCoach());
   }
 
   @override
@@ -252,6 +260,41 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     }
     _afterFrame(() {});
   }
+
+  /// Asks whether the reading hint has been shown before.
+  ///
+  /// Answered late and only ever in the hint's favour of staying away: a store
+  /// that cannot be read says "seen".
+  Future<void> _loadCoach() async {
+    final seen = await ref
+        .read(readerCoachStoreProvider)
+        .hasSeen(ReaderCoachTip.readingBasics);
+    if (!mounted || seen) return;
+    setState(() => _coachPending = true);
+  }
+
+  /// Whether the hint is on screen: only over a calm, plain page. Every other
+  /// state — search, a selection, the markup tray, the controls put away — is
+  /// the reader already doing something the hint could have told them about.
+  bool get _coachShowing =>
+      _coachPending &&
+      widget.loader.document != null &&
+      !_immersive &&
+      !_searching &&
+      _selection == null &&
+      !_annotations.isMarkingUp;
+
+  /// Retires the hint for good. Does not rebuild: it is called from inside
+  /// `setState` closures, and from the one place that rebuilds around it.
+  void _retireCoach() {
+    if (!_coachPending) return;
+    _coachPending = false;
+    unawaited(
+      ref.read(readerCoachStoreProvider).markSeen(ReaderCoachTip.readingBasics),
+    );
+  }
+
+  void _dismissCoach() => setState(_retireCoach);
 
   Future<void> _restoreState() async {
     final state = await _repository.loadState(widget.projectId);
@@ -536,7 +579,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   String get _title =>
-      widget.status.exports.pdf.filename.replaceAll('.pdf', '');
+      readerTitleFromFilename(widget.status.exports.pdf.filename);
 
   bool get _onDarkPage => _annotations.settings.tint == ReaderPageTint.night;
 
@@ -681,6 +724,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     outline: _outline,
     currentRevision: _renderedExactRevision,
     hasCoverPage: _hasCoverPage,
+    pageCount: _pageCount,
+    chapterFor: _chapterFor,
     onStateChanged: (state) {
       setState(() => _state = state);
       _persistState();
@@ -733,7 +778,11 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// of the surface keeps that strip opaque either way.
   void _setImmersive(bool immersive) {
     if (_immersive == immersive) return;
-    setState(() => _immersive = immersive);
+    setState(() {
+      // Putting the controls away is the thing the hint teaches.
+      if (immersive) _retireCoach();
+      _immersive = immersive;
+    });
   }
 
   void _dismissUpdate() {

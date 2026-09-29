@@ -5,17 +5,28 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
+import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
 import 'package:tomeza/features/projects/presentation/chat_thinking_bubble.dart';
+import 'package:tomeza/features/projects/presentation/generation_finished_card.dart';
 import 'package:tomeza/features/projects/presentation/plan_build_progress.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 import 'package:tomeza/shared/ui/app_components.dart';
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
 
+/// The rarely-used settings (language, tone, author) sit behind one row until
+/// something in them is set.
+Future<void> _openMoreOptions(WidgetTester tester) async {
+  final more = find.text('More options');
+  await tester.ensureVisible(more);
+  await tester.tap(more);
+  await tester.pumpAndSettle();
+}
+
 void main() {
-  testWidgets('greeting and quick replies render; build is gated until ready', (
+  testWidgets('greeting and quick replies render; nothing to build yet', (
     tester,
   ) async {
     final creation = ScriptedCreationRepository();
@@ -28,8 +39,9 @@ void main() {
     expect(find.text('A kids book'), findsOneWidget);
     expect(creation.startedMessages, isEmpty);
 
-    final buildFinder = find.widgetWithText(FilledButton, 'Build the plan');
-    expect(tester.widget<FilledButton>(buildFinder).onPressed, isNull);
+    // A blank page has nothing to build: the button arrives with the first
+    // message instead of sitting greyed out under an empty chat.
+    expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
 
     await tester.teardownScreen();
   });
@@ -37,13 +49,32 @@ void main() {
   testWidgets('quick reply chips scroll; only an edge swipe opens the drawer', (
     tester,
   ) async {
+    // A chat under way, so the chips live in the footer row (a blank page
+    // offers its ideas as cards instead).
     final creation = ScriptedCreationRepository()
-      ..greetingQuickReplies = const [
-        'Bedtime story for 5 year olds',
-        'Lead magnet about pricing',
-        'Workbook for new coaches',
-        'Short story about a garden mystery',
-      ];
+      ..resumeConversationResult = MobileCreationConversationResponse.fromJson({
+        'session': {
+          'draftId': 'draft-chips',
+          'title': 'Chips',
+          'status': 'ACTIVE',
+          'messages': [
+            {'id': 'u1', 'role': 'user', 'content': 'A book'},
+            {'id': 'a1', 'role': 'assistant', 'content': reply},
+          ],
+          'createdProjectId': null,
+          'updatedAt': '2026-06-15T00:00:00.000Z',
+        },
+        'turn': turnJson(
+          assistantMessage: reply,
+          canBuild: false,
+          quickReplies: const [
+            'Bedtime story for 5 year olds',
+            'Lead magnet about pricing',
+            'Workbook for new coaches',
+            'Short story about a garden mystery',
+          ],
+        ),
+      });
     await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
@@ -140,7 +171,9 @@ void main() {
     await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
-    await tester.longPress(find.text(greeting));
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.longPress(bubbleText(greeting));
     await tester.pumpAndSettle();
 
     expect(find.text('Copy'), findsOneWidget);
@@ -615,8 +648,8 @@ void main() {
 
       expect(find.text('Advanced settings'), findsOneWidget);
       expect(find.text('Auto'), findsWidgets);
-      // The closed dropdown already draws the selected option's icon in
-      // the item; a prefixIcon would paint the same glyph twice.
+      // Every type is a chip in plain view — no dropdown to open — and the
+      // selected one is the only one marked.
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('book-type-auto')),
@@ -624,10 +657,14 @@ void main() {
         ),
         findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('book-type-auto')));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('book-type-auto')),
+          matching: find.text('Workbook'),
+        ),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Workbook').last);
-      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('book-type-workbook')), findsOneWidget);
 
       expect(find.text('Your choice'), findsWidgets);
 
@@ -703,6 +740,7 @@ void main() {
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
 
+    await _openMoreOptions(tester);
     final authorField = find.byKey(const ValueKey('author-name-field'));
     await tester.ensureVisible(authorField);
     await tester.enterText(authorField, 'Ada Lovelace');
@@ -783,6 +821,7 @@ void main() {
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
 
+    await _openMoreOptions(tester);
     final warmChip = find.widgetWithText(ChoiceChip, 'warm');
     await tester.ensureVisible(warmChip);
     await tester.tap(warmChip);
@@ -1315,6 +1354,9 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
       await tester.pump();
       await tester.pump();
+      // The footer hands over by cross-fading; let the old one finish leaving.
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
 
       expect(find.textContaining('Revising your book plan'), findsNothing);
       // Scoped to the transcript: the brief header also carries the title.
@@ -1403,7 +1445,7 @@ void main() {
 
     // While the chat loads the screen shows only the loading state: the app
     // bar carries no title and the brief header arrives with the chat.
-    expect(find.text('Loading chat'), findsOneWidget);
+    expect(find.byType(AppSkeletonGroup), findsOneWidget);
     expect(find.text('Selected chat draft-a'), findsNothing);
 
     resumeGate.complete();
@@ -1537,7 +1579,12 @@ void main() {
     // The header names the built book; the chat's own title stays in the
     // drawer.
     expect(find.text('Completed idea'), findsNothing);
-    expect(find.text('Original completed chat transcript'), findsOneWidget);
+    // Built but possibly scrolled above the (short) transcript viewport, which
+    // the finder counts as offstage; which chat loaded is the point here.
+    expect(
+      find.text('Original completed chat transcript', skipOffstage: false),
+      findsOneWidget,
+    );
     expect(find.text(planTitle), findsWidgets);
     expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
     expect(find.text('Approve and start writing'), findsOneWidget);
@@ -1578,7 +1625,12 @@ void main() {
     expect(projects.requestedProjectIds, ['project-1']);
     // The header names the built book, never the chat's derived title.
     expect(find.text('Completed idea'), findsNothing);
-    expect(find.text('Original completed chat transcript'), findsOneWidget);
+    // Built but possibly scrolled above the (short) transcript viewport, which
+    // the finder counts as offstage; which chat loaded is the point here.
+    expect(
+      find.text('Original completed chat transcript', skipOffstage: false),
+      findsOneWidget,
+    );
     expect(find.text(planTitle), findsWidgets);
     expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
     expect(find.text('Approve and start writing'), findsOneWidget);
@@ -1587,6 +1639,11 @@ void main() {
   });
 
   testWidgets('completed chat keeps composer for plan edits', (tester) async {
+    // The plan card is open on its chapters now, so the transcript is taller
+    // than the default viewport builds; give it the room to build every item.
+    await tester.binding.setSurfaceSize(const Size(800, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final creation = ScriptedCreationRepository(
       sessions: [
         chatSession(
@@ -1613,7 +1670,9 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('Send revision'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+    // The plan card above is open on its chapters, so the transcript has
+    // further to scroll to reach the new message.
+    await tester.pump(const Duration(seconds: 1));
 
     expect(projects.revisionMessages, contains('Make the examples warmer'));
     expect(find.text('Make the examples warmer'), findsOneWidget);
@@ -1625,6 +1684,11 @@ void main() {
   testWidgets('plan questions reply in chat without revision loading', (
     tester,
   ) async {
+    // The plan card is open on its chapters now, so the transcript is taller
+    // than the default viewport builds; give it the room to build every item.
+    await tester.binding.setSurfaceSize(const Size(800, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final creation = ScriptedCreationRepository();
     final projects = PlanProjectsRepository();
 
@@ -1658,7 +1722,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.byTooltip('Send revision'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(seconds: 1));
 
     expect(projects.revisionMessages, contains('What is this plan about?'));
     expect(find.text('What is this plan about?'), findsOneWidget);
@@ -1670,6 +1734,11 @@ void main() {
   });
 
   testWidgets('revised plan appears as a new chat item', (tester) async {
+    // The plan card is open on its chapters now, so the transcript is taller
+    // than the default viewport builds; give it the room to build every item.
+    await tester.binding.setSurfaceSize(const Size(800, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final creation = ScriptedCreationRepository();
     final projects = PlanProjectsRepository(
       project: plannedProject(plan: plan(title: 'Original launch plan')),
@@ -1759,11 +1828,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Book plan approved'), findsOneWidget);
-    expect(find.text('Tap to open your book'), findsOneWidget);
     expect(find.text('Approve and start writing'), findsNothing);
     expect(find.text('Premise'), findsNothing);
 
-    await tester.tap(find.text('Tap to open your book'));
+    await tester.tap(find.text('Book plan approved'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 300));
@@ -1860,6 +1928,9 @@ void main() {
     resumeGate.complete();
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
+    // The footer hands over by cross-fading; let the old one finish leaving.
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.text('Retry plan · 40 credits'), findsNothing);
     expect(find.text('Plan generation failed'), findsNothing);
@@ -2423,11 +2494,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Ready to export'), findsOneWidget);
     expect(find.text('Planning took 1m 12s'), findsOneWidget);
-    expect(find.text('Book generation took 8m'), findsOneWidget);
+    expect(
+      find.text('Ready · 28 pages · 1 image · made in 8m'),
+      findsOneWidget,
+    );
     expect(find.text('Open PDF'), findsOneWidget);
-    expect(find.text('View progress'), findsOneWidget);
+    // A finished book has nothing left to "view progress" of.
+    expect(find.text('View progress'), findsNothing);
 
     await tester.tap(find.text('Open PDF'));
     await tester.pump();
@@ -2482,8 +2556,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Book plan approved'), findsOneWidget);
-      // The plan card, plus the brief header naming the book by its title.
-      expect(find.text(planTitle), findsNWidgets(2));
+      // The header names the book; the approved-plan row no longer repeats it.
+      expect(find.text(planTitle), findsOneWidget);
       expect(find.text('Needs attention'), findsOneWidget);
       expect(
         find.text('We hit a problem while writing page 4.'),
@@ -2736,9 +2810,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The built plan renders below the brainstorm before the edit, and the
-      // brief header names the book by the same title.
-      expect(find.text(planTitle), findsNWidgets(2));
+      // The finished book renders below the brainstorm before the edit, and
+      // the brief header names the book by the same title.
+      expect(find.byType(GenerationFinishedCard), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('creationBriefHeader')),
+          matching: find.text(planTitle),
+        ),
+        findsOneWidget,
+      );
 
       await tester.longPress(bubbleText('Original brainstorm idea'));
       await tester.pumpAndSettle();
@@ -2956,17 +3037,24 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Original completed chat transcript'), findsOneWidget);
+    // Built but possibly scrolled above the (short) transcript viewport, which
+    // the finder counts as offstage; which chat loaded is the point here.
+    expect(
+      find.text('Original completed chat transcript', skipOffstage: false),
+      findsOneWidget,
+    );
     // The plan card, plus the brief header naming the book by its title.
     expect(find.text(planTitle), findsNWidgets(2));
 
-    await tester.tap(find.byTooltip('New book chat'));
+    await tester.tap(find.byKey(const ValueKey('chat-app-bar-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('New book'));
     await tester.pumpAndSettle();
 
     expect(find.text('Original completed chat transcript'), findsNothing);
     expect(find.text(planTitle), findsNothing);
     expect(find.textContaining('Tell me about the book'), findsOneWidget);
-    expect(find.byTooltip('New book chat'), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-app-bar-more')), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -3178,7 +3266,8 @@ void main() {
       (promptRect.center.dy - expandButtonRect.center.dy).abs(),
       lessThanOrEqualTo(1),
     );
-    expect(composerRect.top - expandButtonRect.bottom, 12);
+    // Close under the header (the message box sits inside a rounded field now).
+    expect(composerRect.top - expandButtonRect.bottom, lessThanOrEqualTo(18));
 
     await tester.tap(find.byTooltip('Expand question'));
     await tester.pump();

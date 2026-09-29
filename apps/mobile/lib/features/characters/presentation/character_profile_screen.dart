@@ -21,12 +21,13 @@ import '../domain/character_image_models.dart';
 import '../domain/character_models.dart';
 import 'character_call.dart';
 import 'character_editor_sheet.dart';
+import 'character_identity.dart';
 import 'character_image_actions.dart';
 import 'character_image_strip.dart';
-import 'character_identity.dart';
 import 'character_image_viewer.dart';
 import 'character_photo_pick.dart';
 import 'character_portrait_polling.dart';
+import 'character_profile_actions.dart';
 import 'character_profile_details.dart';
 import 'character_profile_header.dart';
 import 'character_reference_card.dart';
@@ -547,6 +548,17 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
       380.0,
     );
     _titleRevealOffset = pictureHeight;
+    final theme = Theme.of(context);
+    final role = _roleOf(character);
+    final pictureStatus = characterPictureStatus(character);
+    // The strip is for pictures. A character with none, and nothing on its way,
+    // has the header's own two ways in instead of a bare rail under it.
+    final showStrip =
+        images.isNotEmpty ||
+        _pendingUpload != null ||
+        character.portraitStatus.isBusy ||
+        (imagesValue.isLoading &&
+            (character.hasPhoto || character.usedInBooks));
 
     return Scaffold(
       body: RefreshIndicator(
@@ -571,15 +583,9 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                 ),
               ),
               actions: [
-                IconButton(
-                  key: const ValueKey('character-profile-edit'),
-                  tooltip: 'Edit character',
-                  onPressed: _busy ? null : () => _editDetails(character),
-                  icon: const Icon(Icons.edit_outlined),
-                ),
                 PopupMenuButton<String>(
                   key: const ValueKey('character-profile-menu'),
-                  tooltip: 'Character actions',
+                  tooltip: 'More actions',
                   onSelected: (value) {
                     switch (value) {
                       case 'add':
@@ -588,13 +594,43 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                         _deleteCharacter(character);
                     }
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'add', child: Text('Add a picture')),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete character'),
-                    ),
-                  ],
+                  itemBuilder: (context) {
+                    final colors = Theme.of(context).colorScheme;
+                    return [
+                      const PopupMenuItem(
+                        value: 'add',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.add_photo_alternate_outlined, size: 20),
+                            SizedBox(width: AppSpacing.sm),
+                            Flexible(child: Text('Add a picture')),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: colors.error,
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Flexible(
+                              child: Text(
+                                'Delete character',
+                                style: TextStyle(color: colors.error),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ];
+                  },
                 ),
               ],
             ),
@@ -617,6 +653,7 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                         mainImage == null ? 0 : images.indexOf(mainImage),
                       ),
                       onAddPicture: _addPicture,
+                      onDescribe: _busy ? null : () => _editDetails(character),
                     ),
                   ),
                 ),
@@ -628,56 +665,32 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      character.name,
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    CharacterIllustrationStatus(
-                      character: character,
-                      showNextStep: false,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    // The two things to do with a character that are not
-                    // about their picture: talk to them, or put them in a
-                    // book. A call is the one that happens right here, so it
-                    // gets the filled shape.
-                    Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.xs,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        AppButton.tonal(
-                          key: const ValueKey('character-profile-call'),
-                          label: 'Call ${character.name}',
-                          leading: const Icon(Icons.call_outlined, size: 18),
-                          loading: _calling,
-                          onPressed: _busy || _calling
-                              ? null
-                              : () => _call(character),
+                    Semantics(
+                      header: true,
+                      child: Text(
+                        character.name,
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
                         ),
-                        AppButton.text(
-                          label: 'Copy @${character.name}',
-                          leading: const Icon(
-                            Icons.alternate_email_rounded,
-                            size: 18,
-                          ),
-                          onPressed: () async {
-                            final messenger = ScaffoldMessenger.of(context);
-                            await Clipboard.setData(
-                              ClipboardData(text: '@${character.name}'),
-                            );
-                            if (!mounted) return;
-                            messenger.showAppSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Character mention copied. Paste it into your book chat.',
-                                ),
-                              ),
-                            );
-                          },
+                      ),
+                    ),
+                    if (role != null) ...[
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        role,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                      ],
+                      ),
+                    ],
+                    const SizedBox(height: AppSpacing.md),
+                    CharacterProfileActions(
+                      calling: _calling,
+                      busy: _busy,
+                      useLeads: pictureStatus == CharacterPictureStatus.ready,
+                      onCall: () => _call(character),
+                      onEdit: () => _editDetails(character),
+                      onUse: () => _copyMention(character),
                     ),
                   ],
                 ),
@@ -694,7 +707,6 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                   portraitBusy: _portraitBusy,
                   waitGaveUp: portraitWaitGaveUp,
                   onGeneratePortrait: () => _generatePortrait(character),
-                  onAddPicture: _addPicture,
                   onPromote: (image) => _promote(image, name: character.name),
                   onCheckAgain: resumePortraitPolling,
                 ),
@@ -733,7 +745,7 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                   ),
                 ),
               )
-            else
+            else if (showStrip)
               SliverPadding(
                 padding: const EdgeInsets.only(top: AppSpacing.lg, bottom: 32),
                 sliver: SliverToBoxAdapter(
@@ -749,8 +761,40 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                     onAdd: _addPicture,
                   ),
                 ),
-              ),
+              )
+            else
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// A line under the name saying what they do, when a detail already says so:
+  /// the value of a "Job" or "Role" the reader filled in, nothing invented.
+  String? _roleOf(LibraryCharacter character) {
+    for (final field in character.fields) {
+      final key = field.key.trim().toLowerCase();
+      if ((key == 'job' || key == 'role' || key == 'occupation') &&
+          field.value.trim().isNotEmpty) {
+        return field.value.trim();
+      }
+    }
+    return null;
+  }
+
+  /// "Use in a book" is the one action that acts on the clipboard, so it says
+  /// what it copied and where it goes.
+  Future<void> _copyMention(LibraryCharacter character) async {
+    final messenger = ScaffoldMessenger.of(context);
+    AppHaptics.tap();
+    await Clipboard.setData(ClipboardData(text: '@${character.name}'));
+    if (!mounted) return;
+    messenger.showAppSnackBar(
+      SnackBar(
+        content: Text(
+          'Copied @${character.name}. Paste it into your book chat to put '
+          'them in the story.',
         ),
       ),
     );

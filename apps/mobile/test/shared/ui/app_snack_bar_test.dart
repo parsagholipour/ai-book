@@ -55,25 +55,26 @@ void main() {
     expect(find.text('Highlight removed.'), findsNothing);
   });
 
-  testWidgets('tapping the message of a snack bar with an action dismisses it', (
-    tester,
-  ) async {
-    final messengerKey = GlobalKey<ScaffoldMessengerState>();
-    await tester.pumpWidget(_app(messengerKey));
-    var undone = false;
+  testWidgets(
+    'tapping the message of a snack bar with an action dismisses it',
+    (tester) async {
+      final messengerKey = GlobalKey<ScaffoldMessengerState>();
+      await tester.pumpWidget(_app(messengerKey));
+      var undone = false;
 
-    messengerKey.currentState!.showAppSnackBar(
-      SnackBar(
-        content: const Text('Note removed.'),
-        action: SnackBarAction(label: 'Undo', onPressed: () => undone = true),
-      ),
-    );
-    await tester.pumpAndSettle();
+      messengerKey.currentState!.showAppSnackBar(
+        SnackBar(
+          content: const Text('Note removed.'),
+          action: SnackBarAction(label: 'Undo', onPressed: () => undone = true),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Note removed.'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Note removed.'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Note removed.'), findsNothing);
-    expect(undone, isFalse);
-  });
+      expect(find.text('Note removed.'), findsNothing);
+      expect(undone, isFalse);
+    },
+  );
 }

@@ -144,9 +144,7 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
     _insertedMentionTextById[character.id] = mentionText;
     _composerController.value = TextEditingValue(
       text: next,
-      selection: TextSelection.collapsed(
-        offset: query.start + replaced.length,
-      ),
+      selection: TextSelection.collapsed(offset: query.start + replaced.length),
     );
     _composerFocusNode.requestFocus();
   }
@@ -177,6 +175,21 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
     _seedMentionsFrom(const <MobileCreationCharacterRef>[]);
     _attachedMentions = const <MobileCreationCharacterRef>[];
     _mentionQuery = null;
+  }
+
+  /// Types the `@` for the reader, so the suggestion strip opens on their saved
+  /// characters. The welcome offers this as a tip; the same strip and the same
+  /// listener take it from there.
+  void _beginMention() {
+    final text = _composerController.text;
+    final needsSpace =
+        text.isNotEmpty && !text.endsWith(' ') && !text.endsWith('\n');
+    final next = '${needsSpace ? '$text ' : text}@';
+    _composerController.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    _composerFocusNode.requestFocus();
   }
 
   Future<void> _openCharacterLibrary() async {
@@ -253,8 +266,7 @@ class _MentionSuggestionStrip extends ConsumerWidget {
     final needle = query.trim().toLowerCase();
     final matches = [
       for (final character in characters)
-        if (needle.isEmpty ||
-            character.name.toLowerCase().contains(needle))
+        if (needle.isEmpty || character.name.toLowerCase().contains(needle))
           character,
     ];
     // While the library is still loading, "Create a character" would lie to a
@@ -263,7 +275,7 @@ class _MentionSuggestionStrip extends ConsumerWidget {
     return Material(
       color: colors.surface,
       child: SizedBox(
-        height: 52,
+        height: math.max(52, MediaQuery.textScalerOf(context).scale(24) + 28),
         child: ListView(
           key: const ValueKey('mention-suggestion-strip'),
           scrollDirection: Axis.horizontal,

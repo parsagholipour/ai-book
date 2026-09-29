@@ -1,4 +1,3 @@
-import 'chat_session_page_fixture.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,31 +5,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
-import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
-import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
-import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/chat_drawer_chrome.dart';
 import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
 
+import 'chat_history_drawer_harness.dart';
+
 void main() {
-  testWidgets('search stays behind the overflow until Search chats', (
+  testWidgets('search is one tap away in the header and opens focused', (
     tester,
   ) async {
-    await tester.pumpWidget(_app(sessions: const [], activeDraftId: ''));
+    await tester.pumpWidget(drawerApp(sessions: const [], activeDraftId: ''));
     await tester.pumpAndSettle();
 
     expect(find.byType(TextField), findsNothing);
-    expect(find.byTooltip('More'), findsOneWidget);
-    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    expect(find.byTooltip('Search chats'), findsOneWidget);
     expect(find.byTooltip('Close'), findsOneWidget);
+    // No overflow menu holding a single item.
+    expect(find.byTooltip('More'), findsNothing);
 
-    await tester.tap(find.byTooltip('More'));
-    await tester.pumpAndSettle();
-    expect(find.text('Search chats'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('drawer-search-chats')));
+    await tester.tap(find.byTooltip('Search chats'));
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsOneWidget);
     expect(
@@ -40,7 +35,7 @@ void main() {
   });
 
   testWidgets('new book button uses a pen-on-paper icon', (tester) async {
-    await tester.pumpWidget(_app(sessions: const [], activeDraftId: ''));
+    await tester.pumpWidget(drawerApp(sessions: const [], activeDraftId: ''));
     await tester.pumpAndSettle();
 
     final button = find.widgetWithText(ChatDrawerNewBookButton, 'New book');
@@ -57,7 +52,7 @@ void main() {
       final now = DateTime.now();
       final sessions = List.generate(
         145,
-        (index) => _chatSession(
+        (index) => chatSession(
           draftId: 'draft-$index',
           title: index == 144 ? 'The moon garden' : 'Book idea $index',
           preview: index == 143
@@ -67,13 +62,13 @@ void main() {
         ),
       );
       await tester.pumpWidget(
-        _app(sessions: sessions, activeDraftId: 'draft-0'),
+        drawerApp(sessions: sessions, activeDraftId: 'draft-0'),
       );
       await tester.pumpAndSettle();
       expect(find.text('The moon garden'), findsNothing);
       expect(find.byType(TextField), findsNothing);
 
-      await _openChatSearch(tester);
+      await openChatSearch(tester);
       await tester.enterText(find.byType(TextField), '  MOON  ');
       await tester.pumpAndSettle();
       expect(find.text('The moon garden'), findsOneWidget);
@@ -104,14 +99,14 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      _app(
+      drawerApp(
         sessions: const [],
         activeDraftId: '',
-        repository: _SparseSearchRepository(),
+        repository: SparseSearchRepository(),
       ),
     );
     await tester.pumpAndSettle();
-    await _openChatSearch(tester);
+    await openChatSearch(tester);
     await tester.enterText(find.byType(TextField), 'moon');
     await tester.pumpAndSettle();
     expect(find.text('No matching chats'), findsNothing);
@@ -124,19 +119,19 @@ void main() {
     (tester) async {
       final tail = Completer<MobileChatSessionPage>();
       await tester.pumpWidget(
-        _app(
+        drawerApp(
           sessions: const [],
           activeDraftId: '',
-          repository: _SparseSearchRepository(
+          repository: SparseSearchRepository(
             firstPage: [
-              _chatSession(draftId: 'draft-moon', title: 'Moon garden'),
+              chatSession(draftId: 'draft-moon', title: 'Moon garden'),
             ],
             tail: tail,
           ),
         ),
       );
       await tester.pumpAndSettle();
-      await _openChatSearch(tester);
+      await openChatSearch(tester);
       await tester.enterText(find.byType(TextField), 'moon');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -146,9 +141,7 @@ void main() {
 
       tail.complete(
         MobileChatSessionPage(
-          sessions: [
-            _chatSession(draftId: 'draft-lake', title: 'Moonlit lake'),
-          ],
+          sessions: [chatSession(draftId: 'draft-lake', title: 'Moonlit lake')],
         ),
       );
       await tester.pumpAndSettle();
@@ -165,14 +158,14 @@ void main() {
       final now = DateTime.now();
       final sessions = List.generate(
         125,
-        (index) => _chatSession(
+        (index) => chatSession(
           draftId: 'draft-$index',
           title: 'Book idea $index',
           lastMessageAt: now.subtract(Duration(minutes: index)),
         ),
       );
       await tester.pumpWidget(
-        _app(sessions: sessions, activeDraftId: 'draft-0'),
+        drawerApp(sessions: sessions, activeDraftId: 'draft-0'),
       );
       await tester.pumpAndSettle();
       expect(find.text('Show more chats'), findsNothing);
@@ -211,11 +204,11 @@ void main() {
       final sessions = List.generate(
         35,
         (index) =>
-            _chatSession(draftId: 'draft-$index', title: 'Book idea $index'),
+            chatSession(draftId: 'draft-$index', title: 'Book idea $index'),
       );
-      final repository = _RetryingPageRepository(sessions);
+      final repository = RetryingPageRepository(sessions);
       await tester.pumpWidget(
-        _app(
+        drawerApp(
           sessions: sessions,
           activeDraftId: 'draft-0',
           repository: repository,
@@ -251,9 +244,9 @@ void main() {
       tester.platformDispatcher.textScaleFactorTestValue = 2;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await tester.pumpWidget(
-        _app(
+        drawerApp(
           sessions: [
-            _chatSession(
+            chatSession(
               draftId: 'draft-0',
               title: 'A long book title that wraps',
             ),
@@ -263,7 +256,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      await _openChatSearch(tester);
+      await openChatSearch(tester);
       await tester.enterText(find.byType(TextField), 'long');
       tester.view.viewInsets = const FakeViewPadding(bottom: 280);
       addTearDown(tester.view.resetViewInsets);
@@ -283,9 +276,9 @@ void main() {
       ProviderScope(
         overrides: [
           creationRepositoryProvider.overrideWithValue(
-            _ThrowingCreationRepository(),
+            ThrowingCreationRepository(),
           ),
-          billingRepositoryProvider.overrideWithValue(_FakeBillingRepository()),
+          billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
         ],
         child: MaterialApp(
           theme: buildTomezaLightTheme(),
@@ -310,10 +303,12 @@ void main() {
 
     final sessions = List.generate(
       24,
-      (index) => _chatSession(draftId: 'draft-$index', title: 'Chat $index'),
+      (index) => chatSession(draftId: 'draft-$index', title: 'Chat $index'),
     );
 
-    await tester.pumpWidget(_app(sessions: sessions, activeDraftId: 'draft-0'));
+    await tester.pumpWidget(
+      drawerApp(sessions: sessions, activeDraftId: 'draft-0'),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -355,14 +350,16 @@ void main() {
     final now = DateTime.now();
     final sessions = List.generate(
       24,
-      (index) => _chatSession(
+      (index) => chatSession(
         draftId: 'draft-$index',
         title: 'Chat $index',
         lastMessageAt: now,
       ),
     );
 
-    await tester.pumpWidget(_app(sessions: sessions, activeDraftId: 'other'));
+    await tester.pumpWidget(
+      drawerApp(sessions: sessions, activeDraftId: 'other'),
+    );
     await tester.pumpAndSettle();
 
     final listTop = tester.getTopLeft(find.byType(CustomScrollView)).dy;
@@ -384,120 +381,84 @@ void main() {
     tester,
   ) async {
     final now = DateTime.now();
+    final old = now.subtract(const Duration(days: 45));
     final session = MobileChatSession(
       draftId: 'draft-0',
       title: 'Old Portuguese book',
       preview: 'Latest message',
       messageCount: 2,
       status: 'ACTIVE',
-      createdAt: now.subtract(const Duration(days: 30)),
+      createdAt: old,
       // The row was touched today (e.g. by a build), but the conversation
-      // itself is a month old.
+      // itself is a month and a half old.
       updatedAt: now,
-      lastMessageAt: now.subtract(const Duration(days: 30)),
+      lastMessageAt: old,
     );
 
-    await tester.pumpWidget(_app(sessions: [session], activeDraftId: 'other'));
+    await tester.pumpWidget(
+      drawerApp(sessions: [session], activeDraftId: 'other'),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Older'), findsOneWidget);
+    // Past a month a chat is filed under its calendar month, not one "Older".
+    expect(
+      find.text(
+        DefaultMaterialLocalizations().formatMonthYear(
+          DateTime(old.year, old.month),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Older'), findsNothing);
     expect(find.text('Today'), findsNothing);
   });
 
-  testWidgets('only a chat whose book is being written shows activity', (
+  testWidgets('New book is a footer under the list, never over a row', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final now = DateTime.now();
     await tester.pumpWidget(
-      _app(
+      drawerApp(
         sessions: [
-          _chatSession(
-            draftId: 'draft-live',
-            title: 'Being written',
-            activeProjectId: 'book-1',
-          ),
-          _chatSession(draftId: 'draft-idle', title: 'Just a chat'),
+          for (var i = 0; i < 30; i++)
+            chatSession(
+              draftId: 'draft-$i',
+              title: 'Chat $i',
+              lastMessageAt: now.subtract(Duration(days: i)),
+            ),
         ],
         activeDraftId: 'other',
-        projects: [_project(id: 'book-1', status: 'generating')],
-      ),
-    );
-    await _pumpDrawer(tester);
-
-    expect(_spinnerIn('Being written'), findsOneWidget);
-    expect(_glyphIn('Being written'), findsNothing);
-    // The chat next to it is untouched: one book being written does not make
-    // the whole history look busy.
-    expect(_spinnerIn('Just a chat'), findsNothing);
-    await tester.scrollUntilVisible(
-      find.text('Just a chat'),
-      40,
-      scrollable: find.descendant(
-        of: find.byType(CustomScrollView),
-        matching: find.byType(Scrollable),
-      ),
-    );
-    expect(_glyphIn('Just a chat'), findsOneWidget);
-  });
-
-  testWidgets('a chat whose book is finished keeps the chat glyph', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        sessions: [
-          _chatSession(
-            draftId: 'draft-done',
-            title: 'Finished book',
-            activeProjectId: 'book-1',
-          ),
-        ],
-        activeDraftId: 'other',
-        projects: [_project(id: 'book-1', status: 'complete')],
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(_spinnerIn('Finished book'), findsNothing);
-    expect(_glyphIn('Finished book'), findsOneWidget);
-    expect(find.text('Latest message'), findsOneWidget);
+    final listBottom = tester.getBottomLeft(find.byType(CustomScrollView)).dy;
+    final buttonTop = tester
+        .getTopLeft(find.byType(ChatDrawerNewBookButton))
+        .dy;
+    expect(buttonTop, greaterThanOrEqualTo(listBottom));
+    // The credits stay as tidy as the rest: a balance you can tap.
+    expect(find.text('1200 credits'), findsOneWidget);
   });
 
-  // The list the drawer opened with is a snapshot: a book that settles while
-  // the drawer stays open is only reported by its status stream, and a book
-  // still being planned has no shelf card asking for it either.
-  testWidgets(
-    'the status stream stops the spinner before the list catches up',
-    (tester) async {
-      final statuses = StreamController<MobileProjectStatus>.broadcast();
-      addTearDown(statuses.close);
+  testWidgets('long titles wrap to two lines instead of one truncated line', (
+    tester,
+  ) async {
+    const title =
+        '10 page book about Neymar and the road to the World Cup in Brazil';
+    await tester.pumpWidget(
+      drawerApp(
+        sessions: [chatSession(draftId: 'draft-0', title: title)],
+        activeDraftId: 'other',
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.pumpWidget(
-        _app(
-          sessions: [
-            _chatSession(
-              draftId: 'draft-live',
-              title: 'Being planned',
-              activeProjectId: 'book-1',
-            ),
-          ],
-          activeDraftId: 'other',
-          // Still 'planning' for the whole test: only the stream ever says the
-          // book is done.
-          projects: [_project(id: 'book-1', status: 'planning')],
-          statuses: statuses.stream,
-        ),
-      );
-      await _pumpDrawer(tester);
-
-      expect(_spinnerIn('Being planned'), findsOneWidget);
-
-      statuses.add(_status(id: 'book-1', status: 'complete'));
-      await tester.pumpAndSettle();
-
-      expect(_spinnerIn('Being planned'), findsNothing);
-      expect(_glyphIn('Being planned'), findsOneWidget);
-    },
-  );
+    final text = tester.widget<Text>(find.text(title));
+    expect(text.maxLines, 2);
+  });
 
   test('fromJson falls back to updatedAt when lastMessageAt is missing', () {
     final json = <String, dynamic>{
@@ -519,241 +480,4 @@ void main() {
     });
     expect(current.lastMessageAt, DateTime.parse('2026-06-10T00:00:00.000Z'));
   });
-}
-
-Widget _app({
-  required List<MobileChatSession> sessions,
-  required String activeDraftId,
-  List<MobileProjectSummary> projects = const [],
-  Stream<MobileProjectStatus>? statuses,
-  CreationRepository? repository,
-}) {
-  return ProviderScope(
-    overrides: [
-      creationRepositoryProvider.overrideWithValue(
-        repository ?? _FakeCreationRepository(sessions),
-      ),
-      billingRepositoryProvider.overrideWithValue(_FakeBillingRepository()),
-      projectsProvider.overrideWith((ref) async => projects),
-      projectStatusProvider.overrideWith(
-        (ref, id) => statuses ?? const Stream<MobileProjectStatus>.empty(),
-      ),
-    ],
-    child: MaterialApp(
-      theme: buildTomezaLightTheme(),
-      home: Scaffold(body: ChatHistoryDrawer(activeDraftId: activeDraftId)),
-    ),
-  );
-}
-
-Future<void> _openChatSearch(WidgetTester tester) async {
-  await tester.tap(find.byTooltip('More'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const ValueKey('drawer-search-chats')));
-  await tester.pumpAndSettle();
-}
-
-/// Timed pumps rather than `pumpAndSettle`: an indeterminate spinner animates
-/// forever, so a drawer with a busy chat in it never settles.
-Future<void> _pumpDrawer(WidgetTester tester) async {
-  for (var i = 0; i < 4; i++) {
-    await tester.pump(const Duration(milliseconds: 50));
-  }
-}
-
-Finder _spinnerIn(String title) {
-  return find.descendant(
-    of: find.widgetWithText(ListTile, title),
-    matching: find.byType(CircularProgressIndicator),
-  );
-}
-
-Finder _glyphIn(String title) {
-  return find.descendant(
-    of: find.widgetWithText(ListTile, title),
-    matching: find.byIcon(Icons.chat_bubble_outline),
-  );
-}
-
-MobileChatSession _chatSession({
-  required String draftId,
-  required String title,
-  DateTime? lastMessageAt,
-  String? activeProjectId,
-  String preview = 'Latest message',
-}) {
-  final now = DateTime.utc(2026, 6, 15);
-  return MobileChatSession(
-    draftId: draftId,
-    title: title,
-    preview: preview,
-    messageCount: 2,
-    status: 'ACTIVE',
-    createdAt: now,
-    updatedAt: now,
-    lastMessageAt: lastMessageAt,
-    activeProjectId: activeProjectId,
-  );
-}
-
-MobileProjectSummary _project({required String id, required String status}) {
-  return MobileProjectSummary(
-    id: id,
-    title: 'A book',
-    bookType: 'workbook',
-    lengthPreset: 'standard',
-    qualityPreset: 'balanced',
-    status: status,
-    statusLabel: status,
-    progressPercent: 40,
-    currentAction: status,
-    promptPreview: 'A practical workbook.',
-    targetPages: 18,
-    pageCount: 6,
-    imageCount: 0,
-    hasPlan: true,
-    exports: _exports,
-    createdAt: DateTime.utc(2026, 6, 1),
-    updatedAt: DateTime.utc(2026, 6, 1),
-  );
-}
-
-MobileProjectStatus _status({required String id, required String status}) {
-  return MobileProjectStatus(
-    projectId: id,
-    status: status,
-    statusLabel: status,
-    progressPercent: 100,
-    currentAction: status,
-    retryAvailable: false,
-    steps: const [],
-    pageProgress: const MobilePageProgress(completed: 6, target: 6),
-    imageCount: 0,
-    exports: _exports,
-    updatedAt: DateTime.utc(2026, 6, 15),
-  );
-}
-
-const _exports = MobileExportSet(
-  pdf: MobileExportAvailability(
-    format: 'pdf',
-    available: false,
-    unlocked: false,
-    creditsRequired: 150,
-    downloadUrl: '/api/mobile/projects/book-1/export/pdf',
-    filename: 'book.pdf',
-    contentType: 'application/pdf',
-  ),
-  epub: MobileExportAvailability(
-    format: 'epub',
-    available: false,
-    unlocked: false,
-    creditsRequired: 150,
-    downloadUrl: '/api/mobile/projects/book-1/export/epub',
-    filename: 'book.epub',
-    contentType: 'application/epub+zip',
-  ),
-);
-
-class _FakeCreationRepository
-    with ListSessionsPageFromList
-    implements CreationRepository {
-  const _FakeCreationRepository(this.sessions);
-
-  final List<MobileChatSession> sessions;
-
-  @override
-  Future<List<MobileChatSession>> listSessions() async => sessions;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) {
-    throw UnimplementedError('Not used in this test.');
-  }
-}
-
-class _ThrowingCreationRepository
-    with ListSessionsPageFromList
-    implements CreationRepository {
-  @override
-  Future<List<MobileChatSession>> listSessions() async {
-    throw Exception('network down');
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) {
-    throw UnimplementedError('Not used in this test.');
-  }
-}
-
-class _FakeBillingRepository implements BillingRepository {
-  @override
-  Future<MobileBilling> getBilling() async => _billing();
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) {
-    throw UnimplementedError('Not used in this test.');
-  }
-}
-
-MobileBilling _billing() {
-  return const MobileBilling(
-    credits: CreditBalance(
-      available: 1200,
-      reserved: 0,
-      lifetimeGranted: 1200,
-      lifetimeSpent: 0,
-    ),
-    entitlements: [],
-    products: [],
-    creditCosts: {
-      'fullBookBase': 350,
-      'fullBookPerPage': 8,
-      'imageGeneration': 45,
-      'premiumReview': 200,
-      'exportUnlock': 150,
-    },
-  );
-}
-
-class _SparseSearchRepository extends _FakeCreationRepository {
-  _SparseSearchRepository({this.firstPage, this.tail}) : super(const []);
-
-  final List<MobileChatSession>? firstPage;
-  final Completer<MobileChatSessionPage>? tail;
-
-  @override
-  Future<MobileChatSessionPage> listSessionsPage({
-    String? cursor,
-    String query = '',
-  }) async {
-    if (query.isEmpty) {
-      return const MobileChatSessionPage(sessions: []);
-    }
-    if (cursor == null) {
-      return MobileChatSessionPage(
-        sessions: firstPage ?? const [],
-        nextCursor: 'more',
-      );
-    }
-    if (tail != null) return tail!.future;
-    throw Exception('offline');
-  }
-}
-
-class _RetryingPageRepository extends _FakeCreationRepository {
-  _RetryingPageRepository(super.sessions);
-  bool fail = true;
-  int tailCalls = 0;
-
-  @override
-  Future<MobileChatSessionPage> listSessionsPage({
-    String? cursor,
-    String query = '',
-  }) async {
-    if (cursor != null) {
-      tailCalls++;
-      if (fail) throw Exception('offline');
-    }
-    return super.listSessionsPage(cursor: cursor, query: query);
-  }
 }

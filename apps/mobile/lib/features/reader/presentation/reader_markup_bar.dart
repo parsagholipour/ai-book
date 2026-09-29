@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/motion.dart';
 import '../domain/reader_annotation.dart';
 import 'reader_annotation_painter.dart';
 import 'reader_selection_actions.dart';
@@ -57,19 +58,25 @@ class ReaderMarkupBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final barColor = theme.colorScheme.surfaceContainerHigh;
     return AppBar(
-      backgroundColor: theme.colorScheme.surfaceContainerHigh,
+      backgroundColor: barColor,
       leading: IconButton(
         icon: const Icon(Icons.close),
         tooltip: 'Done',
         onPressed: onDismiss,
       ),
+      // The close button is 48 wide, not the 56 an app bar gives its leading
+      // slot: on a 360-pixel phone those eight pixels are what lets Copy sit
+      // inside the bar rather than on its edge.
+      leadingWidth: 48,
       titleSpacing: 0,
-      title: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      title: _ScrollFade(
+        color: barColor,
         // Resting at the start, so when the row is wider than the screen — a
         // narrow phone, a large text scale — it is the share and copy icons
-        // that run off the end, never the colours.
+        // that run off the end, never the colours. The fade at the end says
+        // there is more there.
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -194,6 +201,90 @@ class _IconAction extends StatelessWidget {
       tooltip: label,
       visualDensity: VisualDensity.compact,
       onPressed: onTap,
+    );
+  }
+}
+
+/// A row that scrolls sideways and shows, with a fade at its end, that it does.
+///
+/// The bar above is wider than a phone once every action is on it. Scrolling is
+/// the right answer; a scroll nobody knows is there is not — the last two
+/// actions were simply off the edge.
+class _ScrollFade extends StatefulWidget {
+  const _ScrollFade({required this.color, required this.child});
+
+  /// The colour behind the row, which the fade dissolves into.
+  final Color color;
+  final Widget child;
+
+  @override
+  State<_ScrollFade> createState() => _ScrollFadeState();
+}
+
+class _ScrollFadeState extends State<_ScrollFade> {
+  final _controller = ScrollController();
+  bool _more = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_update);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _update());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _update() {
+    if (!mounted || !_controller.hasClients) return;
+    final position = _controller.position;
+    final more = position.pixels < position.maxScrollExtent - 1;
+    if (more != _more) setState(() => _more = more);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = AppMotion.reducedMotion(context)
+        ? Duration.zero
+        : AppMotion.fast;
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _update());
+        return false;
+      },
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            controller: _controller,
+            scrollDirection: Axis.horizontal,
+            child: widget.child,
+          ),
+          PositionedDirectional(
+            end: 0,
+            top: 0,
+            bottom: 0,
+            width: 32,
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _more ? 1 : 0,
+                duration: duration,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: AlignmentDirectional.centerStart,
+                      end: AlignmentDirectional.centerEnd,
+                      colors: [widget.color.withValues(alpha: 0), widget.color],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

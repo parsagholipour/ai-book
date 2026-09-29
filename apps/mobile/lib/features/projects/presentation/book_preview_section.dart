@@ -7,11 +7,12 @@ import '../domain/project_models.dart';
 // What has actually been written so far — pages and visuals as they land —
 // plus the reporting affordances that have to sit beside AI-generated content.
 
-class GeneratedBookPreview extends StatelessWidget {
+class GeneratedBookPreview extends StatefulWidget {
   const GeneratedBookPreview({
     required this.project,
     this.onReportProject,
     this.onReportImage,
+    this.live = false,
     super.key,
   });
 
@@ -19,67 +20,141 @@ class GeneratedBookPreview extends StatelessWidget {
   final Future<void> Function()? onReportProject;
   final Future<void> Function(MobileProjectImage image)? onReportImage;
 
+  /// A book still being written shows the pages that landed last; a finished
+  /// one shows how it opens. Either way the rest is a tap away.
+  final bool live;
+
+  @override
+  State<GeneratedBookPreview> createState() => _GeneratedBookPreviewState();
+}
+
+class _GeneratedBookPreviewState extends State<GeneratedBookPreview> {
+  /// Enough to show what the writing is like. A finished book is read in the
+  /// reader; listing all of its pages here pushed everything below it off the
+  /// screen.
+  static const _collapsedCount = 3;
+  bool _showAll = false;
+
   @override
   Widget build(BuildContext context) {
-    final pages = project.pages
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final project = widget.project;
+    final onReportImage = widget.onReportImage;
+    final all = project.pages
         .where(
           (page) =>
               page.previewText.trim().isNotEmpty || page.summary.isNotEmpty,
         )
         .toList();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
+    final collapsible = all.length > _collapsedCount;
+    final pages = !collapsible || _showAll
+        ? all
+        : widget.live
+        ? all.sublist(all.length - _collapsedCount)
+        : all.sublist(0, _collapsedCount);
+    final cover = project.coverImage;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
               'Book preview',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'AI-generated content from your prompt and selected preset.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
               ),
             ),
-            if (onReportProject != null) ...[
-              const SizedBox(height: 10),
-              AppButton.outlined(
-                onPressed: () => onReportProject!(),
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+          Text(
+            'AI-generated content from your prompt and selected preset.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          if (widget.onReportProject != null)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: AppButton.text(
+                onPressed: () => widget.onReportProject!(),
                 leading: const Icon(Icons.flag_outlined),
                 label: 'Report book',
               ),
-            ],
-            const SizedBox(height: 12),
-            if (project.coverImage != null) ...[
-              _AuthenticatedProjectImage(image: project.coverImage!),
-              if (onReportImage != null) ...[
-                const SizedBox(height: 8),
-                _ReportVisualButton(
-                  onPressed: () => onReportImage!(project.coverImage!),
-                ),
-              ],
-              const SizedBox(height: 12),
-            ],
-            if (pages.isEmpty)
-              Text(
-                'Generated pages will appear here as soon as writing starts.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              )
-            else
-              for (final page in pages) ...[
-                _GeneratedPagePreview(page: page, onReportImage: onReportImage),
-                if (page != pages.last) const Divider(height: 22),
-              ],
+            ),
+          const SizedBox(height: AppSpacing.sm),
+          if (cover != null) ...[
+            _CoverRow(
+              image: cover,
+              onReport: onReportImage == null
+                  ? null
+                  : () => onReportImage(cover),
+            ),
+            const Divider(height: AppSpacing.lg),
           ],
-        ),
+          if (all.isEmpty)
+            Text(
+              'Generated pages will appear here as soon as writing starts.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            )
+          else ...[
+            for (final page in pages) ...[
+              _GeneratedPagePreview(page: page, onReportImage: onReportImage),
+              if (page != pages.last) const Divider(height: AppSpacing.lg),
+            ],
+            if (collapsible) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: AppButton.text(
+                  onPressed: () => setState(() => _showAll = !_showAll),
+                  leading: Icon(
+                    _showAll ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  label: _showAll
+                      ? 'Show fewer pages'
+                      : 'Show all ${all.length} pages',
+                ),
+              ),
+            ],
+          ],
+        ],
       ),
+    );
+  }
+}
+
+/// The cover as a thumbnail with its report action. It used to be drawn at full
+/// width here, a third copy of a cover the hero already shows.
+class _CoverRow extends StatelessWidget {
+  const _CoverRow({required this.image, required this.onReport});
+
+  final MobileProjectImage image;
+  final VoidCallback? onReport;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        SizedBox(
+          width: 56,
+          child: _AuthenticatedProjectImage(image: image, compact: true),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            'Cover art',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (onReport != null) _ReportVisualButton(onPressed: onReport!),
+      ],
     );
   }
 }
@@ -121,16 +196,19 @@ class _GeneratedPagePreview extends StatelessWidget {
         if (page.image != null) ...[
           const SizedBox(height: 10),
           _AuthenticatedProjectImage(image: page.image!),
-          if (onReportImage != null) ...[
-            const SizedBox(height: 8),
-            _ReportVisualButton(onPressed: () => onReportImage!(page.image!)),
-          ],
+          if (onReportImage != null)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: _ReportVisualButton(
+                onPressed: () => onReportImage!(page.image!),
+              ),
+            ),
         ] else if (page.imageFailed) ...[
           const SizedBox(height: 10),
           const _IllustrationLostNote(),
         ],
         const SizedBox(height: 8),
-        Text(preview, maxLines: 8, overflow: TextOverflow.ellipsis),
+        Text(preview, maxLines: 6, overflow: TextOverflow.ellipsis),
       ],
     );
   }
@@ -164,23 +242,40 @@ class _IllustrationLostNote extends StatelessWidget {
 }
 
 class _AuthenticatedProjectImage extends StatelessWidget {
-  const _AuthenticatedProjectImage({required this.image});
+  const _AuthenticatedProjectImage({required this.image, this.compact = false});
 
   final MobileProjectImage image;
 
+  /// A thumbnail: too small for a spinner and a sentence, so both placeholders
+  /// are a bare icon.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return AspectRatio(
       aspectRatio: image.role == 'cover' ? 3 / 4 : 16 / 9,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(
+          compact ? AppRadii.compact - 2 : AppRadii.control,
+        ),
         child: AuthedNetworkImage(
           url: image.url,
           cacheBuster: null,
           fit: BoxFit.cover,
           semanticLabel: image.altText,
-          loadingPlaceholder: _ImageLoading(label: image.altText),
-          errorPlaceholder: _ImageUnavailable(label: image.altText),
+          loadingPlaceholder: compact
+              ? ColoredBox(color: colors.surfaceContainerHighest)
+              : _ImageLoading(label: image.altText),
+          errorPlaceholder: compact
+              ? ColoredBox(
+                  color: colors.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.image_not_supported_outlined,
+                    color: colors.outline,
+                  ),
+                )
+              : _ImageUnavailable(label: image.altText),
         ),
       ),
     );
@@ -255,17 +350,14 @@ class _ImageUnavailable extends StatelessWidget {
 class _ReportVisualButton extends StatelessWidget {
   const _ReportVisualButton({required this.onPressed});
 
-  final Future<void> Function() onPressed;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: AppButton.outlined(
-        onPressed: () => onPressed(),
-        leading: const Icon(Icons.flag_outlined),
-        label: 'Report visual',
-      ),
+    return AppButton.text(
+      onPressed: onPressed,
+      leading: const Icon(Icons.flag_outlined),
+      label: 'Report visual',
     );
   }
 }

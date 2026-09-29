@@ -10,6 +10,7 @@ import 'package:tomeza/features/reader/presentation/reader_app_bar.dart';
 import 'package:tomeza/features/reader/presentation/reader_bottom_bar.dart';
 import 'package:tomeza/features/reader/presentation/reader_document_loader.dart';
 import 'package:tomeza/features/reader/presentation/reader_markup_toolbar.dart';
+import 'package:tomeza/features/reader/presentation/reader_page_badge.dart';
 import 'package:tomeza/features/reader/presentation/reader_scroll_handle.dart';
 import 'package:tomeza/features/reader/presentation/reader_view.dart';
 
@@ -119,11 +120,25 @@ void main() {
     await chooseFromMenu(tester, 'Full screen');
     expect(barsHidden(), isTrue);
 
-    await tester.tap(find.byTooltip('Exit full screen'));
+    // The badge that keeps the place in the book is also the way back.
+    await tester.tap(find.byTooltip('Show controls'));
     await tester.pumpAndSettle();
 
     expect(barsHidden(), isFalse);
-    expect(find.byTooltip('Exit full screen'), findsNothing);
+    expect(
+      tester
+          .widget<IgnorePointer>(
+            find
+                .descendant(
+                  of: find.byType(ReaderPageBadge),
+                  matching: find.byType(IgnorePointer),
+                )
+                .first,
+          )
+          .ignoring,
+      isTrue,
+      reason: 'with the bars back the badge steps aside',
+    );
   });
 
   testWidgets(

@@ -10,11 +10,7 @@ import '../domain/character_models.dart';
 /// with explicit auth headers rather than as plain network images, the same
 /// way the voice call avatar does.
 class CharacterAvatar extends StatelessWidget {
-  const CharacterAvatar({
-    required this.character,
-    this.radius = 24,
-    super.key,
-  });
+  const CharacterAvatar({required this.character, this.radius = 24, super.key});
 
   final LibraryCharacter character;
   final double radius;
@@ -22,7 +18,10 @@ class CharacterAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final initials = _InitialsFace(initials: character.initials, radius: radius);
+    final initials = _InitialsFace(
+      initials: character.initials,
+      radius: radius,
+    );
 
     Widget face = initials;
     final imageUrl = character.displayImageUrl;

@@ -427,7 +427,9 @@ class MobileEditProposal {
     if (change != null) {
       final shown = change.readerPageNumbers;
       if (change.action == 'delete') {
-        return shown.length == 1 ? 'Page ${shown.first}' : 'Pages ${shown.join(', ')}';
+        return shown.length == 1
+            ? 'Page ${shown.first}'
+            : 'Pages ${shown.join(', ')}';
       }
       // Every arm below reads [MobileEditStructuralChange.placement] and nothing
       // else, so the chip says what the summary above it says. Where a move
@@ -517,6 +519,7 @@ class MobileBookEditOperation {
     this.changesAvailable = false,
     this.creditsRefunded = false,
     this.creditsRefundedAmount = 0,
+    this.readerPageNumbers = const [],
   });
 
   final String id;
@@ -524,6 +527,10 @@ class MobileBookEditOperation {
   final String kind;
   final String status;
   final List<int> affectedPageIndexes;
+
+  /// The printed PDF pages the edit covers, when the server has a current page
+  /// map. Empty otherwise, and [affectedPageIndexes] then stand in.
+  final List<int> readerPageNumbers;
   final int creditsCharged;
   final String currentAction;
   final String? error;
@@ -592,6 +599,10 @@ class MobileBookEditOperation {
       kind: json['kind'] as String,
       status: json['status'] as String,
       affectedPageIndexes: affected.map((value) => value as int).toList(),
+      readerPageNumbers:
+          (json['readerPageNumbers'] as List<dynamic>? ?? const [])
+              .whereType<int>()
+              .toList(growable: false),
       creditsCharged: creditsCharged,
       currentAction:
           json['currentAction'] as String? ??

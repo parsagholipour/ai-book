@@ -8,11 +8,15 @@ class AppSettingsSection extends StatelessWidget {
   const AppSettingsSection({
     required this.title,
     required this.children,
+    this.footer,
     super.key,
   });
 
   final String title;
   final List<Widget> children;
+
+  /// A line of explanation under the card, e.g. what a group of switches does.
+  final String? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +54,21 @@ class AppSettingsSection extends StatelessWidget {
             ],
           ),
         ),
+        if (footer != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xs,
+              AppSpacing.xs,
+              AppSpacing.xs,
+              0,
+            ),
+            child: Text(
+              footer!,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ),
       ],
     );
   }
@@ -64,6 +83,8 @@ class AppSettingsRow extends StatelessWidget {
     this.value,
     this.onTap,
     this.external = false,
+    this.trailing,
+    this.destructive = false,
     super.key,
   });
 
@@ -74,15 +95,29 @@ class AppSettingsRow extends StatelessWidget {
   final VoidCallback? onTap;
   final bool external;
 
+  /// Replaces the chevron, e.g. with a switch. A row with a switch should
+  /// pass the same toggle as [onTap] so the whole row is the target.
+  final Widget? trailing;
+
+  /// Draws the row in the error colours: sign out, delete account.
+  final bool destructive;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final accessory = external
-        ? Icon(Icons.open_in_new, size: 18, color: colors.onSurfaceVariant)
-        : onTap == null
-        ? null
-        : Icon(Icons.chevron_right, color: colors.onSurfaceVariant);
+    final accessory =
+        trailing ??
+        (external
+            ? Icon(Icons.open_in_new, size: 18, color: colors.onSurfaceVariant)
+            : onTap == null
+            ? null
+            : Icon(Icons.chevron_right, color: colors.onSurfaceVariant));
+    final tileColor = destructive
+        ? colors.errorContainer
+        : colors.primaryContainer.withValues(alpha: 0.7);
+    final tileIcon = destructive ? colors.onErrorContainer : colors.primary;
+    final titleColor = destructive ? colors.error : colors.onSurface;
 
     final row = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: AppSizes.minimumTouchTarget),
@@ -95,12 +130,12 @@ class AppSettingsRow extends StatelessWidget {
           children: [
             DecoratedBox(
               decoration: BoxDecoration(
-                color: colors.surfaceContainerHigh,
+                color: tileColor,
                 borderRadius: BorderRadius.circular(AppRadii.compact),
               ),
               child: SizedBox.square(
                 dimension: 36,
-                child: Icon(icon, size: 20, color: colors.primary),
+                child: Icon(icon, size: 20, color: tileIcon),
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
@@ -112,6 +147,7 @@ class AppSettingsRow extends StatelessWidget {
                     title,
                     style: text.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
+                      color: titleColor,
                     ),
                   ),
                   if (subtitle != null) ...[
@@ -128,7 +164,14 @@ class AppSettingsRow extends StatelessWidget {
             ),
             if (value != null) ...[
               const SizedBox(width: AppSpacing.xs),
-              Flexible(
+              // Sized to its text, up to 45% of the row. It used to be a plain
+              // Flexible sharing the row with an Expanded title, so the two
+              // split the leftover width evenly and every value floated at the
+              // row's midpoint instead of sitting against the chevron.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width * 0.45,
+                ),
                 child: Text(
                   value!,
                   textAlign: TextAlign.end,

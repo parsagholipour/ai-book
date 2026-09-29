@@ -137,6 +137,13 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'Your chat did not say how long the book should be. Pick a length, or type your own.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
             const SizedBox(height: AppSpacing.sm),
             for (final recommendation in recommendations) ...[
               _PageCountOption(
@@ -492,137 +499,172 @@ class _AdvancedSheet extends ConsumerWidget {
     // better image model — so it is read against the chosen preset.
     final imageCredits = _imageCredits(presets.qualityPreset, creditCosts);
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final colors = Theme.of(context).colorScheme;
+    final tone = state.optionalDetails.tone.trim();
+    final author = state.optionalDetails.authorName.trim();
+    final moreSummary = [
+      languageLabel(state.language),
+      if (tone.isNotEmpty) tone,
+      if (author.isNotEmpty) 'by $author',
+    ].join(' · ');
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(18, 4, 18, 18 + bottomInset),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Advanced settings',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Override anything the studio chose. Your selections stick across the conversation.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Advanced settings',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Override anything the studio chose. Your selections stick across the conversation.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _BookTypePicker(
+                    title: 'Book type',
+                    yourChoice: state.userChoices.contains(
+                      CreationChoice.bookType,
+                    ),
+                    options: bookTypePresetOptions,
+                    selected:
+                        state.userChoices.contains(CreationChoice.bookType)
+                        ? presets.bookTypeChoice
+                        : 'auto',
+                    onChanged: controller.setBookType,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _PageCountControl(
+                    title: 'Pages',
+                    yourChoice: state.userChoices.contains(
+                      CreationChoice.length,
+                    ),
+                    presets: presets,
+                    onAuto: controller.setPageCountAuto,
+                    onCustom: controller.setCustomTargetPages,
+                    estimateCredits: (pages) => estimateProjectCredits(
+                      bookType: presets.bookType,
+                      bookTypeChoice: presets.bookTypeChoice,
+                      qualityPreset: presets.qualityPreset,
+                      coverEnabled: presets.coverEnabled,
+                      illustrationsEnabled: presets.illustrationsEnabled,
+                      targetPages: pages,
+                      creditCosts: creditCosts,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  _AdvancedGroup(
+                    title: 'Effort',
+                    yourChoice: state.userChoices.contains(
+                      CreationChoice.finish,
+                    ),
+                    options: qualityPresetOptions,
+                    selected: presets.qualityPreset,
+                    onChanged: controller.setQualityPreset,
+                    creditsPerPage: (quality) =>
+                        _writingCreditsPerPage(presets, quality, creditCosts),
+                    planCredits: (quality) => estimatePlanGenerationCredits(
+                      qualityPreset: quality,
+                      creditCosts: creditCosts,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const _FieldTitle('Visuals'),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppToggleTile(
+                    value: presets.coverEnabled,
+                    onChanged: controller.setCoverEnabled,
+                    icon: Icons.auto_stories_outlined,
+                    title: 'AI cover art',
+                    titleBadge: state.userChoices.contains(CreationChoice.cover)
+                        ? const AppStatusBadge(
+                            label: 'Your choice',
+                            icon: Icons.tune_outlined,
+                          )
+                        : null,
+                    subtitle: _coverSubtitle(
+                      presets.coverEnabled,
+                      imageCredits: imageCredits,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppToggleTile(
+                    value: presets.illustrationsEnabled,
+                    onChanged: controller.setIllustrationsEnabled,
+                    icon: Icons.image_outlined,
+                    title: 'In-book illustrations',
+                    titleBadge:
+                        state.userChoices.contains(CreationChoice.illustrations)
+                        ? const AppStatusBadge(
+                            label: 'Your choice',
+                            icon: Icons.tune_outlined,
+                          )
+                        : null,
+                    subtitle: _illustrationsSubtitle(
+                      presets.illustrationsEnabled,
+                      presets.bookType,
+                      ref.watch(billingProvider).asData?.value.imageQuota,
+                      imageCredits: imageCredits,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  // Set values open the fold by themselves, so nothing chosen
+                  // is ever hidden behind it.
+                  _MoreOptions(
+                    summary: moreSummary,
+                    initiallyOpen:
+                        state.language != 'en' && state.language.isNotEmpty ||
+                        tone.isNotEmpty ||
+                        author.isNotEmpty,
+                    children: [
+                      _LanguageField(
+                        language: state.language,
+                        yourChoice: state.userChoices.contains(
+                          CreationChoice.language,
+                        ),
+                        onChanged: controller.setLanguage,
+                      ),
+                      _ToneField(
+                        tone: state.optionalDetails.tone,
+                        yourChoice: state.userChoices.contains(
+                          CreationChoice.tone,
+                        ),
+                        onChanged: controller.setTone,
+                      ),
+                      _AuthorNameField(
+                        authorName: state.optionalDetails.authorName,
+                        onChanged: controller.setAuthorName,
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            _BookTypeDropdown(
-              title: 'Book type',
-              yourChoice: state.userChoices.contains(CreationChoice.bookType),
-              options: bookTypePresetOptions,
-              selected: state.userChoices.contains(CreationChoice.bookType)
-                  ? presets.bookTypeChoice
-                  : 'auto',
-              onChanged: controller.setBookType,
-            ),
-            const SizedBox(height: 14),
-            _PageCountControl(
-              title: 'Pages',
-              yourChoice: state.userChoices.contains(CreationChoice.length),
-              presets: presets,
-              onAuto: controller.setPageCountAuto,
-              onCustom: controller.setCustomTargetPages,
-              estimateCredits: (pages) => estimateProjectCredits(
-                bookType: presets.bookType,
-                bookTypeChoice: presets.bookTypeChoice,
-                qualityPreset: presets.qualityPreset,
-                coverEnabled: presets.coverEnabled,
-                illustrationsEnabled: presets.illustrationsEnabled,
-                targetPages: pages,
-                creditCosts: creditCosts,
-              ),
-            ),
-            const SizedBox(height: 14),
-            _AdvancedGroup(
-              title: 'Effort',
-              yourChoice: state.userChoices.contains(CreationChoice.finish),
-              options: qualityPresetOptions,
-              selected: presets.qualityPreset,
-              onChanged: controller.setQualityPreset,
-              creditsPerPage: (quality) =>
-                  _writingCreditsPerPage(presets, quality, creditCosts),
-              planCredits: (quality) => estimatePlanGenerationCredits(
-                qualityPreset: quality,
-                creditCosts: creditCosts,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Visuals',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            AppToggleTile(
-              value: presets.coverEnabled,
-              onChanged: controller.setCoverEnabled,
-              icon: Icons.auto_stories_outlined,
-              title: 'AI cover art',
-              titleBadge: state.userChoices.contains(CreationChoice.cover)
-                  ? const AppStatusBadge(
-                      label: 'Your choice',
-                      icon: Icons.tune_outlined,
-                    )
-                  : null,
-              subtitle: _coverSubtitle(
-                presets.coverEnabled,
-                imageCredits: imageCredits,
-              ),
-            ),
-            const SizedBox(height: 8),
-            AppToggleTile(
-              value: presets.illustrationsEnabled,
-              onChanged: controller.setIllustrationsEnabled,
-              icon: Icons.image_outlined,
-              title: 'In-book illustrations',
-              titleBadge:
-                  state.userChoices.contains(CreationChoice.illustrations)
-                  ? const AppStatusBadge(
-                      label: 'Your choice',
-                      icon: Icons.tune_outlined,
-                    )
-                  : null,
-              subtitle: _illustrationsSubtitle(
-                presets.illustrationsEnabled,
-                presets.bookType,
-                ref.watch(billingProvider).asData?.value.imageQuota,
-                imageCredits: imageCredits,
-              ),
-            ),
-            const SizedBox(height: 14),
-            _LanguageField(
-              language: state.language,
-              yourChoice: state.userChoices.contains(CreationChoice.language),
-              onChanged: controller.setLanguage,
-            ),
-            const SizedBox(height: 14),
-            _ToneField(
-              tone: state.optionalDetails.tone,
-              yourChoice: state.userChoices.contains(CreationChoice.tone),
-              onChanged: controller.setTone,
-            ),
-            const SizedBox(height: 14),
-            _AuthorNameField(
-              authorName: state.optionalDetails.authorName,
-              onChanged: controller.setAuthorName,
-            ),
-            const SizedBox(height: 18),
-            AppButton.primary(
+          ),
+          // Pinned: the way out never scrolls away with the settings.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+            child: AppButton.primary(
               onPressed: () => Navigator.of(context).pop(),
               label: 'Done',
               expanded: true,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -78,7 +78,7 @@ class _ChatMessageTextState extends ConsumerState<ChatMessageText> {
     for (final block in blocks) {
       if (previous != null) {
         final tight = previous is ChatListItem && block is ChatListItem;
-        children.add(SizedBox(height: tight ? 3 : 8));
+        children.add(SizedBox(height: tight ? 4 : 10));
       }
       children.add(_block(context, block, base, citations));
       previous = block;
@@ -109,7 +109,7 @@ class _ChatMessageTextState extends ConsumerState<ChatMessageText> {
           inlines,
           base.copyWith(
             fontWeight: FontWeight.w700,
-            fontSize: (base.fontSize ?? 14) + 1,
+            fontSize: (base.fontSize ?? 14) + 2,
           ),
           citations,
         );
@@ -145,11 +145,7 @@ class _ChatMessageTextState extends ConsumerState<ChatMessageText> {
             ),
           ),
         );
-      case ChatListItem(
-        :final ordered,
-        :final marker,
-        :final inlines,
-      ):
+      case ChatListItem(:final ordered, :final marker, :final inlines):
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -177,7 +173,9 @@ class _ChatMessageTextState extends ConsumerState<ChatMessageText> {
   ) {
     return Text.rich(
       TextSpan(
-        children: [for (final inline in inlines) _span(inline, base, citations)],
+        children: [
+          for (final inline in inlines) _span(inline, base, citations),
+        ],
       ),
       style: base,
     );
@@ -209,8 +207,7 @@ class _ChatMessageTextState extends ConsumerState<ChatMessageText> {
     if (inline.italic) style = style.copyWith(fontStyle: FontStyle.italic);
     final url = inline.linkUrl;
     if (url == null) return TextSpan(text: inline.text, style: style);
-    final recognizer = TapGestureRecognizer()
-      ..onTap = () => _openLink(url);
+    final recognizer = TapGestureRecognizer()..onTap = () => _openLink(url);
     _recognizers.add(recognizer);
     return TextSpan(
       text: inline.text,
@@ -239,7 +236,9 @@ class _CitationNumbering {
     for (final block in blocks) {
       for (final inline in block.inlines) {
         final citation = inline.citation;
-        if (citation != null) _numbers.putIfAbsent(_key(citation), () => _numbers.length + 1);
+        if (citation != null) {
+          _numbers.putIfAbsent(_key(citation), () => _numbers.length + 1);
+        }
       }
     }
   }

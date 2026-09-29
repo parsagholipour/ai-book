@@ -23,6 +23,7 @@ class BookCover extends StatelessWidget {
     this.width,
     this.palette,
     this.borderRadius = 10,
+    this.elevated = true,
     super.key,
   });
 
@@ -44,6 +45,10 @@ class BookCover extends StatelessWidget {
   final double? width;
   final double borderRadius;
 
+  /// Drops the soft shadow under the cover. A thumbnail inside a list row sits
+  /// on the row's own surface, where a 10dp blur reads as a smudge.
+  final bool elevated;
+
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(borderRadius);
@@ -52,13 +57,15 @@ class BookCover extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: radius,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          boxShadow: elevated
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
         ),
         child: ClipRRect(
           borderRadius: radius,

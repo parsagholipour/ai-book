@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 
 class ProjectRouteErrorState extends StatelessWidget {
@@ -20,8 +21,9 @@ class ProjectRouteErrorState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final routeError = _ProjectRouteError.from(error);
+    final Widget content;
     if (routeError != null) {
-      return AppErrorState(
+      content = AppErrorState(
         title: routeError.title,
         message: routeError.message,
         icon: routeError.icon,
@@ -29,12 +31,35 @@ class ProjectRouteErrorState extends StatelessWidget {
         actionIcon: Icons.home_outlined,
         onRetry: onGoHome,
       );
+    } else {
+      // A failure that may pass gets its retry, and the way out beside it: the
+      // route's back arrow is the only other exit, and a deep link opened cold
+      // has nothing behind it to go back to.
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppErrorState(
+            title: fallbackTitle,
+            message: userFacingError(error),
+            onRetry: onRetry,
+          ),
+          AppButton.text(
+            onPressed: onGoHome,
+            leading: const Icon(Icons.home_outlined),
+            label: 'Back to projects',
+          ),
+        ],
+      );
     }
-
-    return AppErrorState(
-      title: fallbackTitle,
-      message: userFacingError(error),
-      onRetry: onRetry,
+    // Scrolls, so a large text size on a short screen never overflows, and
+    // centres when there is room.
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(child: content),
+        ),
+      ),
     );
   }
 }

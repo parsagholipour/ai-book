@@ -593,6 +593,10 @@ void main() {
   );
 
   testWidgets('a spent proposal stops offering Apply', (tester) async {
+    // The proposal, the reply and the operation card stack taller than the
+    // default surface, and the list builds only what is on screen.
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpFinishedBook(tester, status: 'applied');
 
     // The card stays as history — it just no longer asks to be acted on.
@@ -606,6 +610,8 @@ void main() {
   testWidgets('a proposal the server still holds open keeps its buttons', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await _pumpFinishedBook(tester, status: 'applied', proposalStillOpen: true);
 
     expect(_proposalButton('Apply'), findsOneWidget);

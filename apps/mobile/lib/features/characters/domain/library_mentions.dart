@@ -40,7 +40,11 @@ class _Candidate {
 }
 
 class _Claim {
-  const _Claim({required this.candidate, required this.start, required this.end});
+  const _Claim({
+    required this.candidate,
+    required this.start,
+    required this.end,
+  });
 
   final _Candidate candidate;
   final int start;

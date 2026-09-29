@@ -51,6 +51,8 @@ extension _ReaderViewSelection on _ReaderViewState {
     List<ReaderSelectionSpan> spans,
   ) {
     _afterFrame(() {
+      // Selecting is the other thing the hint teaches.
+      _retireCoach();
       _selection = selection;
       _menuSelection = selection;
       _menuAnchor = anchor;

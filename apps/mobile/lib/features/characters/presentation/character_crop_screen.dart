@@ -186,6 +186,25 @@ class _CharacterCropScreenState extends State<CharacterCropScreen> {
     }
     return Column(
       children: [
+        // Said in words, not only to a screen reader: the frame is what every
+        // illustrated book draws this face from, and none of the gestures is
+        // labelled on screen.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.xs,
+            AppSpacing.md,
+            AppSpacing.sm,
+          ),
+          child: Text(
+            'Pinch to zoom and drag to frame their face. The circle shows how '
+            'it will look in the app.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
         Expanded(child: _cropArea()),
         if (_error != null)
           Padding(
@@ -200,6 +219,9 @@ class _CharacterCropScreenState extends State<CharacterCropScreen> {
               tone: AppTone.error,
               title: "That didn't work",
               message: _error!,
+              actionLabel: 'Choose another photo',
+              onAction: () =>
+                  Navigator.of(context).pop(CharacterCropOutcome.chooseAnother),
             ),
           ),
         _controls(),
@@ -234,7 +256,6 @@ class _CharacterCropScreenState extends State<CharacterCropScreen> {
   }
 
   Widget _buildCrop(BuildContext context, CharacterCropConfig config) {
-    final colors = Theme.of(context).colorScheme;
     return Crop(
       image: config.image,
       controller: config.controller,
@@ -253,9 +274,10 @@ class _CharacterCropScreenState extends State<CharacterCropScreen> {
       withCircleUi: false,
       interactive: true,
       fixCropRect: false,
-      // The package default is white, which is a flashbang in dark mode.
-      baseColor: colors.surfaceContainerLowest,
-      maskColor: colors.scrim.withValues(alpha: 0.62),
+      // Dark in both themes, like every photo editor: the guides and handles
+      // are white, and white on the theme's own pale surface was invisible.
+      baseColor: const Color(0xFF0E1412),
+      maskColor: Colors.black.withValues(alpha: 0.62),
       radius: AppRadii.control,
       filterQuality: FilterQuality.medium,
       // Safe only because `prepareCharacterCropSource` produced these bytes.
@@ -263,10 +285,12 @@ class _CharacterCropScreenState extends State<CharacterCropScreen> {
       // photo as PNG is several megabytes over mobile data — to be re-encoded
       // to JPEG by the server the moment it lands.
       formatDetector: (_) => ImageFormat.jpeg,
-      progressIndicator: const CircularProgressIndicator(strokeWidth: 2.5),
-      cornerDotBuilder: (size, alignment) =>
-          DotControl(color: colors.onSurface),
-      overlayBuilder: (context, rect) => _CropGuides(colors: colors),
+      progressIndicator: const CircularProgressIndicator(
+        strokeWidth: 2.5,
+        color: Colors.white,
+      ),
+      cornerDotBuilder: (size, alignment) => _CropHandle(size: size),
+      overlayBuilder: (context, rect) => const _CropGuides(),
     );
   }
 
@@ -314,6 +338,18 @@ class _CharacterCropScreenState extends State<CharacterCropScreen> {
             expanded: true,
             onPressed: _status == CropStatus.ready && !busy ? _approve : null,
           ),
+          const SizedBox(height: AppSpacing.xxs),
+          AppButton.text(
+            key: const ValueKey('character-crop-choose-another'),
+            label: 'Choose a different photo',
+            leading: const Icon(Icons.photo_library_outlined),
+            expanded: true,
+            onPressed: busy
+                ? null
+                : () => Navigator.of(
+                    context,
+                  ).pop(CharacterCropOutcome.chooseAnother),
+          ),
         ],
       ),
     );
@@ -322,49 +358,110 @@ class _CharacterCropScreenState extends State<CharacterCropScreen> {
 
 /// A thirds grid plus the circle the avatar will clip to, so the reader can see
 /// both framings of the one file they are choosing.
+///
+/// White with a dark hairline beneath, because the frame sits over a
+/// photograph: light lines vanish on a snowy background and dark ones on a
+/// night shot, and a line with its own shadow reads on both.
 class _CropGuides extends StatelessWidget {
-  const _CropGuides({required this.colors});
-
-  final ColorScheme colors;
+  const _CropGuides();
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
+    return const IgnorePointer(
       child: CustomPaint(
-        painter: _CropGuidePainter(color: colors.onSurface.withValues(alpha: 0.45)),
-        child: const SizedBox.expand(),
+        painter: _CropGuidePainter(),
+        child: SizedBox.expand(),
       ),
     );
   }
 }
 
 class _CropGuidePainter extends CustomPainter {
-  const _CropGuidePainter({required this.color});
-
-  final Color color;
+  const _CropGuidePainter();
 
   @override
   void paint(Canvas canvas, Size size) {
-    final line = Paint()
-      ..color = color.withValues(alpha: 0.35)
-      ..strokeWidth = 1;
+    void line(
+      Offset a,
+      Offset b, {
+      required double alpha,
+      required double width,
+    }) {
+      canvas.drawLine(
+        a,
+        b,
+        Paint()
+          ..color = Colors.black.withValues(alpha: alpha * 0.55)
+          ..strokeWidth = width + 1.5,
+      );
+      canvas.drawLine(
+        a,
+        b,
+        Paint()
+          ..color = Colors.white.withValues(alpha: alpha)
+          ..strokeWidth = width,
+      );
+    }
+
     for (var i = 1; i < 3; i++) {
       final dx = size.width * i / 3;
       final dy = size.height * i / 3;
-      canvas.drawLine(Offset(dx, 0), Offset(dx, size.height), line);
-      canvas.drawLine(Offset(0, dy), Offset(size.width, dy), line);
+      line(Offset(dx, 0), Offset(dx, size.height), alpha: 0.45, width: 1);
+      line(Offset(0, dy), Offset(size.width, dy), alpha: 0.45, width: 1);
     }
-    final circle = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+    final center = size.center(Offset.zero);
+    final radius = (size.shortestSide / 2) - 1;
     canvas.drawCircle(
-      size.center(Offset.zero),
-      (size.shortestSide / 2) - 1,
-      circle,
+      center,
+      radius,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5,
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.95)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
     );
   }
 
   @override
-  bool shouldRepaint(_CropGuidePainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(_CropGuidePainter oldDelegate) => false;
+}
+
+/// A corner handle: a white dot with a dark rim, in a touch target of [size].
+class _CropHandle extends StatelessWidget {
+  const _CropHandle({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: size,
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.black.withValues(alpha: 0.5),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+          child: const SizedBox.square(dimension: 18),
+        ),
+      ),
+    );
+  }
 }

@@ -6,6 +6,7 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../characters/presentation/character_library_screen.dart';
 import '../../projects/data/creation_repository.dart';
 import '../data/app_version.dart';
 import '../data/appearance_store.dart';
@@ -18,6 +19,8 @@ import 'account_overview_card.dart';
 import 'account_paywall.dart';
 import 'appearance_sheet.dart';
 
+/// Account hub: who you are, what you have, and every setting, grouped by what
+/// it is about rather than by which screen it opens.
 class AccountScreen extends ConsumerWidget {
   const AccountScreen({super.key});
 
@@ -35,16 +38,16 @@ class AccountScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
       body: AppScreenLayout(
+        maxContentWidth: 640,
         children: [
           if (session != null) AccountIdentityHeader(user: session.user),
           AccountOverviewCard(
             billing: billing,
-            onAddCredits: () => openAccountBillingPaywall(context, ref),
-            onManagePlan: () => context.push('/account/plan'),
+            onGetCredits: () => openAccountBillingPaywall(context, ref),
             onRetry: () => ref.invalidate(billingProvider),
           ),
           AppSettingsSection(
-            title: 'Billing',
+            title: 'Plan & credits',
             children: [
               AppSettingsRow(
                 key: const ValueKey('account-plan-row'),
@@ -65,10 +68,22 @@ class AccountScreen extends ConsumerWidget {
                 key: const ValueKey('account-archived-chats'),
                 icon: Icons.archive_outlined,
                 title: 'Archived chats',
+                subtitle: 'Chats you have put away',
                 onTap: () {
                   ref.invalidate(archivedChatSessionsProvider);
                   context.push('/account/archived-chats');
                 },
+              ),
+              AppSettingsRow(
+                key: const ValueKey('account-characters'),
+                icon: Icons.people_outline,
+                title: 'Characters',
+                subtitle: 'People and creatures your books can reuse',
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => const CharacterLibraryScreen(),
+                  ),
+                ),
               ),
             ],
           ),
@@ -85,19 +100,15 @@ class AccountScreen extends ConsumerWidget {
             ],
           ),
           AppSettingsSection(
-            title: 'Privacy',
+            title: 'Privacy & help',
             children: [
               AppSettingsRow(
                 key: const ValueKey('account-privacy-row'),
                 icon: Icons.privacy_tip_outlined,
                 title: 'Privacy & data',
+                subtitle: 'How AI is used, what we keep, deleting your account',
                 onTap: () => context.push('/account/privacy'),
               ),
-            ],
-          ),
-          AppSettingsSection(
-            title: 'Help & legal',
-            children: [
               AppSettingsRow(
                 key: const ValueKey('account-support'),
                 icon: Icons.support_agent_outlined,
@@ -110,6 +121,11 @@ class AccountScreen extends ConsumerWidget {
                   config.supportEmail,
                 ),
               ),
+            ],
+          ),
+          AppSettingsSection(
+            title: 'Legal',
+            children: [
               AppSettingsRow(
                 key: const ValueKey('account-privacy-policy'),
                 icon: Icons.policy_outlined,
@@ -148,16 +164,37 @@ class AccountScreen extends ConsumerWidget {
           ),
           if (version != null) ...[
             const SizedBox(height: AppSpacing.md),
-            Text(
-              version,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
+            _VersionFooter(version: version),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _VersionFooter extends StatelessWidget {
+  const _VersionFooter({required this.version});
+
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        TomezaBrandMark(
+          size: 20,
+          color: colors.onSurfaceVariant.withValues(alpha: 0.6),
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(
+          version,
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }

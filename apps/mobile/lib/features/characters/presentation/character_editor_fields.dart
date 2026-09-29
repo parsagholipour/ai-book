@@ -8,6 +8,9 @@ import '../../../shared/ui/app_components.dart';
 /// kind, not only in size.
 const _descriptionCeilingMultiple = 20;
 
+/// The share of the cap at which the counter appears.
+const _counterShownAt = 0.9;
+
 /// The character's description, and everything on screen about its length.
 ///
 /// **The cap is advisory — prose past it is refused, never truncated.** Nothing
@@ -59,27 +62,65 @@ class CharacterDescriptionField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      key: const ValueKey('character-description-field'),
-      controller: controller,
-      maxLength: max,
-      maxLengthEnforcement: MaxLengthEnforcement.none,
-      inputFormatters: [
-        LengthLimitingTextInputFormatter(max * _descriptionCeilingMultiple),
-      ],
-      minLines: 3,
-      maxLines: 6,
-      textCapitalization: TextCapitalization.sentences,
-      decoration: InputDecoration(
-        labelText: 'Description',
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        // The counter every field here hides, shown for the one state it
-        // answers, and the only thing that says why a Save was refused.
-        counterText: overflow == 0 ? '' : '${max + overflow}/$max',
-        hintText: 'What they look like, how they act, who they are.',
-        errorText: overflow == 0 ? null : 'Too long to save.',
-      ),
-      onChanged: (_) => onChanged(),
+    final colors = Theme.of(context).colorScheme;
+    // Read off the controller rather than passed in, so the counter follows
+    // every keystroke without the sheet rebuilding around it: [overflow] only
+    // moves when the description crosses the cap, and the counter has to appear
+    // well before that.
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final used = value.text.trim().length;
+        final nearCap = used >= (max * _counterShownAt).ceil();
+        final field = TextField(
+          key: const ValueKey('character-description-field'),
+          controller: controller,
+          maxLength: max,
+          maxLengthEnforcement: MaxLengthEnforcement.none,
+          inputFormatters: [
+            LengthLimitingTextInputFormatter(max * _descriptionCeilingMultiple),
+          ],
+          minLines: 3,
+          maxLines: 6,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            labelText: 'Description',
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+            // A counter is noise for a reader with plenty of room, so it shows
+            // only once the cap is in sight — and it is the only thing that
+            // says why a Save was refused.
+            counterText: nearCap || overflow > 0 ? '$used/$max' : '',
+            counterStyle: overflow > 0
+                ? TextStyle(color: colors.error, fontWeight: FontWeight.w700)
+                : null,
+            hintText: 'What they look like, how they act, who they are.',
+            errorText: overflow == 0 ? null : 'Too long to save.',
+          ),
+          onChanged: (_) => onChanged(),
+        );
+        // The refusal's words stay the field's own; how to get out of it is
+        // said beneath, in the reader's terms, with the number they need. The
+        // field is always the column's first child, so crossing the cap never
+        // rebuilds it — and a rebuilt field is a lost caret.
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            field,
+            if (overflow > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                child: Text(
+                  'Take out about $overflow '
+                  '${overflow == 1 ? 'character' : 'characters'} and it will '
+                  'save. Nothing is cut for you.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: colors.error),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -114,6 +155,10 @@ class CharacterDetailRow {
   final TextEditingController key;
   final TextEditingController value;
 
+  /// Where the row sits in the form, so a save that refuses it can scroll it
+  /// into view rather than leave the reader hunting for the red.
+  final GlobalKey anchor = GlobalKey();
+
   void dispose() {
     key.dispose();
     value.dispose();
@@ -128,6 +173,9 @@ class CharacterDetailRowField extends StatelessWidget {
     required this.keyMax,
     required this.valueMax,
     required this.onRemove,
+    this.onChanged,
+    this.keyError,
+    this.valueError,
   });
 
   final CharacterDetailRow row;
@@ -135,10 +183,18 @@ class CharacterDetailRowField extends StatelessWidget {
   final int valueMax;
   final VoidCallback onRemove;
 
+  /// The reader typed in either half, which is what clears a refusal.
+  final VoidCallback? onChanged;
+
+  /// Why a save refused this row, said against the half that is missing.
+  final String? keyError;
+  final String? valueError;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
+      key: row.anchor,
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
@@ -155,10 +211,12 @@ class CharacterDetailRowField extends StatelessWidget {
                   maxLength: keyMax,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
+                  onChanged: (_) => onChanged?.call(),
+                  decoration: InputDecoration(
                     labelText: 'Detail',
                     hintText: 'e.g. Personality',
                     counterText: '',
+                    errorText: keyError,
                   ),
                 ),
               ),
@@ -176,10 +234,12 @@ class CharacterDetailRowField extends StatelessWidget {
             minLines: 1,
             maxLines: 3,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
+            onChanged: (_) => onChanged?.call(),
+            decoration: InputDecoration(
               labelText: 'Value',
               hintText: 'What should your stories remember?',
               counterText: '',
+              errorText: valueError,
             ),
           ),
         ],
