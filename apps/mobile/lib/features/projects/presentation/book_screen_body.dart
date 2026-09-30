@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../notes/presentation/book_notes_card.dart';
 import '../../studio/presentation/studio_book_card.dart';
 import '../../studio/presentation/studio_location.dart';
 import '../domain/project_models.dart';
@@ -236,6 +237,10 @@ class BookScreenBody extends StatelessWidget {
           onOpenPaywall: onOpenPaywall,
           onRefresh: () => onRefresh(),
         ),
+
+      // The owner's private notes, on every book in every stage: below what
+      // the book is doing, above anything that would delete it.
+      if (project != null) BookNotesCard(projectId: project.id),
 
       if (onDeleteProject != null)
         ProjectPrivacyActions(

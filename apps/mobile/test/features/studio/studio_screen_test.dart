@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:tomeza/features/studio/data/studio_local_drafts.dart';
 import 'package:tomeza/features/studio/domain/manuscript_models.dart';
+import 'package:tomeza/features/studio/presentation/studio_editor.dart';
 
 import '../../support/fake_studio_repository.dart';
 import 'studio_test_harness.dart';
@@ -473,11 +475,98 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('studio-more')));
     await settle(tester);
-    await tester.tap(find.text('Chapter status'));
+    await tester.tap(find.text('Status'));
     await settle(tester);
     await tester.tap(find.text('Revised'));
     await settle(tester);
     expect(repo.saves.last.status, ManuscriptChapterStatus.revised);
+    await closeStudio(tester);
+  });
+
+  testWidgets('a chapter still named for its place says its number once', (
+    tester,
+  ) async {
+    final repo = FakeStudioRepository();
+    await _open(tester, repo);
+    // "Chapter 1" titled "Chapter 1": the label would only repeat it.
+    expect(find.text('CHAPTER 1'), findsNothing);
+    expect(find.text('Chapter 1'), findsWidgets);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('studio-title-field')),
+      'The Lamp',
+    );
+    await settle(tester);
+    expect(find.text('CHAPTER 1'), findsOneWidget);
+    await closeStudio(tester);
+  });
+
+  test('a placeholder title is the chapter\'s own number, nothing else', () {
+    expect(isPlaceholderChapterTitle('Chapter 3', 3), isTrue);
+    expect(isPlaceholderChapterTitle('  chapter 3 ', 3), isTrue);
+    // Named by count when it was added, but it sits second now.
+    expect(isPlaceholderChapterTitle('Chapter 4', 2), isFalse);
+    expect(isPlaceholderChapterTitle('Chapter 3: The Storm', 3), isFalse);
+    expect(isPlaceholderChapterTitle('', 1), isFalse);
+  });
+
+  testWidgets(
+    'the book\'s notes open over the Studio, from the bar and the menu',
+    (tester) async {
+      tester.view
+        ..physicalSize = const Size(390, 844) * 3
+        ..devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final visited = <String>[];
+      await tester.pumpWidget(
+        studioTestApp(
+          repo: _repo(),
+          extraRoutes: [
+            GoRoute(
+              path: '/projects/:id/notes',
+              builder: (context, state) {
+                visited.add(state.uri.toString());
+                return Scaffold(appBar: AppBar(), body: const Text('notes'));
+              },
+            ),
+          ],
+        ),
+      );
+      await settle(tester);
+
+      await tester.tap(find.byKey(const ValueKey('studio-notes')));
+      await settle(tester);
+      expect(visited, ['/projects/p1/notes']);
+      await tester.pageBack();
+      await settle(tester);
+      // Back is back to the same chapter, still open.
+      expect(find.text('The Lamp'), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('studio-more')));
+      await settle(tester);
+      // The book's notebook and the chapter's own notes are in different groups.
+      expect(find.text('BOOK'), findsOneWidget);
+      expect(find.text('THIS CHAPTER'), findsOneWidget);
+      expect(find.text('Chapter notes'), findsOneWidget);
+      await tester.tap(find.text('Notes'));
+      await settle(tester);
+      expect(visited, ['/projects/p1/notes', '/projects/p1/notes']);
+      await closeStudio(tester);
+    },
+  );
+
+  testWidgets('a narrow phone keeps the notes in the menu only', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(340, 700) * 3
+      ..devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await _open(tester, _repo());
+    expect(find.byKey(const ValueKey('studio-notes')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('studio-more')));
+    await settle(tester);
+    expect(find.text('Notes'), findsOneWidget);
     await closeStudio(tester);
   });
 
@@ -488,7 +577,7 @@ void main() {
     await tester.tap(find.text('Try again'));
     await settle(tester);
     expect(find.text('Your book didn’t open'), findsNothing);
-    expect(find.text('CHAPTER 1'), findsOneWidget);
+    expect(find.byKey(const ValueKey('studio-title-field')), findsOneWidget);
     await closeStudio(tester);
   });
 }

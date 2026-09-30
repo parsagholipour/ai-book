@@ -713,6 +713,7 @@ model Project {
   bookImport         BookImport?
   manuscript         Manuscript?
   assists            ManuscriptAssist[]
+  notes              BookNote[]
   audiobook          Audiobook?
   generationAttempts GenerationAttempt[]
 
@@ -846,6 +847,31 @@ model ManuscriptAssist {
 
   @@unique([projectId, requestId])
   @@index([projectId, status])
+}
+
+/// The owner's private notebook for one book — ideas, research, reminders — on
+/// every kind of book. Never printed, exported, screened or put in a prompt; not
+/// the Studio's per-chapter `ManuscriptChapter.notes`, which the AI drafts from.
+/// See .scratch/book-notes/spec.md and apps/api/src/mobile/routes/notes.ts.
+model BookNote {
+  id        String   @id @default(cuid())
+  projectId String
+  /// The create's idempotency key: a retried POST answers the note it already made.
+  requestId String
+  title     String   @default("")
+  body      String   @default("") @db.Text
+  pinned    Boolean  @default(false)
+  /// Bumps on every title/body change; a pin toggle does not bump it.
+  revision  Int      @default(1)
+  /// The last title/body change — what the list sorts and shows. A pin toggle leaves it alone.
+  editedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, requestId])
+  @@index([projectId, pinned, editedAt])
 }
 
 model MobileCreationDraft {

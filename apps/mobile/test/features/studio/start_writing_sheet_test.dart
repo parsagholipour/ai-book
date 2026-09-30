@@ -12,7 +12,7 @@ import 'package:tomeza/shared/api/api_error.dart';
 
 import '../../support/fake_studio_repository.dart';
 
-// The "Write your own book" sheet every quiet door opens.
+// The "Write it yourself" sheet every quiet door opens.
 
 class _Harness {
   final visited = <String>[];
@@ -38,6 +38,11 @@ Widget _app(FakeStudioRepository studio, _Harness harness) {
             },
           ),
         ),
+      ),
+      GoRoute(
+        path: '/projects/:id',
+        builder: (context, state) =>
+            Scaffold(body: Text('book ${state.pathParameters['id']}')),
       ),
       GoRoute(
         path: '/projects/:id/write',
@@ -83,7 +88,7 @@ void main() {
     await tester.pumpAndSettle();
     await _open(tester);
 
-    expect(find.text('Write your own book'), findsOneWidget);
+    expect(find.text('Write it yourself'), findsOneWidget);
     for (final kind in ManuscriptKind.values) {
       expect(find.text(kind.label), findsOneWidget);
     }
@@ -130,9 +135,33 @@ void main() {
     expect(request.kind, ManuscriptKind.picture);
     expect(request.title, 'The Moon Boat');
     expect(harness.visited, ['/projects/p9/write?chapter=c1']);
-    expect(find.text('Write your own book'), findsNothing);
+    expect(find.text('Write it yourself'), findsNothing);
     // The new book is on the shelf the moment the author comes back.
     expect(harness.listFetches, 2);
+  });
+
+  testWidgets('back walks from the Studio to the book, then to the door', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(FakeStudioRepository(projectId: 'p9'), _Harness()),
+    );
+    await tester.pumpAndSettle();
+    await _open(tester);
+
+    await tester.tap(find.byKey(const ValueKey('start-writing-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('studio'), findsOneWidget);
+
+    // The system back, as Android sends it.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('book p9'), findsOneWidget);
+
+    // The page the door was on is still there, not an offer to close the app.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Open'), findsOneWidget);
   });
 
   testWidgets('a blank title is left for the server to name', (tester) async {
@@ -191,6 +220,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(harness.visited, ['/books/import']);
-    expect(find.text('Write your own book'), findsNothing);
+    expect(find.text('Write it yourself'), findsNothing);
   });
 }

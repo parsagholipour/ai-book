@@ -17,10 +17,10 @@ import '../../projects/chat_history_drawer_harness.dart' as drawer;
 import '../../projects/creation_chat_fakes.dart';
 import '../../projects/creation_chat_harness.dart';
 
-// The four quiet doors into "Write your own book", and how a written book sits
+// The four quiet doors into "Write it yourself", and how a written book sits
 // on the shelf before it is published.
 
-const _sheetTitle = 'Write your own book';
+const _sheetTitle = 'Write it yourself';
 
 MobileProjectDetail _writtenDraft() => bookProject(
   status: 'draft',
@@ -67,9 +67,7 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('the attach sheet writes or imports your own book', (
-    tester,
-  ) async {
+  testWidgets('the attach sheet offers writing it yourself', (tester) async {
     await tester.pumpWidget(
       app(creation: ScriptedCreationRepository(), startFresh: true),
     );
@@ -78,7 +76,7 @@ void main() {
     await tester.tap(find.byTooltip('Attach a photo, document, or notes'));
     await tester.pumpAndSettle();
     expect(find.text('Import a finished manuscript'), findsNothing);
-    final row = find.text('Write or import your own book');
+    final row = find.byKey(const ValueKey('attach-write-it-yourself'));
     await tester.ensureVisible(row);
     await tester.pumpAndSettle();
     await tester.tap(row);
@@ -88,7 +86,7 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('the drawer offers "or write your own" under New book', (
+  testWidgets('the drawer offers "or write it yourself" under New book', (
     tester,
   ) async {
     tester.view
@@ -123,7 +121,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final newBook = tester.getRect(find.text('New book'));
-    final link = find.byKey(const ValueKey('drawer-write-your-own'));
+    final link = find.byKey(const ValueKey('drawer-write-it-yourself'));
     expect(tester.getRect(link).top, greaterThan(newBook.bottom));
     await tester.tap(link);
     await tester.pumpAndSettle();
@@ -165,20 +163,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('New book'), findsOneWidget);
-    expect(find.byKey(const ValueKey('drawer-write-your-own')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('drawer-write-it-yourself')),
+      findsNothing,
+    );
   });
 
-  testWidgets('an empty library offers writing or importing your own', (
-    tester,
-  ) async {
+  testWidgets('an empty library offers writing it yourself', (tester) async {
     await tester.pumpWidget(_library(const []));
     await tester.pumpAndSettle();
 
     expect(find.text('Import a manuscript'), findsNothing);
-    await tester.tap(find.text('Write or import your own book'));
+    await tester.tap(find.byKey(const ValueKey('library-write-it-yourself')));
     await tester.pumpAndSettle();
 
-    expect(find.text(_sheetTitle), findsOneWidget);
+    // The button and the sheet share their words; the sheet is the one with
+    // Start writing.
+    expect(find.text(_sheetTitle), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('start-writing-button')), findsOneWidget);
   });
 
   test('a written book is a book from its first word', () {

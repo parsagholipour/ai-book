@@ -126,6 +126,33 @@ void main() {
     );
   });
 
+  testWidgets('Apply on a book the screen already saw settled keeps the '
+      'transcript', (tester) async {
+    final repository = _ProposalRepository();
+    await tester.pumpWidget(chatApp(repository));
+    await tester.pumpAndSettle();
+    // The status the screen holds when Apply is tapped. Apply refreshes it, and
+    // the refresh hands the listener this same COMPLETE back, flagged loading,
+    // while the transcript it invalidated beside it is still being rebuilt.
+    repository.emitStatus(status: 'complete');
+    await tester.pump();
+
+    await tester.tap(_apply);
+    repository.applyGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Make page 3 warmer'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(EditProposalCard),
+        matching: find.text('Applied'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Cancel closes the card as Cancelled', (tester) async {
     final repository = _ProposalRepository();
     await tester.pumpWidget(chatApp(repository));

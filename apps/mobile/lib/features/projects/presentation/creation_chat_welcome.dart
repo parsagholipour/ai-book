@@ -256,7 +256,7 @@ class _WelcomeStudioLink extends StatelessWidget {
     );
     return Semantics(
       button: true,
-      label: 'Writing your own book? Open the Writing Studio',
+      label: 'Rather write it yourself? Open the Writing Studio',
       child: ExcludeSemantics(
         child: InkWell(
           key: const ValueKey('welcome-writing-studio'),
@@ -273,7 +273,7 @@ class _WelcomeStudioLink extends StatelessWidget {
                 child: Text.rich(
                   TextSpan(
                     children: [
-                      const TextSpan(text: 'Writing your own book? '),
+                      const TextSpan(text: 'Rather write it yourself? '),
                       TextSpan(
                         text: 'Open the Writing Studio →',
                         style: TextStyle(

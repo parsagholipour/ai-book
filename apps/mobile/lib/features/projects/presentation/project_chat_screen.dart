@@ -218,6 +218,13 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   /// The transcript is only refetched on the falling edge, so the finished
   /// message arrives on its own instead of the user having to pull to refresh.
   void _onStatusChanged(AsyncValue<MobileProjectStatus> value) {
+    // An invalidate hands the listener the last status again, as `AsyncData`
+    // flagged loading, synchronously and while the providers invalidated beside
+    // it are still rebuilding. It is not news. Read as a tick, the settled book
+    // from before an Apply fired a false falling edge: it disarmed
+    // `_armFallingEdge` and invalidated the transcript a second time in the
+    // same frame, which Riverpod throws on in debug builds.
+    if (value.isLoading) return;
     final status = value.asData?.value;
     if (status == null) return;
     _didReceiveProjectStatus(status);

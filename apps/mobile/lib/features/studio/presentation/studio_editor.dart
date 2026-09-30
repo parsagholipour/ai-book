@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/motion.dart';
 import '../../projects/domain/chat_text_direction.dart';
 import '../domain/manuscript_formatting.dart';
 import 'chapter_conflict_card.dart';
@@ -9,6 +10,7 @@ import 'studio_ai_tools_sheet.dart' show StudioSelectionTool;
 import 'studio_document.dart';
 import 'studio_image_block.dart';
 import 'studio_picture_pages.dart';
+import 'manuscript_editing_controller.dart';
 import 'studio_session.dart';
 
 export 'studio_ai_tools_sheet.dart' show StudioSelectionTool;
@@ -315,11 +317,15 @@ class StudioTextField extends StatefulWidget {
 
 class _StudioTextFieldState extends State<StudioTextField> {
   TextDirectionHint? _hint;
+  bool _shortCaret = false;
+  ManuscriptCaret? _caret;
+  (TextStyle, TextScaler, TextDirection)? _caretFor;
 
   @override
   void initState() {
     super.initState();
     _hint = chatTextDirection(widget.entry.text);
+    _shortCaret = _isShortCaret(widget.entry.controller.value);
     widget.entry.controller.addListener(_textChanged);
   }
 
@@ -330,6 +336,7 @@ class _StudioTextFieldState extends State<StudioTextField> {
       oldWidget.entry.controller.removeListener(_textChanged);
       widget.entry.controller.addListener(_textChanged);
       _hint = chatTextDirection(widget.entry.text);
+      _shortCaret = _isShortCaret(widget.entry.controller.value);
     }
   }
 
@@ -341,7 +348,33 @@ class _StudioTextFieldState extends State<StudioTextField> {
 
   void _textChanged() {
     final hint = chatTextDirection(widget.entry.text);
-    if (hint != _hint) setState(() => _hint = hint);
+    final shortCaret = _isShortCaret(widget.entry.controller.value);
+    if (hint != _hint || shortCaret != _shortCaret) {
+      setState(() {
+        _hint = hint;
+        _shortCaret = shortCaret;
+      });
+    }
+  }
+
+  /// Whether the caret is on a blank line and so is drawn short.
+  static bool _isShortCaret(TextEditingValue value) =>
+      value.text.isNotEmpty && caretOnEmptyLine(value);
+
+  /// The caret for the current style, scale and direction, measured again only
+  /// when one of them changes.
+  ManuscriptCaret _measureCaret(BuildContext context, TextDirection direction) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final key = (widget.style, scaler, direction);
+    if (_caretFor != key || _caret == null) {
+      _caretFor = key;
+      _caret = ManuscriptCaret.measure(
+        body: Theme.of(context).textTheme.bodyLarge!.merge(widget.style),
+        scaler: scaler,
+        textDirection: direction,
+      );
+    }
+    return _caret!;
   }
 
   /// The platform's selection menu, led by the writing assistant's tools
@@ -392,6 +425,10 @@ class _StudioTextFieldState extends State<StudioTextField> {
       TextDirectionHint.ltr => TextDirection.ltr,
       null => widget.fallbackDirection,
     };
+    final caret = _measureCaret(
+      context,
+      direction ?? Directionality.of(context),
+    );
     return TextField(
       // A structural rewrite of this segment starts its undo history over
       // (`StudioTextEntry.historyEpoch`); the focus node is the entry's own, so
@@ -407,13 +444,15 @@ class _StudioTextFieldState extends State<StudioTextField> {
       textDirection: direction,
       inputFormatters: const [ManuscriptEnterFormatter()],
       style: widget.style,
-      // A strut far below any real line: each line takes its height from its
-      // own spans, which is what lets a blank line (a paragraph break) draw
-      // at half height. `StrutStyle.disabled` does not do this here: the
+      // A strut no taller than a blank line: each line takes its height from
+      // its own spans, which is what lets a blank line (a paragraph break)
+      // draw at half height. `StrutStyle.disabled` does not do this here: the
       // field fills its unset font size in from the text style, and a strut
       // of the body font holds every blank line at the body's natural height.
-      strutStyle: const StrutStyle(fontSize: 1, height: 1, leading: 0),
+      // The caret follows from the same numbers; see [ManuscriptCaret].
+      strutStyle: ManuscriptSpanPalette.strutFor(widget.style),
       cursorWidth: 2,
+      cursorHeight: _shortCaret ? caret.emptyLineHeight : caret.height,
       scrollPadding: const EdgeInsets.fromLTRB(20, 20, 20, 72),
       decoration: studioBareDecoration(
         context,
@@ -425,6 +464,15 @@ class _StudioTextFieldState extends State<StudioTextField> {
     );
   }
 }
+
+/// "Chapter 3" on the third chapter: the name a chapter is given before its
+/// author names it, which says nothing the label does not. A new chapter is
+/// named by count, not place, so "Chapter 4" inserted second is not one.
+@visibleForTesting
+bool isPlaceholderChapterTitle(String title, int position) => RegExp(
+  '^chapter\\s+$position\$',
+  caseSensitive: false,
+).hasMatch(title.trim());
 
 class _ChapterHeading extends StatelessWidget {
   const _ChapterHeading({
@@ -456,16 +504,39 @@ class _ChapterHeading extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            label.toUpperCase(),
-            textDirection: direction,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.6,
-            ),
+          // A chapter still called "Chapter 3" would read its number twice,
+          // once as the label and once as the title; the label waits for a
+          // title of its own.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: document.title,
+            builder: (context, value, _) {
+              final show =
+                  picture ||
+                  !isPlaceholderChapterTitle(
+                    value.text,
+                    session.chapterPosition,
+                  );
+              return AnimatedSize(
+                duration: AppMotion.adapt(context, AppMotion.fast),
+                curve: AppMotion.enter,
+                alignment: AlignmentDirectional.topStart,
+                child: show
+                    ? Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: Text(
+                          label.toUpperCase(),
+                          textDirection: direction,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: colors.primary,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.6,
+                          ),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              );
+            },
           ),
-          const SizedBox(height: AppSpacing.xs),
           TextField(
             key: const ValueKey('studio-title-field'),
             controller: document.title,

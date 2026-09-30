@@ -82,6 +82,7 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
 - [Characters](#characters)
 - [Voice and audiobook routes](#voice-and-audiobook-routes)
 - [Writing Studio](#writing-studio)
+- [Book notes](#book-notes)
 
 ## Billing surfaces
 
@@ -1437,3 +1438,36 @@ contract: `.scratch/writing-studio/spec.md`.
   COMPLETED with `qualityReport`, `imagePrompt` and `imageFailureReason` nulled — the verdict is the
   author rules' integrity-only one from then on. `storyDelta`, summaries, titles, embeddings and
   continuity notes stay: the prose did not change, and a continuation still needs its memory.
+
+## Book notes
+
+A private notebook per book (`BookNote`: title, plain-text body, pinned) in `routes/notes.ts` and
+`bookNotes.ts`; spec and wire contract in `.scratch/book-notes/spec.md`. It is not the Studio's
+`ManuscriptChapter.notes` (a chapter's plan, which the AI drafts from) and not the reader's
+device-local highlights.
+
+- **Every book the caller owns has notes, whatever made it and whatever its status.** The routes
+  check ownership and nothing else (`ownedNoteProject`), never `authorProjectOrReply` or a status.
+  A book the caller does not own is `PROJECT_NOT_FOUND`; a note outside that book is
+  `NOTE_NOT_FOUND`. Both are 404, never 403.
+- **A note never leaves the account, which is why nothing screens it.** No compile, export,
+  prompt, context pack, chat, embedding or project serializer reads `BookNote`. The content screen
+  exists for text that is printed or sent to a model, and a note is neither; refusing a save would
+  only lose the owner's words, the same reasoning that leaves Studio autosave unscreened. If a note
+  ever feeds a prompt, screen it where it leaves, in request-sized windows as the Studio does, and
+  never on save. Titles and bodies are stored verbatim; trimming only decides whether a create is
+  blank (`EMPTY_NOTE`).
+- **A pin is not an edit.** `revision` and `editedAt` move only when the title or body changes, so
+  pinning on one device never turns another device's open editor into a `NOTE_CONFLICT`, and a
+  pinned note does not jump to the top of "recently edited". A text write must carry
+  `baseRevision`, and the check lives in the `updateMany`'s `where`, because a check on a pre-read
+  alone loses races. A lost race answers the winner's copy inside `error`, as `CHAPTER_CONFLICT`
+  does. A `baseRevision` sent with a pin-only write is still honoured.
+- **Delete is hard, and Undo is a new create.** Soft-deleted rows never pile up: the app keeps
+  the deleted note and re-POSTs it under a fresh `requestId`, and a DELETE that finds nothing is
+  `NOTE_NOT_FOUND`, which the app reads as done. The FK cascades, so deleting the book deletes its
+  notes. A replan fork or a takeover copies none of them.
+- **Only create and delete are rate limited.** PATCH is the editor's autosave, like the Studio's
+  chapter PUT (which is also unlimited), and `draftLimiter`'s 120 an hour would refuse a long
+  note mid-sentence. The 200-note cap is a count taken before the insert. It stops a runaway
+  client, but two creates racing at 199 can both pass it, so nothing may treat it as a guarantee.

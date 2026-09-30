@@ -233,7 +233,7 @@ class _ToolsSheetState extends State<_ToolsSheet> {
       key: const ValueKey('studio-ai-tool-book'),
       icon: Icons.auto_stories_outlined,
       title: 'Chapter & book tools',
-      subtitle: 'Draft from your notes, feedback, a consistency check.',
+      subtitle: 'Draft from chapter notes, feedback, a consistency check.',
       trailing: const Icon(Icons.chevron_right_rounded),
       onTap: () => _pick(const StudioBookToolsTool()),
     ),

@@ -24,6 +24,9 @@ import '../../features/projects/presentation/edit_changes_screen.dart';
 import '../../features/projects/presentation/import_book_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/audiobook/presentation/audiobook_screen.dart';
+import '../../features/notes/presentation/book_note_editor_screen.dart';
+import '../../features/notes/presentation/book_notes_screen.dart';
+import '../../features/notes/presentation/notes_location.dart';
 import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../features/studio/presentation/studio_screen.dart';
 import '../../shared/api/api_error.dart';
@@ -372,6 +375,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             openPublish: state.uri.queryParameters['publish'] == '1',
           ),
         ),
+      ),
+      GoRoute(
+        // The book's private notebook. See `bookNotesLocation`.
+        path: '/projects/:id/notes',
+        pageBuilder: (context, state) => _appPage(
+          state,
+          BookNotesScreen(projectId: state.pathParameters['id']!),
+        ),
+      ),
+      GoRoute(
+        // One note; `new` opens a blank one, created once it has words.
+        path: '/projects/:id/notes/:noteId',
+        pageBuilder: (context, state) {
+          final noteId = state.pathParameters['noteId']!;
+          return _appPage(
+            state,
+            BookNoteEditorScreen(
+              projectId: state.pathParameters['id']!,
+              noteId: noteId == newBookNoteId ? null : noteId,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/projects/:id/edit',

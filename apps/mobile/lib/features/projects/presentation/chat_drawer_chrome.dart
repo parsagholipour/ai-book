@@ -190,15 +190,15 @@ class ChatDrawerNewBookButton extends StatelessWidget {
 
 /// The quiet second way to start a book, under the loud first one: a link, not
 /// a button, so "New book" stays the one obvious thing to press.
-class ChatDrawerWriteYourOwnLink extends StatelessWidget {
-  const ChatDrawerWriteYourOwnLink({super.key});
+class ChatDrawerWriteItYourselfLink extends StatelessWidget {
+  const ChatDrawerWriteItYourselfLink({super.key});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
       child: TextButton(
-        key: const ValueKey('drawer-write-your-own'),
+        key: const ValueKey('drawer-write-it-yourself'),
         style: TextButton.styleFrom(
           foregroundColor: theme.colorScheme.primary,
           visualDensity: VisualDensity.compact,
@@ -213,7 +213,7 @@ class ChatDrawerWriteYourOwnLink extends StatelessWidget {
           navigator.pop();
           showStartWritingSheet(navigator.context);
         },
-        child: const Text('or write your own'),
+        child: const Text('or write it yourself'),
       ),
     );
   }
@@ -223,17 +223,17 @@ class ChatDrawerFooter extends StatelessWidget {
   const ChatDrawerFooter({
     required this.billing,
     required this.colors,
-    this.offerWriteYourOwn = true,
+    this.offerWriteItYourself = true,
     super.key,
   });
 
   final AsyncValue<MobileBilling> billing;
   final ColorScheme colors;
 
-  /// Whether the "or write your own" link sits under New book. It steps aside
+  /// Whether the "or write it yourself" link sits under New book. It steps aside
   /// while the chats are being searched, and on a short screen, where the
   /// chats need every row they can get.
-  final bool offerWriteYourOwn;
+  final bool offerWriteItYourself;
 
   @override
   Widget build(BuildContext context) {
@@ -248,8 +248,8 @@ class ChatDrawerFooter extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: ChatDrawerNewBookButton(),
         ),
-        if (offerWriteYourOwn)
-          const ChatDrawerWriteYourOwnLink()
+        if (offerWriteItYourself)
+          const ChatDrawerWriteItYourselfLink()
         else
           const SizedBox(height: 4),
         Padding(

@@ -202,7 +202,7 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
                     colors: colors,
                     // A short screen needs every row for the chats; the
                     // welcome line and the attach sheet still open the Studio.
-                    offerWriteYourOwn:
+                    offerWriteItYourself:
                         !_searchOpen &&
                         MediaQuery.sizeOf(context).height >= 640,
                   ),

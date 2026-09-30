@@ -426,6 +426,17 @@ export const mockPrisma = ({
     update: vi.fn(),
     updateMany: vi.fn(rowsAffected(0))
   },
+  // Book notes. An empty notebook by default; `bookNotes.test.ts` backs these
+  // with an in-memory store.
+  bookNote: {
+    findMany: vi.fn(noRows),
+    findFirst: vi.fn(noRow),
+    findUnique: vi.fn(noRow),
+    count: vi.fn(async (..._args: any[]) => 0),
+    create: vi.fn(),
+    updateMany: vi.fn(rowsAffected(0)),
+    deleteMany: vi.fn(rowsAffected(0))
+  },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: {
     count: vi.fn(async (..._args: any[]) => 0),

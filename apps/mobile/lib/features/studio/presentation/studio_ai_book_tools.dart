@@ -62,7 +62,7 @@ Future<StudioBookTool?> showStudioBookToolsSheet(
             _PricedTile(
               key: const ValueKey('studio-book-tool-draft'),
               icon: Icons.edit_note_rounded,
-              title: 'Draft this chapter from my notes',
+              title: 'Draft this chapter from its notes',
               subtitle: 'A first draft to work from. You choose what to keep.',
               price: price(
                 LongAssistKind.draftChapter,
@@ -269,7 +269,7 @@ class _DraftSheetState extends ConsumerState<_DraftSheet> {
               projectId: widget.projectId,
               label: 'Draft chapter',
               credits: price,
-              reason: 'Drafting this chapter from your notes.',
+              reason: 'Drafting this chapter from its notes.',
               start: () => widget.start(_words, _notes),
               onStarted: (assist) => Navigator.of(context).pop(assist),
             )
@@ -283,14 +283,14 @@ class _DraftSheetState extends ConsumerState<_DraftSheet> {
         if (!hasNotes)
           const AppInlineNotice(
             key: ValueKey('studio-draft-needs-notes'),
-            title: 'Drafting starts from your notes',
+            title: 'Drafting starts from the chapter notes',
             message:
                 'Write a few lines about what happens in this chapter — who '
                 'is in it, what changes, how it ends. The draft follows them.',
-            icon: Icons.sticky_note_2_outlined,
+            icon: Icons.notes_rounded,
           )
         else ...[
-          const StudioAiSectionLabel('From your notes'),
+          const StudioAiSectionLabel('From the chapter notes'),
           Material(
             color: colors.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AppRadii.control),

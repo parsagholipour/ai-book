@@ -2,26 +2,32 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
+import '../../notes/presentation/notes_location.dart';
 import 'studio_ai_controller.dart';
 import 'studio_ai_inbox.dart';
 import 'studio_session.dart';
 import 'studio_sheets.dart';
 
 /// The overflow menu's entries.
+///
+/// Grouped by what they act on — the book, the open chapter, then the tools —
+/// so "Notes" (the book's own notebook) and "Chapter notes" (what this chapter
+/// has to do, which the AI drafts from) never sit side by side as twins.
 enum StudioMenuAction {
   chapters,
-  versions,
+  bookNotes,
   settings,
-  focus,
   notes,
   status,
+  versions,
   aiTools,
   illustrateAll,
+  focus,
 }
 
 /// The Studio's bar: back, the chapter (tap for the outline) with its save
-/// state beneath it, the AI inbox when something is in it, Publish / Update
-/// book, and the overflow menu.
+/// state beneath it, the book's notes, the AI inbox when something is in it,
+/// Publish / Update book, and the overflow menu.
 class StudioTopBar extends StatelessWidget implements PreferredSizeWidget {
   const StudioTopBar({
     required this.session,
@@ -29,6 +35,7 @@ class StudioTopBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onPublish,
     required this.onMenu,
     this.onOpenOutline,
+    this.onOpenNotes,
     this.ai,
     this.onOpenInbox,
     super.key,
@@ -46,12 +53,22 @@ class StudioTopBar extends StatelessWidget implements PreferredSizeWidget {
   /// Null in the two-pane layout, where the outline is always shown.
   final VoidCallback? onOpenOutline;
 
+  /// The book's notes. Null hides the button and the menu entry.
+  final VoidCallback? onOpenNotes;
+
+  /// Below this width the bar keeps its room for the chapter's name, and the
+  /// notes live in the menu only.
+  static const double notesButtonMinWidth = 360;
+
   @override
   Size get preferredSize => const Size.fromHeight(64);
 
   @override
   Widget build(BuildContext context) {
     final publishLabel = session.publishLabel;
+    final notesButton =
+        onOpenNotes != null &&
+        MediaQuery.sizeOf(context).width >= notesButtonMinWidth;
     return AppBar(
       toolbarHeight: 64,
       leading: IconButton(
@@ -62,6 +79,13 @@ class StudioTopBar extends StatelessWidget implements PreferredSizeWidget {
       titleSpacing: 0,
       title: _ChapterTitle(session: session, onTap: onOpenOutline),
       actions: [
+        if (notesButton)
+          IconButton(
+            key: const ValueKey('studio-notes'),
+            tooltip: 'Notes',
+            icon: const Icon(bookNotesIcon),
+            onPressed: onOpenNotes,
+          ),
         if (ai != null && onOpenInbox != null)
           StudioAiInboxButton(controller: ai!, onPressed: onOpenInbox!),
         if (publishLabel != null)
@@ -84,21 +108,44 @@ class StudioTopBar extends StatelessWidget implements PreferredSizeWidget {
           icon: const Icon(Icons.more_vert),
           onSelected: onMenu,
           itemBuilder: (context) => [
+            const _MenuHeading('Book'),
             if (onOpenOutline != null)
               const PopupMenuItem(
                 value: StudioMenuAction.chapters,
                 child: _MenuRow(icon: Icons.toc_rounded, label: 'Chapters'),
               ),
+            if (onOpenNotes != null)
+              const PopupMenuItem(
+                value: StudioMenuAction.bookNotes,
+                child: _MenuRow(icon: bookNotesIcon, label: 'Notes'),
+              ),
+            const PopupMenuItem(
+              value: StudioMenuAction.settings,
+              child: _MenuRow(icon: Icons.tune_rounded, label: 'Book settings'),
+            ),
+            const PopupMenuDivider(),
+            const _MenuHeading('This chapter'),
+            const PopupMenuItem(
+              value: StudioMenuAction.notes,
+              child: _MenuRow(
+                icon: Icons.notes_rounded,
+                label: 'Chapter notes',
+              ),
+            ),
+            PopupMenuItem(
+              value: StudioMenuAction.status,
+              child: _MenuRow(
+                icon: chapterStatusIcon(session.status),
+                label: 'Status',
+                trailing: session.status.label,
+              ),
+            ),
             const PopupMenuItem(
               value: StudioMenuAction.versions,
               child: _MenuRow(
                 icon: Icons.history_rounded,
                 label: 'Version history',
               ),
-            ),
-            const PopupMenuItem(
-              value: StudioMenuAction.settings,
-              child: _MenuRow(icon: Icons.tune_rounded, label: 'Book settings'),
             ),
             const PopupMenuDivider(),
             const PopupMenuItem(
@@ -116,27 +163,11 @@ class StudioTopBar extends StatelessWidget implements PreferredSizeWidget {
                   label: 'Illustrate every page',
                 ),
               ),
-            const PopupMenuDivider(),
             const PopupMenuItem(
               value: StudioMenuAction.focus,
               child: _MenuRow(
                 icon: Icons.center_focus_strong_outlined,
                 label: 'Focus mode',
-              ),
-            ),
-            const PopupMenuItem(
-              value: StudioMenuAction.notes,
-              child: _MenuRow(
-                icon: Icons.sticky_note_2_outlined,
-                label: 'Chapter notes',
-              ),
-            ),
-            PopupMenuItem(
-              value: StudioMenuAction.status,
-              child: _MenuRow(
-                icon: chapterStatusIcon(session.status),
-                label: 'Chapter status',
-                trailing: session.status.label,
               ),
             ),
           ],
@@ -280,6 +311,48 @@ class StudioSaveIndicator extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: session.reopenConflict,
       child: indicator,
+    );
+  }
+}
+
+/// A group's quiet label: not selectable, read as a heading by screen readers.
+class _MenuHeading extends PopupMenuEntry<StudioMenuAction> {
+  const _MenuHeading(this.label);
+
+  final String label;
+
+  @override
+  double get height => 32;
+
+  @override
+  bool represents(StudioMenuAction? value) => false;
+
+  @override
+  State<_MenuHeading> createState() => _MenuHeadingState();
+}
+
+class _MenuHeadingState extends State<_MenuHeading> {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      header: true,
+      child: Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(
+          AppSpacing.md,
+          AppSpacing.xs,
+          AppSpacing.md,
+          AppSpacing.xxs,
+        ),
+        child: Text(
+          widget.label.toUpperCase(),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+          ),
+        ),
+      ),
     );
   }
 }

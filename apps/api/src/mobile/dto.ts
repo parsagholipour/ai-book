@@ -787,6 +787,9 @@ export * from "./characterDto.js";
 // The Writing Studio's shapes, likewise beside their routes.
 export type * from "./manuscript/manuscriptDto.js";
 
+// Book notes, likewise.
+export type * from "./bookNoteDto.js";
+
 /**
  * Everything the app needs to open its own Gemini Live socket.
  *

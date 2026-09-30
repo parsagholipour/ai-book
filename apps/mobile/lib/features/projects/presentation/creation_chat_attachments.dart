@@ -49,12 +49,11 @@ extension _CreationChatAttachments on _CreationChatScreenState {
           ),
           const Divider(height: 1),
           ListTile(
-            key: const ValueKey('attach-import-book'),
+            key: const ValueKey('attach-write-it-yourself'),
             leading: const Icon(Icons.edit_note_outlined),
-            title: const Text('Write or import your own book'),
+            title: const Text('Write it yourself'),
             subtitle: const Text(
-              'Write it yourself in the Writing Studio, or bring in a '
-              'finished manuscript',
+              'Write in the Writing Studio, or import a finished manuscript',
             ),
             onTap: () => Navigator.of(sheetContext).pop('write'),
           ),

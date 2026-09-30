@@ -13,13 +13,16 @@ import '../domain/manuscript_models.dart';
 import 'studio_location.dart';
 import 'studio_progress.dart';
 
-/// The one sheet every "write your own book" door opens.
+/// The one sheet every "write it yourself" door opens.
 ///
 /// The casual route — describe a book and the AI writes it — is the app's
 /// front door and stays that way; this is the side door for people who want to
 /// write the book themselves. A blank sheet to a blinking cursor is two taps:
 /// pick what you are writing (a title is optional), then Start writing. A
 /// manuscript that is already finished goes the other way, into the import.
+///
+/// Every door says who does the writing, never who owns the book: a book the
+/// AI writes is the reader's own too, and "write your own book" said it wasn't.
 Future<void> showStartWritingSheet(BuildContext context) {
   AppHaptics.tap();
   return showAppBottomSheet<void>(
@@ -80,9 +83,15 @@ class _StartWritingSheetState extends ConsumerState<StartWritingSheet> {
       AppHaptics.success();
       final router = GoRouter.of(context);
       Navigator.of(context).pop();
-      router.go(
-        studioLocation(created.projectId, chapterId: created.chapter.id),
-      );
+      // Pushed, never gone to: the page the door was on stays beneath, with
+      // the new book's own page between it and the Studio, so back walks
+      // Studio → book → wherever the author started. A `go` left the book
+      // page alone on the stack, and the next back offered to close the app.
+      router
+        ..push('/projects/${created.projectId}')
+        ..push(
+          studioLocation(created.projectId, chapterId: created.chapter.id),
+        );
     } catch (error) {
       if (!mounted) return;
       AppHaptics.error();
@@ -104,10 +113,10 @@ class _StartWritingSheetState extends ConsumerState<StartWritingSheet> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return AppSheetScaffold(
-      title: 'Write your own book',
+      title: 'Write it yourself',
       subtitle:
-          'Write it yourself, chapter by chapter. Everything saves as you '
-          'go, and nothing is published until you say so.',
+          'You write it, chapter by chapter, with AI tools when you want '
+          'them. Nothing is published until you say so.',
       icon: Icons.history_edu_outlined,
       onClose: _starting ? null : () => Navigator.of(context).pop(),
       footer: _footer(context),

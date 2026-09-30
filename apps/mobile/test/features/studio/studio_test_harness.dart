@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
@@ -61,6 +62,7 @@ Widget studioTestApp({
   Brightness brightness = Brightness.light,
   ThemeData Function(ThemeData theme)? themeOverride,
   bool pushedFromHome = false,
+  List<RouteBase> extraRoutes = const [],
 }) {
   final studio = StudioScreen(
     projectId: repo.projectId,
@@ -86,28 +88,41 @@ Widget studioTestApp({
         (ref) async => const <String, String>{},
       ),
     ],
-    child: MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: theme(buildTomezaLightTheme()),
-      darkTheme: theme(buildTomezaDarkTheme()),
-      themeMode: brightness == Brightness.dark
-          ? ThemeMode.dark
-          : ThemeMode.light,
-      home: pushedFromHome
-          ? Builder(
-              builder: (context) => Scaffold(
-                body: Center(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(
-                      context,
-                    ).push(MaterialPageRoute<void>(builder: (_) => studio)),
-                    child: const Text('Open the Studio'),
-                  ),
-                ),
-              ),
-            )
-          : studio,
-    ),
+    child: extraRoutes.isNotEmpty
+        // The Studio as a route beside [extraRoutes], for doors it opens with
+        // the router (the book's notes).
+        ? MaterialApp.router(
+            debugShowCheckedModeBanner: false,
+            theme: theme(buildTomezaLightTheme()),
+            routerConfig: GoRouter(
+              routes: [
+                GoRoute(path: '/', builder: (context, state) => studio),
+                ...extraRoutes,
+              ],
+            ),
+          )
+        : MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: theme(buildTomezaLightTheme()),
+            darkTheme: theme(buildTomezaDarkTheme()),
+            themeMode: brightness == Brightness.dark
+                ? ThemeMode.dark
+                : ThemeMode.light,
+            home: pushedFromHome
+                ? Builder(
+                    builder: (context) => Scaffold(
+                      body: Center(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(builder: (_) => studio),
+                          ),
+                          child: const Text('Open the Studio'),
+                        ),
+                      ),
+                    ),
+                  )
+                : studio,
+          ),
   );
 }
 

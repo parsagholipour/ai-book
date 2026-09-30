@@ -152,8 +152,10 @@ Future<String?> showChapterNotesSheet(
       onChanged: (text) => latest = text,
       builder: (context, controller, submit) => AppSheetScaffold(
         title: 'Chapter notes',
-        subtitle: 'Private to you. Notes are never printed in the book.',
-        icon: Icons.sticky_note_2_outlined,
+        subtitle:
+            'What this chapter has to do. Never printed — “Draft this '
+            'chapter” writes from these.',
+        icon: Icons.notes_rounded,
         footer: AppButton.primary(
           label: 'Done',
           expanded: true,

@@ -12,6 +12,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../notes/presentation/notes_location.dart';
 import '../../projects/data/projects_repository.dart';
 import '../data/studio_local_drafts.dart';
 import '../data/studio_repository.dart';
@@ -365,8 +366,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     if (navigator.canPop()) {
       navigator.pop();
     } else if (router != null) {
-      // Opened with `go` (the start sheet does): nothing beneath to pop to,
-      // so the way back is the book's own page.
+      // Opened with `go` (the two takeover doors do) or from a deep link:
+      // nothing beneath to pop to, so the way back is the book's own page.
       router.go('/projects/${widget.projectId}');
     } else {
       _leaving = false;
@@ -403,11 +404,22 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   Future<void> _openOutline() =>
       showChapterOutlineSheet(context, session: _session);
 
+  /// The book's notebook, over the Studio: the session stays open beneath it,
+  /// so coming back is back to the same line.
+  void _openNotes() {
+    final router = GoRouter.maybeOf(context);
+    if (router == null) return;
+    unawaited(_session.flush());
+    unawaited(router.push<void>(bookNotesLocation(widget.projectId)));
+  }
+
   Future<void> _onMenu(StudioMenuAction action) async {
     final chapterId = _session.chapterId;
     switch (action) {
       case StudioMenuAction.chapters:
         await _openOutline();
+      case StudioMenuAction.bookNotes:
+        _openNotes();
       case StudioMenuAction.versions:
         if (chapterId == null) return;
         await _session.flush();
@@ -643,6 +655,7 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
                   onPublish: _publish,
                   onMenu: _onMenu,
                   onOpenOutline: twoPane ? null : _openOutline,
+                  onOpenNotes: _openNotes,
                   ai: _ai,
                   onOpenInbox: () => unawaited(_openInbox()),
                 ),

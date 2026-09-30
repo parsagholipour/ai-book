@@ -98,7 +98,9 @@ class _GeneratedBookPreviewState extends State<GeneratedBookPreview> {
           ],
           if (all.isEmpty)
             Text(
-              'Generated pages will appear here as soon as writing starts.',
+              project.isAuthorManuscript
+                  ? 'Your pages will appear here once the book is published.'
+                  : 'Generated pages will appear here as soon as writing starts.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colors.onSurfaceVariant,
               ),

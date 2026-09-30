@@ -147,8 +147,10 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
                               // The other way a book arrives: one the reader
                               // writes, or has already written.
                               AppButton.text(
-                                key: const ValueKey('library-write-your-own'),
-                                label: 'Write or import your own book',
+                                key: const ValueKey(
+                                  'library-write-it-yourself',
+                                ),
+                                label: 'Write it yourself',
                                 leading: const Icon(Icons.edit_note_outlined),
                                 onPressed: () => showStartWritingSheet(context),
                               ),

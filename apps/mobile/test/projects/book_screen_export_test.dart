@@ -1,60 +1,73 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/notes/data/book_notes_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
 import 'package:tomeza/features/projects/presentation/project_export_panel.dart';
 
-void main() {
-  testWidgets('a stopped book says what happened, keeps its pages, and retries', (
-    tester,
-  ) async {
-    var retried = false;
-    // The page is one scrolling list — cover, progress, preview, exports — and
-    // the default 800pt test viewport cuts it off before the preview, which a
-    // lazy ListView then never builds.
-    await tester.binding.setSurfaceSize(const Size(1000, 2400));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+import '../features/notes/fake_book_notes_repository.dart';
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: BookScreenBody(
-            status: fakeStatus(
-              progressPercent: 38,
-              currentAction: 'Writing your book pages.',
-              failureMessage:
-                  'We hit a problem while writing a page: draft timed out.',
-              retryAvailable: true,
+void main() {
+  testWidgets(
+    'a stopped book says what happened, keeps its pages, and retries',
+    (tester) async {
+      var retried = false;
+      // The page is one scrolling list — cover, progress, preview, exports — and
+      // the default 800pt test viewport cuts it off before the preview, which a
+      // lazy ListView then never builds.
+      await tester.binding.setSurfaceSize(const Size(1000, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        // A loaded book carries its notes card, which reads the book's notes.
+        ProviderScope(
+          overrides: [
+            bookNotesRepositoryProvider.overrideWithValue(
+              FakeBookNotesRepository(),
             ),
-            project: fakeProjectWithPreview(),
-            onRefresh: () async {},
-            onResume: () async {
-              retried = true;
-            },
-            onOpen: (_) async {},
-            onDownload: (_) async {},
-            onOpenPaywall: (_) async {},
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: BookScreenBody(
+                status: fakeStatus(
+                  progressPercent: 38,
+                  currentAction: 'Writing your book pages.',
+                  failureMessage:
+                      'We hit a problem while writing a page: draft timed out.',
+                  retryAvailable: true,
+                ),
+                project: fakeProjectWithPreview(),
+                onRefresh: () async {},
+                onResume: () async {
+                  retried = true;
+                },
+                onOpen: (_) async {},
+                onDownload: (_) async {},
+                onOpenPaywall: (_) async {},
+              ),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    // A book that stopped leads with what happened and how much is safe, not
-    // with the running checklist: nothing above the failure is worth ticking.
-    expect(find.text('Writing stopped'), findsOneWidget);
-    expect(find.text('What is written so far is saved.'), findsOneWidget);
-    expect(find.text('3 of 10 pages saved'), findsOneWidget);
-    expect(find.text('Book preview'), findsOneWidget);
-    expect(find.text('Set the promise'), findsOneWidget);
-    expect(find.textContaining('draft timed out'), findsOneWidget);
-    expect(find.text('Stopped at: Write · 3/10 pages'), findsOneWidget);
+      // A book that stopped leads with what happened and how much is safe, not
+      // with the running checklist: nothing above the failure is worth ticking.
+      expect(find.text('Writing stopped'), findsOneWidget);
+      expect(find.text('What is written so far is saved.'), findsOneWidget);
+      expect(find.text('3 of 10 pages saved'), findsOneWidget);
+      expect(find.text('Book preview'), findsOneWidget);
+      expect(find.text('Set the promise'), findsOneWidget);
+      expect(find.textContaining('draft timed out'), findsOneWidget);
+      expect(find.text('Stopped at: Write · 3/10 pages'), findsOneWidget);
 
-    await tester.tap(find.text('Retry generation'));
-    await tester.pump();
+      await tester.tap(find.text('Retry generation'));
+      await tester.pump();
 
-    expect(retried, isTrue);
-  });
+      expect(retried, isTrue);
+    },
+  );
 
   testWidgets('scheduled automatic retry remains progress, not failure', (
     tester,
@@ -189,46 +202,50 @@ void main() {
     },
   );
 
-  testWidgets('a free account sees the Word export locked and is offered the plan', (
-    tester,
-  ) async {
-    final openedFormats = <String>[];
-    final paywalledFormats = <String>[];
+  testWidgets(
+    'a free account sees the Word export locked and is offered the plan',
+    (tester) async {
+      final openedFormats = <String>[];
+      final paywalledFormats = <String>[];
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ProjectExportPanel(
-            exports: fakeExports(includeDocx: true),
-            billing: fakeBilling(availableCredits: 1000),
-            onOpen: (export) async => openedFormats.add(export.format),
-            onDownload: (_) async {},
-            onOpenPaywall: (export) async => paywalledFormats.add(export.format),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProjectExportPanel(
+              exports: fakeExports(includeDocx: true),
+              billing: fakeBilling(availableCredits: 1000),
+              onOpen: (export) async => openedFormats.add(export.format),
+              onDownload: (_) async {},
+              onOpenPaywall: (export) async =>
+                  paywalledFormats.add(export.format),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('Word'), findsOneWidget);
-    expect(find.text('Upgrade'), findsOneWidget);
-    expect(find.text('Included with the Creator plan'), findsOneWidget);
-    // An upgrade path, not a refusal: no padlock on it.
-    expect(find.byIcon(Icons.lock_outline), findsNothing);
-    expect(find.byIcon(Icons.workspace_premium_outlined), findsOneWidget);
-    // The unlocked PDF and EPUB keep their Share buttons; the locked Word
-    // file offers none.
-    expect(find.byTooltip('Share PDF'), findsOneWidget);
-    expect(find.byTooltip('Share EPUB'), findsOneWidget);
-    expect(find.byTooltip('Share Word'), findsNothing);
+      expect(find.text('Word'), findsOneWidget);
+      expect(find.text('Upgrade'), findsOneWidget);
+      expect(find.text('Included with the Creator plan'), findsOneWidget);
+      // An upgrade path, not a refusal: no padlock on it.
+      expect(find.byIcon(Icons.lock_outline), findsNothing);
+      expect(find.byIcon(Icons.workspace_premium_outlined), findsOneWidget);
+      // The unlocked PDF and EPUB keep their Share buttons; the locked Word
+      // file offers none.
+      expect(find.byTooltip('Share PDF'), findsOneWidget);
+      expect(find.byTooltip('Share EPUB'), findsOneWidget);
+      expect(find.byTooltip('Share Word'), findsNothing);
 
-    await tester.tap(find.text('Upgrade'));
-    await tester.pump();
+      await tester.tap(find.text('Upgrade'));
+      await tester.pump();
 
-    expect(paywalledFormats, ['docx']);
-    expect(openedFormats, isEmpty);
-  });
+      expect(paywalledFormats, ['docx']);
+      expect(openedFormats, isEmpty);
+    },
+  );
 
-  testWidgets('a subscriber opens the Word export like any other', (tester) async {
+  testWidgets('a subscriber opens the Word export like any other', (
+    tester,
+  ) async {
     final openedFormats = <String>[];
     final paywalledFormats = <String>[];
 
@@ -240,7 +257,8 @@ void main() {
             billing: fakeBilling(availableCredits: 1000, creator: true),
             onOpen: (export) async => openedFormats.add(export.format),
             onDownload: (_) async {},
-            onOpenPaywall: (export) async => paywalledFormats.add(export.format),
+            onOpenPaywall: (export) async =>
+                paywalledFormats.add(export.format),
           ),
         ),
       ),
@@ -257,7 +275,9 @@ void main() {
     expect(paywalledFormats, isEmpty);
   });
 
-  testWidgets('no Word tile is drawn when the server offers none', (tester) async {
+  testWidgets('no Word tile is drawn when the server offers none', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
