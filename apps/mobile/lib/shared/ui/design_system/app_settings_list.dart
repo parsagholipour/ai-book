@@ -194,7 +194,13 @@ class AppSettingsRow extends StatelessWidget {
       return row;
     }
 
+    void tap() {
+      AppHaptics.tap();
+      onTap!();
+    }
+
     return Semantics(
+      container: true,
       button: true,
       label: [
         title,
@@ -202,14 +208,9 @@ class AppSettingsRow extends StatelessWidget {
         if (value != null) value,
         if (external) 'Opens in another app',
       ].join('. '),
+      onTap: tap,
       child: ExcludeSemantics(
-        child: InkWell(
-          onTap: () {
-            AppHaptics.tap();
-            onTap!();
-          },
-          child: row,
-        ),
+        child: InkWell(onTap: tap, child: row),
       ),
     );
   }

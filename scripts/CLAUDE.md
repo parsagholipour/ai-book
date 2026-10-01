@@ -1,6 +1,6 @@
 # Scripts
 
-Repo tooling, ops repairs and the render harnesses. Four of these are not in `package.json` and are
+Repo tooling, ops repairs and the render harnesses. Five of these are not in `package.json` and are
 found only by listing this directory.
 
 ## Checks (wired into `pnpm check`)
@@ -103,6 +103,12 @@ Anything that launches Chromium must go through the shared browser pool and must
   render lease is live. Clearing only *unsettles* the set: the next `generate-image` or
   `generate-cover` job for that plan is what redraws the cast, which for a finished book means
   asking for a picture afterwards. See `apps/worker/src/generation/CLAUDE.md`.
+- `migrate-legacy-images.ts` — copies pictures that exist only under the historical
+  `storage/images/` into the object store: `ImageAsset` rows (`images/<projectId>/<file>`) and
+  `LibraryCharacterImage` rows (`images/characters/<userId>/<file>`) whose object is missing.
+  `putIfAbsent`, so nothing stored is overwritten. Run it inside the api container (the host has no
+  object-store credentials), and check `df` first: MinIO refuses writes under ~1% free, and the
+  dry run prints the bytes an `--apply` adds.
 - `check_alibaba_credentials.py` — standalone Python probe; redacts secrets.
 
 ## Process entry points

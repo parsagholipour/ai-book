@@ -280,11 +280,14 @@ export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletio
     // between two of them ran the first pages of one edit under one gate
     // configuration and the rest under another.
     const quality = await loadQualityContext(input);
-    const pages = await prisma.page.findMany({
-      where: { projectId, index: { in: affectedPageIndexes } },
-      orderBy: { index: "asc" },
-      include: { chapter: true }
-    });
+    const [pages, bookPageCount] = await Promise.all([
+      prisma.page.findMany({
+        where: { projectId, index: { in: affectedPageIndexes } },
+        orderBy: { index: "asc" },
+        include: { chapter: true }
+      }),
+      prisma.page.count({ where: { projectId } })
+    ]);
     if (pages.length === 0) {
       throw new Error("No matching pages found for this edit");
     }
@@ -323,6 +326,7 @@ export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletio
         ? { operationExactReplacement: storedExactReplacement.replacement }
         : {}),
       mode,
+      bookPageCount,
       // A chapter regeneration is a whole-page rewrite by definition; every
       // other text edit is offered to the surgical patch tier first.
       surgical: operation.kind !== "CHAPTER_REGENERATE",

@@ -368,7 +368,9 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         const characterContext = mentionContext ?? pendingScope?.characterContext;
         const openEditBlocked = await hasOpenProjectWork(id);
         const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content"];
-        if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
+        // Listing the page designs is a reply, not a write.
+        const listsDesigns = intent.kind === "page_design" && intent.pageDesign?.list === true;
+        if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind) && !listsDesigns) {
           // A typed confirmation racing the Apply button: when the "busy" job is
           // the button's own execution of this very proposal, saving the request
           // as a pending edit would let a later nudge rebuild and re-charge it.

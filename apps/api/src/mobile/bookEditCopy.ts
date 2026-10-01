@@ -152,8 +152,11 @@ export function editProposalMessage(
   /** Passed straight through: the bubble and the card say the same sentence. */
   structuralPlan?: StructuralCardPlan | undefined
 ): string {
-  const summary = editProposalSummary(kind, affectedPageIndexes, intent, numbering, structuralPlan);
-  return `${summary}. Tap Apply to confirm, or Cancel to drop it.`;
+  const summary = editProposalSummary(kind, affectedPageIndexes, intent, numbering, structuralPlan).trim();
+  // A text edit's summary is the router's own instruction, which usually ends
+  // its last sentence already: "…formatting unchanged.. Tap Apply".
+  const sentence = /[.!?…。؟]$/u.test(summary) ? summary : `${summary}.`;
+  return `${sentence} Tap Apply to confirm, or Cancel to drop it.`;
 }
 
 /**
@@ -165,8 +168,18 @@ export function operationQueuedMessage(
   kind: BookEditIntentKind,
   affectedPageIndexes: number[],
   intent: BookEditIntent,
-  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING,
+  /**
+   * A verified find/replace: `affectedPageIndexes` are exactly the pages that
+   * hold the text. Its intent keeps the scope the reader asked in ("all
+   * pages"), which read back as "I’ll edit the whole book" for a one-word swap
+   * on three pages the card had just listed.
+   */
+  options: { exact?: boolean } = {}
 ): string {
+  if (options.exact && affectedPageIndexes.length > 0) {
+    return `I’ll make that change on ${readerPagesPhrase(affectedPageIndexes, numbering)} and refresh the exports.`;
+  }
   if (kind === "continue_book") {
     const chapterCount = intent.continuation?.chapterCount ?? 1;
     const chapterText = chapterCount > 1 ? `${chapterCount} new chapters` : "the next chapter";
@@ -250,4 +263,19 @@ export function operationQueuedMessage(
  */
 export function requestWithCharacterContext(message: string, characterContext: string | undefined): string {
   return characterContext ? `${message}\n\n${characterContext}` : message;
+}
+
+/**
+ * "page 3", "pages 3 and 4", "pages 3, 4, 5, 6 and 5 more" — in the numbers
+ * printed on the PDF the reader holds. Undo, Redo and the Edit Mode receipt
+ * used to join model indexes, so a reply said "I restored pages 3, 4, 6, 7, 9,
+ * 11, 12" beside a card that said "Pages 3, 4, 5, 6 +5 more" about the same edit.
+ */
+export function readerPagesPhrase(pageIndexes: readonly number[], numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING): string {
+  const pages = numbering.displayPages(pageIndexes);
+  // A page that prints only on the unnumbered cover sheet has no number to say.
+  if (pages.length === 0) return pageIndexes.length === 1 ? "that page" : "those pages";
+  if (pages.length === 1) return `page ${pages[0]}`;
+  if (pages.length <= 4) return `pages ${pages.slice(0, -1).join(", ")} and ${pages.at(-1)}`;
+  return `pages ${pages.slice(0, 4).join(", ")} and ${pages.length - 4} more`;
 }

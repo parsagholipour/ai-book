@@ -188,7 +188,7 @@ void main() {
   });
 
   testWidgets(
-    'bold with nothing selected: typed text is bold, a space ends it',
+    'bold with nothing selected: a phrase typed with spaces stays one bold run',
     (t) async {
       final entry = await holding(t, 'say |');
       entry.controller.toggleStyle(EmphasisKind.bold);
@@ -199,13 +199,42 @@ void main() {
       expect(now(entry), 'say **h|**');
       await keyboard(t, 'say **hi|**');
       expect(now(entry), 'say **hi|**');
+      // The space waits outside the marks, and bold stays lit.
       await keyboard(t, 'say **hi |**');
       expect(now(entry), 'say **hi** |');
+      expect(entry.controller.isStyleOn(EmphasisKind.bold), isTrue);
+      // The next letter takes the space back into the run.
       await keyboard(t, 'say **hi** x|');
-      expect(now(entry), 'say **hi** x|');
-      expect(entry.controller.typingStyle, isEmpty);
+      expect(now(entry), 'say **hi x|**');
+      expect(EmphasisIndex.of(entry.text).pairs, hasLength(1));
     },
   );
+
+  testWidgets('bold turned off after a space: the next word is plain', (
+    t,
+  ) async {
+    final entry = await holding(t, 'say **hi|**');
+    await keyboard(t, 'say **hi |**');
+    expect(now(entry), 'say **hi** |');
+    expect(entry.controller.isStyleOn(EmphasisKind.bold), isTrue);
+    entry.controller.toggleStyle(EmphasisKind.bold);
+    expect(entry.controller.isStyleOn(EmphasisKind.bold), isFalse);
+    await keyboard(t, 'say **hi** x|');
+    expect(now(entry), 'say **hi** x|');
+  });
+
+  testWidgets('a space left at the end of bold text stays outside it', (
+    t,
+  ) async {
+    final entry = await holding(t, 'say **hi|**');
+    await keyboard(t, 'say **hi |**');
+    // Enter makes a paragraph break, and the style goes with it.
+    await keyboard(t, 'say **hi** \n|');
+    expect(now(entry), 'say **hi** \n\n|');
+    expect(entry.controller.typingStyle, isEmpty);
+    await keyboard(t, 'say **hi** \n\nx|');
+    expect(now(entry), 'say **hi** \n\nx|');
+  });
 
   testWidgets('a typing style is let go of when the cursor moves away', (
     t,
@@ -300,6 +329,28 @@ void main() {
       expect(now(entry), 'say **hey|**');
       await keyboard(t, 'say **hey |**');
       expect(now(entry), 'say **hey** |');
+      expect(EmphasisIndex.of(entry.text).pairs, hasLength(1));
+    });
+
+    testWidgets('a bold phrase typed word by word as composing regions', (
+      t,
+    ) async {
+      final entry = await holding(t, 'say |');
+      entry.controller.toggleStyle(EmphasisKind.bold);
+      await compose(t, 'say {h|}');
+      await compose(t, 'say **{hi|}**');
+      await keyboard(t, 'say **hi |**');
+      expect(now(entry), 'say **hi** |');
+      // The keyboard starts the next word after the space it was sent back.
+      await compose(t, 'say **hi** {t|}');
+      expect(now(entry), 'say **hi t|**');
+      expect(
+        entry.controller.value.composing,
+        const TextRange(start: 9, end: 10),
+      );
+      await compose(t, 'say **hi {th|}**');
+      await compose(t, 'say **hi {there|}**');
+      expect(now(entry), 'say **hi there|**');
       expect(EmphasisIndex.of(entry.text).pairs, hasLength(1));
     });
 

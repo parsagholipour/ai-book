@@ -3,7 +3,7 @@ import { withRenderPage } from "./browserPool.js";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
 import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
-import { cleanText, fitCoverText, type FittedCoverText } from "./coverText.js";
+import { cleanText, coverConceptText, fitCoverText, type FittedCoverText } from "./coverText.js";
 import type { BookPlan, CoverTemplateId, CreateProjectInput } from "../schemas/book.js";
 
 export const COVER_WIDTH = 1800;
@@ -260,7 +260,7 @@ export function buildCoverArtworkPrompt(options: CoverArtworkPromptInput): strin
   const title = cleanText(options.metadata.title);
   const subtitle = cleanText(options.metadata.subtitle ?? options.plan.subtitle);
   const tagline = cleanText(options.metadata.coverTagline);
-  const baseCoverPrompt = cleanText(options.plan.illustrationPlan.coverPrompt) || options.input.prompt;
+  const baseCoverPrompt = coverConceptText(options.input, options.plan);
   const style = cleanText(options.input.mediaSettings.imageStyle) || options.plan.illustrationPlan.globalStyle;
 
   return [

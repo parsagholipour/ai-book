@@ -30,11 +30,19 @@ const verdictProseBound = (maxLength: number) =>
 const evidenceItemBound = (maxLength: number) =>
   `Each fact is one sentence of at most ${maxLength} characters; a longer fact is cut, so lead with what matters.`;
 
+/**
+ * The pages a reviewer is shown are the ones the edit changed, so "every
+ * occurrence throughout the book" is a claim it cannot check and code can.
+ */
+const CODE_VERIFIED_FACTS_RULE =
+  "codeVerifiedFacts, when present, were established by code over the whole edited text, including pages you are not shown: treat each as proven, and never report as missing, unverifiable or contradicted anything a code-verified fact establishes.";
+
 export const wholeSetSystemMessage = (maxProseLength: number): string => [
   "You are an instruction-adherence checker for an already approved book edit.",
   "Judge only whether the after pages fully perform the approved instruction when compared with the before pages.",
   "Do not judge morality, safety, taste, advisability, writing style, or whether you would have chosen this edit.",
   "Review the changed page set jointly, because one requirement may be distributed across several pages.",
+  CODE_VERIFIED_FACTS_RULE,
   "A material omission, contradiction, substitution, or silent softening means satisfied is false.",
   "missingRequirements, contradictions and pageIndexesToRevise are the repair order a satisfied=false verdict carries: name the concrete unmet requirements, the contradictions, and the after pages that can repair them. Leave all three empty when satisfied is true — nothing else is read from a satisfied verdict, and this review has no field for optional improvements.",
   verdictProseBound(maxProseLength),
@@ -99,7 +107,8 @@ export const finalSystemMessage = (maxProseLength: number): string => [
   "Do not judge morality, safety, taste, advisability, writing style, or whether you would have chosen this edit.",
   "Requirements may be distributed across evidence nodes, but a material omission, contradiction, substitution, or silent softening means satisfied is false.",
   "Copy every supplied negative fact id into acceptedNegativeFactIds exactly once and in order.",
-  "A possible omission may appear in resolvedPossibleOmissionIds only when the complete positive evidence proves that exact concern was fulfilled elsewhere; preserve order and never include a contradiction id.",
+  CODE_VERIFIED_FACTS_RULE,
+  "A possible omission may appear in resolvedPossibleOmissionIds only when the complete positive evidence or a codeVerifiedFacts entry proves that exact concern was fulfilled; preserve order and never include a contradiction id.",
   "missingRequirements, contradictions and pageIndexesToRevise are the repair order a satisfied=false verdict carries: name the concrete unmet requirements, the contradictions, and the after pages that can repair them. Leave all three empty when satisfied is true — nothing else is read from a satisfied verdict, and this review has no field for optional improvements.",
   "Copy the supplied evidence id, coverage digest, and evidence digest exactly.",
   verdictProseBound(maxProseLength),

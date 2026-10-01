@@ -2,7 +2,7 @@ vi.mock("@book-maker/db", async () => (await import("./testing/mobileApiMocks.js
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectQualityStatus } from "../projectStatus.js";
-import { loadProjectQualityReport, qualityWithExportsOnDisk } from "./qualityVerdict.js";
+import { loadProjectQualityReport, qualityForReader, qualityWithExportsOnDisk } from "./qualityVerdict.js";
 import { mockPrisma } from "./testing/mobileApiMocks.js";
 
 const reviewRecommended: ProjectQualityStatus = {
@@ -151,5 +151,41 @@ describe("qualityWithExportsOnDisk", () => {
 
     expect(quality.state).toBe("blocked");
     expect(quality.issues.map((issue) => issue.code)).toEqual(["PAGE_TOO_SHORT"]);
+  });
+});
+
+describe("qualityForReader", () => {
+  const issue = (code: string, message: string) => ({
+    code, severity: "warning" as const, source: "model" as const, message, guidance: "", affectedPageIndexes: []
+  });
+  const noFiles = { epub: { available: true }, docx: { available: true } };
+
+  it("leaves the reviewer's own uncertainty off a finished book's card", () => {
+    // Mira (2026-10-01): a positive read-aloud assessment whose quote did not
+    // validate was the book's only note, and it read "Review recommended".
+    const quality: ProjectQualityStatus = {
+      state: "review_recommended",
+      score: 90,
+      issues: [issue("BRIEF_COVERAGE_UNVERIFIED", "The manuscript's coverage of the brief and promises could not be fully verified.")],
+      affectedPageIndexes: []
+    };
+
+    expect(qualityForReader(quality, noFiles)).toMatchObject({ state: "passed", issues: [] });
+  });
+
+  it("keeps every note about the book itself", () => {
+    const quality: ProjectQualityStatus = {
+      state: "review_recommended",
+      score: 80,
+      issues: [
+        issue("BRIEF_COVERAGE_UNVERIFIED", "could not be fully verified"),
+        issue("MISSING_BRIEF_REQUIREMENT", "The shopping list is missing.")
+      ],
+      affectedPageIndexes: []
+    };
+
+    const reader = qualityForReader(quality, noFiles);
+    expect(reader.state).toBe("review_recommended");
+    expect(reader.issues.map((entry) => entry.code)).toEqual(["MISSING_BRIEF_REQUIREMENT"]);
   });
 });

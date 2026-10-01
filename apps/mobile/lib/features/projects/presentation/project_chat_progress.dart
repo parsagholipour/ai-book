@@ -191,9 +191,11 @@ class ChatLiveBanner extends StatelessWidget {
       _ => 'Editing your book',
     };
     return Semantics(
+      container: true,
       button: true,
       liveRegion: true,
       label: '$label, $percent percent. Tap to see progress.',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
           color: colors.primaryContainer,

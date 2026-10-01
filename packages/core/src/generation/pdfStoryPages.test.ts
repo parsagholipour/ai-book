@@ -9,6 +9,8 @@ import { createProjectSchema } from "../schemas/book.js";
 import { closeSharedBrowser } from "./browserPool.js";
 import { compileBookMarkdownWithPageAnchors } from "./markdown.js";
 import { generateBookPdfWithPageMap } from "./pdf.js";
+import { storySceneLength, type StorySceneLength } from "./pdfStoryPages.js";
+import { allStoryPageDesigns, STORY_PAGE_DESIGN_IDS, type StoryPageDesignId } from "./storyPageDesigns.js";
 import { extractPdfNamedDestinations } from "./pdfNamedDestinations.js";
 
 afterAll(closeSharedBrowser);
@@ -21,7 +23,7 @@ function wordBounds(path: string, page: number, word: string): { x: number; y: n
   return { x: Number(match![1]), y: Number(match![2]), height: Number(match![4]) - Number(match![2]) };
 }
 
-it("gives text-only story sheets readable type and measure, with fifteen chapters on one Contents sheet", async () => {
+it("centres text-only story sheets in picture-book type, with fifteen chapters on one Contents sheet", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pdf-text-story-"));
   try {
     const input = createProjectSchema.parse({ prompt: "Rabbit and Turtle restore the lantern path.", category: "KIDS", targetPages: 30 });
@@ -52,13 +54,133 @@ it("gives text-only story sheets readable type and measure, with fifteen chapter
       expect(text.match(/EndingScene\d+Token/g)).toEqual([`EndingScene${page.index}Token`]);
       expect(text).toContain(`Page ${page.index + 1}`);
       const bounds = wordBounds(outputPath, page.index + 2, `OpeningScene${page.index}Token.`);
-      expect(bounds.height).toBeGreaterThan(32); // Source Serif's glyph box at 20pt, versus ~18pt at 11pt.
-      expect(bounds.height).toBeLessThan(35);
+      const end = wordBounds(outputPath, page.index + 2, `EndingScene${page.index}Token.`);
+      // Picture-book type: Nunito's glyph box at the largest size is ~34pt, the
+      // house serif's at 11pt ~18pt.
+      expect(bounds.height).toBeGreaterThan(30);
       expect(bounds.x).toBeGreaterThan(100); // Narrower measure, with symmetric gutters.
-      expect(bounds.y).toBeGreaterThan(185); // Prose sits lower than the normal top margin.
+      // A forty-word scene sits in the middle of its sheet rather than at the top
+      // of an otherwise empty one: A4 is 842pt tall, and its writing area runs
+      // from 57pt to 765pt.
+      expect((bounds.y + end.y + end.height) / 2).toBeGreaterThan(330);
+      expect((bounds.y + end.y + end.height) / 2).toBeLessThan(450);
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 }, 30_000);
+
+it("sizes a text-only scene by the height its paragraphs take, not by its characters", () => {
+  const prose = "Mira pulled the quilt up to her chin and listened while the old house settled. ".repeat(4);
+  const dialogue = Array.from({ length: 14 }, (_, i) => (i % 2 ? "“I’m here,” Mother said." : "“Mother?” Mira called.")).join("\n\n");
+  expect(prose.split(/\s+/).length).toBeGreaterThan(dialogue.split(/\s+/).length);
+  expect(storySceneLength(prose)).toBe("brief");
+  // Fewer words, but fourteen lines that each end early and the gaps between them.
+  expect(storySceneLength(dialogue)).not.toBe("brief");
+  // At the last word the largest size takes, a chapter heading costs lines of
+  // its own; an anchor and image markup cost none.
+  const words = "Mira pulled the quilt up to her chin and listened. ".repeat(30).trim().split(" ");
+  let edge = words[0]!;
+  for (let count = 2; count <= words.length && storySceneLength(words.slice(0, count).join(" ")) === "brief"; count += 1) {
+    edge = words.slice(0, count).join(" ");
+  }
+  expect(storySceneLength(`<a id="bp-1"></a>\n\n${edge}`)).toBe("brief");
+  expect(storySceneLength(`![Mira](/assets/images/book/mira.png)\n\n${edge}`)).toBe("brief");
+  expect(storySceneLength(`<a id="chapter-1"></a>\n\n## Chapter 1: The Long Night\n\n${edge}`)).not.toBe("brief");
+});
+
+// Every design, and no design at all: each card takes its own padding off the
+// sheet and its own face sets its own line, so each is measured on its own.
+for (const designId of [...STORY_PAGE_DESIGN_IDS, undefined] as const) {
+  it(`keeps the longest scene each size accepts on one sheet, heading and all (${designId ?? "no design"})`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pdf-story-sizes-"));
+    try {
+      const category = designId ? "KIDS" : "STORY";
+      const sources = {
+        prose: "Mira pulled the quilt up to her chin and listened. Somewhere down the hall, a floorboard gave a long, slow creak, " +
+          "the kind that sounds like a sigh. She counted to ten. Nothing else moved. Her little bear sat beside her, button eyes " +
+          "shining in the moonlight, and together they waited for the house to settle into sleep.",
+        dialogue: "“Mother?” Mira called softly.\n\n“I’m here,” Mother said.\n\nThe floorboard creaked again.\n\n" +
+          "“Is it a monster?”\n\n“It is only the old house.”\n\nMira hugged her bear."
+      };
+      const title = "The Long Night in the Creaking Old House on the Hill";
+      const sizes: StorySceneLength[] = ["brief", "short", "medium", "long"];
+      const scenes = Object.values(sources).flatMap((source) => {
+        const tokens = source.split(/( |\n\n)/);
+        const sceneOf = (words: number) => {
+          let text = "";
+          for (let count = 0, i = 0; count < words; i += 1) {
+            text += tokens[i % tokens.length]!;
+            if (tokens[i % tokens.length]!.trim()) count += 1;
+          }
+          return text.trim();
+        };
+        const longest = new Map<StorySceneLength, string>();
+        for (let words = 1; words <= 300; words += 1) {
+          const scene = sceneOf(words);
+          longest.set(storySceneLength(`## Chapter 1: ${title}\n\n${scene}`, designId), scene);
+        }
+        return sizes.map((size) => longest.get(size)!);
+      });
+      const input = createProjectSchema.parse({ prompt: "A bedtime story.", category, targetPages: scenes.length });
+      const pages = scenes.map((markdown, i) => ({ index: i + 1, title: `Scene ${i + 1}`, markdown }));
+      const compiled = compileBookMarkdownWithPageAnchors({ plan: makeFallbackPlan(input), category: input.category,
+        storyPageLayout: "separate", ...(designId ? { storyPageDesign: designId } : {}), pages, authorName: "Story Author",
+        readerChapters: pages.map((page) => ({ index: page.index, title, summary: "The next scene.",
+          startPageIndex: page.index, endPageIndex: page.index })) });
+      expect(compiled.storyPageDesign).toBe(designId);
+      const result = await generateBookPdfWithPageMap(compiled.markdown, { imageStorageDir: directory,
+        publicApiUrl: "http://localhost:4001", pageMapPlan: compiled, outputPath: join(directory, "book.pdf") });
+      expect(result.pageMap?.pages.map((page) => page.endPdfPage - page.startPdfPage + 1)).toEqual(scenes.map(() => 1));
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  }, 30_000);
+}
+
+it("prints each design in its own colours and faces, and a book with none on plain sheets", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pdf-story-designs-"));
+  try {
+    const scenes = ["Mira snuggled beneath her blanket and listened.", "The old floorboard creaked once.", "The room grew quiet again."];
+    const render = async (designId: StoryPageDesignId | undefined) => {
+      const category = designId ? "KIDS" : "STORY";
+      const input = createProjectSchema.parse({ prompt: "A bedtime story.", category, targetPages: scenes.length });
+      const compiled = compileBookMarkdownWithPageAnchors({ plan: makeFallbackPlan(input), category, storyPageLayout: "separate",
+        ...(designId ? { storyPageDesign: designId } : {}), authorName: "Story Author",
+        pages: scenes.map((markdown, i) => ({ index: i + 1, title: `Scene ${i + 1}`, markdown })),
+        // Two chapters, so the first sheet carries a chapter title in the design's heading face.
+        readerChapters: [
+          { index: 1, title: "The Creak", summary: "s", startPageIndex: 1, endPageIndex: 2 },
+          { index: 2, title: "Morning", summary: "s", startPageIndex: 3, endPageIndex: 3 }
+        ] });
+      const outputPath = join(directory, `${designId ?? "none"}.pdf`);
+      const result = await generateBookPdfWithPageMap(compiled.markdown, { imageStorageDir: directory,
+        publicApiUrl: "http://localhost:4001", pageMapPlan: compiled, outputPath });
+      // A point inside the card's padding, clear of the prose and the shapes:
+      // 25mm in from the sheet's left edge, halfway down.
+      const fills: string[] = [];
+      for (const page of result.pageMap!.pages) {
+        const raster = join(directory, `${designId ?? "none"}-${page.index}`);
+        execFileSync("pdftoppm", ["-f", String(page.startPdfPage), "-l", String(page.startPdfPage), "-r", "20", "-png", "-singlefile", outputPath, raster]);
+        const { data, info } = await sharp(`${raster}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        const offset = (Math.round(info.height / 2) * info.width + Math.round((25 / 210) * info.width)) * 3;
+        fills.push([...data.subarray(offset, offset + 3)].join(","));
+      }
+      return { fonts: execFileSync("pdffonts", [outputPath], { encoding: "utf8" }), fills };
+    };
+    for (const design of allStoryPageDesigns()) {
+      const { fonts, fills } = await render(design.id);
+      expect(fonts, design.id).toMatch(design.face === "rounded" ? /Nunito/ : /SourceSerif/);
+      if (design.displayHeadings) expect(fonts, design.id).toMatch(/Playfair/);
+      if (!design.card) {
+        expect(new Set(fills), design.id).toEqual(new Set(["255,255,255"]));
+        continue;
+      }
+      expect(fills, design.id).not.toContain("255,255,255");
+      // Each sheet takes the next fill in the design's cycle.
+      expect(new Set(fills).size, design.id).toBe(new Set(design.sheets.slice(0, scenes.length).map((sheet) => sheet.fill)).size);
+    }
+    const plain = await render(undefined);
+    expect(plain.fonts).not.toMatch(/Nunito|Playfair/);
+    expect(new Set(plain.fills)).toEqual(new Set(["255,255,255"]));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}, 60_000);
 
 it("prints thirty separate story sheets with ten matching scene images and truthful ranges", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pdf-story-pages-"));

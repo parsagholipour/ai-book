@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     bookEditOperation: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     project: { update: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
-    page: { findMany: vi.fn(), update: vi.fn() },
+    page: { findMany: vi.fn(), update: vi.fn(), count: vi.fn() },
     pageEditSnapshot: { findMany: vi.fn(), createManyAndReturn: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     continuityNote: { createMany: vi.fn() },
     $executeRawUnsafe: vi.fn()

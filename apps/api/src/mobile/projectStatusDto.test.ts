@@ -331,6 +331,51 @@ describe("mobile project status DTO", () => {
     await app.close();
   });
 
+  it("keeps a reader's failed, refunded edit out of a completed book's status", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          id: "project-1",
+          title: "Finished Book",
+          status: "COMPLETE",
+          jobs: [
+            {
+              id: "job-edit-failed",
+              type: "APPLY_BOOK_EDIT",
+              status: "FAILED",
+              progress: 60,
+              error: "That change couldn’t be applied as requested, so the original book was kept and your credits were returned.",
+              payload: { operationId: "operation-1" }
+            },
+            { id: "job-compile", type: "COMPILE_EXPORT", status: "COMPLETED", progress: 100, error: null }
+          ]
+        },
+        progress: {
+          pages: { complete: 12, target: 12 },
+          images: 0,
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done" },
+            { key: "pages", label: "Pages", status: "done", detail: "12/12 pages" },
+            { key: "export", label: "Export", status: "done", detail: "Markdown & PDF ready" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().status).toMatchObject({ status: "complete", failureMessage: null });
+    await app.close();
+  });
+
   it("keeps a failed presentation reprint out of a completed book's status", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });

@@ -123,6 +123,56 @@ void main() {
     expect(find.text('−1'), findsWidgets);
   });
 
+  testWidgets('names the page by the number printed on the PDF', (
+    tester,
+  ) async {
+    // The chat card that opens this screen says "Pages 2, 3, 4"; a heading
+    // reading "Page 1" for the first of them looked like another edit.
+    final base = _changes();
+    final page = base.pages.single;
+    final printed = MobileEditPageChange.fromJson({
+      'pageIndex': page.pageIndex,
+      'readerPage': 2,
+      'titleBefore': page.titleBefore,
+      'titleAfter': page.titleAfter,
+      'titleChanged': page.titleChanged,
+      'addedWords': page.addedWords,
+      'removedWords': page.removedWords,
+    });
+    expect(printed.pageIndex, 1);
+    expect(printed.shownPage, 2);
+    await tester.pumpWidget(
+      _app(
+        MobileEditChanges(
+          operationId: base.operationId,
+          kind: base.kind,
+          status: base.status,
+          request: base.request,
+          creditsCharged: base.creditsCharged,
+          undone: false,
+          addedWords: 1,
+          removedWords: 1,
+          pages: [
+            MobileEditPageChange(
+              pageIndex: page.pageIndex,
+              readerPage: 2,
+              titleBefore: page.titleBefore,
+              titleAfter: page.titleAfter,
+              titleChanged: page.titleChanged,
+              addedWords: page.addedWords,
+              removedWords: page.removedWords,
+              blocks: page.blocks,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Page 2'), findsOneWidget);
+    expect(find.text('Page 1'), findsNothing);
+  });
+
   testWidgets(
     'marks the words that moved rather than reprinting the paragraph',
     (tester) async {

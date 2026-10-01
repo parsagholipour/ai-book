@@ -130,6 +130,39 @@ async function sendUnlocked(
 export async function registerMobileExportRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { appConfig } = context;
 
+  // The reader's copy of the PDF, with no unlock: reading a book in the app is
+  // free, and the unlock is for taking the file out of it — the download routes
+  // below. Generated books are unlocked by their generation charge, so this only
+  // changes anything for a book that never had one (a Studio book, an import),
+  // whose first open in the reader used to spend the unlock without a word.
+  fastify.get(
+    "/api/mobile/projects/:id/read/pdf",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const project = await prisma.project.findFirst({
+        where: { id, userId: auth.user.id },
+        select: { title: true, status: true, currentPlanId: true, contentRevision: true }
+      });
+      if (!project) {
+        return sendProjectNotFound(reply);
+      }
+      const artifact = await readProjectExportArtifact(appConfig, id, "pdf", project);
+      if (!artifact) {
+        await ensureExportRepairQueued({ id, ...project }, "pdf", appConfig);
+        return sendExportNotReady(reply);
+      }
+      reply.header("Content-Disposition", `inline; filename="${sanitizeDownloadFilename(project.title)}.pdf"`);
+      reply.type(exportContentType("pdf"));
+      setExportProvenanceHeaders(reply, artifact);
+      return artifact.bytes;
+    }
+  );
+
   for (const format of EXPORT_FORMATS) {
     const gated = exportRequiresSubscription(format);
     fastify.get(

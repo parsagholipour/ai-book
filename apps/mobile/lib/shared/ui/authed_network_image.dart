@@ -1,8 +1,39 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/config/app_config.dart';
 import '../api/api_client.dart';
+
+/// Images the server answered 404 for in this session, by resolved URL.
+///
+/// Flutter's image cache drops a failed load, so a missing file was asked for
+/// again on every rebuild and every visit: one pre-migration cover was
+/// requested 32 times in twelve hours. A 404 is the server saying the file is
+/// gone, and a URL that can change carries its version in `v`, so a redrawn
+/// picture is a different URL and is asked for afresh. Only a 404 counts — an
+/// expired token, a 5xx or a dropped connection is worth asking again.
+final LinkedHashSet<String> _missingImages = LinkedHashSet<String>();
+const _missingImagesCap = 256;
+
+/// Records [error] for [url] when it says the file is gone.
+@visibleForTesting
+void rememberMissingAuthedImage(String url, Object error) {
+  if (error is! NetworkImageLoadException || error.statusCode != 404) return;
+  _missingImages
+    ..remove(url)
+    ..add(url);
+  if (_missingImages.length > _missingImagesCap) {
+    _missingImages.remove(_missingImages.first);
+  }
+}
+
+@visibleForTesting
+bool isKnownMissingAuthedImage(String url) => _missingImages.contains(url);
+
+@visibleForTesting
+void forgetMissingAuthedImages() => _missingImages.clear();
 
 /// An API-owned network image loaded with the signed-in user's bearer token.
 ///
@@ -57,20 +88,25 @@ class AuthedNetworkImage extends ConsumerWidget {
           url: url,
           cacheBuster: cacheBuster,
         );
+        final resolved = uri.toString();
+        if (_missingImages.contains(resolved)) return errorPlaceholder;
         final ratio = MediaQuery.devicePixelRatioOf(context);
         final cacheWidth = logicalDecodeWidth == null
             ? null
             : (logicalDecodeWidth! * ratio).round();
 
         return Image.network(
-          uri.toString(),
+          resolved,
           headers: headers,
           fit: fit,
           width: width,
           height: height,
           semanticLabel: semanticLabel,
           cacheWidth: cacheWidth,
-          errorBuilder: (context, error, stackTrace) => errorPlaceholder,
+          errorBuilder: (context, error, stackTrace) {
+            rememberMissingAuthedImage(resolved, error);
+            return errorPlaceholder;
+          },
           frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
             final loaded = wasSynchronouslyLoaded || frame != null;
             final duration = transitionDuration;

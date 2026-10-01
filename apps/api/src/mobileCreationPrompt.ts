@@ -4,6 +4,7 @@ import { clampBriefText, completeRecipe, normalizePayload } from "./mobileCreati
 import { intentForLane, laneLabel } from "./mobileCreationLanes.js";
 import {
   mobileCreationBriefSchema,
+  resolveMobileImageSettings,
   type MobileBookAdvisorResponse,
   type MobileCreationBrief,
   type MobileCreationDraftPayload,
@@ -40,17 +41,35 @@ export function composeMobileProjectPrompt(
 ): string {
   const normalized = normalizePayload(payload);
   const recipe = normalized.recipe ?? advisor.recipe;
-  const autoMode = recipe.lane === "auto" || normalized.selectedPresets?.bookTypeChoice === "auto";
+  // A book left on Auto whose chat settled its shape is planned as that shape;
+  // only one still open hands the decision to the planner.
+  const settled =
+    normalized.selectedPresets?.bookTypeChoice === "auto" && recipe.autoLane && recipe.autoLane !== "auto"
+      ? recipe.autoLane
+      : undefined;
+  const autoMode = !settled && (recipe.lane === "auto" || normalized.selectedPresets?.bookTypeChoice === "auto");
+  const shapeLane = settled ?? recipe.lane;
   const attachments = normalized.attachments ?? [];
   const head = [
     autoMode
       ? "Create the best-fitting book from the user's creation chat. Decide the real book shape during planning; do not rely on the neutral project category."
-      : `Create a ${laneLabel(recipe.lane).toLowerCase()}.`,
-    fieldLine("Book type choice", autoMode ? "Auto - decide during planning" : laneLabel(recipe.lane))
+      : `Create a ${laneLabel(shapeLane).toLowerCase()}.`,
+    fieldLine(
+      "Book type choice",
+      autoMode ? "Auto - decide during planning" : settled ? `Auto - the creation chat settled on ${laneLabel(settled)}` : laneLabel(recipe.lane)
+    )
   ].filter(Boolean);
   const libraryCharacters = normalized.characters ?? [];
   const tail = [
     fieldLine("Artifact", recipe.artifact),
+    // The recipe is the chat model's words for the genre. "Illustrated
+    // children's bedtime storybook" arrived with in-book illustrations switched
+    // off; the planner and the coverage review both read it as a promise of
+    // pictures, and the finished book was flagged for the illustrations the
+    // reader had declined. The switch is the fact, so it is stated beside it.
+    normalized.selectedPresets && !resolveMobileImageSettings(normalized.selectedPresets).illustrationsEnabled
+      ? "Visuals: no in-book illustrations; the reader turned them off. Any \"illustrated\" wording here names the genre, not pictures this book will have."
+      : "",
     fieldLine("Audience or reader", recipe.audience),
     fieldLine("Promise or story shape", recipe.promise),
     fieldLine("Tone or vibe", recipe.tone),

@@ -232,8 +232,10 @@ class _VersionRow extends StatelessWidget {
         '${version.reason.label} · ${_wordsLabel(context, version.wordCount)}';
     final published = version.reason == ManuscriptVersionReason.publish;
     return Semantics(
+      container: true,
       button: true,
       label: '$when. $detail',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
           color: colors.surfaceContainerLow,

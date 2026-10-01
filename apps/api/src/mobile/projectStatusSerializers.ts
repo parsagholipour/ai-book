@@ -8,7 +8,7 @@ import { imageSettingsFromMediaSettings } from "./imageSettings.js";
 import { serializePlanningProgress } from "./planningProgress.js";
 import { findCurrentOwningFailure } from "./generationRecovery.js";
 import { serializeExportSet } from "./projectArtifactSerializers.js";
-import { qualityWithExportsOnDisk } from "./qualityVerdict.js";
+import { qualityForReader } from "./qualityVerdict.js";
 import {
   type MobileExportSetDto,
   type MobilePlanOperationDto,
@@ -132,7 +132,17 @@ export function serializeProjectStatus(
   // with nothing the reader could do about it. The repair re-queues itself
   // when a download or status surface next asks; a reprint re-queues when the
   // reader toggles the preference again.
-  const failedJob = findCurrentOwningFailure(project.jobs, generationJobControlsProjectStatus);
+  // A reader's text edit settles itself: a failed one restores the status it
+  // found and refunds, and its own operation card in the chat says so. Read
+  // as the book's trouble once the book is settled again, it painted a
+  // COMPLETE book "Something needs your attention" for good — the reader's
+  // next try is a new operation, which never supersedes it
+  // (`jobsTargetSameOwningWork` matches edits by operation).
+  const settled = project.status === "COMPLETE" || project.status === "REVIEW_REQUIRED";
+  const failedJob = findCurrentOwningFailure(
+    project.jobs,
+    (type) => generationJobControlsProjectStatus(type) && !(settled && type === "APPLY_BOOK_EDIT")
+  );
   const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
   const generationProgress = serializeGenerationProgress(status, imageSettings);
   const editProgress = serializeEditProgress(status);
@@ -185,7 +195,7 @@ export function serializeProjectStatus(
       target: status.progress.pages.target
     },
     imageCount: status.progress.images,
-    quality: qualityWithExportsOnDisk(status.quality, exports),
+    quality: qualityForReader(status.quality, exports),
     exports,
     ...serializedHasCoverPage(project),
     updatedAt: project.updatedAt.toISOString()

@@ -13,6 +13,7 @@ class _FakeApiClient implements ApiClient {
   String payload = '%PDF-fake';
   Object? failWith;
   int downloads = 0;
+  final paths = <String>[];
 
   /// What the export route says about the bytes it just sent. Empty is an
   /// older server, which says nothing at all.
@@ -26,6 +27,7 @@ class _FakeApiClient implements ApiClient {
     CancelToken? cancelToken,
   }) async {
     downloads++;
+    paths.add(path);
     final failure = failWith;
     if (failure != null) {
       // A real interrupted download leaves bytes behind before it throws.
@@ -72,6 +74,7 @@ MobileExportAvailability exportOf({
   int revision = 1,
   int? byteSize = 9,
   String format = 'pdf',
+  String? readUrl,
 }) {
   return MobileExportAvailability(
     format: format,
@@ -79,6 +82,7 @@ MobileExportAvailability exportOf({
     unlocked: true,
     creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/$format',
+    readUrl: readUrl,
     filename: 'the-book.$format',
     contentType: format == 'pdf' ? 'application/pdf' : 'application/epub+zip',
     revision: revision,
@@ -118,6 +122,19 @@ void main() {
     expect(entry.revision, 1);
     expect(await File(entry.path).readAsString(), '%PDF-fake');
   });
+
+  test(
+    'reads through the route that spends nothing when the server offers it',
+    () async {
+      // The download route spends the book's export unlock; reading in the app
+      // must not, or the first open of a Studio book cost 150 credits.
+      await cache.ensure(
+        projectId: 'project-1',
+        export: exportOf(readUrl: '/api/mobile/projects/project-1/read/pdf'),
+      );
+      expect(api.paths, ['/api/mobile/projects/project-1/read/pdf']);
+    },
+  );
 
   test('reuses the cached file on a second open', () async {
     await cache.ensure(projectId: 'project-1', export: exportOf());

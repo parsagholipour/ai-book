@@ -79,6 +79,11 @@ class _JumpToLatestButtonState extends State<_JumpToLatestButton> {
     final motion = AppMotion.reducedMotion(context)
         ? Duration.zero
         : AppMotion.fast;
+    void jump() {
+      AppHaptics.tap();
+      widget.onPressed();
+    }
+
     return IgnorePointer(
       ignoring: !_away,
       child: ExcludeSemantics(
@@ -91,8 +96,10 @@ class _JumpToLatestButtonState extends State<_JumpToLatestButton> {
             duration: motion,
             opacity: _away ? 1 : 0,
             child: Semantics(
+              container: true,
               button: true,
               label: label,
+              onTap: jump,
               child: ExcludeSemantics(
                 child: Material(
                   color: unread > 0
@@ -103,10 +110,7 @@ class _JumpToLatestButtonState extends State<_JumpToLatestButton> {
                   shape: const StadiumBorder(),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
-                    onTap: () {
-                      AppHaptics.tap();
-                      widget.onPressed();
-                    },
+                    onTap: jump,
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(
                         minHeight: 40,

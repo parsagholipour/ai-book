@@ -110,10 +110,12 @@ class _ModeTile extends StatelessWidget {
         : AppMotion.fast;
 
     return Semantics(
+      container: true,
       button: true,
       selected: selected,
       inMutuallyExclusiveGroup: true,
       label: mode.label,
+      onTap: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           borderRadius: radius,

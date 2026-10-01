@@ -7,6 +7,7 @@ import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart'
 import 'package:tomeza/features/projects/presentation/creation_labels.dart';
 import 'package:tomeza/features/projects/presentation/credit_cost_badge.dart';
 import 'package:tomeza/shared/api/api_error.dart';
+import 'package:tomeza/shared/ui/app_components.dart';
 
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
@@ -226,6 +227,68 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('a chip opens Advanced settings at its own setting', (
+    tester,
+  ) async {
+    // On a phone the Visuals switches are two screens below where the sheet
+    // starts; the Illustrations chip used to open it at the top.
+    tester.view.physicalSize = const Size(1080, 2376);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+    await _expandHeader(tester);
+
+    final chip = _inDetails(find.text('Illustrations: Included'));
+    await tester.ensureVisible(chip);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+
+    final tile = find.widgetWithText(AppToggleTile, 'In-book illustrations');
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(tester.getRect(tile).bottom, lessThanOrEqualTo(screen.height));
+    expect(tester.getRect(tile).top, greaterThanOrEqualTo(0));
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('a declined AI cover is a designed one, and the chip says so', (
+    tester,
+  ) async {
+    // Phone width: at the default 800dp both subtitles fit on one line, so
+    // the cards never changed height there.
+    tester.view.physicalSize = const Size(1080, 2376);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+    await _expandHeader(tester);
+    expect(_inDetails(find.text('Cover: AI art')), findsOneWidget);
+
+    await tester.tap(_inDetails(find.text('Cover: AI art')));
+    await tester.pumpAndSettle();
+    final cover = find.widgetWithText(AppToggleTile, 'AI cover art');
+    final illustrations = find.widgetWithText(
+      AppToggleTile,
+      'In-book illustrations',
+    );
+    final before = tester.getRect(illustrations);
+    await tester.tap(cover);
+    await tester.pumpAndSettle();
+    // The cover card's subtitle changed length and it gained a "Your choice"
+    // badge; the switch under it stayed where the next tap was going to land.
+    expect(tester.getRect(illustrations), before);
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+
+    expect(_inDetails(find.text('Cover: Designed')), findsOneWidget);
+    expect(find.text('Cover: Not included'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('the Effort picker prices each quality tier on its own tile', (
     tester,
   ) async {
@@ -337,6 +400,37 @@ void main() {
 
     expect(find.text('Edit title'), findsNothing);
 
+    await tester.teardownScreen();
+  });
+
+  testWidgets('the expanded panel leaves the composer above the keyboard', (
+    tester,
+  ) async {
+    // Measured on a 1080x2376 phone: the panel read the keyboard from inside
+    // the Scaffold body, where it is always zero, and "BOTTOM OVERFLOWED BY
+    // 69 PIXELS" hid the Send button under the keyboard.
+    tester.view.physicalSize = const Size(1080, 2376);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+    await _expandHeader(tester);
+    await tester.enterText(
+      find.byType(TextField).first,
+      'A practical guide for renters who want to grow vegetables on a small '
+      'balcony with no prior gardening experience, in a hot desert climate',
+    );
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 1000);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    final send = tester.getRect(find.byTooltip('Send').first);
+    expect(send.bottom, lessThanOrEqualTo((2376 - 1000) / 2.625));
+
+    tester.view.resetViewInsets();
     await tester.teardownScreen();
   });
 

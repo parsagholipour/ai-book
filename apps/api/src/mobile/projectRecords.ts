@@ -8,6 +8,8 @@ import {
   type MobilePageCountMode,
   type MobilePageCountSource
 } from "../mobileCreation.js";
+import { laneFromBookTypeChoice, productBookTypeForLane } from "../mobileCreationLanes.js";
+import { type MobileCreationLane } from "../mobileCreationSchemas.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { createCreationOutputForProject, creationOutputsForDraft, mobileCreationDraftOutputsInclude } from "./creationSessions.js";
 import {
@@ -24,6 +26,7 @@ import { planOperation } from "./projectStatusSerializers.js";
 import {
   MOBILE_AUTO_BOOK_TYPE_SETTINGS,
   MOBILE_BOOK_TYPE_SETTINGS,
+  MOBILE_CHILDREN_STORY_SETTINGS,
   MOBILE_PRODUCT_PRESETS,
   MOBILE_TITLE_SOURCE_PLANNER_PENDING,
   UNTITLED_MOBILE_PROJECT_TITLE,
@@ -63,7 +66,19 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
   const parsed = mobileComposedProjectCreateSchema.parse(input);
   const bookTypeChoice = bookTypeChoiceForMobileCreate(parsed);
   const isAutoBookType = bookTypeChoice === "auto";
-  const bookType = isAutoBookType ? MOBILE_AUTO_BOOK_TYPE_SETTINGS : MOBILE_BOOK_TYPE_SETTINGS[parsed.bookType];
+  const lane = resolvedMobileCreationLane(parsed, bookTypeChoice);
+  // Auto settles on a lane during the chat, and that lane is what the book is
+  // filed under: left CUSTOM, a "practical guide" the chat agreed to was
+  // written as cue-word prose and never reached the toolkit path. The stored
+  // `mobile.bookType` stays "custom" and the choice stays "auto".
+  const bookType =
+    lane === "children_story" && (isAutoBookType || parsed.bookType === "short_story")
+      ? MOBILE_CHILDREN_STORY_SETTINGS
+      : !isAutoBookType
+        ? MOBILE_BOOK_TYPE_SETTINGS[parsed.bookType]
+        : lane
+          ? MOBILE_BOOK_TYPE_SETTINGS[productBookTypeForLane(lane)]
+          : MOBILE_AUTO_BOOK_TYPE_SETTINGS;
   const quality = MOBILE_PRODUCT_PRESETS[parsed.qualityPreset];
   const exactTargetPages = parsed.pageCountMode === "custom" && parsed.targetPages ? parsed.targetPages : undefined;
   const targetPages = exactTargetPages ?? bookType.targetPages[parsed.lengthPreset];
@@ -172,6 +187,25 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
   };
 }
 
+/**
+ * The lane a book is being made in: the reader's concrete choice, else (Auto)
+ * the lane the creation chat or advisor resolved — the same recipe lane
+ * `toolkitBookKind` reads back off the stored metadata.
+ */
+export function resolvedMobileCreationLane(
+  parsed: z.infer<typeof mobileProjectCreateBodySchema>,
+  bookTypeChoice: MobileBookTypeChoice | undefined
+): MobileCreationLane | undefined {
+  const chosen = laneFromBookTypeChoice(bookTypeChoice);
+  if (chosen) return chosen;
+  return [
+    parsed.creationPayload?.recipe?.lane,
+    parsed.creationPayload?.detectedLane,
+    parsed.advisor?.recipe.lane,
+    parsed.advisor?.detectedLane
+  ].find((lane): lane is MobileCreationLane => lane !== undefined && lane !== "auto");
+}
+
 export function bookTypeChoiceForMobileCreate(parsed: z.infer<typeof mobileProjectCreateBodySchema>): MobileBookTypeChoice | undefined {
   return parsed.bookTypeChoice ?? parsed.creationPayload?.selectedPresets?.bookTypeChoice ?? parsed.advisor?.recommendation.bookTypeChoice;
 }
@@ -222,8 +256,10 @@ export function deterministicPageCountRecommendations(
   // Auto is unresolved. The legacy product field is a compatibility value,
   // not a book type the user chose, and may outlive a switch back to Auto.
   const legacyBookType = choice === undefined ? presets.bookType : undefined;
+  // Auto lists the lane the chat resolved, once it has resolved one.
+  const resolvedAutoLane = [payload.recipe?.lane, advisor.recipe.lane].find((candidate) => candidate && candidate !== "auto");
   const lane = choice === "auto"
-    ? "auto"
+    ? resolvedAutoLane ?? "auto"
     : choice && choice !== "short_story"
       ? choice
       : advisor.recipe.lane === "auto" ? advisor.detectedLane : advisor.recipe.lane;

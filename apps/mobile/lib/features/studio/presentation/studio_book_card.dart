@@ -252,8 +252,10 @@ class _CoverRow extends StatelessWidget {
     final cover = manuscript.cover;
     final summary = studioCoverSummary(cover);
     return Semantics(
+      container: true,
       button: true,
       label: 'Cover. $summary. Change cover',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           key: const ValueKey('studio-cover'),
@@ -425,8 +427,10 @@ class _QuietLink extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Semantics(
+      container: true,
       button: true,
       label: label,
+      onTap: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           onTap: onTap,
@@ -555,8 +559,10 @@ class _ChapterRow extends StatelessWidget {
       if (chapter.hasConflict) 'Needs your decision',
     ].join(' · ');
     return Semantics(
+      container: true,
       button: true,
       label: 'Chapter ${chapter.position}, ${chapter.displayTitle}. $meta',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           key: ValueKey('studio-chapter-${chapter.id}'),

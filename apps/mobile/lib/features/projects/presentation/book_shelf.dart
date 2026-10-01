@@ -192,8 +192,10 @@ class _ShelfMore extends StatelessWidget {
     return SizedBox(
       width: width,
       child: Semantics(
+        container: true,
         button: true,
         label: 'See all $count books',
+        onTap: onTap,
         child: ExcludeSemantics(
           child: AspectRatio(
             aspectRatio: kBookCoverAspectRatio,
@@ -294,40 +296,50 @@ class _ShelfBookState extends ConsumerState<_ShelfBook> {
     final status = bookStatusInfo(currentProject);
     final progress = status.progress;
 
+    void open() {
+      AppHaptics.tap();
+      Navigator.of(context).pop();
+      // A finished book opens in the reader; one still being made opens on its
+      // own page, which shows whichever of plan, progress and exports is true
+      // right now.
+      context.push(
+        currentProject.exports.pdf.available
+            ? '/projects/${currentProject.id}/read'
+            : '/projects/${currentProject.id}',
+      );
+    }
+
+    Future<void> showOptions(Offset position) {
+      AppHaptics.longPress();
+      return showBookActionsMenu(
+        context: context,
+        ref: ref,
+        position: position,
+        project: currentProject,
+        billing: widget.billing,
+      );
+    }
+
     return SizedBox(
       width: widget.width,
       child: Semantics(
+        container: true,
         button: true,
         label: '${currentProject.title}. ${status.label}',
+        onTap: open,
         // Long press exposes chat and export actions that are otherwise several
         // screens deep.
+        onLongPress: () {
+          final box = context.findRenderObject()! as RenderBox;
+          showOptions(box.localToGlobal(box.size.center(Offset.zero)));
+        },
         onLongPressHint: 'Show book options',
         child: ExcludeSemantics(
           child: MessageHoldFeedback(
-            onLongPressStart: (details) {
-              AppHaptics.longPress();
-              return showBookActionsMenu(
-                context: context,
-                ref: ref,
-                position: details.globalPosition,
-                project: currentProject,
-                billing: widget.billing,
-              );
-            },
+            onLongPressStart: (details) => showOptions(details.globalPosition),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                AppHaptics.tap();
-                Navigator.of(context).pop();
-                // A finished book opens in the reader; one still being made
-                // opens on its own page, which shows whichever of plan,
-                // progress and exports is true right now.
-                context.push(
-                  currentProject.exports.pdf.available
-                      ? '/projects/${currentProject.id}/read'
-                      : '/projects/${currentProject.id}',
-                );
-              },
+              onTap: open,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,

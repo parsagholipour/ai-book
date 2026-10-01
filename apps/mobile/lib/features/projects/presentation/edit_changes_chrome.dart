@@ -216,9 +216,12 @@ class EditChangesPageJumpStrip extends StatelessWidget {
             );
           }
           final page = pages[index - 1];
+          void jump() => onJump(page.pageIndex);
           return Semantics(
+            container: true,
             button: true,
-            label: 'Jump to page ${page.pageIndex}',
+            label: 'Jump to page ${page.shownPage}',
+            onTap: jump,
             child: ExcludeSemantics(
               child: Center(
                 child: Material(
@@ -226,7 +229,7 @@ class EditChangesPageJumpStrip extends StatelessWidget {
                   shape: const StadiumBorder(),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
-                    onTap: () => onJump(page.pageIndex),
+                    onTap: jump,
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(
                         minWidth: AppSizes.minimumTouchTarget,
@@ -236,7 +239,7 @@ class EditChangesPageJumpStrip extends StatelessWidget {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
-                            '${page.pageIndex}',
+                            '${page.shownPage}',
                             style: theme.textTheme.labelLarge?.copyWith(
                               fontWeight: FontWeight.w700,
                             ),

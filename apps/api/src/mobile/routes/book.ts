@@ -1,5 +1,5 @@
 import { type MobileEditableBookDto, type MobileManualBookEditResponseDto } from "../dto.js";
-import { loadEditChanges } from "../editChanges.js";
+import { loadEditChanges, withReaderPages } from "../editChanges.js";
 import { hasOpenProjectWork } from "../editOperations.js";
 import {
   hitAuthenticatedLimit,
@@ -21,6 +21,7 @@ import { isPrismaUniqueConflict } from "../support.js";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
+import { numberingForProject } from "../../bookPageNumbering.js";
 
 /**
  * Readable book payload and direct manual page edits.
@@ -82,7 +83,7 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
       const { id, operationId } = operationParamsSchema.parse(request.params);
       const project = await prisma.project.findFirst({
         where: { id, userId: auth.user.id },
-        select: { id: true }
+        select: { id: true, status: true, pdfPageMap: true, contentRevision: true }
       });
       if (!project) {
         return sendProjectNotFound(reply);
@@ -91,7 +92,7 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
       if (!changes) {
         return sendOperationNotFound(reply);
       }
-      return { changes };
+      return { changes: withReaderPages(changes, numberingForProject(project)) };
     }
   );
 
@@ -121,7 +122,7 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
 
       const project = await prisma.project.findFirst({
         where: { id, userId: auth.user.id },
-        select: { id: true, status: true, currentPlanId: true }
+        select: { id: true, status: true, currentPlanId: true, pdfPageMap: true, contentRevision: true }
       });
       if (!project) {
         return sendProjectNotFound(reply);
@@ -190,7 +191,8 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
           pagesById,
           savedExportMessage,
           requestId: parsed.data.requestId,
-          bookStorageDir: appConfig.BOOK_STORAGE_DIR
+          bookStorageDir: appConfig.BOOK_STORAGE_DIR,
+          numbering: numberingForProject(project)
         });
       } catch (error) {
         if (parsed.data.requestId && isPrismaUniqueConflict(error)) {

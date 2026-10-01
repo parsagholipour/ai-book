@@ -289,22 +289,26 @@ class _CreditsPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    void addCredits() {
+      final navigator = Navigator.of(context);
+      navigator.pop();
+      showBillingPaywall(
+        navigator.context,
+        title: 'Add book credits',
+        message:
+            'Credits are used when you approve a full book or unlock finished exports.',
+      );
+    }
+
     return Semantics(
+      container: true,
       button: true,
       label: '$label. Add credits',
+      onTap: addCredits,
       child: ExcludeSemantics(
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadii.pill),
-          onTap: () {
-            final navigator = Navigator.of(context);
-            navigator.pop();
-            showBillingPaywall(
-              navigator.context,
-              title: 'Add book credits',
-              message:
-                  'Credits are used when you approve a full book or unlock finished exports.',
-            );
-          },
+          onTap: addCredits,
           child: ConstrainedBox(
             constraints: const BoxConstraints(
               minHeight: AppSizes.minimumTouchTarget,

@@ -5,15 +5,14 @@ import { numberingForProject, MODEL_PAGE_NUMBERING, type ReaderPageNumbering } f
 import { proposeAddImageEdit } from "./addImageOperations.js";
 import { proposeImageLayoutEdit } from "./imageLayoutOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
-import { applyBackMatterEdit } from "./backMatterEdits.js";
 import { refuseAuthorBookReplan } from "./authorBookReplan.js";
-import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
+import { applyPresentationIntent } from "./presentationIntents.js";
 import {
   affectedPagesForIntent,
   continuationNewPageCount,
   exactReplacementForIntent
 } from "./bookEditScope.js";
-import { exactReplacementPreviewCard, planExactReplacement } from "./exactReplacementPreview.js";
+import { exactReplacementPreviewCard, planExactReplacement, replyReplacementNotFound } from "./exactReplacementPreview.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "./dto.js";
 import { type ProposedChatEdit } from "./chatEditOptions.js";
 import {
@@ -325,14 +324,9 @@ export async function handleProjectChatIntent(options: {
     });
   }
 
-  if (intent.kind === "back_matter" && ["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
-    const reply = await applyBackMatterEdit(project, intent, userMessageId);
-    return { reply, operation: null };
-  }
-
-  if (intent.kind === "chapter_heading" && ["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
-    const reply = await applyChapterHeadingEdit(project, intent, userMessageId);
-    return { reply, operation: null };
+  const presentation = await applyPresentationIntent(project, intent, userMessageId);
+  if (presentation) {
+    return { reply: presentation, operation: null };
   }
 
   if (!["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
@@ -616,14 +610,13 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
   // a known diff at no charge, rather than a per-page estimate for a rewrite
   // the worker was never going to run.
   const editInstruction = intent.editInstruction?.trim() || message.trim();
-  const patch =
-    intent.kind === "local_patch"
-      ? await planExactReplacement(
-          project.id,
-          exactReplacementForIntent(intent, editInstruction),
-          affectedPageIndexes
-        )
-      : null;
+  const requestedReplacement = intent.kind === "local_patch" ? exactReplacementForIntent(intent, editInstruction) : null;
+  const patch = requestedReplacement
+    ? await planExactReplacement(project.id, requestedReplacement, affectedPageIndexes)
+    : null;
+  if (requestedReplacement && !patch) {
+    return { reply: await replyReplacementNotFound(project.id, userMessageId, intent, requestedReplacement.from), operation: null };
+  }
   if (patch) {
     affectedPageIndexes = patch.pageIndexes;
   }
@@ -661,7 +654,11 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
       editProposal: {
         id: proposalId,
         kind: intent.kind,
-        scope: proposalIntent.scope,
+        // A verified swap already dropped every page without the text, so the
+        // chip lists those pages: "Whole book" over a three-page diff read as
+        // a rewrite of the book. Only the card says so — the stored intent
+        // keeps the reader's scope, which is what Apply re-resolves from.
+        scope: patch ? "matching_pages" : proposalIntent.scope,
         affectedPageIndexes,
         ...(numbering.pdfPageMap ? { readerPageNumbers: numbering.displayPages(affectedPageIndexes) } : {}),
         ...(proposalIntent.affectedChapterIndex ? { affectedChapterIndex: proposalIntent.affectedChapterIndex } : {}),
@@ -752,7 +749,7 @@ export async function busyEditReply(options: {
     clarification: "busy"
   };
   const resumesWithoutProposal =
-    options.intent.kind === "back_matter" || options.intent.kind === "chapter_heading";
+    ["back_matter", "chapter_heading", "page_design"].includes(options.intent.kind);
   return createAssistantChatMessage({
     projectId: options.projectId,
     parentId: options.parentMessageId,

@@ -1,6 +1,12 @@
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import type { ImageAdapterCapabilities } from "../adapters/types.js";
 import { coverArtSourceFor } from "./coverSource.js";
+import { coverConceptText } from "./coverText.js";
+import {
+  libraryCharactersFromMediaSettings,
+  matchLibraryCharacter,
+  type LibraryCharacterSnapshot
+} from "./libraryCharacters.js";
 
 type Character = BookPlan["characters"][number];
 
@@ -30,6 +36,74 @@ export function shouldGenerateCharacterReferences(input: CreateProjectInput, pla
     plan.characters.length > 0 &&
     (input.mediaSettings.fullIllustrations || coverArtSourceFor(input.mediaSettings) === "ai")
   );
+}
+
+/**
+ * The most characters a cover-only book draws sheets for. A constant rather
+ * than the image adapter's own reference budget, because every caller of the
+ * sheet pass — the book pass, the cover job, a chat picture — has to compute
+ * the same cast or the settled set reads as incomplete to one of them and the
+ * cast is drawn again. Three is the smallest budget a supported model takes.
+ */
+export const COVER_CAST_MAX = 3;
+
+/**
+ * The plan characters an AI cover depicts: the ones its concept names
+ * (`coverConceptText`), in plan order, at most `COVER_CAST_MAX`. A concept
+ * that names nobody depicts nobody.
+ */
+export function coverCastCharacters(input: CreateProjectInput, plan: BookPlan): Character[] {
+  const concept = coverConceptText(input, plan);
+  return plan.characters.filter((character) => characterNamedIn(character, concept)).slice(0, COVER_CAST_MAX);
+}
+
+/**
+ * The plan characters this book draws a reference sheet for — the set a
+ * settled pass has to answer for, and the only set a pass renders.
+ *
+ * A book with interior illustrations draws its whole cast: every page may
+ * need anyone. A cover-only book draws only who its cover depicts. It used to
+ * draw everyone too — "Tiko and the Quiet Sea" (2026-10-01) rendered four
+ * sheets, then attached three of them, to a cover whose concept showed one
+ * tortoise: five image calls ($0.195) against the 45 credits the cover is
+ * priced at. And a cover-cast character the reader saved with a portrait
+ * draws no sheet at all — the cover attaches the portrait itself
+ * (`coverPortraitCharacters`), one generation from the face the reader knows
+ * instead of two.
+ */
+export function characterReferenceCast(input: CreateProjectInput, plan: BookPlan): Character[] {
+  if (!shouldGenerateCharacterReferences(input, plan)) {
+    return [];
+  }
+  if (input.mediaSettings.fullIllustrations) {
+    return plan.characters;
+  }
+  const portraits = new Set(coverPortraitCharacters(input, plan).map(({ character }) => character));
+  return coverCastCharacters(input, plan).filter((character) => !portraits.has(character));
+}
+
+/**
+ * Cover-cast characters of a cover-only AI book whose library snapshot carries
+ * saved artwork: the cover attaches that file in place of a sheet. Read off the
+ * snapshot alone, so the cast is the same answer for every caller; a file that
+ * has gone, or that is not the owner's, resolves to nothing at render time and
+ * the character is drawn from prose — the deletion valve seeding already has.
+ */
+export function coverPortraitCharacters(
+  input: CreateProjectInput,
+  plan: BookPlan
+): Array<{ character: Character; snapshot: LibraryCharacterSnapshot }> {
+  if (input.mediaSettings.fullIllustrations || coverArtSourceFor(input.mediaSettings) !== "ai") {
+    return [];
+  }
+  const snapshots = libraryCharactersFromMediaSettings(input.mediaSettings);
+  if (!snapshots.some((snapshot) => snapshot.portraitFile)) {
+    return [];
+  }
+  return coverCastCharacters(input, plan).flatMap((character) => {
+    const snapshot = matchLibraryCharacter(character.name, snapshots);
+    return snapshot?.portraitFile ? [{ character, snapshot }] : [];
+  });
 }
 
 export function shouldUseCharacterReferenceImages(
@@ -148,9 +222,15 @@ function byPlanOrderThenScore(
 
 function scoreAssetForContext(characters: Character[], asset: CharacterReferenceAsset, context: string): number {
   const character = characters[characterIndexForAsset(characters, asset)];
-  if (!character) {
-    return 0;
-  }
+  return character ? nameScore(character, context) : 0;
+}
+
+/** Whether `text` names the character, by the same test the sheet selection scores with. */
+function characterNamedIn(character: Character, text: string): boolean {
+  return nameScore(character, text) > 0;
+}
+
+function nameScore(character: Character, context: string): number {
   const haystack = context.toLowerCase();
   let score = mentionsName(haystack, character.name) ? 10 : 0;
   const firstName = character.name.split(/\s+/)[0];

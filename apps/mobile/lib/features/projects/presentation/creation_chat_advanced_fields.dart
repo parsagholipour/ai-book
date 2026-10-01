@@ -370,10 +370,12 @@ class _CompactChoiceTile extends StatelessWidget {
         ? colors.onPrimaryContainer
         : colors.onSurfaceVariant;
     return Semantics(
+      container: true,
       button: true,
       selected: selected,
       inMutuallyExclusiveGroup: true,
       label: [title, blurb, ?detail].join('. '),
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Card(
           margin: EdgeInsets.zero,
@@ -638,17 +640,20 @@ class _MoreOptionsState extends State<_MoreOptions> {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final reduced = AppMotion.reducedMotion(context);
+    void toggle() => setState(() => _open = !_open);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Semantics(
+          container: true,
           button: true,
           expanded: _open,
           label: 'More options. ${widget.summary}',
+          onTap: toggle,
           child: ExcludeSemantics(
             child: InkWell(
               borderRadius: BorderRadius.circular(AppRadii.control),
-              onTap: () => setState(() => _open = !_open),
+              onTap: toggle,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
                   minHeight: AppSizes.minimumTouchTarget,

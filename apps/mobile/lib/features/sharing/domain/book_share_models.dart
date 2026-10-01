@@ -270,7 +270,7 @@ class BookShareRequest {
 /// The longest note the server keeps, counted after trimming.
 const bookShareCaptionMaxChars = 500;
 
-/// "Shared · Preview 6 of 24" or "Shared · Full book".
+/// "Shared · Preview 6 of 24 printed pages" or "Shared · Full book".
 String bookShareSummary(BookShare share, BookShareBook book) {
   if (share.mode == BookShareMode.full) {
     return 'Shared · Full book';
@@ -279,7 +279,7 @@ String bookShareSummary(BookShare share, BookShareBook book) {
   final total = book.readingPages;
   return total == null
       ? 'Shared · Preview ${bookSharePageCount(shown)}'
-      : 'Shared · Preview $shown of $total';
+      : 'Shared · Preview $shown of $total printed pages';
 }
 
 String bookSharePageCount(int pages) => pages == 1 ? '1 page' : '$pages pages';

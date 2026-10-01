@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/design_system/app_dialogs.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
@@ -225,6 +226,33 @@ Future<bool> _reportExportFailure({
   return false;
 }
 
+/// Asks before an export spends this book's unlock.
+///
+/// Reading a book in the app is free — the reader has its own route — so the
+/// unlock is only ever spent by taking the file out: opening it in another
+/// app, sharing or saving it. A generated book's unlock comes with its
+/// generation; a Studio book or an import has none, and every surface that
+/// opens or shares a file used to spend it the moment it was tapped.
+Future<bool> confirmProjectExportUnlock(
+  BuildContext context,
+  MobileExportAvailability export,
+) {
+  if (export.unlocked || export.creditsRequired <= 0) {
+    return Future.value(true);
+  }
+  final credits = export.creditsRequired;
+  return showAppConfirmationDialog(
+    context,
+    title: 'Unlock exports for this book?',
+    message:
+        'Opening or sharing the ${projectExportFormatLabel(export)} uses '
+        '$credits credits, once for this book and every format. Reading it '
+        'here in the app stays free.',
+    confirmLabel: 'Unlock for $credits credits',
+    icon: Icons.lock_open_outlined,
+  );
+}
+
 Future<bool> openProjectExport({
   required BuildContext context,
   required WidgetRef ref,
@@ -234,6 +262,11 @@ Future<bool> openProjectExport({
   VoidCallback? onRefresh,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
+  if (!await confirmProjectExportUnlock(context, export) ||
+      !context.mounted ||
+      !isMounted()) {
+    return false;
+  }
   try {
     final outcome = await ref
         .read(projectsRepositoryProvider)
@@ -282,6 +315,11 @@ Future<bool> downloadProjectExport({
   VoidCallback? onRefresh,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
+  if (!await confirmProjectExportUnlock(context, export) ||
+      !context.mounted ||
+      !isMounted()) {
+    return false;
+  }
   try {
     final file = await ref
         .read(projectsRepositoryProvider)

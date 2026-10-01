@@ -185,6 +185,11 @@ export function currentActionForEditOperation(
     return "Edit failed.";
   }
   if (operation.status === "APPLIED") {
+    // An undone edit stays APPLIED with `undoneAt` on its classifier, and its
+    // card swaps Undo for Redo — under a line that still said "Edit applied."
+    if (typeof jsonRecord(operation.classifier).undoneAt === "string") {
+      return "Edit undone.";
+    }
     // The worker records pages it skipped because their text had changed
     // between the quote and the apply; the card is where that has to be said,
     // because the queued chat reply already promised those pages.

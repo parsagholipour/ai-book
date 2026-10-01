@@ -135,11 +135,20 @@ class _ActionTile extends StatelessWidget {
       ),
     );
 
+    final VoidCallback? tap = onPressed == null
+        ? null
+        : () {
+            AppHaptics.tap();
+            onPressed!();
+          };
+
     return Semantics(
+      container: true,
       button: true,
       enabled: enabled,
       label: label,
       liveRegion: loading,
+      onTap: tap,
       child: ExcludeSemantics(
         child: Opacity(
           opacity: enabled || loading ? 1 : 0.5,
@@ -153,12 +162,7 @@ class _ActionTile extends StatelessWidget {
             ),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: onPressed == null
-                  ? null
-                  : () {
-                      AppHaptics.tap();
-                      onPressed!();
-                    },
+              onTap: tap,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(
                   minHeight: AppSizes.minimumTouchTarget + AppSpacing.md,

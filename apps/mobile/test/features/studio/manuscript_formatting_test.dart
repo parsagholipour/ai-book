@@ -158,7 +158,9 @@ void main() {
     test('continues a list, and an empty item ends it', () {
       expect(show(type('- milk|')), '- milk\n- |');
       expect(show(type('1. first|')), '1. first\n2. |');
-      expect(show(type('- milk\n- |')), '- milk\n|');
+      // A blank line after the list, or the next line continues the item.
+      expect(show(type('- milk\n- |')), '- milk\n\n|');
+      expect(show(type('- |')), '|');
     });
     test('inside a code fence it is a plain newline', () {
       expect(show(type('```\ncode|\n```')), '```\ncode\n|\n```');

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { readerPageNumbering } from "../bookPageNumbering.js";
-import { editProposalMessage, editProposalSummary, operationQueuedMessage } from "./bookEditCopy.js";
+import { editProposalMessage, editProposalSummary, operationQueuedMessage, readerPagesPhrase } from "./bookEditCopy.js";
 
 function editIntent(overrides: Partial<BookEditIntent>): BookEditIntent {
   return {
@@ -35,9 +35,19 @@ describe("continuation and replan proposal contracts", () => {
       `Write 2 new chapters continuing your book: ${editInstruction}`
     );
     expect(editProposalMessage(intent.kind, [], intent)).toBe(
-      `Write 2 new chapters continuing your book: ${editInstruction}. Tap Apply to confirm, or Cancel to drop it.`
+      `Write 2 new chapters continuing your book: ${editInstruction} Tap Apply to confirm, or Cancel to drop it.`
     );
     expect(editProposalSummary(intent.kind, [], intent)).not.toContain(intent.assistantMessage);
+  });
+
+  it("ends the summary's sentence once, whether or not the instruction already did", () => {
+    const ended = editIntent({ kind: "local_patch", editInstruction: "Replace every \"tray\" with \"saucer\"." });
+    const unended = editIntent({ kind: "local_patch", editInstruction: "Replace every \"tray\" with \"saucer\"" });
+    for (const intent of [ended, unended]) {
+      const message = editProposalMessage(intent.kind, [], intent);
+      expect(message).not.toContain("..");
+      expect(message).toMatch(/[^.]\. Tap Apply to confirm/);
+    }
   });
 
   it("shows the resolved replan instruction alongside the priced rebuild settings", () => {
@@ -198,6 +208,47 @@ describe("structural page edit copy", () => {
     expect(editProposalSummary("restructure_pages", [], move([1, 2]), numbering)).toBe("Move those pages");
     expect(editProposalSummary("restructure_pages", [], move([1], 0), numbering)).toBe(
       "Move that page to the front of the book"
+    );
+  });
+});
+
+describe("readerPagesPhrase", () => {
+  // Undo of a seven-page word swap said "I restored pages 3, 4, 6, 7, 9, 11,
+  // 12" — model indexes — beside a card naming printed pages 3, 4, 5, 6 +5 more.
+  const numbering = readerPageNumbering({
+    version: 2,
+    totalPdfPages: 14,
+    hasCoverPage: true,
+    pages: [
+      { index: 1, startPdfPage: 1, endPdfPage: 1 },
+      { index: 3, startPdfPage: 4, endPdfPage: 5 },
+      { index: 4, startPdfPage: 5, endPdfPage: 6 },
+      { index: 6, startPdfPage: 7, endPdfPage: 8 },
+      { index: 12, startPdfPage: 13, endPdfPage: 14 }
+    ]
+  });
+
+  it("names the printed pages, not the model indexes", () => {
+    expect(readerPagesPhrase([3], numbering)).toBe("pages 3 and 4");
+    expect(readerPagesPhrase([3, 4, 6, 12], numbering)).toBe("pages 3, 4, 5, 6 and 3 more");
+  });
+
+  it("never prints an empty list", () => {
+    expect(readerPagesPhrase([1], numbering)).toBe("that page");
+  });
+
+  it("keeps model indexes when the book has no page map", () => {
+    expect(readerPagesPhrase([2])).toBe("page 2");
+    expect(readerPagesPhrase([2, 5])).toBe("pages 2 and 5");
+  });
+
+  it("names a verified swap's pages in the queued reply, never the whole book", () => {
+    const intent = editIntent({ kind: "local_patch", scope: "all_pages", affectedPageIndexes: [3, 4, 6] });
+    expect(operationQueuedMessage("local_patch", [3, 4, 6], intent, numbering)).toBe(
+      "I’ll edit the whole book and refresh the exports."
+    );
+    expect(operationQueuedMessage("local_patch", [3, 4, 6], intent, numbering, { exact: true })).toBe(
+      "I’ll make that change on pages 3, 4, 5, 6 and 1 more and refresh the exports."
     );
   });
 });

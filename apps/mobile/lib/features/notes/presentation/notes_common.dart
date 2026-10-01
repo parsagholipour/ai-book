@@ -36,6 +36,23 @@ String? watchNotesBookTitle(WidgetRef ref, String projectId) {
   return null;
 }
 
+/// [parts] read aloud as sentences: a part that already ends its sentence
+/// keeps its own mark, so a note ending "…at dusk." is not followed by "..".
+String noteSemanticsLabel(Iterable<String> parts) {
+  final ended = RegExp(r'[.!?…。؟]$');
+  final buffer = StringBuffer();
+  for (final part in parts) {
+    final text = part.trim();
+    if (text.isEmpty) continue;
+    if (buffer.isNotEmpty) {
+      if (!ended.hasMatch(buffer.toString())) buffer.write('.');
+      buffer.write(' ');
+    }
+    buffer.write(text);
+  }
+  return buffer.toString();
+}
+
 /// The direction [text] reads in, when it says; null keeps the app's own.
 TextDirection? noteTextDirection(String text) {
   return switch (chatTextDirection(text)) {

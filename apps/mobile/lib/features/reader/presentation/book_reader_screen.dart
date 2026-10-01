@@ -108,9 +108,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     );
   }
 
-  /// Sends the reader to the paywall on the same terms as every other export
-  /// action: an unlock the balance covers is spent silently by the download,
-  /// and only a balance that cannot cover it interrupts the reader.
+  /// Sends the reader to the paywall. Only an older server reaches this for
+  /// want of credits: one that serves the reader through the download route,
+  /// where an unlock the balance covers is spent by the download itself and a
+  /// balance that cannot cover it is what interrupts the reader. A server with
+  /// a read route (`MobileExportAvailability.readUrl`) charges nothing to read.
   Future<void> _offerUnlock(
     MobileExportAvailability export, {
     MobilePdfPageNumbering? pageNumbering,
@@ -216,7 +218,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       );
     }
 
-    if (projectExportNeedsCredits(export, credits) && loader.document == null) {
+    // Reading needs no unlock when the server offers the reader its own route
+    // (`readUrl`), so the lock below is only an older server's: one that still
+    // makes the reader download through the route that spends it.
+    if (export.readUrl == null &&
+        projectExportNeedsCredits(export, credits) &&
+        loader.document == null) {
       if (!_unlockOffered) {
         // Scheduled rather than called inline: this runs during build.
         WidgetsBinding.instance.addPostFrameCallback((_) {

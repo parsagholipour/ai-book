@@ -128,7 +128,11 @@ async function boundedHostSearch(
   try {
     const result = await Promise.race([run(), timeout]);
     if (result === "timed_out") {
-      const timeouts = (outage?.timeouts ?? 0) + 1;
+      // Counted from the map as it stands now, not from `outage` as it stood
+      // when this search started: a dossier fires its searches together, so
+      // every one of them read "no outage", each wrote a count of one, and a
+      // catalogue that timed out thirteen searches running was never skipped.
+      const timeouts = (hostOutages.get(host)?.timeouts ?? 0) + 1;
       hostOutages.set(host, { timeouts, skipUntil: timeouts >= throttle.outageAfterTimeouts ? Date.now() + throttle.outageSkipMs : 0 });
       return { host, outcome: "timed_out", candidates: [], ms: Date.now() - started };
     }

@@ -42,6 +42,59 @@ void main() {
     expect(network.headers, const {'Authorization': 'Bearer test-token'});
   });
 
+  group('a file the server says is gone', () {
+    tearDown(forgetMissingAuthedImages);
+
+    test('is remembered for a 404 and nothing else', () {
+      const url = 'https://api.example.test/root/cover.jpg';
+      final uri = Uri.parse(url);
+      rememberMissingAuthedImage(
+        url,
+        NetworkImageLoadException(statusCode: 401, uri: uri),
+      );
+      rememberMissingAuthedImage(url, StateError('connection dropped'));
+      expect(isKnownMissingAuthedImage(url), isFalse);
+      rememberMissingAuthedImage(
+        url,
+        NetworkImageLoadException(statusCode: 404, uri: uri),
+      );
+      expect(isKnownMissingAuthedImage(url), isTrue);
+    });
+
+    testWidgets('is not asked for again in the same session', (tester) async {
+      // One pre-migration cover was requested 32 times in twelve hours,
+      // because a failed load leaves Flutter's image cache.
+      rememberMissingAuthedImage(
+        'https://api.example.test/images/cover.png?v=7',
+        NetworkImageLoadException(
+          statusCode: 404,
+          uri: Uri.parse('https://api.example.test/images/cover.png?v=7'),
+        ),
+      );
+      await tester.pumpWidget(
+        _app(
+          const AuthedNetworkImage(
+            url: '/images/cover.png',
+            cacheBuster: '7',
+            errorPlaceholder: Text('no cover'),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(Image), findsNothing);
+      expect(find.text('no cover'), findsOneWidget);
+
+      // A redrawn cover carries a new version, and is asked for.
+      await tester.pumpWidget(
+        _app(
+          const AuthedNetworkImage(url: '/images/cover.png', cacheBuster: '8'),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(Image), findsOneWidget);
+    });
+  });
+
   testWidgets('keeps an absolute immutable URL unchanged', (tester) async {
     const url = 'https://cdn.example.test/picture.jpg?quality=80';
     await tester.pumpWidget(

@@ -56,6 +56,21 @@ const INTER: FontsourcePackage = {
   css: ["index.css"]
 };
 
+/**
+ * The faces a story page design may add (`storyPageDesigns.ts`): Nunito for a
+ * rounded design's prose, Playfair Display for a fairy tale's chapter titles.
+ * Latin, Cyrillic and Vietnamese only — any other script falls through to the
+ * book's own families, which carry it.
+ */
+export const STORY_ROUND_FONT: FontsourcePackage = {
+  package: "@fontsource-variable/nunito",
+  css: ["index.css"]
+};
+export const STORY_DISPLAY_FONT: FontsourcePackage = {
+  package: "@fontsource-variable/playfair-display",
+  css: ["index.css"]
+};
+
 function script(pkg: string, limitTo?: string): FontsourcePackage {
   return { package: pkg, css: ["index.css"], ...(limitTo ? { limitTo } : {}) };
 }

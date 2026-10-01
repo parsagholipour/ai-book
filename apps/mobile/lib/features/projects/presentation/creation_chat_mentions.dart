@@ -107,8 +107,13 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
     });
   }
 
+  /// Read through [_characterLibraryWatch], never `ref.read`: the provider is
+  /// autoDispose, so a read with nothing subscribed created it, fetched the
+  /// library and dropped it again — once per keystroke, since every keystroke
+  /// resolves mentions. Typing a 150-character brief sent 150 requests. No
+  /// subscription means no `@` yet, and so nothing to resolve.
   List<LibraryCharacter> get _loadedCharacters =>
-      ref.read(charactersProvider).asData?.value.characters ??
+      _characterLibraryWatch?.read().asData?.value.characters ??
       const <LibraryCharacter>[];
 
   /// The ids to send with [text].

@@ -8,6 +8,7 @@ import {
   includeSourcesPreference,
   isAuthorManuscript,
   mediaSettingsSchema,
+  storyPageDesignFor,
   storyPageLayoutFor,
   resolvePublicImageUrl,
   type BookPageMapPlan
@@ -75,6 +76,13 @@ export async function compileProjectManuscript(
   const compiled = strategy.compileMarkdownWithPageAnchors({
     plan: project.currentPlan.planningPackage as never,
     storyPageLayout: storyPageLayoutFor(project, generatedPages),
+    // Resolved from the same row and plan the worker's compile reads.
+    storyPageDesign: storyPageDesignFor({
+      mediaSettings: project.mediaSettings,
+      category: project.category,
+      prompt: project.prompt,
+      plan: project.currentPlan.planningPackage as never
+    }),
     authorManuscript,
     ...(authorManuscript ? { readerChapters: authorReaderChapters(generatedPages) } : {}),
     category: project.category,

@@ -60,6 +60,7 @@ import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'mention_chips_row.dart';
+import 'stable_toggle_tile.dart';
 import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
 import 'plan_build_progress.dart';
@@ -465,6 +466,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                     children: [
                       _BriefHeader(
                         state: state,
+                        keyboardInset: keyboardInset,
                         activeProjectId: activeProjectId,
                         planValue: planValue,
                         statusValue: generationStatusValue,

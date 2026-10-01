@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -35,9 +36,24 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 /// Keeping this beside [apiClientProvider] means image authorization does not
 /// have to be forwarded through every feature repository that happens to own
 /// an authenticated image URL.
-final apiAuthHeadersProvider = FutureProvider.autoDispose(
-  (ref) => ref.watch(apiClientProvider).authHeaders(),
-);
+///
+/// Any authenticated picture on screen keeps this provider alive — the book
+/// header's cover never leaves — so a header computed once outlived its
+/// fifteen-minute access token, and every portrait and cover loaded after that
+/// was a 401. It re-reads itself just inside the client's refresh window,
+/// where the re-read is what mints the next token.
+final apiAuthHeadersProvider = FutureProvider.autoDispose((ref) async {
+  final tokens = await ref.watch(apiClientProvider).validTokens();
+  final renewIn = tokens.accessTokenRefreshAt
+      .add(const Duration(seconds: 1))
+      .difference(DateTime.now().toUtc());
+  final timer = Timer(
+    renewIn < const Duration(seconds: 1) ? const Duration(seconds: 1) : renewIn,
+    ref.invalidateSelf,
+  );
+  ref.onDispose(timer.cancel);
+  return {'Authorization': 'Bearer ${tokens.accessToken}'};
+});
 
 /// Receive timeout for endpoints whose response waits on a full LLM turn
 /// (creation chat, project chat, build preflight). The global 20s default
@@ -105,16 +121,35 @@ class ApiClient {
     return response.data as Map<String, dynamic>;
   }
 
+  /// An event stream whose HTTP request is aborted when the listener cancels.
+  ///
+  /// Cancelling the Dart subscription alone left the socket open: the status
+  /// provider is rebuilt every few seconds while a book works, each rebuild
+  /// opened a new stream, and the server kept every abandoned one alive —
+  /// polling the database each second for it — until the book settled (three
+  /// concurrent streams for one book, 2026-10-01). The generator's `finally`
+  /// runs on cancellation, and the token is what closes the connection.
   Stream<ServerSentEvent> getServerSentEvents(
     String path, {
     bool requiresAuth = true,
   }) async* {
-    final response = await _streamRequest(path, requiresAuth: requiresAuth);
-    final body = response.data;
-    if (body == null) {
-      return;
+    final cancelToken = CancelToken();
+    try {
+      final response = await _streamRequest(
+        path,
+        requiresAuth: requiresAuth,
+        cancelToken: cancelToken,
+      );
+      final body = response.data;
+      if (body == null) {
+        return;
+      }
+      yield* _decodeServerSentEvents(body.stream);
+    } finally {
+      if (!cancelToken.isCancelled) {
+        cancelToken.cancel('Event stream closed by its listener.');
+      }
     }
-    yield* _decodeServerSentEvents(body.stream);
   }
 
   Future<Map<String, String>> authHeaders() async {
@@ -387,6 +422,7 @@ class ApiClient {
     String path, {
     bool requiresAuth = true,
     bool retryOnAuthFailure = true,
+    CancelToken? cancelToken,
   }) async {
     final options = Options(
       method: 'GET',
@@ -403,7 +439,11 @@ class ApiClient {
     }
 
     try {
-      return await dio.request<ResponseBody>(path, options: options);
+      return await dio.request<ResponseBody>(
+        path,
+        options: options,
+        cancelToken: cancelToken,
+      );
     } on DioException catch (error) {
       if (requiresAuth &&
           retryOnAuthFailure &&
@@ -412,6 +452,7 @@ class ApiClient {
         return _mapped(
           () => dio.request<ResponseBody>(
             path,
+            cancelToken: cancelToken,
             options: Options(
               method: 'GET',
               responseType: ResponseType.stream,
@@ -429,6 +470,12 @@ class ApiClient {
   }
 
   Future<String> _validAccessToken() async {
+    return (await validTokens()).accessToken;
+  }
+
+  /// The stored session, refreshed first when its access token is about to
+  /// expire.
+  Future<MobileSessionTokens> validTokens() async {
     final tokens = await tokenStore.read();
     if (tokens == null) {
       throw const ApiException(
@@ -446,9 +493,9 @@ class ApiClient {
       );
     }
     if (tokens.shouldRefreshAccessToken) {
-      return (await refreshTokens()).accessToken;
+      return refreshTokens();
     }
-    return tokens.accessToken;
+    return tokens;
   }
 
   /// Runs [send] and maps any Dio failure onto an [ApiException].
@@ -532,8 +579,14 @@ Stream<ServerSentEvent> _decodeServerSentEvents(
     dataLines.clear();
   }
 
+  // `bind`, not `stream.transform(utf8.decoder)`: Dio hands back a
+  // `Stream<Uint8List>`, and `transform` checks the decoder against that
+  // runtime type — a `StreamTransformer<List<int>, String>` is not a
+  // `StreamTransformer<Uint8List, String>` — so every event stream threw on its
+  // first byte, the status watch fell back to polling, and the abandoned socket
+  // stayed open on the server.
   await for (final line
-      in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+      in utf8.decoder.bind(stream).transform(const LineSplitter())) {
     if (line.isEmpty) {
       if (dataLines.isNotEmpty) {
         yield ServerSentEvent(event: event, data: dataLines.join('\n'));

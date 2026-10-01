@@ -66,6 +66,90 @@ describe("deterministic exact-replacement edits", () => {
     await app.close();
   });
 
+  it("quotes a natural word swap free, with its plural, on only the pages that hold it", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages().map((page) =>
+      page.index === 1 ? { ...page, markdown: "Two rabbits race. A rabbit wins." } : page
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: [...generatedPages(), { ...generatedPages()[1]!, id: "page-3", index: 3, title: "Turtle", markdown: "Turtle rests.", summary: "Turtle rests." }]
+      })
+    );
+    state.pages.push({ ...state.pages[1]!, id: "page-3", index: 3, title: "Turtle", markdown: "Turtle rests.", summary: "Turtle rests." });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Replace the word rabbit with fly everywhere in the book" }
+    });
+    const proposal = response.json().reply.metadata.editProposal;
+
+    expect(response.statusCode).toBe(200);
+    // The reader said "everywhere", and the chip still lists the two pages
+    // the swap touches rather than "Whole book".
+    expect(proposal).toMatchObject({ kind: "local_patch", credits: 0, affectedPageIndexes: [1, 2], scope: "matching_pages" });
+    expect(proposal.preview.samples[0]).toEqual({
+      pageIndex: 1,
+      before: "Two rabbits race. A rabbit wins.",
+      after: "Two flies race. A fly wins."
+    });
+    await app.close();
+  });
+
+  it("cuts both sides of a long line's preview from one window around the change", async () => {
+    // Each side was cut at 160 characters on its own: a change past the cut
+    // previewed two identical lines, and a longer replacement shifted the after
+    // side's cut so the card highlighted the tails ("blocks t…" / "blocks…").
+    mockAccessTokens({ "token-a": "user-a" });
+    const lead = "On a rented balcony, stability and movement belong in the choice from the start, long before anything is planted or watered or moved around. ";
+    const line = `${lead}Check that the filled pot and its tray sit securely, and that neither blocks the drain or the walking route on a windy afternoon.`;
+    state.pages = editablePages().map((page) => (page.index === 1 ? { ...page, markdown: line } : page));
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Replace the word tray with saucer everywhere in the book" }
+    });
+    const sample = response.json().reply.metadata.editProposal.preview.samples[0];
+
+    expect(sample.before).toContain("its tray sit");
+    expect(sample.after).toBe(sample.before.replace("its tray sit", "its saucer sit"));
+    expect(sample.before.startsWith("…")).toBe(true);
+    await app.close();
+  });
+
+  it("tells the reader a swapped word is not in the book instead of pricing a rewrite", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Replace the word dragon with wyvern everywhere" }
+    });
+    const reply = response.json().reply;
+
+    expect(response.statusCode).toBe(200);
+    expect(reply.content).toContain("couldn’t find “dragon”");
+    expect(reply.metadata.editProposal).toBeUndefined();
+    expect(reply.metadata.pendingEditCancelled).toBe(true);
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("charges nothing and tells the worker to stay mechanical when applied", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     state.pages = editablePages();
@@ -88,6 +172,7 @@ describe("deterministic exact-replacement edits", () => {
 
     expect(confirm.statusCode).toBe(200);
     expect(confirm.json().operation).toMatchObject({ kind: "local_patch", creditsCharged: 0 });
+    expect(confirm.json().reply.content).toMatch(/^I’ll make that change on pages? \d/);
     // reserveCredits returns null at zero without touching the ledger, so the
     // amount is what matters here, not whether the call happened.
     expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 0 }));
@@ -96,7 +181,9 @@ describe("deterministic exact-replacement edits", () => {
         type: "APPLY_BOOK_EDIT",
         payload: expect.objectContaining({
           mode: "exact",
-          exactReplacement: { from: "rabbit", to: "fly", preserveCase: true }
+          // A sentence-initial "Rabbit" is the word, so the literal-or-fold
+          // fallback is not needed; the plural and casings ride `wordForms`.
+          exactReplacement: { from: "rabbit", to: "fly", wordForms: true }
         })
       })
     );

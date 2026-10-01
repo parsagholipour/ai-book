@@ -7,7 +7,7 @@ import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/scrip
 import { imageMarkdownRe, leadingCoverIllustration, resolveBookImageAsset } from "./bookImageAssets.js";
 import { withRenderPage } from "./browserPool.js";
 import { renderDocumentTempPath } from "./exportTempSweep.js";
-import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
+import { bookFontSetForLanguage, STORY_DISPLAY_FONT, STORY_ROUND_FONT, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
 import type { CompiledBookMarkdown } from "./markdown.js";
 import { bookPdfCss } from "./pdfCss.js";
@@ -29,6 +29,7 @@ import {
 } from "./pdfPageMap.js";
 import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
 import { separateStoryPagesForPdf, STORY_PAGE_PDF_CSS } from "./pdfStoryPages.js";
+import { storyPageDesign, type StoryPageDesignId } from "./storyPageDesigns.js";
 
 export type GenerateBookPdfOptions = BookImageOptions & {
   publicApiUrl: string;
@@ -174,7 +175,7 @@ export async function generateBookPdf(
  */
 export type BookPageMapPlan = Pick<
   CompiledBookMarkdown,
-  "pageAnchors" | "sourcesOffset" | "hasCoverPage" | "hasContents" | "storyPageLayout"
+  "pageAnchors" | "sourcesOffset" | "hasCoverPage" | "hasContents" | "storyPageLayout" | "storyPageDesign"
 >;
 
 export type GenerateBookPdfResult = {
@@ -214,7 +215,7 @@ export async function generateBookPdfWithPageMap(
   // before the font subset, so a chart's tick labels are in it.
   const expanded = expandFigureFences(prepared, { language: options.language });
   const profile = scriptProfileForLanguage(options.language);
-  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), expanded, profile);
+  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), expanded, profile, plan?.storyPageDesign);
   const nav = plan
     ? bookPageAnchorLinkNav(plan.pageAnchors, {
         hasContents: plan.hasContents,
@@ -410,14 +411,23 @@ function printDocument(documentPath: string, assetRoot: string): Promise<Buffer>
  * faces covering characters the book actually contains are embedded, which is
  * what keeps a Chinese book — 101 available subsets — to a few megabytes.
  */
-function loadBookPdfFontCss(fontSet: BookFontSet, markdown: string, profile: ScriptProfile): Promise<string> {
+function loadBookPdfFontCss(
+  fontSet: BookFontSet,
+  markdown: string,
+  profile: ScriptProfile,
+  storyPageDesignId?: StoryPageDesignId
+): Promise<string> {
   // The footer's digits come from the script profile rather than from the book
   // text, so a Persian book that happens to write every number out in words
   // still has to carry the faces that can draw "۱۲" at the foot of the page.
   const codePoints = codePointsOf(markdown, profile.numerals ?? "");
+  const design = storyPageDesignId ? storyPageDesign(storyPageDesignId) : undefined;
   return embedFontFaceCss([
     { family: "SourceSerifBook", packages: fontSet.body, codePoints },
-    { family: "InterBook", packages: fontSet.display, codePoints }
+    { family: "InterBook", packages: fontSet.display, codePoints },
+    // Only a book whose story design sets in them carries these bytes.
+    ...(design?.face === "rounded" ? [{ family: "StoryRoundBook", packages: [STORY_ROUND_FONT], codePoints }] : []),
+    ...(design?.displayHeadings ? [{ family: "StoryDisplayBook", packages: [STORY_DISPLAY_FONT], codePoints }] : [])
   ]);
 }
 

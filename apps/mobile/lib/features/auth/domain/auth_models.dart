@@ -116,10 +116,13 @@ class MobileSessionTokens {
     return refreshTokenExpiresAt.isBefore(DateTime.now().toUtc());
   }
 
+  /// The moment the access token stops being worth sending: from here on the
+  /// client refreshes it before using it.
+  DateTime get accessTokenRefreshAt =>
+      accessTokenExpiresAt.subtract(const Duration(seconds: 45));
+
   bool get shouldRefreshAccessToken {
-    return accessTokenExpiresAt.isBefore(
-      DateTime.now().toUtc().add(const Duration(seconds: 45)),
-    );
+    return accessTokenRefreshAt.isBefore(DateTime.now().toUtc());
   }
 }
 

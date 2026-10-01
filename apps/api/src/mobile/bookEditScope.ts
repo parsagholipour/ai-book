@@ -50,9 +50,9 @@ export function planSummaryForClassifier(
  *
  * The `all_pages` branch is where a scope label becomes an N-page bill, so an
  * intent that reaches here with `all_pages` had better be one that really needs
- * every page rewritten. Presentation changes (`back_matter`, `chapter_heading`)
- * carry `scope: "none"` and an empty page list precisely so they can never
- * expand here.
+ * every page rewritten. Presentation changes (`back_matter`, `chapter_heading`,
+ * `page_design`) carry `scope: "none"` and an empty page list precisely so they
+ * can never expand here.
  */
 export async function affectedPagesForIntent(
   intent: BookEditIntent,

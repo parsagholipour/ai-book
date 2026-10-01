@@ -52,6 +52,54 @@ describe("reviewAppliedBookEdit", () => {
     expect(payload.afterPages.map((page: { index: number }) => page.index)).toEqual([1, 2]);
   });
 
+  it("hands the reviewer what code verified over the pages it is not shown", async () => {
+    const satisfied = { satisfied: true, confidence: 1, missingRequirements: [], contradictions: [], pageIndexesToRevise: [] };
+    const fact = "Code searched every page of the book (12): no whole-word “tray” remains.";
+    const page = (markdown: string) => ({ index: 3, title: "Containers", markdown, summary: "s" });
+    const small = modelReturning(satisfied);
+    await reviewAppliedBookEdit({
+      instruction: "Replace tray with saucer throughout the book, including plurals.",
+      beforePages: [page("A tray.")],
+      afterPages: [page("A saucer.")],
+      textModel: small.model,
+      codeVerifiedFacts: [fact]
+    });
+    const wholeSet = small.generateJson.mock.calls[0]![0].messages;
+    expect(JSON.parse(wholeSet[1]!.content).codeVerifiedFacts).toEqual([fact]);
+    expect(wholeSet[0]!.content).toContain("codeVerifiedFacts");
+
+  });
+
+  it("shows the model reviewers what prints, never a page's stored summary", async () => {
+    const { model, generateJson } = modelReturning({
+      satisfied: true, confidence: 1, missingRequirements: [], contradictions: [], pageIndexesToRevise: []
+    });
+    const page = (markdown: string, summary: string) => ({ index: 3, title: "Containers", markdown, summary });
+    await reviewAppliedBookEdit({
+      instruction: "Replace tray with saucer.",
+      beforePages: [page("A tray catches water.", "SYNOPSIS-BEFORE a tray")],
+      afterPages: [page("A saucer catches water.", "SYNOPSIS-AFTER a tray")],
+      textModel: model
+    });
+    const sent = JSON.stringify(generateJson.mock.calls[0]![0].messages);
+    expect(sent).toContain("A saucer catches water.");
+    expect(sent).not.toContain("SYNOPSIS-");
+
+    // The hierarchical path, past the whole-set budget.
+    const long = (word: string) => `A ${word} catches water on the balcony. `.repeat(400);
+    const big = modelReturning({
+      satisfied: true, confidence: 1, missingRequirements: [], contradictions: [], pageIndexesToRevise: []
+    });
+    await reviewAppliedBookEdit({
+      instruction: "Replace tray with saucer.",
+      beforePages: [page(long("tray"), "SYNOPSIS-BEFORE a tray")],
+      afterPages: [page(long("saucer"), "SYNOPSIS-AFTER a tray")],
+      textModel: big.model
+    }).catch(() => undefined);
+    expect(big.generateJson.mock.calls.length).toBeGreaterThan(0);
+    expect(JSON.stringify(big.generateJson.mock.calls.map(([options]) => options.messages))).not.toContain("SYNOPSIS-");
+  });
+
   it.each([
     {
       field: "an optional improvement",

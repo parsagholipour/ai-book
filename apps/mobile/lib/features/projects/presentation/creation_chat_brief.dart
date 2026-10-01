@@ -149,6 +149,7 @@ _BuiltHeaderView? _builtHeaderView(
 class _BriefHeader extends StatefulWidget {
   const _BriefHeader({
     required this.state,
+    required this.keyboardInset,
     this.activeProjectId,
     this.planValue,
     this.statusValue,
@@ -158,6 +159,12 @@ class _BriefHeader extends StatefulWidget {
   });
 
   final CreationChatState state;
+
+  /// The keyboard's height, read by the screen above its Scaffold. Read here
+  /// it is always zero — the Scaffold strips it from the body's MediaQuery —
+  /// so the panel was sized as if no keyboard were open and pushed the
+  /// composer and its Send button under the keyboard.
+  final double keyboardInset;
 
   /// Non-null once the chat has a built book. The header then carries the
   /// screen's only title (the app bar names nothing), so it prefers the
@@ -176,7 +183,7 @@ class _BriefHeader extends StatefulWidget {
 
   /// Opens Advanced settings from the preset chips. Null once built: the
   /// sheet edits the pre-build presets, which a built book no longer reads.
-  final Future<void> Function()? onOpenAdvanced;
+  final Future<void> Function({_AdvancedSection? section})? onOpenAdvanced;
 
   /// Opens the title sheet from the pen chip in the expanded panel; null
   /// once built, when the title belongs to the book rather than the brief.
@@ -222,9 +229,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
   /// its own share. Without the second bound an expanded brief over an open
   /// question overflowed the column on a small phone at a large text size.
   double _detailsMaxHeight(BuildContext context) {
-    final available =
-        MediaQuery.sizeOf(context).height -
-        MediaQuery.viewInsetsOf(context).bottom;
+    final available = MediaQuery.sizeOf(context).height - widget.keyboardInset;
     final scale = MediaQuery.textScalerOf(context).scale(1);
     // The warnings banner is the one pinned piece whose height depends on its
     // words: estimate its lines from their length and the width they wrap at.

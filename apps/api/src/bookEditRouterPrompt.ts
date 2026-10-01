@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { type BookEditProjectStage } from "./bookEditIntent.js";
 import { CHAT_REPLY_MARKDOWN_PROMPT } from "./chatReplyMarkdownPrompt.js";
+import { allStoryPageDesigns, STORY_PAGE_DESIGN_IDS } from "@book-maker/core";
 
 /**
  * What the edit router is allowed to decide, and what it is told.
@@ -101,6 +102,7 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
           "continuation",
           "back_matter",
           "chapter_heading",
+          "page_design",
           "insert_image",
           "move_image",
           "remove_image",
@@ -116,6 +118,8 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       chapterHeadingStyle: z.enum(["label_number_title", "number_title", "title_only"]).nullish(),
       /** A word to use in place of "Chapter", when editTarget is chapter_heading. */
       chapterHeadingLabel: z.string().trim().min(1).max(24).nullish(),
+      /** The design to print the pages in, when editTarget is page_design; null for "a different one". */
+      pageDesign: z.enum(STORY_PAGE_DESIGN_IDS).nullish(),
       /** What the new picture should show, when editTarget is insert_image. */
       imageSubject: z.string().trim().min(1).max(300).nullish(),
       /** Where the new picture goes, when editTarget is insert_image and no page is named. */
@@ -285,8 +289,9 @@ export function routerSystemPrompt(
           "Adding something new to the finished book — a character, a scene, an object, a mention — is propose_edit, not clarify. Set editTarget to pages for the scenes where it belongs, or whole_book when it should run through the story. Reserve structural for replacing the book's premise or main character, because it regenerates the entire book.",
           ...(readerPagesArePdf ? READER_PAGE_RULES : []),
           ...imageRules(readerPagesArePdf),
-          "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Set replacementFrom and replacementTo together only when their exact boundaries are explicit in editInstruction (quoted terms or single tokens), and copy those terms exactly. Omit both for an unquoted multiword phrase or any ambiguous boundary.",
+          "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Set replacementFrom and replacementTo together only when their exact boundaries are explicit in editInstruction (quoted terms or single tokens), and copy those terms exactly. Omit both for an unquoted multiword phrase or any ambiguous boundary. For a plain swap of one word or phrase everywhere, write editInstruction exactly as Replace \"<old>\" with \"<new>\" throughout the book. and nothing more: code already swaps the plural and the capitalised forms of a plain word, and only that bare form is checked and applied free.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
+          `Use editTarget page_design when the user wants a picture book's pages to look different — the page design, layout, colours, background or decoration they are printed in, not what they say. Set pageDesign to one of ${allStoryPageDesigns().map((design) => `${design.id} (${design.label}: ${design.summary})`).join("; ")} — the one whose look matches what they describe — or leave it null when they only ask for something different. It changes no text and is free. Never use it for the writing style, the story's theme, the cover, the illustrations or the font.`,
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
           "A request that changes how long the book is or whether it has pictures is structural, because both are decided when the book is planned. Set newTargetPages whenever the user names the book's whole new length (\"make it 3 pages\", \"half as long\" — resolve it to a number), and illustrationsEnabled false when they want it without illustrations (true to add them). Report them even when the message also asks for other changes; the server prices the book you describe, so leaving them out quotes the old book's size.",
           "Adding, removing or reordering particular pages is NOT structural, and newTargetPages is the book's total length rather than a number of pages to add. Use editTarget insert_pages (\"add three pages after page 10\", \"write a new opening page\"), delete_pages (\"delete page 7\", \"remove pages 4 and 5\") or move_pages (\"move page 12 to after page 4\"). Set structuralAnchorPageIndex to the page the new or moved pages go next to, filled exactly the way you fill pageIndexes and never stepped back by one yourself, and structuralAnchorPosition to before or after (after is the default) to say which side of that page they land on: \"add a page before page 10\" is structuralAnchorPageIndex for page 10 with structuralAnchorPosition before, and 0 with after is the front of the book. Set structuralPageCount for how many pages to add, and pageIndexes for the pages to delete or move. Reserve structural for replacing the book's premise, main character, audience or whole length, because it regenerates the entire book into a new copy.",

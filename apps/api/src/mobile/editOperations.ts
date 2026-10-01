@@ -25,8 +25,8 @@ import {
   ATOMIC_CANDIDATES_CONTINUATION_PROTOCOL,
   CONTINUATION_PUBLICATION_PROTOCOL_FIELD,
   bookPlanSchema,
-  creditCostForOperation,
   isDetachedFromProjectLifecycle,
+  planRevisionCreditCost,
   PRE_EDIT_PROJECT_STATUS
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -247,7 +247,8 @@ export async function queueChatPlanRevision(options: {
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const planId = project.currentPlan!.id;
-  const credits = creditCostForOperation("PLAN_REVISION");
+  // The book's tier, as `queueChargedPlanRevision` will charge it.
+  const credits = planRevisionCreditCost(project.mediaSettings).credits;
   // Both plan-question surfaces answer through chat by embedding each
   // question's prompt verbatim ("- {prompt}: {answer}"), so the answered
   // prompts are recovered from the message itself — this is what lets the
@@ -543,7 +544,9 @@ export async function queueChatBookEdit(options: QueuedChatEdit): Promise<{
         }
       });
     },
-    replyContent: operationQueuedMessage(intent.kind, affectedPageIndexes, intent, numberingForProject(project)),
+    replyContent: operationQueuedMessage(intent.kind, affectedPageIndexes, intent, numberingForProject(project), {
+      exact: Boolean(patch)
+    }),
     replyMetadata: { intent, charged: true, creditsCharged: cost }
   });
 }

@@ -79,7 +79,10 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
     title: "Changing a book",
     blurb: "Quoted in chat before the edit runs, then charged when it is confirmed.",
     fields: [
-      { key: "planRevision", label: "Plan revision", help: "Reworking the plan before approval." },
+      { key: "planRevisionFast", label: "Plan revision — Quick draft", help: "Reworking the plan before approval. Runs the same planner as the first plan, so it follows the same tier ladder." },
+      { key: "planRevision", label: "Plan revision — Balanced", help: "Reworking the plan before approval." },
+      { key: "planRevisionPremium", label: "Plan revision — Extra polish", help: "Reworking the plan before approval, on the premium planner." },
+      { key: "planRevisionUltra", label: "Plan revision — Ultra effort", help: "Reworking the plan before approval, on Ultra effort." },
       { key: "bookTextEditBase", label: "Text edit base", help: "Flat part of a small in-place edit. Not tiered — request overhead, not model spend." },
       { key: "bookTextEditPerPageFast", label: "Text edit per page — Quick draft", help: "Added for each page the edit touches." },
       { key: "bookTextEditPerPage", label: "Text edit per page — Balanced", help: "Added for each page the edit touches." },

@@ -269,9 +269,12 @@ class _CastMember extends StatelessWidget {
     final theme = Theme.of(context);
     final name = character.name.trim();
     return Semantics(
+      container: true,
       button: true,
       label: '${name.isEmpty ? 'Unnamed character' : name}, in the cast',
       hint: 'Options',
+      onTap: onTap,
+      onLongPress: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           onTap: onTap,
@@ -313,10 +316,12 @@ class _EmptyCastInvite extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Semantics(
+      container: true,
       button: true,
       label:
           'Add the characters in your book. Their pictures stay consistent '
           'across your book.',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           onTap: onTap,

@@ -43,6 +43,8 @@ import {
   revertStructuralPageChange
 } from "@book-maker/db";
 import { objectKey, objectStore } from "@book-maker/storage";
+import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
+import { readerPagesPhrase } from "./bookEditCopy.js";
 
 /**
  * Direct page edits made in the book editor, plus undo and export recompilation.
@@ -101,6 +103,8 @@ export async function applyManualBookEdit(options: {
   savedExportMessage: MobileProjectChatMessageRecord | null;
   requestId?: string | undefined;
   bookStorageDir: string;
+  /** The printed numbering the receipt names pages in; model indexes without one. */
+  numbering?: ReaderPageNumbering | undefined;
 }): Promise<{ message: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord }> {
   const { projectId, edits, pagesById, savedExportMessage } = options;
   const affectedPageIndexes = edits.map((edit) => pagesById.get(edit.id)!.index).sort((a, b) => a - b);
@@ -176,7 +180,7 @@ export async function applyManualBookEdit(options: {
       message = await tx.projectChatMessage.update({
         where: { id: savedExportMessage.id },
         data: {
-          content: manualEditMessageContent(mergedIndexes),
+          content: manualEditMessageContent(mergedIndexes, options.numbering),
           operationId: operation.id,
           metadata: jsonInputValue({
             ...jsonRecord(savedExportMessage.metadata),
@@ -195,7 +199,7 @@ export async function applyManualBookEdit(options: {
           projectId,
           parentId,
           role: "ASSISTANT",
-          content: manualEditMessageContent(affectedPageIndexes),
+          content: manualEditMessageContent(affectedPageIndexes, options.numbering),
           operationId: operation.id,
           metadata: jsonInputValue({
             charged: false,
@@ -310,9 +314,8 @@ export async function queueUserEditExportRecompile(
   }
 }
 
-export function manualEditMessageContent(pageIndexes: number[]): string {
-  const pageText =
-    pageIndexes.length === 1 ? `page ${pageIndexes[0]}` : `pages ${pageIndexes.join(", ")}`;
+export function manualEditMessageContent(pageIndexes: number[], numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING): string {
+  const pageText = readerPagesPhrase(pageIndexes, numbering);
   return `You edited ${pageText} yourself in Edit Mode. The exports are refreshing with your changes.`;
 }
 
@@ -565,7 +568,7 @@ export async function undoLastBookEdit(
     projectId: project.id,
     parentId,
     operationId: operation.id,
-    content: undoConfirmation(operation.request, structural, restoredPageIndexes),
+    content: undoConfirmation(operation.request, structural, restoredPageIndexes, numberingForProject(project)),
     metadata: {
       intent,
       charged: false,
@@ -614,14 +617,11 @@ function nothingToUndoReply(
 function undoConfirmation(
   request: string,
   structural: StructuralApplication | null,
-  restoredPageIndexes: number[]
+  restoredPageIndexes: number[],
+  numbering: ReaderPageNumbering
 ): string {
-  const restored =
-    restoredPageIndexes.length === 0
-      ? null
-      : restoredPageIndexes.length === 1
-        ? `restored page ${restoredPageIndexes[0]} to how it was`
-        : `restored pages ${restoredPageIndexes.join(", ")} to how they were`;
+  const phrase = restoredPageIndexes.length === 0 ? null : readerPagesPhrase(restoredPageIndexes, numbering);
+  const restored = phrase === null ? null : `restored ${phrase} to how ${phrase.startsWith("page ") ? "it was" : "they were"}`;
   const shape =
     structural === null
       ? null

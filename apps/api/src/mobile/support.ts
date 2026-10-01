@@ -81,13 +81,56 @@ export function previewText(value: string): string {
   return clipText(value, 180);
 }
 
+/**
+ * A page's text as one readable line for the book page's preview.
+ *
+ * Block by block, because the preview is prose: a heading ends its own
+ * sentence ("…keeps slipping. It is Sunday…" rather than "…keeps slipping It is
+ * Sunday…"), fenced blocks (code, a figure's JSON) and table delimiter rows are
+ * dropped, a table row reads as its cells, and only markup is removed — the old
+ * pass stripped every `-` and `_`, so "one-hour" previewed as "one hour".
+ */
 export function markdownPlainText(markdown: string): string {
-  return markdown
+  const withoutFences = markdown.replace(/^\s*(```|~~~)[^\n]*\n[\s\S]*?^\s*\1[^\n]*$/gm, "");
+  const lines = withoutFences.split(/\r?\n/).flatMap((raw) => {
+    let line = raw.trim();
+    if (!line || /^(-{3,}|\*{3,}|_{3,})$/.test(line)) return [];
+    if (/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$/.test(line)) return [];
+    if (line.startsWith("|")) {
+      line = line.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim()).filter(Boolean).join(" · ");
+    }
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    if (heading) {
+      const text = heading[1]!.trim();
+      return [/[.!?:…]$/.test(text) ? text : `${text}.`];
+    }
+    return [line.replace(/^(>\s*)+/, "").replace(/^([-*+]|\d+[.)])\s+/, "").replace(/^\[[ xX]\]\s+/, "")];
+  });
+  return lines
+    .join(" ")
+    .replace(/<[^>]+>/g, "")
     .replace(/!\[[^\]]*]\([^)]+\)/g, "")
     .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
-    .replace(/[`*_>#-]+/g, " ")
+    .replace(/(\*\*|__|\*|`)(?=\S)([^*`]*?\S)\1/g, "$2")
+    .replace(/(^|\s)_(\S[^_]*?\S|\S)_(?=\s|[.,;:!?]|$)/g, "$1$2")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * `clipText` for a chat reply, which the app renders as light markdown: line
+ * breaks are the markdown. `clipText` folds them into spaces, and every
+ * grounded answer reached the reader as one paragraph of "… - **A** … - **B**".
+ */
+export function clipReplyText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  const clipped = normalized.slice(0, maxLength);
+  const lastBreak = Math.max(clipped.lastIndexOf(" "), clipped.lastIndexOf("\n"));
+  const minBreak = Math.floor(maxLength * 0.65);
+  return `${clipped.slice(0, lastBreak > minBreak ? lastBreak : maxLength).trim()}...`;
 }
 
 export function clipText(value: string, maxLength: number): string {

@@ -145,6 +145,45 @@ describe("hierarchical edit adherence coverage", () => {
     }
   }, 60_000);
 
+  it("shows the final call what code verified, and no leaf", async () => {
+    const fact = "Code searched every page of the book (12): no whole-word “tray” remains.";
+    const prose = (marker: string) => `${marker} sentence about the runoff ${marker} on a balcony. `.repeat(55);
+    const beforePages = [3, 4, 6, 7, 9, 11, 12].map((index) => page(index, prose("tray")));
+    const afterPages = beforePages.map((entry) => page(entry.index, prose("saucer")));
+    const { model, generateJson } = protocolModel();
+
+    await reviewAppliedBookEdit({ instruction: "Replace tray with saucer.", beforePages, afterPages, textModel: model, codeVerifiedFacts: [fact] });
+
+    const payloads = generateJson.mock.calls.map(([request]) => userPayload(request));
+    expect(payloads.find((payload) => payload.reviewPhase === "global-verdict")?.codeVerifiedFacts).toEqual([fact]);
+    expect(payloads.filter((payload) => payload.reviewPhase !== "global-verdict").some((payload) => "codeVerifiedFacts" in payload)).toBe(false);
+  });
+
+  it("shows each leaf both sides of every page it reads", async () => {
+    // Seven ~3.3 KB pages, the 2026-10-01 word swap: before-then-after
+    // ordering handed leaves one side of a page and every one of them reported
+    // the other side missing, so a correct edit was refused and refunded.
+    const prose = (marker: string) => `${marker} sentence about the runoff ${marker} on a balcony. `.repeat(55);
+    const beforePages = [3, 4, 6, 7, 9, 11, 12].map((index) => page(index, prose("tray")));
+    const afterPages = beforePages.map((entry) => page(entry.index, prose("saucer")));
+    const { model, generateJson } = protocolModel();
+
+    await reviewAppliedBookEdit({ instruction: "Replace tray with saucer.", beforePages, afterPages, textModel: model });
+
+    const leaves = generateJson.mock.calls
+      .map(([request]) => userPayload(request))
+      .filter((payload) => payload.reviewPhase === "collect-evidence");
+    expect(leaves.length).toBeGreaterThan(1);
+    for (const leaf of leaves) {
+      const sides = new Map<string, Set<string>>();
+      for (const segment of records(leaf.segments)) {
+        const key = String(segment.pagePosition);
+        sides.set(key, new Set([...(sides.get(key) ?? []), String(segment.side)]));
+      }
+      for (const seen of sides.values()) expect([...seen].sort()).toEqual(["after", "before"]);
+    }
+  });
+
   it("segments one oversized Unicode page at stable contiguous offsets without dropping content", async () => {
     const huge = `start-${"🙂quoted \\\" text\n".repeat(4000)}-end`;
     const before = page(7, huge);
@@ -607,7 +646,7 @@ describe("hierarchical edit adherence coverage", () => {
     // Nine omissions over four segments, five and four over the halves: the
     // overflow slot is the same "give me less to read" the flag is, so the
     // group is re-asked rather than the whole review failing closed.
-    expect(phases(generateJson.mock.calls).filter((phase) => phase === "collect-evidence")).toHaveLength(5);
+    expect(phases(generateJson.mock.calls).filter((phase) => phase === "collect-evidence")).toHaveLength(3);
     expect(verdict.satisfied).toBe(false);
     expect(verdict.missingRequirements).toEqual(
       Array.from({ length: 9 }, (_, index) => `omission-${index}`)

@@ -259,11 +259,19 @@ TextEditingValue? paragraphBreakAt(String text, int offset) {
   if (item != null &&
       offset >= lineStart + line.length - item.group(6)!.length) {
     if (item.group(6)!.trim().isEmpty) {
-      // Enter on an empty item ends the list: the marker goes, the line stays.
-      final cleared = text.replaceRange(lineStart, lineEnd, '');
+      // Enter on an empty item ends the list: the marker goes, and a blank
+      // line goes between the list and what is written next. A line straight
+      // under an item is that item's lazy continuation in markdown, so the
+      // next paragraph printed as part of the last item.
+      final afterList = lineStart >= 2 && text.codeUnitAt(lineStart - 2) != 0x0a
+          ? '\n'
+          : '';
+      final cleared = text.replaceRange(lineStart, lineEnd, afterList);
       return TextEditingValue(
         text: cleared,
-        selection: TextSelection.collapsed(offset: lineStart),
+        selection: TextSelection.collapsed(
+          offset: lineStart + afterList.length,
+        ),
       );
     }
     final number = item.group(3);

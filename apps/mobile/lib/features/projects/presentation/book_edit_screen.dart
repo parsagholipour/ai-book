@@ -405,6 +405,21 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
     );
   }
 
+  /// The book's review verdict, from whichever book-page read is already
+  /// alive. Edit Mode is opened from the book page, which holds both; reading
+  /// them here fetches nothing, so a screen opened another way shows no notes
+  /// rather than paying for a read it was not asked to make.
+  MobileProjectQuality? _quality() {
+    final id = widget.projectId;
+    final status = ref.exists(projectStatusProvider(id))
+        ? ref.watch(projectStatusProvider(id)).asData?.value.quality
+        : null;
+    final detail = ref.exists(projectDetailProvider(id))
+        ? ref.watch(projectDetailProvider(id)).asData?.value.quality
+        : null;
+    return status ?? detail;
+  }
+
   Widget _buildEditor(BuildContext context, MobileEditableBook book) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -420,6 +435,7 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
     };
     final undo = _undoControllers[selectedPage.id]!;
     final dirty = _dirtyPageIds.contains(selectedPage.id);
+    final notes = BookEditReviewNotes.notesFor(_quality(), selectedPage.index);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -446,6 +462,15 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
                   onRevert: () => _revertPage(selectedPage),
                 ),
                 const SizedBox(height: 8),
+                if (!keyboardOpen &&
+                    (notes.page.isNotEmpty || notes.book.isNotEmpty)) ...[
+                  BookEditReviewNotes(
+                    key: ValueKey('review-notes-${selectedPage.id}'),
+                    pageNotes: notes.page,
+                    bookNotes: notes.book,
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 TextField(
                   key: ValueKey('title-${selectedPage.id}'),
                   controller: _titleControllers[selectedPage.id],

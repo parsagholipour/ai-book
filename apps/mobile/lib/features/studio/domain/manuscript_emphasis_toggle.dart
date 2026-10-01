@@ -86,6 +86,50 @@ TextEditingValue toggleEmphasis(TextEditingValue value, EmphasisKind kind) {
   );
 }
 
+/// Bold (or italic) switched off with the cursor at the end of a run of it:
+/// the cursor steps out past that run's closing marks, so what is typed next is
+/// plain, and the run keeps every letter it has. Null when the cursor is not at
+/// the end of a [kind] run.
+///
+/// It is what a reader means by tapping Bold again after typing a bold phrase.
+/// Taken as "the word the cursor touches", the tap unbolded the phrase's last
+/// word instead, and the next words went on in bold. Runs of other kinds the
+/// cursor steps out of on the way (italic inside the bold) stay on, as
+/// [keep].
+({TextEditingValue value, Set<EmphasisKind> keep})? leaveRunEnd(
+  TextEditingValue value,
+  EmphasisKind kind,
+) {
+  final selection = value.selection;
+  if (!selection.isValid || !selection.isCollapsed) return null;
+  final text = value.text;
+  if (!text.contains('*') && !text.contains('_')) return null;
+  final index = EmphasisIndex.of(text);
+  final passed = <EmphasisKind>{};
+  var at = selection.baseOffset;
+  var stepped = true;
+  while (stepped) {
+    stepped = false;
+    for (final pair in index.pairs) {
+      if (pair.close.start != at || pair.close.end <= at) continue;
+      if (pair.kind == kind) {
+        return (
+          value: TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: pair.close.end),
+          ),
+          keep: passed,
+        );
+      }
+      passed.add(pair.kind);
+      at = pair.close.end;
+      stepped = true;
+      break;
+    }
+  }
+  return null;
+}
+
 /// The letters of a pair as they are seen: its content less any hidden marks
 /// of other pairs at either end (the italic in `***word***` is inside the bold,
 /// and the bold's letters are still just `word`).

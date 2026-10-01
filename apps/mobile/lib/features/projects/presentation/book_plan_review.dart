@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../billing/domain/billing_models.dart';
+import '../domain/plan_revision_suggestions.dart';
 import '../domain/project_models.dart';
 
 // The plan, in the two shapes the book page needs it: the full review a reader
@@ -81,7 +82,12 @@ class ProjectPlanReview extends StatelessWidget {
             ),
             AppMetricChip(
               label: 'Cover',
-              value: project.coverEnabled ? 'Included' : 'Not included',
+              // Declining AI art buys a designed cover, not no cover.
+              value: switch (project.coverArtSource) {
+                'ai' => 'AI art',
+                'none' => 'None',
+                _ => 'Designed',
+              },
             ),
             AppMetricChip(
               label: 'Illustrations',
@@ -130,6 +136,17 @@ class ProjectPlanReview extends StatelessWidget {
           controller: revisionController,
           isBusy: busyAction == 'revise',
           onSubmit: onRevisionRequest,
+          suggestions: planRevisionSuggestionsFor(
+            bookType: project.bookType,
+            bookShape: project.bookShape,
+            plan: plan,
+          ),
+          revisionCredits: billing == null
+              ? null
+              : estimatePlanRevisionCredits(
+                  qualityPreset: project.qualityPreset,
+                  creditCosts: billing!.creditCosts,
+                ),
         ),
         const SizedBox(height: 16),
         PlanSectionCard(
@@ -758,26 +775,22 @@ class _ChapterTile extends StatelessWidget {
   }
 }
 
-/// Things people commonly ask a plan for. They fill the box rather than send:
-/// a blank field is the one place a reader stalls, and a suggestion they can
-/// edit is a better start than nothing.
-const planRevisionSuggestions = <String>[
-  'Make it shorter',
-  'Add more examples',
-  'Use simpler language',
-  'Change the chapters',
-];
-
 class _RevisionRequestCard extends StatelessWidget {
   const _RevisionRequestCard({
     required this.controller,
     required this.isBusy,
     required this.onSubmit,
+    required this.suggestions,
+    required this.revisionCredits,
   });
 
   final TextEditingController controller;
   final bool isBusy;
   final Future<void> Function(String message) onSubmit;
+  final List<String> suggestions;
+
+  /// What sending costs, said before the tap; null until billing has loaded.
+  final int? revisionCredits;
 
   @override
   Widget build(BuildContext context) {
@@ -791,7 +804,7 @@ class _RevisionRequestCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final suggestion in planRevisionSuggestions)
+              for (final suggestion in suggestions)
                 ActionChip(
                   label: Text(suggestion),
                   onPressed: isBusy
@@ -832,6 +845,15 @@ class _RevisionRequestCard extends StatelessWidget {
             leading: const Icon(Icons.send_outlined),
             label: 'Send revision',
           ),
+          if (revisionCredits != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'A revision costs $revisionCredits credits.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
       ),
     );

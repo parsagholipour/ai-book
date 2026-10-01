@@ -368,6 +368,38 @@ void main() {
       expect(result.appliedTypingStyle, isFalse);
     });
 
+    test('after spaces typed at the end of a bold word, it goes on with it', () {
+      expect(guarded('**Your** |', '**Your** f|', typing: bold), '**Your f|**');
+      expect(guarded('**a**  |', '**a**  b|', typing: bold), '**a  b|**');
+    });
+
+    test('a word typed with its own space goes in, and the space after it', () {
+      expect(guarded('**a** |', '**a** b |', typing: bold), '**a b** |');
+      expect(guarded('**a**|', '**a** b|', typing: bold), '**a b|**');
+    });
+
+    test('it does not go on with a word on the line before', () {
+      expect(guarded('**a**\n|', '**a**\nb|', typing: bold), '**a**\n**b|**');
+    });
+
+    test('or across spaces with a word of the other kind', () {
+      expect(guarded('*soft* |', '*soft* x|', typing: bold), '*soft* **x|**');
+    });
+
+    test('bold alone goes on with bold, closing italic inside it first', () {
+      final result = guarded('**_a_** |', '**_a_** b|', typing: bold);
+      expect(result, '**_a_ b|**');
+    });
+
+    test('the composing region moves back over the marks with the word', () {
+      final next = v(
+        '**a** b|',
+      ).copyWith(composing: const TextRange(start: 6, end: 7));
+      final result = guardEdit(v('**a** |'), next, typingStyle: bold).value;
+      expect(show(result), '**a b|**');
+      expect(result.composing, const TextRange(start: 4, end: 5));
+    });
+
     test('the composing region of the IME moves with the letter', () {
       final next = v(
         'a b|',
@@ -375,6 +407,161 @@ void main() {
       final result = guardEdit(v('a |'), next, typingStyle: bold).value;
       expect(result.text, 'a **b**');
       expect(result.composing, const TextRange(start: 4, end: 5));
+    });
+  });
+
+  group('the style going on through spaces', () {
+    const bold = {EmphasisKind.bold};
+    Set<EmphasisKind> after(
+      String before,
+      String now, {
+      Set<EmphasisKind> style = const {},
+    }) => continuedTypingStyle(v(before), v(now), style);
+
+    test('a space at the end of a bold word keeps bold on', () {
+      expect(after('**Your|**', '**Your** |'), bold);
+    });
+
+    test('and so does a second one, while the style is on', () {
+      expect(after('**a** |', '**a**  |', style: bold), bold);
+    });
+
+    test('nested bold and italic both go on', () {
+      expect(after('***both|***', '***both*** |'), {
+        EmphasisKind.bold,
+        EmphasisKind.italic,
+      });
+    });
+
+    test('a space after plain text, or after marks it was not in, does not', () {
+      expect(after('a|', 'a |'), isEmpty);
+      expect(after('**a** |', '**a**  |'), isEmpty);
+    });
+
+    test('Enter, a letter, a deletion and a move all end it', () {
+      expect(after('**a** |', '**a** \n|', style: bold), isEmpty);
+      expect(after('**a** |', '**a** b|', style: bold), isEmpty);
+      expect(after('**a**  |', '**a** |', style: bold), isEmpty);
+      expect(after('**a** |', '**a**| ', style: bold), isEmpty);
+    });
+  });
+
+  group('typing a phrase in bold, a key at a time', () {
+    /// Each character as its own key press, through the formatter's rule and
+    /// the controller's, the way a keyboard (and adb) deliver them.
+    ({TextEditingValue value, Set<EmphasisKind> style}) type(
+      TextEditingValue value,
+      String keys,
+      Set<EmphasisKind> style,
+    ) {
+      for (final key in keys.split('')) {
+        final at = value.selection.baseOffset;
+        final raw = TextEditingValue(
+          text: value.text.replaceRange(at, at, key),
+          selection: TextSelection.collapsed(offset: at + key.length),
+        );
+        final next = guardEdit(value, raw, typingStyle: style).value;
+        style = continuedTypingStyle(value, next, style);
+        value = next;
+      }
+      return (value: value, style: style);
+    }
+
+    test('the whole phrase is one bold run', () {
+      final typed = type(v('say |'), 'Your first cry', {EmphasisKind.bold});
+      expect(show(typed.value), 'say **Your first cry|**');
+      expect(EmphasisIndex.of(typed.value.text).pairs, hasLength(1));
+    });
+
+    test('a space nothing follows stays outside the marks', () {
+      final typed = type(v('say |'), 'Your first ', {EmphasisKind.bold});
+      expect(show(typed.value), 'say **Your first** |');
+      expect(typed.style, {EmphasisKind.bold});
+    });
+
+    test('turned off after a space, the next word is plain', () {
+      final typed = type(v('say |'), 'Your ', {EmphasisKind.bold});
+      final plain = type(typed.value, 'first', const {});
+      expect(show(plain.value), 'say **Your** first|');
+    });
+
+    test('Enter after a space leaves the space outside and ends the style', () {
+      final typed = type(v('say |'), 'Your \nnext', {EmphasisKind.bold});
+      expect(show(typed.value), 'say **Your** \nnext|');
+      expect(typed.style, isEmpty);
+    });
+
+    test('italic phrases too', () {
+      final typed = type(v('|'), 'very soft', {EmphasisKind.italic});
+      expect(show(typed.value), '*very soft|*');
+    });
+  });
+
+  group('a keyboard one edit behind', () {
+    TextEditingValue composing(String dsl, int start, int end) =>
+        v(dsl).copyWith(composing: TextRange(start: start, end: end));
+
+    test('a letter typed on the text before the marks went in', () {
+      final rebased = rebaseKeyboardEdit(
+        sent: composing('S|', 0, 1),
+        current: composing('**S|**', 2, 3),
+        next: composing('Sh|', 0, 2),
+      )!;
+      expect(show(rebased), '**Sh|**');
+      expect(rebased.composing, const TextRange(start: 2, end: 4));
+    });
+
+    test('a composing word finished on the text before the rewrite', () {
+      final rebased = rebaseKeyboardEdit(
+        sent: composing('x **a** b|', 8, 9),
+        current: composing('x **a b|**', 6, 7),
+        next: v('x **a** b|'),
+      )!;
+      expect(show(rebased), 'x **a b|**');
+      expect(rebased.composing, TextRange.empty);
+    });
+
+    test('an edit already made on the current text is left alone', () {
+      expect(
+        rebaseKeyboardEdit(
+          sent: v('S|'),
+          current: v('**S|**'),
+          next: v('**Sh|**'),
+        ),
+        isNull,
+      );
+    });
+
+    test('an edit away from the caret is not moved', () {
+      expect(
+        rebaseKeyboardEdit(
+          sent: v('ab S|'),
+          current: v('ab **S|**'),
+          next: v('xab S'),
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('Bold again at the end of a bold run', () {
+    test('steps out of the run, leaving every letter bold', () {
+      final left = leaveRunEnd(v('say **hi there|**'), EmphasisKind.bold)!;
+      expect(show(left.value), 'say **hi there**|');
+      expect(left.keep, isEmpty);
+    });
+
+    test('italic inside the bold stays on', () {
+      final left = leaveRunEnd(v('***both|***'), EmphasisKind.bold);
+      expect(left, isNotNull);
+      expect(left!.keep, {EmphasisKind.italic});
+      expect(left.value.selection.baseOffset, greaterThan(6));
+    });
+
+    test('not at the end of a run, it is not this rule', () {
+      expect(leaveRunEnd(v('**bo|ld**'), EmphasisKind.bold), isNull);
+      expect(leaveRunEnd(v('*soft|*'), EmphasisKind.bold), isNull);
+      expect(leaveRunEnd(v('plain|'), EmphasisKind.bold), isNull);
     });
   });
 

@@ -19,8 +19,8 @@ things the framework's text field does not do for you.
   keeps the rest bold and deleting the last letter takes the marks; a space at the end of a bold word
   goes after it and Enter inside one ends the bold and starts it again (marks cannot cross a line).
   Edits are corrected by `ManuscriptEmphasisFormatter`, which **the field must be given** — a new
-  field over this controller needs `controller.emphasisFormatter` in `inputFormatters`, after the
-  Enter formatter, or the marks are unprotected.
+  field over this controller takes `controller.inputFormatters` (the keyboard rebase, the Enter
+  formatter, then the emphasis formatter, in that order), or the marks are unprotected.
 - **Styling and editing read one parse.** `domain/manuscript_inline.dart` is the only place that
   knows what a mark is; the styler walks its tree and the editing rules read its pairs
   (`EmphasisIndex`). Do not add a second scanner for `*` — two of them disagree about `snake_case`,
@@ -37,7 +37,25 @@ things the framework's text field does not do for you.
   button writes nothing (`ManuscriptEditingController.toggleStyle`); the marks go round the next
   thing typed, and the style is dropped when the cursor moves or the text changes. Writing `****` and
   parking the cursor inside it was the old behaviour: with marks hidden it shows as a scene break.
-  The toolbar's lit state (`isStyleOn`) is the only sign left that the style is on.
+  The toolbar's lit state (`isStyleOn`) is the only sign left that the style is on. One change keeps
+  it: spaces typed at the end of a bold or italic run (`continuedTypingStyle`). The space still goes
+  after the marks, but the run's style stays on, and the next thing typed goes back inside the run
+  with the spaces (`_applyTypingStyle`), so `Your first cry` typed in bold is one run. Without that a
+  phrase came out bold one word at a time. A space nothing follows (Enter, a move, Bold turned off)
+  stays outside the marks. Tapping Bold again at the end of a bold run (`leaveRunEnd`) steps the
+  cursor out past its closing marks: the phrase stays bold and what comes next is plain. Read as "the
+  word the cursor touches", that tap unbolded the phrase's last word and left the bold on.
+- **The keyboard is one edit behind, so its edits are moved onto what the formatters wrote.** On
+  Android the engine keeps its own copy of the text, the keyboard edits that copy, and every
+  formatter rewrite behind the cursor (`**S**` round a first letter, closing marks moved past a word,
+  a list marker on Enter) reaches it only after a round trip. `adb shell input text` always outruns
+  that, and a person can too: the next letter arrives made on the old text, and read against the
+  rewritten one it is marks deleted and words moved (the phone saved
+  `**She smiled a**t **everyone that night.****`). `ManuscriptImeRebase` keeps the value the keyboard
+  last sent and replays an edit made at that value's caret at the current caret, composing region
+  included (`rebaseKeyboardEdit`). It must run before the other formatters.
+  `test/features/studio/studio_emphasis_keyboard_test.dart` types through a fake keyboard that syncs
+  every 1, 2 and 3 edits. Test a new rewrite there, not just with `updateEditingValue`.
 - **The buttons act on what is seen.** `toggleEmphasis` normalises a selection past hidden marks
   first, so dragging over `**bold**` and getting only its opening stars still unwraps it; a part of a
   bold run loses bold and the rest keeps it; a mixed selection becomes all bold. Counting stars

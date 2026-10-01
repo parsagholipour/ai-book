@@ -3,17 +3,95 @@ import {
   applyExactReplacement,
   countExactMatches,
   exactReplacementFromInstruction,
+  exactReplacementSearchTerms,
+  replacementTermsFromInstruction,
+  termOccurrences,
   exactReplacementInstructionMatches,
   exactReplacementLineDiff,
   hasExactMatch
 } from "./exactReplacement.js";
+
+describe("a word swap names a word, not a spelling", () => {
+  it.each([
+    // The phrasing a reader actually used on 2026-10-01, which the router then
+    // paraphrased into a plural-aware model edit over every page.
+    ["Replace the word tray with saucer everywhere in the book", { from: "tray", to: "saucer", wordForms: true }],
+    ["Change the word tray to saucer everywhere.", { from: "tray", to: "saucer", wordForms: true }],
+    ['Replace the word "tray" with the word "saucer".', { from: "tray", to: "saucer", wordForms: true }],
+    ["Replace all instances of tray with saucer throughout the book", { from: "tray", to: "saucer", wordForms: true }],
+    ["replace tray with saucer", { from: "tray", to: "saucer", wordForms: true }],
+    // The canonical form the router is told to write for a plain swap.
+    ['Replace "tray" with "saucer" throughout the book.', { from: "tray", to: "saucer", wordForms: true }],
+    ["Change the name Bob to Rob", { from: "Bob", to: "Rob" }],
+    ['Replace "red rabbit" with "silver fox"', { from: "red rabbit", to: "silver fox" }]
+  ])("parses %s", (instruction, expected) => {
+    expect(exactReplacementFromInstruction(instruction)).toEqual(expected);
+  });
+
+  it.each([
+    "Replace the hero Rabbit with Fox",
+    "Replace the word tray with saucer on page 3",
+    "Replace the word tray with saucer and make it warmer"
+  ])("still refuses %s", (instruction) => {
+    expect(exactReplacementFromInstruction(instruction)).toBeNull();
+  });
+
+  const tray = { from: "tray", to: "saucer", wordForms: true };
+
+  it("swaps the plural and the casings English gives the word, and nothing inside another word", () => {
+    const before =
+      "Tray first. Put a tray under it; empty both trays. An ashtray, a portrayal and a trayful stay. " +
+      "TRAYS ARE OPTIONAL. The Tray Company sells one. Use the tray's rim.";
+    expect(applyExactReplacement(before, tray)).toBe(
+      "Saucer first. Put a saucer under it; empty both saucers. An ashtray, a portrayal and a trayful stay. " +
+        "SAUCERS ARE OPTIONAL. The Tray Company sells one. Use the saucer's rim."
+    );
+    expect(countExactMatches(before, tray)).toBe(5);
+  });
+
+  it("treats a heading and a title as places a common word is capitalised", () => {
+    expect(applyExactReplacement("## Runoff Trays\n\nEmpty the tray.", tray)).toBe("## Runoff Saucers\n\nEmpty the saucer.");
+    expect(applyExactReplacement("Runoff Trays and Drainage", tray)).toBe("Runoff Saucers and Drainage");
+    expect(applyExactReplacement("- Tray: optional\n1. Tray again", tray)).toBe("- Saucer: optional\n1. Saucer again");
+  });
+
+  it("inflects regular plurals and finds pages a plural alone is on", () => {
+    const city = exactReplacementFromInstruction("Change city to town everywhere")!;
+    expect(applyExactReplacement("Two cities and one city.", city)).toBe("Two towns and one town.");
+    expect(exactReplacementSearchTerms(city)).toEqual(["city", "cities"]);
+    expect(exactReplacementSearchTerms(tray)).toEqual(["tray"]);
+    const box = exactReplacementFromInstruction("Replace box with crate")!;
+    expect(applyExactReplacement("boxes and a box", box)).toBe("crates and a crate");
+  });
+
+  it("walks once, so a replacement containing the word is not replaced again", () => {
+    const dog = exactReplacementFromInstruction('Replace "dog" with "doghouse"')!;
+    expect(applyExactReplacement("dogs and a dog", dog)).toBe("doghouses and a doghouse");
+  });
+});
+
+describe("what code can check about a replacement a model performed", () => {
+  it("reads the terms a router instruction opens with, and grants nothing for it", () => {
+    const router =
+      'Replace every occurrence of the word "tray" with "saucer" throughout the entire book, including plural forms ("trays" → "saucers"). Keep all other wording unchanged.';
+    expect(replacementTermsFromInstruction(router)).toEqual({ from: "tray", to: "saucer" });
+    expect(exactReplacementFromInstruction(router)).toBeNull();
+    expect(replacementTermsFromInstruction("Make the ending warmer.")).toBeNull();
+    expect(replacementTermsFromInstruction('Replace "he" with "she" and fix the agreement.')).toBeNull();
+  });
+
+  it("counts the word in any capitalisation and its plural, never inside another word", () => {
+    expect(termOccurrences("Tray, trays, the Tray Company, an ashtray, portrayal.", "tray")).toBe(3);
+    expect(termOccurrences("No saucer here.", "tray")).toBe(0);
+  });
+});
 
 describe("exact replacement fast-path eligibility", () => {
   it.each([
     ['Replace "Rabbit" with "Fox".', { from: "Rabbit", to: "Fox" }],
     ["Replace “Rabbit” with “Fox” throughout the whole book!", { from: "Rabbit", to: "Fox" }],
     ["Please replace every occurrence of ‘Rabbit’ with ‘Fox’, everywhere.", { from: "Rabbit", to: "Fox" }],
-    ["Change rabbit to fox globally.", { from: "rabbit", to: "fox" }],
+    ["Change rabbit to fox globally.", { from: "rabbit", to: "fox", wordForms: true }],
     ["Replace Rabbit with Fox.", { from: "Rabbit", to: "Fox" }],
     ['Replace "the  red rabbit" with "the  silver fox", please.', { from: "the  red rabbit", to: "the  silver fox" }],
     ['Replace "." with "!".', { from: ".", to: "!" }]

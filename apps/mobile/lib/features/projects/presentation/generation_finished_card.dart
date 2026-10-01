@@ -79,6 +79,7 @@ class _GenerationFinishedCardState extends State<GenerationFinishedCard> {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final reduced = AppMotion.reducedMotion(context);
+    void toggleSteps() => setState(() => _showSteps = !_showSteps);
     return Align(
       alignment: AlignmentDirectional.centerStart,
       child: ConstrainedBox(
@@ -99,8 +100,10 @@ class _GenerationFinishedCardState extends State<GenerationFinishedCard> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Semantics(
+                  container: true,
                   button: true,
                   label: 'Open ${widget.title}. ${widget.summary}',
+                  onTap: widget.onOpen,
                   child: ExcludeSemantics(
                     child: InkWell(
                       key: const ValueKey('finished-card-open'),
@@ -195,13 +198,15 @@ class _GenerationFinishedCardState extends State<GenerationFinishedCard> {
                 if (widget.steps.isNotEmpty) ...[
                   Divider(height: 1, color: colors.outlineVariant),
                   Semantics(
+                    container: true,
                     button: true,
                     expanded: _showSteps,
                     label: 'See how it was made',
+                    onTap: toggleSteps,
                     child: ExcludeSemantics(
                       child: InkWell(
                         key: const ValueKey('finished-card-history'),
-                        onTap: () => setState(() => _showSteps = !_showSteps),
+                        onTap: toggleSteps,
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(
                             minHeight: AppSizes.minimumTouchTarget,

@@ -3,7 +3,7 @@ import { createOpenBookEditOperation } from "./editOperationClaims.js";
 import { classifyEditFailure } from "@book-maker/core/editFailure";
 import { type MobileBookEditOperationRecord } from "./dto.js";
 import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord } from "./support.js";
-import { creditCostForOperation } from "@book-maker/core";
+import { planRevisionCreditCost } from "@book-maker/core";
 import { PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,
@@ -96,7 +96,7 @@ export async function queueDirectPlanRevision(options: {
     data: {
       generationJobId: queued.job.id,
       ledgerEntryId: queued.ledgerEntry?.id ?? null,
-      creditsCharged: creditCostForOperation("PLAN_REVISION")
+      creditsCharged: queued.credits
     },
     include: { generationJob: { select: { id: true, status: true } } }
   });
@@ -138,8 +138,20 @@ export async function queueChargedPlanRevision(options: {
   operationId?: string | undefined;
   /** Plan question prompts this revision answers; the reviser won't re-ask them. */
   respondedQuestionPrompts?: string[] | undefined;
-}): Promise<{ job: Awaited<ReturnType<typeof enqueueGenerationJob>>; ledgerEntry: CreditLedgerEntryRecord | null }> {
-  const amountCredits = creditCostForOperation("PLAN_REVISION");
+}): Promise<{
+  job: Awaited<ReturnType<typeof enqueueGenerationJob>>;
+  ledgerEntry: CreditLedgerEntryRecord | null;
+  /** What this revision was charged, at the book's own tier. */
+  credits: number;
+}> {
+  // The book's tier, read off its row: a revision runs the planner the first
+  // plan ran, so it is priced on the same ladder (`planRevisionCreditCost`).
+  const project = await prisma.project.findUnique({
+    where: { id: options.projectId },
+    select: { mediaSettings: true }
+  });
+  const quote = planRevisionCreditCost(project?.mediaSettings);
+  const amountCredits = quote.credits;
   const started = await startGenerationAttempt({
     userId: options.userId,
     commandKey: options.operationId
@@ -161,6 +173,8 @@ export async function queueChargedPlanRevision(options: {
     description: "Mobile plan revision",
     metadata: {
       planId: options.planId,
+      modelTier: quote.modelTier,
+      pricingKey: quote.pricingKey,
       ...(options.operationId ? { operationId: options.operationId } : {})
     },
     create: async (tx, { attemptId, ledgerEntry }) => {
@@ -230,6 +244,7 @@ export async function queueChargedPlanRevision(options: {
     : null;
   return {
     job,
-    ledgerEntry
+    ledgerEntry,
+    credits: amountCredits
   };
 }

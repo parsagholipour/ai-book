@@ -322,8 +322,10 @@ class StudioPictureSlot extends StatelessWidget {
     final colors = theme.colorScheme;
     final radius = BorderRadius.circular(AppRadii.control);
     return Semantics(
+      container: true,
       button: true,
       label: 'Add a picture',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
           color: colors.surfaceContainerLow,

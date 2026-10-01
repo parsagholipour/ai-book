@@ -16,6 +16,7 @@ import {
   laneForLegacyIntent,
   laneFromBookTypeChoice,
   laneFromProductBookType,
+  laneLabel,
   looksFactualOrCurrent,
   mainCharacterFor,
   nextStepFallback,
@@ -65,8 +66,16 @@ export async function adviseMobileBook(
     // The title is pinned to the base's: recipe.title means "stated by the
     // user", and the model's own title ideas travel as titleSuggestions. An
     // invented recipe title would show in the app as the book's working name.
+    // The lane is pinned the same way: under Auto it is the shape the chat
+    // settled on (`settledAutoLane`), which only code may write.
+    const { autoLane: _modelAutoLane, ...modelRecipe } = cleaned.recipe ?? {};
     const recipe = cleaned.recipe
-      ? mobileBookRecipeSchema.parse({ ...cleaned.recipe, title: base.recipe.title, lane: base.detectedLane })
+      ? mobileBookRecipeSchema.parse({
+          ...modelRecipe,
+          title: base.recipe.title,
+          lane: base.recipe.lane,
+          ...(base.recipe.autoLane ? { autoLane: base.recipe.autoLane } : {})
+        })
       : base.recipe;
     return mobileBookAdvisorResponseSchema.parse({
       ...base,
@@ -85,13 +94,19 @@ export async function adviseMobileBook(
 export function deterministicAdvisor(payload: MobileCreationDraftPayload): MobileBookAdvisorResponse {
   const normalized = normalizePayload(payload);
   const detectedLane = laneForPayload(normalized);
-  const recipe = completeRecipe(normalized, detectedLane);
+  // `detectedLane` stays "auto" for a book left on Auto — it is what the
+  // build's stale-lane recompute and the app's header read — while the recipe,
+  // the recommendation and the preview follow the shape the chat settled on.
+  // The recipe lane is what reaches the project: the toolkit path
+  // (`toolkitBookKind`) and the KIDS routing both read it back.
+  const recipeLane = detectedLane === "auto" ? settledAutoLane(normalized) ?? "auto" : detectedLane;
+  const recipe = completeRecipe(normalized, recipeLane);
   const recommendation = resolveCreationPresets(
     normalized.selectedPresets,
     detectedLane,
-    recommendedPresets(detectedLane, normalized)
+    recommendedPresets(recipeLane, normalized)
   );
-  const warnings = warningMessages(normalized, detectedLane);
+  const warnings = warningMessages(normalized, recipeLane);
   const followUpSuggestions = followUpSuggestionsFor(recipe);
   const briefScore = recipeStrengthScore(normalized, recipe, warnings);
   const bookShapePreview = shapePreview(recipe, recommendation);
@@ -108,8 +123,20 @@ export function deterministicAdvisor(payload: MobileCreationDraftPayload): Mobil
     // has nothing but the user's own words to offer, and mangling those into
     // pseudo-titles ("Make A About Flies And Their") is worse than no chips.
     titleSuggestions: [],
-    rationale: rationaleFor(detectedLane)
+    rationale: rationaleFor(detectedLane, recipeLane)
   };
+}
+
+/**
+ * The shape the creation chat settled on while the book type is Auto, or
+ * undefined while it is still open. Read only from `recipe.autoLane`, which
+ * code writes from the interviewer's answer and only under Auto — never from
+ * `detectedLane` or `recipe.lane`, which can still hold an explicit choice the
+ * reader has since switched away from.
+ */
+export function settledAutoLane(payload: MobileCreationDraftPayload): MobileCreationLane | undefined {
+  const lane = payload.recipe?.autoLane;
+  return lane && lane !== "auto" ? lane : undefined;
 }
 
 export function explicitTargetPagesForMobilePayload(payload: MobileCreationDraftPayload): number | undefined {
@@ -229,8 +256,12 @@ export function completeRecipe(payload: MobileCreationDraftPayload, lane: Mobile
   const title = clampBriefText(details.title || payload.brief?.title || "", 160);
   const tone = details.tone || existing?.tone || payload.brief?.tone || toneFallback(lane);
   const promise = clampBriefText(existing?.promise || payload.brief?.desiredOutcome || promiseFallback(lane), 500);
+  // Carried only while the book is still on Auto; an explicit choice owns the
+  // lane outright and a settled shape from before it is history.
+  const autoLane = laneForPayload(payload) === "auto" ? settledAutoLane(payload) : undefined;
   return mobileBookRecipeSchema.parse({
     lane,
+    ...(autoLane ? { autoLane } : {}),
     title,
     artifact: existing?.artifact || artifactForLane(lane),
     audience,
@@ -422,7 +453,11 @@ function shapePreview(recipe: MobileBookRecipe, recommendation: MobileCreationPr
   return ["Clear reader promise", "Problem framing and quick diagnostic", "Practical framework with examples", "Checklist and call-to-action"];
 }
 
-function rationaleFor(lane: MobileCreationLane): string {
+function rationaleFor(detectedLane: MobileCreationLane, recipeLane: MobileCreationLane = detectedLane): string {
+  if (detectedLane === "auto" && recipeLane !== "auto") {
+    return `Auto is selected, and the chat settled on a ${laneLabel(recipeLane).toLowerCase()}.`;
+  }
+  const lane = recipeLane;
   if (lane === "auto") {
     return "Auto is selected, so the planner will choose the best book shape from the full chat history.";
   }

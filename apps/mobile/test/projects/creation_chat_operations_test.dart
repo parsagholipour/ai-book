@@ -310,7 +310,7 @@ Future<void> _expectRebuildThenOpenBook(
     reason: 'the previous PDF is still on disk until the compile finishes',
   );
   expect(bubbleText('See changes'), findsOneWidget);
-  expect(find.text('Regenerating your book…'), findsOneWidget);
+  expect(find.text('Updating your book…'), findsOneWidget);
   if (expectUndo) {
     expect(find.widgetWithText(TextButton, 'Undo'), findsOneWidget);
     expect(
@@ -334,7 +334,7 @@ Future<void> _expectRebuildThenOpenBook(
 
   expect(bubbleText('Open book'), findsOneWidget);
   expect(bubbleText('See changes'), findsOneWidget);
-  expect(find.text('Regenerating your book…'), findsNothing);
+  expect(find.text('Updating your book…'), findsNothing);
   if (expectUndo) {
     expect(
       tester
@@ -816,7 +816,7 @@ void main() {
             'the compile already finished before the first status tick; '
             'keeping the handoff would leave Regenerating up',
       );
-      expect(find.text('Regenerating your book…'), findsNothing);
+      expect(find.text('Updating your book…'), findsNothing);
       expect(bubbleText('Open book'), findsOneWidget);
       expect(bubbleText('See changes'), findsOneWidget);
       expect(

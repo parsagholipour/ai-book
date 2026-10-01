@@ -56,12 +56,29 @@ export type MobileProjectCreateRequestDto = {
   advisor?: MobileBookAdvisorResponse | undefined;
 };
 
+export type MobileBookShape = "children_story" | "story" | "guide" | "workbook" | "book";
+
 export type MobileProjectSummaryDto = {
   id: string;
   title: string;
   subtitle: string | null;
   authorName: string | null;
   bookType: MobileBookType | "custom";
+  /**
+   * The type the reader chose, which `bookType` cannot always say: a
+   * children's story is stored as `short_story` but written as a KIDS book,
+   * which illustrates every page up to its cap — so the app's approval quote
+   * needs this to count its pictures the way the charge does. Null for a book
+   * the app did not create.
+   */
+  bookTypeChoice: MobileBookTypeChoice | null;
+  /**
+   * What the book was filed as, whatever language it is written in: an Auto
+   * book keeps `bookType: "custom"`, so the app could only guess its shape from
+   * English words in the plan — and a Persian story was offered "Add more
+   * examples". Read from the category generation actually used.
+   */
+  bookShape: MobileBookShape;
   lengthPreset: MobileLengthPreset | "custom";
   /**
    * Also the tier the book is priced at — the app's credit mirror reads it as
@@ -432,6 +449,11 @@ export type MobileEditDiffBlockDto = {
 
 export type MobileEditPageChangeDto = {
   pageIndex: number;
+  /**
+   * The number printed on the PDF for this page, when the book has a measured
+   * page map. `pageIndex` stays the model page the screen navigates by.
+   */
+  readerPage?: number;
   titleBefore: string;
   titleAfter: string;
   titleChanged: boolean;
@@ -637,6 +659,15 @@ export type MobileExportAvailabilityDto = {
   requiresSubscription: boolean;
   creditsRequired: number;
   downloadUrl: string;
+  /**
+   * The PDF the in-app reader opens, served without the export unlock — only
+   * the PDF has one. Reading a book in the app is free; the unlock is for
+   * taking the file out of it (open in another app, share, save), which goes
+   * through `downloadUrl`. Before this the reader downloaded through
+   * `downloadUrl` too, so the first open of a book whose unlock was not part
+   * of a generation — a Studio book, an import — spent 150 credits silently.
+   */
+  readUrl?: string;
   filename: string;
   contentType: string;
   /** Project content revision this export set was reported against. */

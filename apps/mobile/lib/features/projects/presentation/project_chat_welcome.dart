@@ -182,9 +182,11 @@ class _SuggestionTile extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Semantics(
+      container: true,
       button: true,
       label: '${suggestion.title}. ${suggestion.example}',
       hint: 'Adds this to your message',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
           color: colors.surfaceContainerLowest,

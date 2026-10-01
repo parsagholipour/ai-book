@@ -73,6 +73,23 @@ describe("embedFontFaceCss", () => {
     }
   });
 
+  it("declares one weight range for every face of a family", async () => {
+    // Chrome picks a family's faces by their exact descriptors before it reads
+    // unicode-range, so Source Serif's 200–900 beside a script font's 100–900
+    // left every "." in a Persian book to a system serif.
+    for (const language of ["fa", "ar", "he", "hi", "th"]) {
+      const css = await cssFor(language, "Sample سلام שלום नमस्ते สวัสดี. «» 1");
+      for (const family of ["SourceSerifBook", "InterBook"]) {
+        const weights = new Set(
+          faceBlocks(css)
+            .filter((block) => block.includes(`font-family: "${family}"`))
+            .map((block) => block.match(/font-weight:\s*([^;]+);/)?.[1])
+        );
+        expect(weights.size, `${language} ${family}: ${[...weights].join(" | ")}`).toBe(1);
+      }
+    }
+  });
+
   it("does not embed a CJK library for a book with no CJK", async () => {
     const latin = await cssFor("en", "Hello world");
     const chinese = await cssFor("zh", "这是一个测试");

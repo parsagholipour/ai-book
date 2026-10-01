@@ -49,9 +49,11 @@ class CharacterEditorPhoto extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Semantics(
+              container: true,
               button: true,
               enabled: !busy,
               label: hasPhoto ? 'Change photo' : 'Add a photo',
+              onTap: busy ? null : onChoose,
               child: ExcludeSemantics(
                 child: GestureDetector(
                   key: const ValueKey('character-editor-photo'),

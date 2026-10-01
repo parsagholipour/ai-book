@@ -36,12 +36,15 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
   }
 
   String? _composerLockLabel(MobileProjectStatus? liveStatus) {
-    if (_rebuildHandoff.awaiting) return 'Regenerating your book…';
+    // "Updating", not "Regenerating": nearly every lock here is an edit, an
+    // undo or a recompile of a finished book — a free one-word swap included —
+    // and none of them generates the book again.
+    if (_rebuildHandoff.awaiting) return 'Updating your book…';
     if (liveStatus == null) return null;
     return switch (liveStatus.status) {
       'planning' => 'Revising your plan…',
       'generating' => 'Generating your book…',
-      _ => 'Regenerating your book…',
+      _ => 'Updating your book…',
     };
   }
 

@@ -12,7 +12,7 @@ import {
   publishCompiledExports
 } from "../generation/exportPublication.js";
 import { resolveCompileReaderLayout } from "./compileExportLayout.js";
-import { storyPageLayoutFor } from "@book-maker/core";
+import { storyPageDesignFor, storyPageLayoutFor } from "@book-maker/core";
 import { usesShortPictureBookReview } from "../generation/shortPictureBook.js";
 import { loadPictureBookRequirementTargets, shortPictureBookChecks } from "../generation/shortPictureBookReviewCache.js";
 import { shortPictureBookReaderChapters } from "../generation/shortPictureBookExport.js";
@@ -689,6 +689,15 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     return strategy.compileMarkdownWithPageAnchors({
       plan,
       storyPageLayout: storyPageLayoutFor(input, markdownPages),
+      // The row's preference and prompt, never the plan's snapshot: changing the
+      // design is a live preference that only queues a recompile, and the API's
+      // inline rebuild resolves it from the same row.
+      storyPageDesign: storyPageDesignFor({
+        mediaSettings: project.mediaSettings,
+        category: input.category,
+        prompt: project.prompt,
+        plan
+      }),
       authorManuscript,
       category: input.category,
       language: input.language,

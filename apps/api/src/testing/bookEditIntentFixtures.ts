@@ -68,6 +68,7 @@ export type DecideArgs = {
   editTarget?: string;
   editStyle?: string;
   backMatterSources?: boolean;
+  pageDesign?: string | null;
 };
 
 export type FakeRouterModel = TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> };

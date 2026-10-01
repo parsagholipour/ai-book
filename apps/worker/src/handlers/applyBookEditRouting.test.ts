@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const project = { update: vi.fn(), updateMany: vi.fn() };
-  const page = { findMany: vi.fn(), update: vi.fn() };
+  const page = { findMany: vi.fn(), update: vi.fn(), count: vi.fn() };
   const pageEditSnapshot = { findMany: vi.fn(), createManyAndReturn: vi.fn(), update: vi.fn(), deleteMany: vi.fn() };
   const continuityNote = { createMany: vi.fn() };
   return {

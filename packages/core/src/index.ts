@@ -165,6 +165,7 @@ export {
   studioPictureStoryPageLayout,
   type StoryPagePlan
 } from "./generation/pdfStoryPages.js";
+export * from "./generation/storyPageDesigns.js";
 export * from "./generation/pdfCss.js";
 export * from "./generation/pdfDocument.js";
 export * from "./generation/pdfPageAnchors.js";

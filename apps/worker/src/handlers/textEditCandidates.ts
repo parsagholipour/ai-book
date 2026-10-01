@@ -1,5 +1,8 @@
 import {
+  exactReplacementFromInstruction,
   exactReplacementInstructionMatches,
+  replacementTermsFromInstruction,
+  termOccurrences,
   hasExactMatch,
   reviewAppliedBookEdit,
   type BookGenerationStrategy,
@@ -82,6 +85,11 @@ export async function draftTextEditCandidates(options: {
   operationExactReplacement?: ExactReplacement | null | undefined;
   mode?: "exact" | undefined;
   /**
+   * Pages in the whole book, so a code-verified fact can say "every page of
+   * the book" when this edit covers all of them, and no more when it does not.
+   */
+  bookPageCount?: number | undefined;
+  /**
    * Whether a model-backed page is first offered to the surgical patch tier.
    * On by default; a chapter regeneration turns it off, because its instruction
    * is a whole-page rewrite by definition and the tier would only decline.
@@ -111,7 +119,7 @@ export async function draftTextEditCandidates(options: {
     options.exactReplacement &&
     operationCandidateAgrees &&
     exactReplacementInstructionMatches(options.editInstruction, options.exactReplacement)
-      ? options.exactReplacement
+      ? withInstructionWordForms(options.exactReplacement, options.editInstruction)
       : null;
   if (exactMode && !exactPatch) {
     // The re-derivation refused terms the reader approved at zero credits, and
@@ -317,6 +325,16 @@ export async function draftTextEditCandidates(options: {
   };
 }
 
+/**
+ * The queue payload's schema carries only `from`, `to` and `preserveCase`, so
+ * `wordForms` — which the API's preview applied — is re-derived from the
+ * durable instruction, the same parse that decided the terms. Without it the
+ * reader approved "trays → saucers" on the card and got every "trays" left.
+ */
+function withInstructionWordForms(replacement: ExactReplacement, editInstruction: string): ExactReplacement {
+  return exactReplacementFromInstruction(editInstruction)?.wordForms ? { ...replacement, wordForms: true } : replacement;
+}
+
 export type StoredExactReplacementCandidate = {
   present: boolean;
   replacement: ExactReplacement | null;
@@ -379,8 +397,39 @@ async function reviewCandidates(
       summary: updated.summary
     })),
     textModel: options.providers.text,
-    ...(exactPatch ? { exactReplacement: exactPatch } : {})
+    ...(exactPatch ? { exactReplacement: exactPatch } : {}),
+    codeVerifiedFacts: replacementFacts(options, candidates)
   });
+}
+
+/**
+ * What code can say about a replacement the model performed: whether the old
+ * term is anywhere in the edited text of every page the edit covers — changed
+ * pages as drafted, and the pages the patch tier left alone as stored. The
+ * reviewer sees only the changed pages, so without this "every occurrence
+ * throughout the book" is a claim it can never confirm, and a correct swap was
+ * refused and refunded three times over it. A term still present is reported
+ * just as plainly: that is real evidence the edit is incomplete.
+ */
+export function replacementFacts(
+  options: Pick<Parameters<typeof draftTextEditCandidates>[0], "editInstruction" | "pages" | "bookPageCount">,
+  candidates: Map<number, TextEditCandidate>
+): string[] {
+  const terms = replacementTermsFromInstruction(options.editInstruction);
+  if (!terms) return [];
+  const remaining = options.pages
+    .filter((page) => {
+      const updated = candidates.get(page.index)?.updated;
+      return termOccurrences(`${updated?.title ?? page.title}\n\n${updated?.markdown ?? page.markdown}`, terms.from) > 0;
+    })
+    .map((page) => page.index);
+  const scope =
+    options.bookPageCount !== undefined && options.pages.length >= options.bookPageCount
+      ? `every page of the book (${options.pages.length})`
+      : `all ${options.pages.length} pages this edit covers`;
+  return remaining.length === 0
+    ? [`Code searched the edited title and text of ${scope}, including pages the edit left unchanged: no whole-word “${terms.from}” remains, in any capitalisation or as its regular plural.`]
+    : [`Code found whole-word “${terms.from}” still in the edited text of page${remaining.length === 1 ? "" : "s"} ${remaining.join(", ")}.`];
 }
 
 function priorDrafts(candidates: Map<number, TextEditCandidate>): PriorPageContext[] {

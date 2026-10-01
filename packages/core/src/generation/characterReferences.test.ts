@@ -3,6 +3,10 @@ import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import {
   buildCharacterReferencePrompt,
+  characterReferenceCast,
+  COVER_CAST_MAX,
+  coverCastCharacters,
+  coverPortraitCharacters,
   selectCharacterReferenceAssets,
   shouldGenerateCharacterReferences,
   shouldUseCharacterReferenceImages
@@ -169,5 +173,62 @@ describe("character reference helpers", () => {
     });
 
     expect(selected.map((asset) => asset.path)).toEqual(["/tmp/plan-3-nora.png"]);
+  });
+});
+
+describe("the cast a book draws reference sheets for", () => {
+  // "Tiko and the Quiet Sea" (2026-10-01): AI cover on, interior illustrations
+  // off, four characters, a cover concept showing one. Every character got a
+  // sheet and three were attached to the cover: five image calls for a cover.
+  const coverOnly: CreateProjectInput = {
+    ...input,
+    category: "STORY",
+    mediaSettings: { ...input.mediaSettings, fullIllustrations: false, illustrationCadence: "manual", includeCover: true, coverArtSource: "ai" }
+  };
+  const character = (name: string) => ({ name, role: "r", description: "d", traits: [], visualRules: [] });
+  const tikoPlan = (coverPrompt: string): BookPlan => ({
+    ...plan,
+    illustrationPlan: { ...plan.illustrationPlan, coverPrompt },
+    characters: [character("Tiko"), character("Pip"), character("Nella"), character("Gull")]
+  });
+  const tiko = tikoPlan("A gentle cover showing Tiko, a small moss-green tortoise, looking at the calm sea at dusk.");
+  const names = (characters: Array<{ name: string }>) => characters.map((entry) => entry.name);
+
+  it("draws only who a cover-only book's cover shows", () => {
+    expect(names(characterReferenceCast(coverOnly, tiko))).toEqual(["Tiko"]);
+    expect(names(coverCastCharacters(coverOnly, tiko))).toEqual(["Tiko"]);
+  });
+
+  it("still draws the whole cast when pages are illustrated", () => {
+    const illustrated = { ...coverOnly, mediaSettings: { ...coverOnly.mediaSettings, fullIllustrations: true } };
+    expect(names(characterReferenceCast(illustrated, tiko))).toEqual(["Tiko", "Pip", "Nella", "Gull"]);
+  });
+
+  it("draws nobody for a cover that shows nobody, or for a designed cover", () => {
+    expect(characterReferenceCast(coverOnly, tikoPlan("A quiet shoreline at dusk, waves and a blue pebble."))).toEqual([]);
+    const designed = { ...coverOnly, mediaSettings: { ...coverOnly.mediaSettings, includeCover: false, coverArtSource: "design" as const } };
+    expect(characterReferenceCast(designed, tiko)).toEqual([]);
+  });
+
+  it("holds the cover cast to a constant every caller agrees on", () => {
+    const crowded = tikoPlan("Tiko, Pip, Nella and Gull together on the sand.");
+    expect(names(characterReferenceCast(coverOnly, crowded))).toHaveLength(COVER_CAST_MAX);
+    expect(names(characterReferenceCast(coverOnly, crowded))).toEqual(["Tiko", "Pip", "Nella"]);
+  });
+
+  it("draws no sheet for a cover-cast character the reader saved with artwork", () => {
+    const withPortrait: CreateProjectInput = {
+      ...coverOnly,
+      mediaSettings: {
+        ...coverOnly.mediaSettings,
+        mobile: { characters: [{ id: "lib-tiko", name: "Tiko", description: "A tortoise", fields: [], portraitFile: "user-1/tiko.png" }] }
+      } as CreateProjectInput["mediaSettings"]
+    };
+    expect(characterReferenceCast(withPortrait, tiko)).toEqual([]);
+    expect(coverPortraitCharacters(withPortrait, tiko).map(({ snapshot }) => snapshot.id)).toEqual(["lib-tiko"]);
+    // An illustrated book seeds that character's sheet from the portrait instead.
+    const illustrated = { ...withPortrait, mediaSettings: { ...withPortrait.mediaSettings, fullIllustrations: true } };
+    expect(coverPortraitCharacters(illustrated, tiko)).toEqual([]);
+    expect(names(characterReferenceCast(illustrated, tiko))).toContain("Tiko");
   });
 });

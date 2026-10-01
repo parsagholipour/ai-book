@@ -57,6 +57,8 @@ class MobileProjectSummary {
     this.revisedFrom,
     this.coverImage,
     this.manuscript,
+    this.bookTypeChoice,
+    this.bookShape = 'book',
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
        illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
        coverArtSource =
@@ -84,6 +86,17 @@ class MobileProjectSummary {
   /// names the book it was rebuilt from.
   final MobileProjectRevisionOrigin? revisedFrom;
   final String bookType;
+
+  /// The type the reader chose. A children's story is stored as
+  /// `short_story` but written as a KIDS book, which the quote counts
+  /// differently; null for a book the app did not create.
+  final String? bookTypeChoice;
+
+  /// What the server filed the book as — `children_story`, `story`, `guide`,
+  /// `workbook` or `book` — read from the category generation used, so it
+  /// holds whatever language the book is in. An Auto book's [bookType] stays
+  /// `custom`, which says nothing about its shape.
+  final String bookShape;
   final String lengthPreset;
   final String qualityPreset;
 
@@ -121,6 +134,8 @@ class MobileProjectSummary {
       subtitle: json['subtitle'] as String?,
       authorName: json['authorName'] as String?,
       bookType: json['bookType'] as String,
+      bookTypeChoice: json['bookTypeChoice'] as String?,
+      bookShape: json['bookShape'] as String? ?? 'book',
       lengthPreset: json['lengthPreset'] as String,
       qualityPreset: json['qualityPreset'] as String,
       coverEnabled: json['coverEnabled'] as bool?,
@@ -178,7 +193,12 @@ class MobileProjectSummary {
       'lead_magnet' => 'Lead magnet',
       'workbook' => 'Workbook',
       'short_story' => 'Short story',
-      _ => 'Book',
+      // An Auto book: say what the chat settled on rather than "Book".
+      _ => switch (bookShape) {
+        'children_story' => 'Children’s book',
+        'story' => 'Short story',
+        _ => 'Book',
+      },
     };
   }
 
@@ -250,6 +270,8 @@ class MobileProjectDetail extends MobileProjectSummary {
     super.revisedFrom,
     super.coverImage,
     super.manuscript,
+    super.bookTypeChoice,
+    super.bookShape,
     this.plan,
     this.quality = const MobileProjectQuality.pending(),
   });
@@ -270,6 +292,8 @@ class MobileProjectDetail extends MobileProjectSummary {
       subtitle: json['subtitle'] as String?,
       authorName: json['authorName'] as String?,
       bookType: json['bookType'] as String,
+      bookTypeChoice: json['bookTypeChoice'] as String?,
+      bookShape: json['bookShape'] as String? ?? 'book',
       lengthPreset: json['lengthPreset'] as String,
       qualityPreset: json['qualityPreset'] as String,
       coverEnabled: json['coverEnabled'] as bool?,
@@ -720,6 +744,7 @@ int estimateApprovalCredits(
 ) {
   return estimateProjectCredits(
     bookType: project.bookType,
+    bookTypeChoice: project.bookTypeChoice,
     qualityPreset: project.qualityPreset,
     coverEnabled: project.coverEnabled,
     illustrationsEnabled: project.illustrationsEnabled,
@@ -794,11 +819,28 @@ int estimatePlanGenerationCredits({
   });
 }
 
+/// What one revision of the plan costs, at the book's effort level.
+///
+/// Mirrors `planRevisionCreditCost` in core: a revision runs the planner the
+/// first plan ran, so it climbs the same ladder.
+int estimatePlanRevisionCredits({
+  required String qualityPreset,
+  required Map<String, dynamic> creditCosts,
+}) {
+  return tierCreditRate(creditCosts, 'planRevision', qualityPreset, const {
+    'fast': 20,
+    'balanced': 40,
+    'premium': 80,
+    'ultra': 120,
+  });
+}
+
 /// Book type the quote uses.
 ///
-/// Auto is stored and charged as `custom` (`buildMobileCreateProjectInput`),
-/// so quoting the advisor's recommended concrete type would price a 5-page
-/// auto book as a lead magnet.
+/// Auto is stored as `custom` and its illustrations are capped as `custom`
+/// (`interiorIllustrationLaunchCap`), whatever category the chat's lane filed
+/// it under — so quoting the advisor's recommended concrete type would price
+/// a 5-page Auto book as a lead magnet.
 String quotingBookType(String bookType, [String? bookTypeChoice]) {
   return bookTypeChoice == 'auto' ? 'custom' : bookType;
 }
@@ -808,8 +850,9 @@ String quotingBookType(String bookType, [String? bookTypeChoice]) {
 /// Mirrors `estimateInteriorImageCount` in `packages/core/src/billing.ts`, which
 /// is what the server actually charges against, so the two must move together.
 /// Counts the same pages generation will illustrate (page 1, then every 8th;
-/// workbooks every 4th), then the launch cap. The cover is excluded here
-/// because [estimateProjectCredits] prices it separately as exactly one
+/// workbooks every 4th; a children's story, which is a KIDS book, every page),
+/// then the launch cap. The cover is excluded here because
+/// [estimateProjectCredits] prices it separately as exactly one
 /// image-generation unit.
 int estimatedInteriorImageCount({
   required String bookType,
@@ -832,7 +875,7 @@ int estimatedInteriorImageCount({
   final step = type == 'workbook' ? 4 : 8;
   var slots = 0;
   for (var i = 1; i <= targetPages; i++) {
-    if (i == 1 || i % step == 0) {
+    if (bookTypeChoice == 'children_story' || i == 1 || i % step == 0) {
       slots++;
     }
   }

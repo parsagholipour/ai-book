@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../../projects/domain/chat_text_direction.dart';
-import '../domain/manuscript_formatting.dart';
 import 'chapter_conflict_card.dart';
 import 'studio_ai_picture_card.dart';
 import 'studio_ai_tools_sheet.dart' show StudioSelectionTool;
@@ -447,10 +446,7 @@ class _StudioTextFieldState extends State<StudioTextField> {
       textDirection: direction,
       // Enter first (it makes a paragraph), then the marks of bold and italic
       // are kept whole through whatever Enter or a key press did to them.
-      inputFormatters: [
-        const ManuscriptEnterFormatter(),
-        widget.entry.controller.emphasisFormatter,
-      ],
+      inputFormatters: widget.entry.controller.inputFormatters,
       style: widget.style,
       // A strut no taller than a blank line: each line takes its height from
       // its own spans, which is what lets a blank line (a paragraph break)

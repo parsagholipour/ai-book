@@ -374,3 +374,22 @@ describe("currentActionForEditOperation for skipped text-edit pages", () => {
   });
 });
 
+
+describe("currentActionForEditOperation for an undone edit", () => {
+  it("says the edit was undone rather than applied, beside the Redo it now offers", () => {
+    const swap: MobileBookEditOperationRecord = {
+      id: "op-3",
+      projectId: "project-1",
+      kind: "LOCAL_PATCH",
+      status: "APPLIED",
+      request: "Replace the word sandals with slippers",
+      classifier: { undoneAt: "2026-10-01T16:09:00.000Z" },
+      affectedPageIndexes: [1, 3],
+      creditsCharged: 0,
+      createdAt: new Date("2026-10-01T16:02:00.000Z"),
+      appliedAt: new Date("2026-10-01T16:02:30.000Z")
+    };
+    expect(currentActionForEditOperation(swap, MODEL_PAGE_NUMBERING)).toBe("Edit undone.");
+    expect(currentActionForEditOperation({ ...swap, classifier: {} }, MODEL_PAGE_NUMBERING)).toBe("Edit applied.");
+  });
+});

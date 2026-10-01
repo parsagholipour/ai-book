@@ -168,6 +168,35 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('typing without an @ never fetches the library', (tester) async {
+    // Every keystroke resolves mentions; a bare read of the autoDispose
+    // library used to fetch it each time — one request per character typed.
+    final creation = MentionRecordingRepository();
+    final characters = FakeCharactersRepository([
+      libraryCharacter(id: 'lib-luna', name: 'Luna'),
+    ]);
+    await tester.pumpWidget(
+      mentionApp(creation: creation, characters: characters),
+    );
+    await tester.pumpAndSettle();
+
+    final field = find.byType(TextField).first;
+    for (final text in ['A', 'A b', 'A book', 'A book about Luna']) {
+      await tester.enterText(field, text);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(characters.listCalls, 0);
+
+    await tester.enterText(field, 'A book about @Lu');
+    await tester.pumpAndSettle();
+    await tester.enterText(field, 'A book about @Luna');
+    await tester.pumpAndSettle();
+    expect(characters.listCalls, 1);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('a name that is only part of a longer word is not a mention', (
     tester,
   ) async {

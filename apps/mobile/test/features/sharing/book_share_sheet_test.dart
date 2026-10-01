@@ -128,7 +128,7 @@ void main() {
     expect(find.text('Share preview'), findsOneWidget);
     expect(find.textContaining('Previews are free'), findsOneWidget);
     // The cap is half of 24; the first preview offers ten of them.
-    expect(find.text('10 of 24 pages'), findsOneWidget);
+    expect(find.text('10 of 24 printed pages'), findsOneWidget);
     expect(find.text(BookShareForm.rightsLabel), findsOneWidget);
     expect(find.text(BookShareForm.likenessLabel), findsNothing);
     expect(find.text('0/500'), findsOneWidget);
@@ -145,7 +145,7 @@ void main() {
       await tester.pump();
     }
     // Twelve is the cap: the third tap is refused.
-    expect(find.text('12 of 24 pages'), findsOneWidget);
+    expect(find.text('12 of 24 printed pages'), findsOneWidget);
 
     await tapText(tester, BookShareForm.rightsLabel);
     repo.saveGate = Completer<void>();
@@ -169,7 +169,7 @@ void main() {
     expect(request.acceptExportUnlock, isFalse);
     expect(request.toJson()['caption'], isNull);
 
-    expect(find.text('Shared · Preview 12 of 24'), findsOneWidget);
+    expect(find.text('Shared · Preview 12 of 24 printed pages'), findsOneWidget);
     // A new link goes straight to the system share sheet.
     expect(sheet.shared, [shareUrl]);
   });
@@ -201,7 +201,7 @@ void main() {
     );
     await _Sheet(repo).open(tester);
 
-    expect(find.text('Shared · Preview 6 of 24'), findsOneWidget);
+    expect(find.text('Shared · Preview 6 of 24 printed pages'), findsOneWidget);
     expect(find.text(shareUrl), findsOneWidget);
     expect(find.text('3 views · shown without your name'), findsOneWidget);
     expect(find.text('For night readers.'), findsOneWidget);
@@ -223,7 +223,7 @@ void main() {
     expect(repo.stops, 1);
     expect(find.text('Sharing stopped. The link no longer works.'), findsOne);
     // The old settings are offered back, ready to share again.
-    expect(find.text('6 of 24 pages'), findsOneWidget);
+    expect(find.text('6 of 24 printed pages'), findsOneWidget);
     expect(find.text('Share preview'), findsOneWidget);
   });
 
@@ -240,11 +240,11 @@ void main() {
     expect(find.text(BookShareForm.rightsLabel), findsNothing);
     await tester.tap(find.byTooltip('Fewer pages'));
     await tester.pump();
-    expect(find.text('5 of 24 pages'), findsOneWidget);
+    expect(find.text('5 of 24 printed pages'), findsOneWidget);
 
     await tapText(tester, 'Save changes');
     expect(repo.saves.single.previewPages, 5);
-    expect(find.text('Shared · Preview 5 of 24'), findsOneWidget);
+    expect(find.text('Shared · Preview 5 of 24 printed pages'), findsOneWidget);
     // Only a new link opens the system share sheet.
     expect(sheet.shared, isEmpty);
   });
@@ -477,7 +477,7 @@ void main() {
     await tapText(tester, 'Save changes');
     expect(repo.saves.single.likenessConfirmed, isTrue);
     expect(repo.saves.single.rightsConfirmed, isFalse);
-    expect(find.text('Shared · Preview 6 of 24'), findsOneWidget);
+    expect(find.text('Shared · Preview 6 of 24 printed pages'), findsOneWidget);
   });
 
   testWidgets('editing a live share with the likeness on record asks for '
@@ -496,7 +496,7 @@ void main() {
 
     await tapText(tester, 'Save changes');
     expect(repo.saves.single.likenessConfirmed, isFalse);
-    expect(find.text('Shared · Preview 6 of 24'), findsOneWidget);
+    expect(find.text('Shared · Preview 6 of 24 printed pages'), findsOneWidget);
   });
 
   testWidgets('a likeness the server says is missing is asked for after all', (
@@ -525,7 +525,7 @@ void main() {
     await tapText(tester, BookShareForm.likenessLabel);
     await tapText(tester, 'Save changes');
     expect(repo.saves.last.likenessConfirmed, isTrue);
-    expect(find.text('Shared · Preview 6 of 24'), findsOneWidget);
+    expect(find.text('Shared · Preview 6 of 24 printed pages'), findsOneWidget);
   });
 
   testWidgets('a book that is not finished explains why it cannot be shared', (

@@ -11,6 +11,7 @@ import {
   serializeProjectSummary as serializeProjectSummaryFromFacade
 } from "./projectSerializers.js";
 import {
+  bookShapeForCategory,
   projectSourceFromMediaSettings,
   serializeProjectDetail,
   serializeProjectSummary
@@ -67,7 +68,7 @@ describe("projectSourceFromMediaSettings", () => {
 
 describe("summary/detail serializer parity", () => {
   const summaryKeys = [
-    "authorName", "bookType", "coverArtSource", "coverEnabled", "coverImage", "createdAt", "currentAction", "exports",
+    "authorName", "bookShape", "bookType", "bookTypeChoice", "coverArtSource", "coverEnabled", "coverImage", "createdAt", "currentAction", "exports",
     "hasPlan", "id", "illustrationsEnabled", "imageCount", "imagesEnabled", "lengthPreset", "manuscript", "pageCount", "progressPercent",
     "promptPreview", "qualityPreset", "revisedFrom", "source", "status", "statusLabel", "subtitle", "targetPages",
     "title", "updatedAt"
@@ -170,5 +171,17 @@ describe("summary/detail serializer parity", () => {
     expect(mockPrisma.generationJob.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ ownsQualityVerdict: true }) })
     );
+  });
+});
+
+describe("bookShapeForCategory", () => {
+  // An Auto book keeps bookType "custom"; the category is what generation used,
+  // and it reads the same whatever language the book is written in.
+  it("names the shape generation filed the book under", () => {
+    expect(bookShapeForCategory("KIDS", "Picture Book")).toBe("children_story");
+    expect(bookShapeForCategory("STORY", "Short Story")).toBe("story");
+    expect(bookShapeForCategory("EDUCATION", null)).toBe("workbook");
+    expect(bookShapeForCategory("BUSINESS", null)).toBe("guide");
+    expect(bookShapeForCategory("CUSTOM", null)).toBe("book");
   });
 });

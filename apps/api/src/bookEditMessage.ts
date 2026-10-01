@@ -1,5 +1,6 @@
 import {
   BOOK_PAGE_WORD_PATTERN,
+  exactReplacementFromInstruction,
   explicitTargetPagesFromText,
   LANGUAGE_CLAUSE_END_GUARD,
   LANGUAGE_NAME_CODES,
@@ -791,6 +792,12 @@ export function quotedTexts(message: string): string[] {
 }
 
 export function replacementTermsFromMessage(message: string): BookEditReplacement | null {
+  // The strict parse first: it knows "the word tray" names "tray", where the
+  // loose pattern below searched the book for "word tray".
+  const exact = exactReplacementFromInstruction(message);
+  if (exact) {
+    return { from: exact.from, to: exact.to };
+  }
   const quotes = quotedTexts(message);
   if (quotes.length >= 2) {
     return cleanReplacement({ from: quotes[0]!, to: quotes[1]! });

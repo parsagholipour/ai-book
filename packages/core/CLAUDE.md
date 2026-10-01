@@ -177,8 +177,8 @@ arrive with one.
 
 - **A price key with no tier suffix is the *balanced* rate.** The quality preset a reader picks in
   the app's **Effort** section (`fast` / `balanced` / `premium` / `ultra`) routes to genuinely
-  different models, so six rates carry `Fast` / `Premium` / `Ultra` twins beside them —
-  `planGeneration`, `fullBookBase`, `fullBookPerPage`, `imageGeneration`,
+  different models, so seven rates carry `Fast` / `Premium` / `Ultra` twins beside them —
+  `planGeneration`, `planRevision`, `fullBookBase`, `fullBookPerPage`, `imageGeneration`,
   `pageRegenerationPerPage`, `bookTextEditPerPage` (`TIER_PRICED_KEYS`). Read them **only**
   through `tierPrice(pricing, key, tier)`, and name the key to charge with `tierPriceKey` — the
   dashboard's revenue projection buckets by the same function, so a book cannot be quoted against
@@ -189,7 +189,9 @@ arrive with one.
   `planGeneration: 0` in a stored revision is not an operator override; migration
   `000061_tiered_plan_generation_pricing` appends a head revision that turns that zero into 40
   and seeds the three new tier keys. Charge the first plan through `planGenerationCreditCost`;
-  plan revisions, book replans and the other `…Base` charges stay flat. Everything else stays
+  revise one through `planRevisionCreditCost`, which climbs the same ladder because a revision runs
+  the same planner (a flat 40 charged a Quick Draft revision twice its plan); book replans and the
+  other `…Base` charges stay flat. Everything else stays
   flat on purpose — `exportUnlock` compiles the same PDF whatever wrote it, audiobooks and voice
   calls reach a tier-blind provider, and those `…Base` charges are request overhead rather than
   model spend.

@@ -1,5 +1,4 @@
 import { characterReferenceNameKey } from "./characterReferenceFileNames.js";
-import { type BookPlan } from "@book-maker/core";
 
 /**
  * What counts as an *answer* for a plan's cast, and how two answers are
@@ -35,8 +34,8 @@ export type CharacterReferenceRefusal = {
 };
 
 /**
- * Whether this plan's sheet set has an answer for every character — a drawn
- * sheet, or a recorded refusal.
+ * Whether this plan's sheet set has an answer for every character of its cast —
+ * a drawn sheet, or a recorded refusal.
  *
  * The check used to be "does every character have a sheet", which a refused
  * character can never satisfy. Once the render pass was allowed to carry on
@@ -52,14 +51,15 @@ export type CharacterReferenceRefusal = {
 export function characterReferenceSetIsSettled(
   assets: Array<{ metadata: unknown }>,
   refusals: readonly CharacterReferenceRefusal[],
-  plan: BookPlan
+  /** `characterReferenceCast` — the whole plan cast only for an illustrated book. */
+  cast: ReadonlyArray<{ name: string }>
 ): boolean {
   const stored = [
     ...assets.map((asset) => characterNameFromAssetMetadata(asset.metadata) ?? ""),
     ...refusals.map((refusal) => refusal.name)
   ];
   const answered = new Set(stored.map(characterReferenceNameKey).filter(Boolean));
-  return plan.characters.every((character) => answered.has(characterReferenceNameKey(character.name)));
+  return cast.every((character) => answered.has(characterReferenceNameKey(character.name)));
 }
 
 export function parseCharacterReferenceRefusals(value: unknown): CharacterReferenceRefusal[] {

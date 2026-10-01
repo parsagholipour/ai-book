@@ -537,6 +537,7 @@ class _PlanFooterState extends State<_PlanFooter> {
                       children: [
                         if (!keyboardOpen) ...[
                           _RevisionSuggestions(
+                            plan: plan,
                             controller: widget.revisionController,
                             focusNode: _revisionFocus,
                             enabled: !widget.isBusy,
@@ -638,19 +639,31 @@ class _RevisionComposer extends StatelessWidget {
 
 /// One line of ideas for a plan change, shown while the box is empty. Tapping
 /// one fills the box for editing — it never sends on its own.
-class _RevisionSuggestions extends StatelessWidget {
+class _RevisionSuggestions extends ConsumerWidget {
   const _RevisionSuggestions({
+    required this.plan,
     required this.controller,
     required this.focusNode,
     required this.enabled,
   });
 
+  final MobilePlan plan;
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool enabled;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The book's own ideas: a bedtime story is not offered "Add more examples".
+    final project = ref
+        .watch(projectDetailProvider(plan.projectId))
+        .asData
+        ?.value;
+    final suggestions = planRevisionSuggestionsFor(
+      bookType: project?.bookType ?? 'custom',
+      bookShape: project?.bookShape ?? 'book',
+      plan: plan,
+    );
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: controller,
       builder: (context, value, _) {
@@ -666,7 +679,7 @@ class _RevisionSuggestions extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                for (final suggestion in planRevisionSuggestions) ...[
+                for (final suggestion in suggestions) ...[
                   ActionChip(
                     label: Text(suggestion),
                     onPressed: enabled
@@ -707,11 +720,17 @@ class _ApprovalCaption extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final estimate = estimateApprovalCredits(project, billing.creditCosts);
+    // A change to the plan is charged when it is sent, so its price is said
+    // here, beside the composer, rather than only after the fact.
+    final revision = estimatePlanRevisionCredits(
+      qualityPreset: project.qualityPreset,
+      creditCosts: billing.creditCosts,
+    );
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Text(
-        'Book after approval: ≈ $estimate credits · You have '
-        '${billing.credits.available}',
+        'Plan change: $revision credits · Book after approval: ≈ $estimate '
+        'credits · You have ${billing.credits.available}',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: Theme.of(context).colorScheme.onSurfaceVariant,

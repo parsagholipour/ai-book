@@ -253,19 +253,26 @@ export async function loadPricingDrivers(
       .reduce((total, row) => total + Number(row.count), 0);
   // Standalone unlocks only — the bundled ones are already counted above.
   drivers.exportUnlock += countOf("EXPORT_UNLOCK");
-  drivers.planRevision += countOf("PLAN_REVISION");
-  const planGenerationKeys = new Set<CreditPriceKey>([
-    "planGenerationFast",
-    "planGeneration",
-    "planGenerationPremium",
-    "planGenerationUltra"
-  ]);
-  for (const row of spendRows.filter((candidate) => candidate.operation === "PLAN_GENERATION")) {
-    const stamped = row.pricing_key as CreditPriceKey | null;
-    const key = stamped && planGenerationKeys.has(stamped)
-      ? stamped
-      : tierPriceKey("planGeneration", row.project_id ? projectTiers.get(row.project_id) ?? "balanced" : "balanced");
-    drivers[key] += Number(row.count);
+  // Initial plans and their revisions both climb the tier ladder. A row stamped
+  // with its key counts there. An unstamped initial plan counts at its book's
+  // tier; an unstamped revision predates tiered revisions and was charged the
+  // flat (balanced) `planRevision` rate whatever its book's tier.
+  for (const [operation, base] of [["PLAN_GENERATION", "planGeneration"], ["PLAN_REVISION", "planRevision"]] as const) {
+    const keys = new Set<CreditPriceKey>([
+      tierPriceKey(base, "fast"),
+      tierPriceKey(base, "balanced"),
+      tierPriceKey(base, "premium"),
+      tierPriceKey(base, "ultra")
+    ]);
+    for (const row of spendRows.filter((candidate) => candidate.operation === operation)) {
+      const stamped = row.pricing_key as CreditPriceKey | null;
+      const key = stamped && keys.has(stamped)
+        ? stamped
+        : operation === "PLAN_REVISION"
+          ? base
+          : tierPriceKey(base, row.project_id ? projectTiers.get(row.project_id) ?? "balanced" : "balanced");
+      drivers[key] += Number(row.count);
+    }
   }
   for (const row of spendRows.filter((candidate) => ["CHAT_MESSAGE", "MESSAGE_LIMIT_RESET"].includes(candidate.operation))) {
     const key = row.pricing_key as CreditPriceKey | null;

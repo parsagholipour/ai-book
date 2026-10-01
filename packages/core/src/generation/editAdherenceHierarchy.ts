@@ -147,6 +147,8 @@ export type HierarchicalAdherenceReviewOptions = {
   beforePages: EditAdherencePage[];
   afterPages: EditAdherencePage[];
   textModel: TextModelAdapter;
+  /** Shown to the final call only; see `ReviewAppliedBookEditOptions.codeVerifiedFacts`. */
+  codeVerifiedFacts?: string[] | undefined;
 };
 
 export function serializedAdherenceMessageBytes(messages: ChatMessage[]): number {
@@ -157,14 +159,13 @@ export function adherenceMessagesFit(messages: ChatMessage[]): boolean {
   return serializedAdherenceMessageBytes(messages) <= EDIT_ADHERENCE_MESSAGE_BUDGET_BYTES;
 }
 
-export function canonicalAdherencePageText(page: EditAdherencePage): string {
+/** What a leaf reads of a page: what prints, never the summary (see `printedPage`). */
+export function canonicalAdherencePageText(page: Pick<EditAdherencePage, "title" | "markdown">): string {
   return [
     `TITLE UTF-8 BYTES ${Buffer.byteLength(page.title, "utf8")}\n`,
     page.title,
     `\nMARKDOWN UTF-8 BYTES ${Buffer.byteLength(page.markdown, "utf8")}\n`,
-    page.markdown,
-    `\nSUMMARY UTF-8 BYTES ${Buffer.byteLength(page.summary, "utf8")}\n`,
-    page.summary
+    page.markdown
   ].join("");
 }
 
@@ -187,12 +188,25 @@ export async function reviewHierarchically(
 }
 
 
+/**
+ * **A page's before and after sit next to each other, so a leaf is shown both
+ * halves of the diff it is asked about.** Every before page used to come
+ * first and every after page second, so the leaves of a seven-page word swap
+ * held "before 3, 4, 6, 7, 9", "before 11, 12, after 3, 4", "after 6 … 11" and
+ * "after 12": each correctly reported that the replacement on a page it could
+ * see one side of "cannot be verified", those omissions reach the final call
+ * unreduced, and a correctly applied edit was refused three rounds running and
+ * refunded (2026-10-01).
+ */
 function buildSegments(options: HierarchicalAdherenceReviewOptions): ManuscriptSegment[] {
   const segments: ManuscriptSegment[] = [];
-  for (const side of ["before", "after"] as const) {
-    const pages = side === "before" ? options.beforePages : options.afterPages;
-    for (const [pagePosition, page] of pages.entries()) {
-      segments.push(...segmentPage(options.instruction, side, pagePosition, page, segments.length));
+  const positions = Math.max(options.beforePages.length, options.afterPages.length);
+  for (let pagePosition = 0; pagePosition < positions; pagePosition += 1) {
+    for (const side of ["before", "after"] as const) {
+      const page = (side === "before" ? options.beforePages : options.afterPages)[pagePosition];
+      if (page) {
+        segments.push(...segmentPage(options.instruction, side, pagePosition, page, segments.length));
+      }
     }
   }
   return segments.map((segment, ordinal) => ({ ...segment, ordinal }));
@@ -295,9 +309,7 @@ async function collectLeafEvidence(
   options: HierarchicalAdherenceReviewOptions,
   segments: ManuscriptSegment[]
 ): Promise<EvidenceNode[]> {
-  const groups = packContiguous(segments, MAX_LEAF_INPUTS_PER_CALL, (group) =>
-    leafMessages(options.instruction, group, segments.length)
-  );
+  const groups = packPagePairs(segments, (group) => leafMessages(options.instruction, group, segments.length));
   const collected = await mapWithConcurrency(groups, LEAF_REVIEW_CONCURRENCY, (group) =>
     collectGroupEvidence(options, group, segments.length, MAX_LEAF_SPLIT_DEPTH)
   );
@@ -326,7 +338,7 @@ async function collectGroupEvidence(
   if (splitsLeft <= 0 || group.length < 2) {
     throw new Error("The adherence evidence stayed incomplete over the smallest reviewable manuscript slice.");
   }
-  const middle = Math.ceil(group.length / 2);
+  const middle = pairBoundaryNear(group, Math.ceil(group.length / 2));
   const halves = [group.slice(0, middle), group.slice(middle)];
   const collected = await mapWithConcurrency(halves, LEAF_REVIEW_CONCURRENCY, (half) =>
     collectGroupEvidence(options, half, totalSegments, splitsLeft - 1)
@@ -368,7 +380,7 @@ async function decideGlobalVerdict(
   if (negativeFacts.length > MAX_FINAL_NEGATIVE_FACTS) {
     throw new Error("The complete negative adherence evidence exceeds the bounded final-review capacity.");
   }
-  const messages = finalMessages(options.instruction, root);
+  const messages = finalMessages(options.instruction, root, options.codeVerifiedFacts);
   assertMessagesFit(messages);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "review-edit-adherence",
@@ -505,7 +517,7 @@ function reducerMessages(instruction: string, nodes: EvidenceNode[]): ChatMessag
   ], reducerEvidenceResponseSchema);
 }
 
-function finalMessages(instruction: string, root: EvidenceNode): ChatMessage[] {
+function finalMessages(instruction: string, root: EvidenceNode, codeVerifiedFacts?: string[] | undefined): ChatMessage[] {
   return jsonSchemaMessages([
     { role: "system", content: FINAL_SYSTEM_MESSAGE },
     {
@@ -528,10 +540,58 @@ function finalMessages(instruction: string, root: EvidenceNode): ChatMessage[] {
           possibleOmissions: root.evidence.possibleOmissions,
           contradictions: root.evidence.contradictions
         },
+        ...(codeVerifiedFacts?.length ? { codeVerifiedFacts } : {}),
         outputContract: FINAL_VERDICT_CONTRACT
       })
     }
   ], finalResponseSchema);
+}
+
+/**
+ * `packContiguous` over whole pages: a page's segments — its before and its
+ * after — join a leaf together or start the next one. Only a page too large
+ * for one call is packed segment by segment, which is the one case its two
+ * sides can still land in different leaves.
+ */
+function packPagePairs(
+  segments: ManuscriptSegment[],
+  messagesFor: (group: ManuscriptSegment[]) => ChatMessage[]
+): ManuscriptSegment[][] {
+  const pages: ManuscriptSegment[][] = [];
+  for (const segment of segments) {
+    const last = pages.at(-1);
+    if (last && last[0]!.pagePosition === segment.pagePosition) last.push(segment);
+    else pages.push([segment]);
+  }
+  const fits = (group: ManuscriptSegment[]) =>
+    group.length <= MAX_LEAF_INPUTS_PER_CALL && adherenceMessagesFit(messagesFor(group));
+  const groups: ManuscriptSegment[][] = [];
+  let current: ManuscriptSegment[] = [];
+  for (const page of pages) {
+    if (fits([...current, ...page])) {
+      current = [...current, ...page];
+      continue;
+    }
+    if (current.length > 0) groups.push(current);
+    current = [];
+    if (fits(page)) {
+      current = page;
+      continue;
+    }
+    groups.push(...packContiguous(page, MAX_LEAF_INPUTS_PER_CALL, messagesFor));
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+/** Where to halve a leaf group: the page boundary nearest `middle`, or `middle` inside one page. */
+function pairBoundaryNear(group: ManuscriptSegment[], middle: number): number {
+  let best: number | undefined;
+  for (let index = 1; index < group.length; index += 1) {
+    if (group[index]!.pagePosition === group[index - 1]!.pagePosition) continue;
+    if (best === undefined || Math.abs(index - middle) < Math.abs(best - middle)) best = index;
+  }
+  return best ?? middle;
 }
 
 function packContiguous<T>(

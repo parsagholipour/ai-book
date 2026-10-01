@@ -25,7 +25,7 @@ import {
   type CoverDesign,
   type CoverTemplateOverride
 } from "@book-maker/core";
-import { characterReferencePromptInstruction, selectReferenceImagePaths } from "../generation/characterReferences.js";
+import { characterReferencePromptInstruction, selectCoverReferenceImagePaths } from "../generation/characterReferences.js";
 import { characterReferenceAssetsOrNone } from "../generation/characterReferenceTolerance.js";
 import { coverDesignArtwork } from "../generation/coverArtwork.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
@@ -138,13 +138,13 @@ export async function generateCover(job: GenerateImageJob) {
     cover = await designedCover();
   } else {
     const baseArtworkPrompt = buildCoverArtworkPrompt({ input, plan, metadata });
-    const references = await selectReferenceImagePaths({
+    const references = await selectCoverReferenceImagePaths({
       input,
       plan,
       assets: characterReferences,
       projectId,
       image: providers.image,
-      context: [baseArtworkPrompt, ...plan.characters.map((character) => `${character.name}: ${character.description}`)].join("\n")
+      artworkPrompt: baseArtworkPrompt
     });
     const referenceImagePaths = references.paths;
     // A function of what is attached: the instruction counts the pictures and

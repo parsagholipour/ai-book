@@ -2,7 +2,7 @@ import { modelTierForInput } from "./adapters/modelTiers.js";
 import { type CreditPricing, creditPricing } from "./creditPricing.js";
 import { messagePolicy } from "./messagePricing.js";
 import { coverArtSourceFor } from "./generation/coverSource.js";
-import { interiorIllustrationSlotCount } from "./generation/illustrationSlots.js";
+import { interiorIllustrationLaunchCap, interiorIllustrationSlotCount } from "./generation/illustrationSlots.js";
 import { modelTierSchema } from "./schemas/book.js";
 import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
 import { jsonRecord } from "./schemas/jsonCoercion.js";
@@ -119,13 +119,15 @@ export function modelTierFromMediaSettings(mediaSettings: unknown): ModelTier {
  * The rates that vary by tier, and the only ones.
  *
  * A tier changes which models run, so a price follows it exactly as far as the
- * model spend does: the initial plan, the writing rate, the images, and the
- * per-page rate every post-generation rewrite is billed at. Everything else is
- * flat on purpose — `exportUnlock` compiles the same PDF whatever wrote it, an
- * audiobook and a voice call reach a tier-blind provider, and the `…Base`
- * charges (`fullBookBase`'s siblings `bookTextEditBase`, `bookReplanBase`) are
- * request overhead rather than model spend. Plan revisions stay on the flat
- * `planRevision` key; only the first plan follows the tier.
+ * model spend does: the initial plan and every revision of it, the writing
+ * rate, the images, and the per-page rate every post-generation rewrite is
+ * billed at. Everything else is flat on purpose — `exportUnlock` compiles the
+ * same PDF whatever wrote it, an audiobook and a voice call reach a tier-blind
+ * provider, and the `…Base` charges (`fullBookBase`'s siblings
+ * `bookTextEditBase`, `bookReplanBase`) are request overhead rather than model
+ * spend. A revision runs the planner the first plan ran, so it follows the
+ * same ladder: a flat 40 made a Quick Draft revision cost twice the plan it
+ * revised.
  *
  * The unsuffixed key is the balanced rate; the others add `Fast` / `Premium` /
  * `Ultra`. Keeping the convention mechanical is what lets one resolver serve
@@ -133,6 +135,7 @@ export function modelTierFromMediaSettings(mediaSettings: unknown): ModelTier {
  */
 export const TIER_PRICED_KEYS = [
   "planGeneration",
+  "planRevision",
   "fullBookBase",
   "fullBookPerPage",
   "imageGeneration",
@@ -152,6 +155,18 @@ export type PlanGenerationCreditQuote = {
   credits: number;
   modelTier: ModelTier;
   pricingKey: PlanGenerationPricingKey;
+};
+
+export type PlanRevisionPricingKey =
+  | "planRevision"
+  | "planRevisionFast"
+  | "planRevisionPremium"
+  | "planRevisionUltra";
+
+export type PlanRevisionCreditQuote = {
+  credits: number;
+  modelTier: ModelTier;
+  pricingKey: PlanRevisionPricingKey;
 };
 
 /**
@@ -184,9 +199,9 @@ export function tierPrice(pricing: CreditPricing, key: TierPricedKey, tier: Mode
 /**
  * The charge for creating an initial plan.
  *
- * Initial planning is the one planning operation that follows the selected
- * model tier. Plan revisions and book replans retain their existing flat
- * prices. Returning the resolved key with the amount gives the charge and the
+ * Initial planning follows the selected model tier, and so does every revision
+ * of the plan ({@link planRevisionCreditCost}); a book replan keeps its flat
+ * base. Returning the resolved key with the amount gives the charge and the
  * ledger audit stamp one indivisible answer.
  */
 export function planGenerationCreditCost(
@@ -198,6 +213,22 @@ export function planGenerationCreditCost(
   // Indexed on the key this quote is about to hand back, rather than through
   // `tierPrice` — which would resolve the same suffix a second time and leave
   // the amount and the audit stamp two answers that merely agree.
+  return { credits: pricing[pricingKey], modelTier, pricingKey };
+}
+
+/**
+ * The charge for revising a plan, at the tier of the book being revised.
+ *
+ * Takes the book's raw `mediaSettings` because every caller holds a project
+ * row rather than a parsed input. The chat quote, the direct route and the
+ * charge all read it here, so the price a reader is shown is the one taken.
+ */
+export function planRevisionCreditCost(
+  mediaSettings: unknown,
+  pricing: CreditPricing = creditPricing()
+): PlanRevisionCreditQuote {
+  const modelTier = modelTierFromMediaSettings(mediaSettings);
+  const pricingKey = tierPriceKey("planRevision", modelTier);
   return { credits: pricing[pricingKey], modelTier, pricingKey };
 }
 
@@ -592,23 +623,16 @@ export function buildMarginEstimate(options: {
   };
 }
 
+/**
+ * How many interior illustrations a book is billed for: exactly the slots
+ * generation will draw. `interiorIllustrationSlotCount` already thins an app
+ * book's slots to its launch cap, so the cap here only binds an operator book,
+ * which draws every slot and is never billed past the cap. One rule in
+ * `illustrationSlots.ts` decides both, so the charge cannot exceed the
+ * drawing or the drawing the charge.
+ */
 export function estimateInteriorImageCount(input: CreateProjectInput): number {
-  if (!input.mediaSettings.fullIllustrations) {
-    return 0;
-  }
-  const mobile = mobileMetadata(input.mediaSettings);
-  const bookType = mobile?.bookType ?? inferMobileBookType(input.category, input.subcategory);
-  const launchCap =
-    bookType === "workbook"
-      ? 6
-      : bookType === "lead_magnet" || bookType === "short_story"
-        ? 4
-        : Math.max(1, Math.ceil(input.targetPages / 8));
-  // Slots are the pages generation will actually try to illustrate. The /4
-  // ceiling used to charge a 5-page short story for two interiors while
-  // `shouldIllustratePage` only fired for page 1. Cap still bounds KIDS
-  // every-page books so a 32-page picture book is not billed for 32 images.
-  return Math.max(0, Math.min(launchCap, interiorIllustrationSlotCount(input)));
+  return Math.min(interiorIllustrationLaunchCap(input), interiorIllustrationSlotCount(input));
 }
 
 /**
@@ -623,41 +647,6 @@ export function estimateInteriorImageCount(input: CreateProjectInput): number {
 export function isPremiumProject(input: CreateProjectInput): boolean {
   const tier = modelTierForInput(input);
   return tier === "premium" || tier === "ultra";
-}
-
-/**
- * The app's own metadata echo, read for the one thing only it knows: which of
- * the mobile book shapes this is, which sets the illustration cap. The quality
- * preset also lives here and is deliberately *not* read — pricing follows
- * `mediaSettings.modelTier`, see {@link modelTierForInput}.
- */
-function mobileMetadata(mediaSettings: CreateProjectInput["mediaSettings"]): {
-  bookType?: "lead_magnet" | "workbook" | "short_story";
-  imagesEnabled?: boolean;
-} | null {
-  const record = jsonRecord((mediaSettings as CreateProjectInput["mediaSettings"] & { mobile?: unknown }).mobile);
-  const bookType = stringValue(record.bookType);
-  return {
-    ...(bookType === "lead_magnet" || bookType === "workbook" || bookType === "short_story" ? { bookType } : {}),
-    ...(typeof record.imagesEnabled === "boolean" ? { imagesEnabled: record.imagesEnabled } : {})
-  };
-}
-
-function inferMobileBookType(category: string, subcategory?: string | null): "lead_magnet" | "workbook" | "short_story" | "custom" {
-  if (subcategory === "Lead Magnet Ebook" || category === "BUSINESS" || category === "SELF_HELP") {
-    return "lead_magnet";
-  }
-  if (subcategory === "Workbook or Study Guide" || category === "EDUCATION") {
-    return "workbook";
-  }
-  if (subcategory === "Short Story" || category === "STORY") {
-    return "short_story";
-  }
-  return "custom";
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
 }
 
 function roundUsd(value: number): number {

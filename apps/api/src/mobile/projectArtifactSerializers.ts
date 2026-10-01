@@ -160,6 +160,7 @@ export function serializeExport(
     requiresSubscription: exportRequiresSubscription(format),
     creditsRequired: unlocked ? 0 : creditCostForOperation("EXPORT_UNLOCK"),
     downloadUrl: `/api/mobile/projects/${encodeURIComponent(projectId)}/export/${format}`,
+    ...(format === "pdf" ? { readUrl: `/api/mobile/projects/${encodeURIComponent(projectId)}/read/pdf` } : {}),
     filename: `${sanitizeDownloadFilename(title)}.${format}`,
     contentType: exportContentType(format),
     revision: contentRevision,

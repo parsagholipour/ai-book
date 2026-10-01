@@ -11,6 +11,7 @@ import {
 } from "./runtime/dispatch.js";
 import { config } from "./runtime/config.js";
 import { startExportTempCleanup } from "./runtime/exportTempCleanup.js";
+import { reconcileLostQueueDeliveries } from "./runtime/lostDeliveries.js";
 import { BOOK_QUEUE_NAME, connection, queue } from "./runtime/queue.js";
 import { processWorkerJob } from "./processJob.js";
 
@@ -48,6 +49,9 @@ const queueReconcileTimer = setInterval(() => {
     void reconcileStrandedGeneration().catch((error) => {
       console.error("Stranded generation reconciliation failed", error);
     });
+    void reconcileLostQueueDeliveries(queue).catch((error) => {
+      console.error("Lost queue delivery reconciliation failed", error);
+    });
   }
 }, 5_000);
 queueReconcileTimer.unref();
@@ -59,6 +63,9 @@ void reconcileGenerationAttemptRefunds().catch((error) => {
 });
 void reconcileStrandedGeneration().catch((error) => {
   console.error("Initial stranded generation reconciliation failed", error);
+});
+void reconcileLostQueueDeliveries(queue).catch((error) => {
+  console.error("Initial lost queue delivery reconciliation failed", error);
 });
 
 // Local render scratch and S3 predecessor objects survive an abrupt exit.

@@ -1,5 +1,6 @@
 import {
   chapterHeadingStylePreference,
+  storyPageDesignPreference,
   compilePublicationPolicyFromPayload,
   includeSourcesPreference,
   MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
@@ -310,7 +311,8 @@ export async function forkedPublicationRecoveryPolicy(project: {
 
 function hasPresentationPreference(mediaSettings: unknown): boolean {
   return includeSourcesPreference(mediaSettings) !== undefined ||
-    chapterHeadingStylePreference(mediaSettings) !== undefined;
+    chapterHeadingStylePreference(mediaSettings) !== undefined ||
+    storyPageDesignPreference(mediaSettings) !== undefined;
 }
 
 function settledStatusFromQualityReport(qualityReport: unknown): SettledProjectStatus | null {

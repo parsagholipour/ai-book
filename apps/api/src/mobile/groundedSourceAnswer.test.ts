@@ -29,3 +29,55 @@ describe("source-grounded book answers", () => {
     expect(messages).toContain(CHAT_REPLY_MARKDOWN_PROMPT);
   });
 });
+
+describe("grounded book answers", () => {
+  const page = (index: number, title: string, summary: string) =>
+    ({ index, title, summary, chapter: { index: index < 5 ? 1 : 2 } }) as never;
+  const project = (pages: never[]): Parameters<typeof generateGroundedProjectAnswer>[0] => ({
+    id: "book", userId: "owner", title: "Balcony Garden", prompt: "A balcony guide", category: "CUSTOM",
+    targetPages: 3, complexity: 2, temperature: 0.3, language: "en", mediaSettings: {}, status: "COMPLETE",
+    contentRevision: 0, exportInvalidationRevision: null, pdfPageMap: null, storyState: null,
+    templateId: null, currentPlanId: null, subcategory: null, subtitle: null, authorName: null, coverTagline: null,
+    createdAt: new Date(0), updatedAt: new Date(0), pages, research: [], currentPlan: null,
+    chapters: [
+      { id: "c1", index: 1, title: "Set Up the Balcony", summary: "" },
+      { id: "c2", index: 2, title: "Pick Easy Crops", summary: "" }
+    ]
+  });
+
+  it("keeps the reply's line breaks, which are its markdown", async () => {
+    const reply = "The book starts beginners on:\n\n- **Lettuce**\n- **Radishes**\n\nBoth suit a first try.";
+    const model = new FakeTextModelAdapter();
+    vi.spyOn(model, "generateText").mockResolvedValue({ text: `${reply}  \n`, model: "fake-model", provider: "fake" });
+    const answer = await generateGroundedProjectAnswer(project([]), "Which vegetables?", "Unavailable", model, undefined, []);
+    expect(answer).toBe(reply);
+  });
+
+  it("shows every page's title and summary and the router's draft, by printed page", async () => {
+    const model = new FakeTextModelAdapter();
+    const generate = vi.spyOn(model, "generateText");
+    await generateGroundedProjectAnswer(
+      project([
+        page(1, "Map Your Balcony", "Check sun and wind for the beginner."),
+        page(2, "Pots for the beginner", "Choose containers with drainage for a beginner."),
+        page(3, "Mix for the beginner", "Use an airy mix as a beginner."),
+        page(4, "Water for the beginner", "Check moisture as a beginner."),
+        page(5, "Choose Crops for a First Planting", "Greens, radishes and herbs suit a first planting.")
+      ]),
+      "Which vegetables suit a beginner?",
+      "The crops chapter points to greens.",
+      model,
+      undefined,
+      []
+    );
+    const payload = JSON.parse(generate.mock.calls[0]![0].messages.at(-1)!.content as string);
+    expect(payload.pages.map((entry: { title: string }) => entry.title)).not.toContain("Choose Crops for a First Planting");
+    expect(payload.bookOutline.map((entry: { title: string }) => entry.title)).toContain("Choose Crops for a First Planting");
+    expect(payload.bookOutline.at(-1).readerPages).toBe("5");
+    // Page titles are never printed; the chapter heading is what a reader can find.
+    expect(payload.bookOutline.at(-1).chapter).toBe("Pick Easy Crops");
+    expect(generate.mock.calls[0]![0].messages[0]!.content).toContain("never cite it");
+    expect(payload.draftAnswer).toBe("The crops chapter points to greens.");
+    expect(JSON.stringify(payload.pages)).not.toContain('"index"');
+  });
+});

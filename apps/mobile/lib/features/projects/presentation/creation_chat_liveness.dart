@@ -184,19 +184,22 @@ String? _outputMessagingLockLabel({
   required MobileProjectStatus? liveStatus,
   bool awaitingRebuild = false,
 }) {
+  // An edit, an undo or a recompile updates a finished book; only the first
+  // run generates one. "Regenerating" over a free word swap read as the whole
+  // book being written again.
   if (awaitingRebuild) {
-    return 'Regenerating your book…';
+    return 'Updating your book…';
   }
   if (liveStatus?.isLive ?? false) {
     return liveStatus!.status == 'generating'
         ? 'Generating your book…'
-        : 'Regenerating your book…';
+        : 'Updating your book…';
   }
   if (projectStatus == 'generating') {
     return 'Generating your book…';
   }
   if (projectStatus == 'editing') {
-    return 'Regenerating your book…';
+    return 'Updating your book…';
   }
   return null;
 }

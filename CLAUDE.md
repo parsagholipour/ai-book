@@ -251,6 +251,7 @@ code in that area, however obvious the rule looks.
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
 - **A plan period cut short is *adopted*, not re-granted.** → packages/db/CLAUDE.md
 - **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat `add_image` Apply.** → apps/api/src/mobile/CLAUDE.md
+- **Reading a book in the app spends nothing; only taking its file out spends the export unlock, and the app asks first.** → apps/api/src/mobile/CLAUDE.md
 - **Chat replies never name a credit price.** → apps/api/src/mobile/CLAUDE.md
 - **A price key with no tier suffix is the *balanced* rate.** → packages/core/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md
 - **Credit prices are operator-editable, not constants.** → packages/core/CLAUDE.md
@@ -267,6 +268,7 @@ code in that area, however obvious the rule looks.
 - **A cited source is stored as the publisher's own address, never Google's.** → packages/core/src/adapters/CLAUDE.md
 - **A grounded search is priced at its tokens plus the grounding fee Google actually bills — nothing inside its pool's free allowance, list price past it — and on 2.5 Flash it runs with thinking off.** → packages/core/src/adapters/CLAUDE.md + packages/db/CLAUDE.md
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
+- **A picture book's page design is not page text either, and it is changed only where it shows.** → apps/api/src/mobile/CLAUDE.md
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
 - **A model-backed page edit is patches first and a page second, and only a rewrite answers to page QA.** → apps/worker/src/handlers/CLAUDE.md + packages/core/src/generation/CLAUDE.md
 - **A rewrite that kept the page's prose inherits the page's approval.** → apps/worker/src/generation/CLAUDE.md
@@ -405,6 +407,8 @@ code in that area, however obvious the rule looks.
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
 - **A publication may replace the page map; it may never refuse to publish over it.** → apps/worker/src/generation/CLAUDE.md
 - **A compile that stands down leaves no verdict about prose it no longer speaks for.** → apps/worker/src/handlers/CLAUDE.md
+- **Every face a family is assembled from declares one weight range, or Chrome never falls back across its packages.** → packages/core/src/generation/CLAUDE.md
+- **A text-only story sheet is sized to its paragraphs and centred on its sheet, and it wears the design the reader chose — or, for a children's book, the one its own words point to.** → packages/core/src/generation/CLAUDE.md
 - **The coverless title sheet is capped at exactly one page, and it clips from the tail.** → packages/core/src/generation/CLAUDE.md
 - **Every renumber parks before it lands, because neither unique index is deferrable.** → packages/db/CLAUDE.md
 - **A page renumber carries the page map with it; only a sheet that would lose its page clears it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
@@ -462,8 +466,8 @@ code in that area, however obvious the rule looks.
 - **A takeover clears the generator's page verdicts and image slots, because the author compile still reads them.** → apps/api/src/mobile/CLAUDE.md
 - **An author's book compiles by its own rules, and a generated book never sees them.** → packages/core/src/generation/CLAUDE.md
 - **A revision-owned cover re-typesets the design the book already wears.** → apps/worker/src/handlers/CLAUDE.md
-- **A hidden bold or italic mark is still a character, so the cursor, the keyboard and the buttons must be taught it is not there.** → apps/mobile/lib/features/studio/CLAUDE.md
-- **A blank line is short and the text field's caret arithmetic assumes it is not; the strut, the root span and the blank line are one style for that reason.** → apps/mobile/lib/features/studio/CLAUDE.md
+- **A hidden mark is still a character, so the cursor, the keyboard and the buttons all have to be taught that it is not there.** → apps/mobile/lib/features/studio/CLAUDE.md
+- **A blank line is short, and the field's caret arithmetic assumes it is not.** → apps/mobile/lib/features/studio/CLAUDE.md
 
 ### Book sharing
 

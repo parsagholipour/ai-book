@@ -118,6 +118,86 @@ EmphasisGuardResult guardEdit(
 bool _isSpace(int unit) =>
     unit == 0x20 || unit == 0x09 || unit == 0x0a || unit == 0xa0;
 
+/// A space that does not end the line: what may sit between a run's closing
+/// marks and a word that goes on with the run.
+bool _isLineSpace(int unit) => unit == 0x20 || unit == 0x09 || unit == 0xa0;
+
+/// Where the spaces before [offset] on its line begin.
+int _lineSpacesStart(String text, int offset) {
+  var at = offset;
+  while (at > 0 && _isLineSpace(text.codeUnitAt(at - 1))) {
+    at--;
+  }
+  return at;
+}
+
+/// The pairs whose closing marks run back from [end] without a gap, outermost
+/// (the one ending at [end]) first.
+List<EmphasisPair> _closersEndingAt(EmphasisIndex index, int end) {
+  final chain = <EmphasisPair>[];
+  var at = end;
+  var found = true;
+  while (found) {
+    found = false;
+    for (final pair in index.pairs) {
+      if (pair.close.end == at && pair.close.start < at) {
+        chain.add(pair);
+        at = pair.close.start;
+        found = true;
+        break;
+      }
+    }
+  }
+  return chain;
+}
+
+/// The typing style once [next] has replaced [old]: what the cursor was
+/// writing in goes on through spaces typed at the end of it.
+///
+/// A space typed at the end of a bold word is put after the word's marks (a
+/// mark cannot close after a space), which takes the cursor out of the bold.
+/// With nothing more, the next word came out plain and a bold phrase could
+/// only be made a word at a time. So the kinds the cursor was writing in — the
+/// run it stood at the end of, or the typing style it held — stay on while
+/// only spaces follow the run, and the next thing typed goes back inside the
+/// run with those spaces (see [_applyTypingStyle]). Anything else — a letter,
+/// Enter, a deletion, a move — answers nothing, which drops the style; and a
+/// space nothing follows stays outside the marks.
+Set<EmphasisKind> continuedTypingStyle(
+  TextEditingValue old,
+  TextEditingValue next,
+  Set<EmphasisKind> current,
+) {
+  if (next.text.length <= old.text.length) return const {};
+  final caret = next.selection;
+  if (!caret.isValid || !caret.isCollapsed) return const {};
+  final n = next.text;
+  final end = caret.baseOffset;
+  if (end <= 0 || end > n.length || !_isLineSpace(n.codeUnitAt(end - 1))) {
+    return const {};
+  }
+  final gapStart = _lineSpacesStart(n, end);
+  if (gapStart == 0) return const {};
+  final mark = n.codeUnitAt(gapStart - 1);
+  if (mark != 0x2a && mark != 0x5f) return const {}; // `*` or `_`
+  final change = _changeOf(old, next);
+  if (change == null ||
+      !change.isInsertion ||
+      change.inserted.isEmpty ||
+      !change.inserted.codeUnits.every(_isLineSpace)) {
+    return const {};
+  }
+  final writing = {
+    ...current,
+    for (final kind in const [EmphasisKind.bold, EmphasisKind.italic])
+      if (emphasisAt(old, kind)) kind,
+  };
+  return {
+    for (final pair in _closersEndingAt(EmphasisIndex.of(n), gapStart))
+      if (writing.contains(pair.kind)) pair.kind,
+  };
+}
+
 TextEditingValue _value(String text, int caret) => TextEditingValue(
   text: text,
   selection: TextSelection.collapsed(offset: caret),
@@ -372,28 +452,54 @@ TextEditingValue? _applyTypingStyle(
         : TextRange.empty;
   }
 
-  // Bold typed right after a bold word is that word going on, not a second
-  // one (`**a****b**` does not read back as two): the word goes in before the
-  // word's closing marks.
+  // Bold typed after a bold word — right after it, or after spaces typed at
+  // its end — is that word going on, not a second one (`**a****b**` does not
+  // read back as two, and `**a** **b**` is two runs for one phrase): the
+  // closing marks move past what was typed and take the spaces in with it.
+  // Only marks of the style's own kinds move, outermost first, so italic
+  // inside bold is closed before a word typed in bold alone.
   final index = EmphasisIndex.of(o);
-  if (lead == 0 && spaceAfter.isEmpty) {
-    for (final kind in style) {
-      for (final pair in index.pairs) {
-        if (pair.kind == kind && pair.close.end == at) {
-          final closeLength = pair.close.end - pair.close.start;
-          final text =
-              '${o.substring(0, pair.close.start)}$word'
-              '${_markText(o, pair.close)}${o.substring(at)}';
-          return TextEditingValue(
-            text: text,
-            selection: TextSelection.collapsed(
-              offset: pair.close.start + word.length,
-            ),
-            composing: composingShifted(-closeLength),
-          );
-        }
-      }
+  final gapStart = _lineSpacesStart(o, at);
+  final joined = <EmphasisPair>[];
+  for (final pair in _closersEndingAt(index, gapStart)) {
+    if (!style.contains(pair.kind)) break;
+    joined.add(pair);
+  }
+  if (joined.isNotEmpty &&
+      joined.map((pair) => pair.kind).toSet().containsAll(style)) {
+    final closeStart = joined.last.close.start;
+    final closers = o.substring(closeStart, gapStart);
+    final gap = '${o.substring(gapStart, at)}$spaceBefore';
+    final text =
+        '${o.substring(0, closeStart)}$gap$word$closers$spaceAfter'
+        '${o.substring(at)}';
+    final wordEnd = closeStart + gap.length + word.length;
+    // Where an offset of [next] (the old text with the insertion at `at`)
+    // lands in [text], for the IME's composing region.
+    int moved(int offset) {
+      if (offset <= closeStart) return offset;
+      if (offset <= gapStart) return closeStart;
+      if (offset <= at) return offset - closers.length;
+      // The spaces and word typed slide back over the marks; what follows the
+      // marks (and the rest of the text) keeps its place.
+      final typed = offset - at;
+      return typed <= spaceBefore.length + word.length
+          ? offset - closers.length
+          : offset;
     }
+
+    final composing = next.composing;
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(
+        offset: spaceAfter.isEmpty
+            ? wordEnd
+            : wordEnd + closers.length + spaceAfter.length,
+      ),
+      composing: composing.isValid && !composing.isCollapsed
+          ? TextRange(start: moved(composing.start), end: moved(composing.end))
+          : TextRange.empty,
+    );
   }
 
   final ordered = [

@@ -109,11 +109,13 @@ class _StripItem extends StatelessWidget {
     final colors = theme.colorScheme;
     final title = page.title.trim();
     return Semantics(
+      container: true,
       button: true,
       selected: selected,
       label:
           'Page ${page.index}${title.isEmpty ? '' : ', $title'}'
           '${dirty ? ', unsaved changes' : ''}',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
           color: selected
@@ -265,5 +267,154 @@ enum BookEditAsk {
       BookEditAsk.shorter => 'Rewrite this passage: "$excerpt". Shorten it.',
       BookEditAsk.picture => 'Add a picture for this passage: "$excerpt".',
     };
+  }
+}
+
+/// The quality notes behind a "Review" that sent the reader here.
+///
+/// The book page lists the review notes and opens Edit Mode at the first
+/// flagged page, and Edit Mode used to show that page with nothing about why
+/// it was opened. The page's own notes show open; notes about the whole book
+/// (no page named) show folded, and only on a page with none of its own.
+class BookEditReviewNotes extends StatefulWidget {
+  const BookEditReviewNotes({
+    required this.pageNotes,
+    required this.bookNotes,
+    super.key,
+  });
+
+  final List<MobileProjectQualityIssue> pageNotes;
+  final List<MobileProjectQualityIssue> bookNotes;
+
+  /// The notes for [pageIndex] out of [quality], split by scope.
+  static ({
+    List<MobileProjectQualityIssue> page,
+    List<MobileProjectQualityIssue> book,
+  })
+  notesFor(MobileProjectQuality? quality, int pageIndex) {
+    if (quality == null || !(quality.recommendsReview || quality.isBlocked)) {
+      return (page: const [], book: const []);
+    }
+    return (
+      page: [
+        for (final issue in quality.issues)
+          if (issue.affectedPageIndexes.contains(pageIndex)) issue,
+      ],
+      book: [
+        for (final issue in quality.issues)
+          if (issue.affectedPageIndexes.isEmpty) issue,
+      ],
+    );
+  }
+
+  @override
+  State<BookEditReviewNotes> createState() => _BookEditReviewNotesState();
+}
+
+class _BookEditReviewNotesState extends State<BookEditReviewNotes> {
+  late bool _open = widget.pageNotes.isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final onPage = widget.pageNotes.isNotEmpty;
+    final notes = onPage ? widget.pageNotes : widget.bookNotes;
+    if (notes.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final count = notes.length == 1
+        ? '1 review note'
+        : '${notes.length} review notes';
+    final title = onPage ? '$count on this page' : '$count on the whole book';
+    void toggle() {
+      AppHaptics.selection();
+      setState(() => _open = !_open);
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            container: true,
+            button: true,
+            expanded: _open,
+            label: title,
+            onTap: toggle,
+            child: ExcludeSemantics(
+              child: InkWell(
+                onTap: toggle,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: AppSizes.minimumTouchTarget,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.rate_review_outlined,
+                          size: 20,
+                          color: colors.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          _open ? Icons.expand_less : Icons.expand_more,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (_open)
+            // Bounded: the page text below is what the reader came to edit.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 168),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  0,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                ),
+                itemCount: notes.length,
+                separatorBuilder: (_, _) =>
+                    const SizedBox(height: AppSpacing.xs),
+                itemBuilder: (context, index) {
+                  final note = notes[index];
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(note.message, style: theme.textTheme.bodyMedium),
+                      if (note.guidance.trim().isNotEmpty)
+                        Text(
+                          note.guidance,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

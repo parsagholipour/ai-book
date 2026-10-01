@@ -496,7 +496,9 @@ describe("mobile creation session project build", () => {
     expect(Object.keys(body.project).sort()).toMatchInlineSnapshot(`
       [
         "authorName",
+        "bookShape",
         "bookType",
+        "bookTypeChoice",
         "coverArtSource",
         "coverEnabled",
         "coverImage",

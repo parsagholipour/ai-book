@@ -1,4 +1,5 @@
 import type { ScriptProfile } from "../prompting/script.js";
+import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 
 export type FitCoverTextOptions = {
   text: string;
@@ -22,6 +23,17 @@ export type FittedCoverText = {
 
 export function cleanText(value: string | null | undefined): string {
   return value?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+/**
+ * What an AI cover is a picture of: the planner's cover concept, or the
+ * book's own prompt when the plan has none. The artwork prompt states it as
+ * the primary visual concept, and the cast a cover-only book draws reference
+ * sheets for is read off the same words (`coverCastCharacters`), so the two
+ * cannot come to disagree about who is on the cover.
+ */
+export function coverConceptText(input: Pick<CreateProjectInput, "prompt">, plan: Pick<BookPlan, "illustrationPlan">): string {
+  return cleanText(plan.illustrationPlan.coverPrompt) || input.prompt;
 }
 
 /**

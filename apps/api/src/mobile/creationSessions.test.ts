@@ -753,3 +753,14 @@ describe("mobile creation sessions", () => {
   });
 
 });
+
+describe("a chat's label from its first message", () => {
+  it("cuts at a word and says it was cut", async () => {
+    const { _chatTitleForPayload } = await import("./creationSessions.js");
+    const title = _chatTitleForPayload({
+      payloadVersion: 2,
+      messages: [{ role: "user", content: "A short literary story about an old lighthouse keeper in Oman who receives a letter" }]
+    } as Parameters<typeof _chatTitleForPayload>[0]);
+    expect(title).toBe("A short literary story about an old lighthouse keeper in...");
+  });
+});

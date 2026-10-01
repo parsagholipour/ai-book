@@ -200,15 +200,20 @@ class _CastRow extends ConsumerWidget {
     final enabled = character.callable;
 
     final ready = enabled && affordable;
+    final VoidCallback? placeCall = enabled
+        ? () => _placeCall(context, ref)
+        : null;
     return Semantics(
+      container: true,
       button: true,
       enabled: enabled,
       label:
           'Call ${character.name}${_subtitle().isEmpty ? '' : ', ${_subtitle()}'}',
+      onTap: placeCall,
       child: ExcludeSemantics(
         child: InkWell(
           borderRadius: BorderRadius.circular(AppRadii.control),
-          onTap: enabled ? () => _placeCall(context, ref) : null,
+          onTap: placeCall,
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 64),
             child: Padding(

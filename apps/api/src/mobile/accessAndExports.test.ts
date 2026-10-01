@@ -149,6 +149,46 @@ describe("mobile rate limits, exports and operator routes", () => {
     await app.close();
   });
 
+  it("lets the owner read the PDF in the app without spending the export unlock", async () => {
+    // A Studio book or an import has no generation charge to include the unlock,
+    // and the reader used to download through the charging route — so opening
+    // the book spent 150 credits without a word.
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-reader-copy");
+    mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
+      where.id === "project-a" && where.userId === "user-a"
+        ? { id: "project-a", title: "Letters to My Daughter", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 3 }
+        : null
+    );
+    const app = await buildMobileApp();
+
+    const own = await app.inject({ method: "GET", url: "/api/mobile/projects/project-a/read/pdf", headers: bearer("token-a") });
+    const other = await app.inject({ method: "GET", url: "/api/mobile/projects/project-a/read/pdf", headers: bearer("token-b") });
+
+    expect(own.statusCode).toBe(200);
+    expect(own.body).toBe("%PDF-reader-copy");
+    expect(own.headers["content-disposition"]).toMatch(/^inline;/);
+    expect(own.headers["x-export-content-digest"]).toBeTruthy();
+    expect(other.statusCode).toBe(404);
+    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("answers a reader whose PDF is missing with the repair, not a charge", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a", title: "Owned Mobile Book", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/mobile/projects/project-a/read/pdf", headers: bearer("token-a") });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("EXPORT_NOT_READY");
+    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("reports export size, mtime and content revision so the reader can cache the file", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-cacheable");
@@ -168,8 +208,11 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(exports.pdf).toMatchObject({
       available: true,
       revision: 7,
-      byteSize: "%PDF-cacheable".length
+      byteSize: "%PDF-cacheable".length,
+      readUrl: "/api/mobile/projects/project-a/read/pdf"
     });
+    // Only the PDF is read in the app; every other format is only ever taken out.
+    expect(exports.epub.readUrl).toBeUndefined();
     expect(Date.parse(exports.pdf.updatedAt)).not.toBeNaN();
     // The EPUB was never compiled, so it carries the revision but no file facts.
     expect(exports.epub).toMatchObject({ available: false, revision: 7, byteSize: null, updatedAt: null });

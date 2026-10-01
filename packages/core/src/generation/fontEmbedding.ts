@@ -56,22 +56,19 @@ export function codePointsOf(...text: readonly string[]): Set<number> {
 export async function embedFontFaceCss(requests: readonly EmbeddedFontRequest[]): Promise<string> {
   const blocks = await Promise.all(
     requests.map(async (request) => {
-      const rendered = await Promise.all(
-        request.packages.map((pkg) => renderPackage(request.family, pkg, request.codePoints))
-      );
-      return rendered.flat();
+      const faces = (
+        await Promise.all(request.packages.map((pkg) => facesForPackage(pkg, request.codePoints)))
+      ).flat();
+      const weight = sharedWeightRange(faces);
+      return Promise.all(faces.map((face) => renderFace(request.family, face, weight)));
     })
   );
   return blocks.flat().join("\n");
 }
 
-async function renderPackage(
-  family: string,
-  pkg: FontsourcePackage,
-  codePoints: ReadonlySet<number>
-): Promise<string[]> {
+async function facesForPackage(pkg: FontsourcePackage, codePoints: ReadonlySet<number>): Promise<ParsedFace[]> {
   const limit = pkg.limitTo ? parseUnicodeRange(pkg.limitTo) : undefined;
-  const faces: string[] = [];
+  const faces: ParsedFace[] = [];
 
   for (const cssFile of pkg.css) {
     for (const face of await parseFontsourceCss(pkg.package, cssFile)) {
@@ -81,18 +78,47 @@ async function renderPackage(
       if (!coversAnyCodePoint(face.ranges, codePoints)) {
         continue;
       }
-      faces.push(await renderFace(family, face));
+      faces.push(face);
     }
   }
 
   return faces;
 }
 
-async function renderFace(family: string, face: ParsedFace): Promise<string> {
+/**
+ * One `font-weight` range for every face a family is assembled from.
+ *
+ * Chrome matches a style against a family's faces *grouped by their exact
+ * descriptors* and consults `unicode-range` only inside the group it picked.
+ * Source Serif 4 declares `200 900` and every script package `100 900` (Noto
+ * Naskh `400 700`), so a Persian run settled on Vazirmatn's group and never saw
+ * Source Serif's Latin face: every "." "«" ":" and Western digit in a Persian,
+ * Arabic, Hebrew, Devanagari or Thai book fell through to "Times New Roman" —
+ * Liberation Serif under fontconfig. Declaring the union puts them in one group;
+ * a variable font asked for a weight past its axis clamps to the end it has.
+ */
+function sharedWeightRange(faces: readonly ParsedFace[]): string | undefined {
+  let low = Number.POSITIVE_INFINITY;
+  let high = Number.NEGATIVE_INFINITY;
+  for (const face of faces) {
+    const values = /font-weight\s*:\s*([^;]+);/i.exec(face.declarations)?.[1]?.trim().split(/\s+/).map(Number);
+    if (!values || values.some((value) => !Number.isFinite(value))) {
+      return undefined;
+    }
+    low = Math.min(low, ...values);
+    high = Math.max(high, ...values);
+  }
+  return Number.isFinite(low) ? (low === high ? `${low}` : `${low} ${high}`) : undefined;
+}
+
+async function renderFace(family: string, face: ParsedFace, weight: string | undefined): Promise<string> {
   const base64 = await fontFileBase64(face.filePath);
+  const declarations = weight
+    ? face.declarations.replace(/font-weight\s*:[^;]+;/i, `font-weight: ${weight};`)
+    : face.declarations;
   return `@font-face {
   font-family: "${family}";
-${face.declarations}
+${declarations}
   src: url("data:font/woff2;base64,${base64}") format("woff2-variations");
   unicode-range: ${face.rangeText};
   font-display: block;

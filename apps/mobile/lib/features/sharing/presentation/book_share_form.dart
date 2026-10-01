@@ -358,9 +358,12 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
     final colors = theme.colorScheme;
     final cap = book.previewCap;
     final total = book.readingPages;
+    // Printed pages, the PDF's own: a book of 12 pages prints them on 10
+    // sheets after its cover and contents, and "5 of 10 pages" beside a book
+    // called "12 pages" everywhere else read as a miscount.
     final count = total == null
         ? bookSharePageCount(_pages)
-        : '$_pages of $total pages';
+        : '$_pages of $total printed pages';
     return Column(
       key: const ValueKey('book-share-preview'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -409,7 +412,7 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
         ),
         const SizedBox(height: AppSpacing.xxs),
         Text(
-          'A preview can show up to half the book: '
+          'A preview can show up to half the printed pages: '
           '${bookSharePageCount(cap)}.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: colors.onSurfaceVariant,

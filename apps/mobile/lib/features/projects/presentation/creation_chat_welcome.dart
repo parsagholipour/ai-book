@@ -254,13 +254,16 @@ class _WelcomeStudioLink extends StatelessWidget {
       color: colors.onSurfaceVariant,
       height: 1.35,
     );
+    void openStudio() => showStartWritingSheet(context);
     return Semantics(
+      container: true,
       button: true,
       label: 'Rather write it yourself? Open the Writing Studio',
+      onTap: openStudio,
       child: ExcludeSemantics(
         child: InkWell(
           key: const ValueKey('welcome-writing-studio'),
-          onTap: () => showStartWritingSheet(context),
+          onTap: openStudio,
           borderRadius: BorderRadius.circular(AppRadii.compact),
           child: ConstrainedBox(
             constraints: const BoxConstraints(

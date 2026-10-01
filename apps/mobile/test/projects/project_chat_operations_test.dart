@@ -698,7 +698,7 @@ void main() {
 
     final composer = tester.widget<TextField>(find.byType(TextField));
     expect(composer.enabled, isFalse);
-    expect(composer.decoration?.hintText, 'Regenerating your book…');
+    expect(composer.decoration?.hintText, 'Updating your book…');
     // The half-written thought survives the lock instead of being thrown away.
     expect(composer.controller?.text, 'Also make it funnier');
     // The edit pencil goes with it: an edited message is another chat turn.

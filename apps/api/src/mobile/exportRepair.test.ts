@@ -175,6 +175,32 @@ describe("mobile export repair queueing", () => {
     await app.close();
   });
 
+  it("sends the headers the reply was given before the stream was hijacked", async () => {
+    // `@fastify/cors` sets its headers on request; the hijacked writeHead used
+    // to drop them, so a browser client refused every status stream.
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-a", status: "COMPLETE", currentPlanId: "plan-1", contentRevision: 7 })
+    );
+    mockProjectStatus.buildProjectStatus.mockResolvedValue(statusRecord({ project: { status: "COMPLETE" } }));
+    mockPrisma.generationJob.findFirst.mockResolvedValue(null);
+    fakeDedupingQueue();
+    const app = await buildMobileApp();
+    app.addHook("onRequest", async (_request, reply) => {
+      reply.header("access-control-allow-origin", "http://127.0.0.1:8099");
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/status/events",
+      headers: bearer("token-a")
+    });
+
+    expect(response.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:8099");
+    expect(response.headers["content-type"]).toBe("text/event-stream");
+    await app.close();
+  });
+
   it("queues a settled project's repair before publishing the missing-export status", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(

@@ -4,6 +4,7 @@ import { jsonRecord } from "../schemas/jsonCoercion.js";
 import { DEFAULT_MARKDOWN_LABELS, markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
 import { joinMarkdownPageBlocks } from "./markdownPageBoundaries.js";
 import { assertBookLikeMarkdown } from "./bookLikeMarkdown.js";
+import { storyPageDesignField, type StoryPageDesignId } from "./storyPageDesigns.js";
 
 // Re-exported because `markdownLabels` was always part of this module's surface
 // — `epub.ts` and the exporters import it from here. The leak checks moved out
@@ -29,6 +30,7 @@ export type ReaderChapter = {
 export type CompileMarkdownInput = {
   plan: BookPlan;
   storyPageLayout?: "separate" | undefined;
+  storyPageDesign?: StoryPageDesignId | undefined;
   category?: CreateProjectInput["category"] | undefined;
   language?: string | undefined;
   pages: MarkdownPage[];
@@ -195,6 +197,7 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
 export type CompiledBookMarkdown = {
   markdown: string;
   storyPageLayout?: "separate" | undefined;
+  storyPageDesign?: StoryPageDesignId | undefined; // Text-only story sheets' design (`storyPageDesigns.ts`).
   pageAnchors: PageAnchorPlan[];
   /** Offset of the Sources heading, when the back matter is printed. */
   sourcesOffset?: number;
@@ -294,6 +297,7 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
   return {
     markdown,
     ...(input.storyPageLayout ? { storyPageLayout: input.storyPageLayout } : {}),
+    ...(input.storyPageLayout === "separate" ? storyPageDesignField(input) : {}),
     pageAnchors,
     ...(sourcesOffset !== undefined ? { sourcesOffset } : {}),
     hasCoverPage: Boolean(coverImagePath || titlePage),

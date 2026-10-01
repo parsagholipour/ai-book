@@ -448,6 +448,34 @@ export const MOBILE_BOOK_TYPE_SETTINGS: Record<
   }
 };
 
+/**
+ * **A children's story is a KIDS book, whatever product type it is stored
+ * under.** The app has no children's product type, so the `children_story`
+ * lane used to be filed as `short_story` → STORY, and STORY at 12+ pages
+ * composes adult chapters: a 12-page story for a six-year-old printed 5,337
+ * words, and the app's own first example chip ("Bedtime story for 5 year
+ * olds", 36 pages) 17,422, where KIDS books of 30 pages run ~1,600. The
+ * stored `mobile.bookType` stays what the reader chose, so the quote and the
+ * launch cap are unchanged; the category is what routes the writing.
+ * `subcategory` is deliberately not "Short Story": an Auto book's cap is
+ * inferred from it, and the app quotes Auto as `custom`.
+ */
+export const MOBILE_CHILDREN_STORY_SETTINGS = {
+  category: "KIDS",
+  templateSlug: "kids-picture-book",
+  subcategory: "Children's Story",
+  coverTemplate: "kids",
+  toneProfile: "narrative",
+  targetPages: MOBILE_BOOK_TYPE_SETTINGS.short_story.targetPages
+} as const satisfies {
+  category: CreateProjectInput["category"];
+  templateSlug: string;
+  subcategory: string;
+  coverTemplate: "kids";
+  toneProfile: ToneProfile;
+  targetPages: Record<MobileLengthPreset, number>;
+};
+
 export const MOBILE_AUTO_BOOK_TYPE_SETTINGS = {
   category: "CUSTOM",
   templateSlug: "general-book",

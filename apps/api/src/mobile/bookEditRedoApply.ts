@@ -21,6 +21,8 @@ import { UNDOABLE_EDIT_KINDS, queueUserEditExportRecompile } from "./manualEdits
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
 import { rebuildStoryStateAfterUndo } from "./rebuildStoryState.js";
 import { jsonInputValue } from "./support.js";
+import { numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
+import { readerPagesPhrase } from "./bookEditCopy.js";
 
 /**
  * Restores the after-snapshots of the most recently undone snapshot-backed
@@ -210,7 +212,7 @@ export async function redoLastBookEdit(
     projectId: project.id,
     parentId,
     operationId: operation.id,
-    content: redoConfirmation(operation.request, restoredPageIndexes),
+    content: redoConfirmation(operation.request, restoredPageIndexes, numberingForProject(project)),
     metadata: {
       intent,
       charged: false,
@@ -232,13 +234,9 @@ function nothingToRedoReply(
   });
 }
 
-function redoConfirmation(request: string, restoredPageIndexes: number[]): string {
+function redoConfirmation(request: string, restoredPageIndexes: number[], numbering: ReaderPageNumbering): string {
   const restored =
-    restoredPageIndexes.length === 0
-      ? "put that edit back"
-      : restoredPageIndexes.length === 1
-        ? `put page ${restoredPageIndexes[0]} back`
-        : `put pages ${restoredPageIndexes.join(", ")} back`;
+    restoredPageIndexes.length === 0 ? "put that edit back" : `put ${readerPagesPhrase(restoredPageIndexes, numbering)} back`;
   return `I ${restored} to redo “${request.slice(0, 120)}”. I’m rebuilding your book now. Redo is free.`;
 }
 

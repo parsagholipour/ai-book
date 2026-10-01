@@ -162,6 +162,27 @@ describe("primarySources", () => {
     configurePrimarySourceThrottle({ intervalMs: 0, backoffMs: 50, retries: 1, searchTimeoutMs: 10_000, outageAfterTimeouts: 2, outageSkipMs: 5 * 60_000 });
   });
 
+  it("counts timeouts from searches that ran together toward the outage", async () => {
+    // A dossier fires its episode searches at once; each used to count from
+    // the outage it saw when it started — none — so the count never left one.
+    configurePrimarySourceThrottle({ intervalMs: 0, searchTimeoutMs: 40, outageAfterTimeouts: 2, outageSkipMs: 5_000 });
+    let gutendexRequests = 0;
+    const events: Array<Record<string, unknown>> = [];
+    const slowGutendex = async (url: string) => {
+      if (!url.includes("gutendex.com")) return fakeFetch(url);
+      gutendexRequests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return { status: 200, text: JSON.stringify({ results: [] }) };
+    };
+    const search = () => searchPrimarySources("chronicle", { fetch: slowGutendex, language: "en", log: (event, detail) => events.push({ event, ...detail }) });
+    await Promise.all([search(), search(), search()]);
+    expect(gutendexRequests).toBe(3);
+    await search();
+    expect(gutendexRequests).toBe(3);
+    expect(events.at(-1)).toMatchObject({ hosts: { gutenberg: { outcome: "skipped", ms: 0 } } });
+    configurePrimarySourceThrottle({ intervalMs: 0, backoffMs: 50, retries: 1, searchTimeoutMs: 10_000, outageAfterTimeouts: 2, outageSkipMs: 5 * 60_000 });
+  });
+
   it("serialises requests per host and retries after a 429", async () => {
     const calls: number[] = [];
     let first = true;

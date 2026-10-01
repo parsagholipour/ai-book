@@ -218,7 +218,7 @@ describe("a Studio picture book's story pages", () => {
         plan: flatPlan, pages, authorManuscript: true, storyPageLayout: "separate", category: "KIDS"
       });
       const { markdown } = separateStoryPagesForPdf(compiled.markdown, compiled);
-      expect(markdown.match(/class="pdf-story-page pdf-story-scene"/g)).toHaveLength(pages.length);
+      expect(markdown.match(/class="pdf-story-page pdf-story-scene[ "]/g)).toHaveLength(pages.length);
     }
   });
 });

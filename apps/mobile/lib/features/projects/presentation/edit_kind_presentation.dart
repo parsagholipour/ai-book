@@ -41,6 +41,10 @@ EditKindStyle editKindStyle(String kind, {String? structuralAction}) {
       icon: Icons.title,
       label: 'Chapter headings',
     ),
+    'page_design' => const EditKindStyle(
+      icon: Icons.palette_outlined,
+      label: 'Page design',
+    ),
     'add_image' => const EditKindStyle(
       icon: Icons.add_photo_alternate_outlined,
       label: 'New picture',

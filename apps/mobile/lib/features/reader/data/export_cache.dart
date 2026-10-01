@@ -107,8 +107,10 @@ class ExportCache {
 
     final DownloadedFile received;
     try {
+      // The reader's own route when the server offers one: reading is free,
+      // and the download route spends the book's export unlock.
       received = await apiClient.downloadFile(
-        export.downloadUrl,
+        export.readUrl ?? export.downloadUrl,
         partial.path,
         onReceiveProgress: onProgress,
         cancelToken: cancelToken,

@@ -3,25 +3,22 @@ import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type WorkerImageAsset } from "../runtime/jobTypes.js";
 import {
   buildCharacterReferencePrompt,
+  characterReferenceCast,
   characterReferenceSeedInstruction,
   errorMessage,
   imageAdapterCapabilities,
   imageRefusalReason,
   isImageContentRefusalError,
-  libraryCharacterObjectKey,
   libraryCharactersFromMediaSettings,
   matchLibraryCharacter,
   optimizeImageForStorage,
   publicAssetUrl,
   safePathPart,
-  selectCharacterReferenceAssets,
   shouldGenerateCharacterReferences,
   shouldUseCharacterReferenceImages,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
-  type ImageAdapter,
-  type LibraryCharacterPortraitSource,
   type LibraryCharacterSnapshot,
   type ProviderSet
 } from "@book-maker/core";
@@ -39,8 +36,8 @@ import {
   imageReferenceForAsset,
   renderedSheetFileNames
 } from "./characterReferenceSheetFiles.js";
-import type { CharacterReferenceSelection } from "./characterReferencePrompt.js";
 import { runCharacterReferenceRenderPass } from "./characterReferenceRenderLease.js";
+import { resolveLibraryPortraitSeed, type LibraryPortraitSeedOutcome } from "./libraryPortraitSeed.js";
 import { Prisma, prisma } from "@book-maker/db";
 import { randomUUID } from "node:crypto";
 import { appendRunLog, objectKey, objectReference, objectStore } from "@book-maker/storage";
@@ -69,6 +66,14 @@ export async function ensureCharacterReferenceAssets(
   if (!shouldGenerateCharacterReferences(options.input, options.plan)) {
     return [];
   }
+  // Who this book draws sheets for — the whole cast only when pages are
+  // illustrated, and possibly nobody for a cover-only book. One reading for
+  // the fast check, the locked read and the render, so a set settled by one
+  // caller is settled for every other.
+  const cast = characterReferenceCast(options.input, options.plan);
+  if (cast.length === 0) {
+    return [];
+  }
 
   const capabilities = imageAdapterCapabilities(options.providers.image);
   if (!shouldUseCharacterReferenceImages(options.input, options.plan, capabilities)) {
@@ -94,7 +99,7 @@ export async function ensureCharacterReferenceAssets(
     currentCharacterReferences(options.projectId, options.planId),
     settledCharacterReferenceRefusals(options.planId)
   ]);
-  if (characterReferenceSetIsSettled(existing, refusals, options.plan)) {
+  if (characterReferenceSetIsSettled(existing, refusals, cast)) {
     return existing.map(toWorkerImageAsset);
   }
 
@@ -115,10 +120,10 @@ export async function ensureCharacterReferenceAssets(
       const settledRefusals = await settledCharacterReferenceRefusals(options.planId, client);
       return {
         answer: { assets: assets.map(toWorkerImageAsset), refusals: settledRefusals },
-        settled: characterReferenceSetIsSettled(assets, settledRefusals, options.plan)
+        settled: characterReferenceSetIsSettled(assets, settledRefusals, cast)
       };
     },
-    render: () => renderCharacterReferenceSheets(options),
+    render: () => renderCharacterReferenceSheets(options, cast),
     // A pass whose answer the commit did not keep leaves a whole cast of files
     // no row names, and nothing else will ever unlink one — see
     // `characterReferenceSheetFiles.ts`.
@@ -246,7 +251,8 @@ type RenderedCharacterReferences = {
  * abort a commit or block another image job.
  */
 async function renderCharacterReferenceSheets(
-  options: CharacterReferenceRenderOptions
+  options: CharacterReferenceRenderOptions,
+  cast: BookPlan["characters"]
 ): Promise<RenderedCharacterReferences> {
 
   // The renders are independent, so a small worker pool runs them
@@ -254,7 +260,7 @@ async function renderCharacterReferenceSheets(
   // series. Workers stop picking up new characters after the first failure
   // (a rejected Promise.all cannot cancel siblings, and renders nobody will
   // keep spend the same image budget the retry needs).
-  const characters = options.plan.characters;
+  const characters = cast;
   // Names decide filenames, so the whole cast's stems are resolved together and
   // up front: two characters must never share one, and the renders below run
   // concurrently into this one directory. The pass's own id rides on every stem
@@ -545,79 +551,12 @@ async function commitCharacterReferenceSheets(
 
 const CHARACTER_REFERENCE_RENDER_CONCURRENCY = 3;
 
-/**
- * Why a plan character's reference sheet was rendered without the reader's own
- * saved artwork.
- *
- * All six used to be one `return null` that recorded nothing, which is what
- * made "my saved character came out as a different person" a database dig: the
- * sheet, the plan and the book all look ordinary, and the only trace of the
- * decision was its absence. They are kept apart because they need different
- * answers — a rename by the planner (`no_library_match`) is a matcher problem,
- * a `portrait_file_missing` is a character deleted since the build, and
- * `portrait_owned_by_another_user` is a planted snapshot being refused and is
- * working as intended.
- */
-export type LibraryPortraitSeedSkipReason =
-  | "no_library_match"
-  | "no_portrait"
-  | "project_has_no_owner"
-  | "portrait_owned_by_another_user"
-  | "portrait_path_rejected"
-  | "portrait_file_missing";
-
-type LibraryPortraitSeed = { id: string; path: string; source: LibraryCharacterPortraitSource };
-
-export type LibraryPortraitSeedOutcome =
-  | { seeded: true; seed: LibraryPortraitSeed }
-  | {
-      seeded: false;
-      reason: LibraryPortraitSeedSkipReason;
-      /** Present once a snapshot was matched — every reason but `no_library_match`. */
-      libraryCharacterId?: string | undefined;
-    };
-
 async function libraryPortraitSeedForName(
   name: string,
   snapshots: readonly LibraryCharacterSnapshot[],
   ownerUserId: string | null
 ): Promise<LibraryPortraitSeedOutcome> {
   return resolveLibraryPortraitSeed(matchLibraryCharacter(name, snapshots), ownerUserId);
-}
-
-/**
- * The security-relevant ownership trio — owner-prefix check,
- * `libraryCharacterObjectKey`, object HEAD — lives here and only here; every path
- * that reads a portrait off a stored snapshot (seeding, page faces, the chat
- * `add_image` insertion) resolves through it.
- */
-export async function resolveLibraryPortraitSeed(
-  match: LibraryCharacterSnapshot | null,
-  ownerUserId: string | null
-): Promise<LibraryPortraitSeedOutcome> {
-  if (!match) {
-    return { seeded: false, reason: "no_library_match" };
-  }
-  const matched = { libraryCharacterId: match.id };
-  if (!match.portraitFile) {
-    return { seeded: false, reason: "no_portrait", ...matched };
-  }
-  if (!ownerUserId) {
-    return { seeded: false, reason: "project_has_no_owner", ...matched };
-  }
-  // The snapshots are stored JSON that client flows can reach, so a portrait is
-  // only ever read out of the book owner's own characters directory.
-  if (!match.portraitFile.startsWith(`${ownerUserId}/`)) {
-    return { seeded: false, reason: "portrait_owned_by_another_user", ...matched };
-  }
-  const path = libraryCharacterObjectKey(match.portraitFile);
-  if (!path) {
-    return { seeded: false, reason: "portrait_path_rejected", ...matched };
-  }
-  if (!(await objectStore().head(path))) {
-    return { seeded: false, reason: "portrait_file_missing", ...matched };
-  }
-  return { seeded: true, seed: { id: match.id, path: objectReference(path), source: match.portraitSource ?? "generated" } };
 }
 
 /** What a rendered sheet's row records about its seeding, successful or not. */
@@ -729,109 +668,14 @@ async function logCharacterReferenceRefused(options: {
 // both through the module that builds the selection.
 export { characterReferencePromptInstruction } from "./characterReferencePrompt.js";
 export type { CharacterReferenceSelection } from "./characterReferencePrompt.js";
-
-export async function selectReferenceImagePaths(options: {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  assets: WorkerImageAsset[];
-  projectId: string;
-  image: ImageAdapter;
-  context: string;
-}): Promise<CharacterReferenceSelection> {
-  const capabilities = imageAdapterCapabilities(options.image);
-  if (!capabilities.supportsReferenceImages || capabilities.maxReferenceImages <= 0) {
-    return { paths: [], libraryFaceNames: [] };
-  }
-  const localAssets = options.assets.flatMap((asset) => {
-    const path = imageReferenceForAsset(asset.path, options.projectId);
-    return path ? [{ path, metadata: asset.metadata }] : [];
-  });
-  const sheets = selectCharacterReferenceAssets({
-    input: options.input,
-    plan: options.plan,
-    assets: localAssets,
-    context: options.context,
-    maxReferences: capabilities.maxReferenceImages
-  });
-  const paths = sheets.map((asset) => asset.path);
-  const faces = await libraryFacesForSheets({
-    sheets,
-    input: options.input,
-    projectId: options.projectId,
-    budget: capabilities.maxReferenceImages - paths.length
-  });
-  return {
-    paths: [...paths, ...faces.map((face) => face.path)],
-    libraryFaceNames: faces.map((face) => face.name)
-  };
-}
-
-async function libraryFacesForSheets(options: {
-  sheets: Array<{ metadata?: unknown }>;
-  input: CreateProjectInput;
-  projectId: string;
-  budget: number;
-}): Promise<Array<{ name: string; path: string }>> {
-  if (options.budget <= 0) {
-    return [];
-  }
-  const snapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
-  if (!snapshots.some((snapshot) => snapshot.portraitFile)) {
-    return [];
-  }
-  // Same ownership rule as the seeding path: a snapshot is stored JSON that
-  // client flows can reach, so a file is only read out of the book owner's own
-  // characters directory. An operator-console book has no owner and gets none.
-  const ownerUserId =
-    (await prisma.project.findUnique({ where: { id: options.projectId }, select: { userId: true } }))?.userId ?? null;
-  if (!ownerUserId) {
-    return [];
-  }
-  const faces: Array<{ name: string; path: string }> = [];
-  for (const sheet of options.sheets) {
-    if (faces.length >= options.budget) {
-      break;
-    }
-    const match = librarySnapshotForSheet(sheet.metadata, snapshots);
-    if (!match) {
-      continue;
-    }
-    const outcome = await resolveLibraryPortraitSeed(match, ownerUserId);
-    if (outcome.seeded) {
-      // The book calls the character by the plan's name, so that is the name the
-      // face instruction has to use; the snapshot's own is the fallback for a
-      // sheet somehow written without one.
-      faces.push({ name: characterNameFromAssetMetadata(sheet.metadata) ?? match.name, path: outcome.seed.path });
-    }
-  }
-  return faces;
-}
-
-/**
- * Which library character a rendered sheet belongs to.
- *
- * The seeding pass already resolved this and wrote the answer onto the sheet's
- * own row, so a page render reads that id back instead of running the name
- * matcher a second time. Re-deriving it here reproduced every matching defect
- * at render time and — worse — could reach a *different* answer than the sheet
- * was actually drawn from, which is a face attached to the wrong character.
- * The name match survives only for sheets rendered before the id was recorded.
- *
- * An id that names no snapshot resolves to nothing rather than falling back to
- * the name: the snapshot set has moved out from under the sheet, and guessing
- * by name against a moved set is precisely the wrong-face bug.
- */
-export function librarySnapshotForSheet(
-  metadata: unknown,
-  snapshots: readonly LibraryCharacterSnapshot[]
-): LibraryCharacterSnapshot | null {
-  const recordedId = libraryCharacterIdFromAssetMetadata(metadata);
-  if (recordedId) {
-    return snapshots.find((snapshot) => snapshot.id === recordedId) ?? null;
-  }
-  const name = characterNameFromAssetMetadata(metadata);
-  return name ? matchLibraryCharacter(name, snapshots) : null;
-}
+export {
+  libraryCharacterIdFromAssetMetadata,
+  librarySnapshotForSheet,
+  selectCoverReferenceImagePaths,
+  selectReferenceImagePaths
+} from "./characterReferenceSelection.js";
+export { resolveLibraryPortraitSeed } from "./libraryPortraitSeed.js";
+export type { LibraryPortraitSeedOutcome, LibraryPortraitSeedSkipReason } from "./libraryPortraitSeed.js";
 
 export function imageAssetPlanId(metadata: unknown): string | undefined {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -839,19 +683,6 @@ export function imageAssetPlanId(metadata: unknown): string | undefined {
   }
   const value = (metadata as Record<string, unknown>).planId;
   return typeof value === "string" ? value : undefined;
-}
-
-/**
- * The library character a sheet was seeded from, as recorded at render time.
- * Absent on sheets rendered before the id was written, and on every sheet of a
- * book that mentioned no saved character.
- */
-export function libraryCharacterIdFromAssetMetadata(metadata: unknown): string | undefined {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return undefined;
-  }
-  const value = (metadata as Record<string, unknown>).libraryCharacterId;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 export function toWorkerImageAsset(asset: { id: string; path: string; metadata: unknown }): WorkerImageAsset {

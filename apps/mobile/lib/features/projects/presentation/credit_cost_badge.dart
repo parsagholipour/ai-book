@@ -36,17 +36,20 @@ class CreditCostBadge extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final tint = foreground ?? colors.onSurfaceVariant;
     final refunded = kind == CreditCostKind.refunded;
+    void explain() =>
+        showCreditCostSheet(context, credits: credits, kind: kind);
     return Semantics(
+      container: true,
       button: true,
       label: _semanticLabel(credits, kind),
+      onTap: explain,
       child: ExcludeSemantics(
         child: Material(
           color: tint.withValues(alpha: 0.10),
           shape: const StadiumBorder(),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: () =>
-                showCreditCostSheet(context, credits: credits, kind: kind),
+            onTap: explain,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               child: Row(

@@ -193,11 +193,18 @@ class AppButton extends StatelessWidget {
               ),
     };
 
+    // The Material button below is excluded so the announced label is ours,
+    // which takes its tap action with it — so this node carries the tap, and is
+    // its own container. Without both, TalkBack heard a button it could not
+    // press, merged into whatever text sat around it (an empty state read as
+    // one "button" holding its title, its message and the label).
     final result = Semantics(
+      container: true,
       button: true,
       enabled: enabled,
       liveRegion: loading,
       label: announcedLabel,
+      onTap: callback,
       child: ExcludeSemantics(
         child: AppPressScale(
           enabled: enabled,

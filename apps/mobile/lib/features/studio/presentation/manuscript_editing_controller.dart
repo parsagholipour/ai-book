@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../domain/manuscript_emphasis.dart';
+import '../domain/manuscript_formatting.dart';
 import '../domain/manuscript_inline.dart';
 
 /// A text controller that draws markdown as it will read in the book, without
@@ -36,31 +38,59 @@ class ManuscriptEditingController extends TextEditingController {
   /// Bold and italic switched on with the cursor between words: nothing is
   /// written until the next thing is typed, which the marks then go round.
   /// It belongs to the place it was asked for and is let go of when the cursor
-  /// moves or the text changes.
+  /// moves or the text changes — except by spaces typed at the end of a bold
+  /// or italic run, which keep the run's style on so a phrase can be typed in
+  /// it (see [continuedTypingStyle]).
   Set<EmphasisKind> get typingStyle => _typingStyle;
 
   /// The formatter that keeps hidden marks whole and applies [typingStyle].
   late final ManuscriptEmphasisFormatter emphasisFormatter =
       ManuscriptEmphasisFormatter(typingStyle: () => _typingStyle);
 
+  /// Moves a keyboard's edit made on text the formatters have since rewritten
+  /// onto the rewrite. It keeps the last value the keyboard sent, so it is one
+  /// per field, and it runs before anything reads the edit.
+  late final ManuscriptImeRebase imeRebase = ManuscriptImeRebase();
+
+  /// What a field over this controller must take as `inputFormatters`, in
+  /// this order: the keyboard's edit moved onto the current text, Enter as a
+  /// paragraph or list item, then the hidden marks kept whole.
+  List<TextInputFormatter> get inputFormatters => [
+    imeRebase,
+    const ManuscriptEnterFormatter(),
+    emphasisFormatter,
+  ];
+
   @override
   set value(TextEditingValue newValue) {
     final snapped = snapSelection(value, newValue);
-    if (_typingStyle.isNotEmpty &&
-        (snapped.text != value.text || snapped.selection != value.selection)) {
-      _typingStyle = const {};
+    if (snapped.text != value.text || snapped.selection != value.selection) {
+      _typingStyle = continuedTypingStyle(value, snapped, _typingStyle);
     }
     super.value = snapped;
   }
 
   /// The Bold and Italic buttons and their shortcuts.
   ///
-  /// On a selection or a word it changes the text (see [toggleEmphasis]). With
+  /// At the end of a run of [kind] it steps out of the run, so what is typed
+  /// next is not [kind]. On a selection or a word it changes the text (see
+  /// [toggleEmphasis]). With
   /// the cursor between words there is nothing to change, so it switches the
   /// typing style instead — unless the cursor is already in text of that
   /// style, where there is nothing to switch on.
   void toggleStyle(EmphasisKind kind) {
     final current = value;
+    // At the end of a run of this style, the button turns it off for what is
+    // typed next rather than taking it off the last word (see [leaveRunEnd]).
+    // The composing word is let go of, so the keyboard starts the next word
+    // where the cursor now is.
+    final left = leaveRunEnd(current, kind);
+    if (left != null) {
+      value = left.value;
+      _typingStyle = left.keep;
+      notifyListeners();
+      return;
+    }
     if (current.selection.isValid &&
         current.selection.isCollapsed &&
         !cursorTouchesWord(current)) {

@@ -356,7 +356,7 @@ export function mediaSettingsWithReplanSettings(
  * `chapterHeadingLabel` are not even fields of `mediaSettingsSchema`, so any
  * snapshot that passed through it has already silently dropped them.
  */
-const ROW_OWNED_MEDIA_SETTINGS = ["includeSources", "chapterHeadingStyle", "chapterHeadingLabel"] as const;
+const ROW_OWNED_MEDIA_SETTINGS = ["includeSources", "chapterHeadingStyle", "chapterHeadingLabel", "storyPageDesign"] as const;
 
 /**
  * The mediaSettings a plan revision or replan may write back to the project

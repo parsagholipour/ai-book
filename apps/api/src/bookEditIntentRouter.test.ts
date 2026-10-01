@@ -15,6 +15,44 @@ import {
 } from "./testing/bookEditIntentFixtures.js";
 
 describe("book edit intent AI router", () => {
+  it("takes a whole-message word swap without the router, so it stays the free verified path", async () => {
+    // 2026-10-01: the router rewrote this into a plural-aware instruction with
+    // no replacement terms, and the reader was quoted a model edit of the
+    // whole book that the adherence review then refused three times.
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.9,
+      reasoning: "Should never be used.",
+      assistantMessage: "Model reply",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+    const message = "Replace the word tray with saucer everywhere in the book";
+
+    const intent = await classifyProjectChatMessage({ message, stage: "complete", pages, chapters, textModel: model });
+
+    expect(model.generateWithTools).not.toHaveBeenCalled();
+    expect(intent).toMatchObject({
+      kind: "local_patch",
+      scope: "all_pages",
+      editInstruction: message,
+      exactReplacement: { from: "tray", to: "saucer" }
+    });
+
+    // A selection places the request on a page, which is the router's to read.
+    await classifyProjectChatMessage({
+      message,
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model,
+      readerSelection: { pageIndex: pages[0]!.index }
+    });
+    expect(model.generateWithTools).toHaveBeenCalled();
+  });
+
   it("short-circuits read/undo intents without calling the AI router", async () => {
     const model = fakeDecideModel({
       action: "answer",
@@ -96,6 +134,58 @@ describe("book edit intent AI router", () => {
       backMatter: { includeSources: false },
       assistantMessage: "Ich entferne die Quellenliste."
     });
+  });
+
+  it("takes a page-design request without the router, as a free design change", async () => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.9,
+      reasoning: "Should never be used.",
+      assistantMessage: "Model reply",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null,
+      editTarget: "whole_book"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Make the pages look like the night sky",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    // A rewrite of every page could not change how the pages are printed.
+    expect(model.generateWithTools).not.toHaveBeenCalled();
+    expect(intent).toMatchObject({ kind: "page_design", pageDesign: { design: "night" }, affectedPageIndexes: [] });
+  });
+
+  it("routes the router's page_design edit target to a free design change", async () => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.92,
+      reasoning: "The reader wants the pages printed like the night sky.",
+      assistantMessage: "صفحه‌ها را با طرح آسمان شب چاپ می‌کنم.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null,
+      editTarget: "page_design",
+      pageDesign: "night"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "طرح صفحه‌ها رو شبیه آسمان شب کن",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    expect(model.generateWithTools).toHaveBeenCalledOnce();
+    expect(intent).toMatchObject({ kind: "page_design", pageDesign: { design: "night" }, scope: "none" });
   });
 
   it("uses the AI router for plan revisions via decide", async () => {

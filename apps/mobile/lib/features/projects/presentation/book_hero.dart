@@ -342,8 +342,10 @@ class _ChangeCoverLink extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Semantics(
+      container: true,
       button: true,
       label: 'Change cover',
+      onTap: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           key: const ValueKey('hero-change-cover'),
@@ -453,7 +455,9 @@ String? bookMetaLine({
   }
   if (project.hasDistinctBookType) {
     parts.add(project.bookTypeLabel);
-  } else if (project.qualityPresetLabel != 'Custom') {
+  } else if (!project.isAuthorManuscript &&
+      project.qualityPresetLabel != 'Custom') {
+    // The effort is the AI's: an author's own book was written at none.
     parts.add(project.qualityPresetLabel);
   }
   return parts.isEmpty ? null : parts.join(' · ');
@@ -650,9 +654,11 @@ class _ActionTile extends StatelessWidget {
     final colors = theme.colorScheme;
     final foreground = selected ? colors.onPrimaryContainer : colors.onSurface;
     return Semantics(
+      container: true,
       button: true,
       selected: selected,
       label: semanticLabel ?? label,
+      onTap: onTap,
       child: ExcludeSemantics(
         child: Material(
           color: selected ? colors.primaryContainer : Colors.transparent,

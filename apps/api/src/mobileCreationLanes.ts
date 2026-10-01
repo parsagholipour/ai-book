@@ -140,7 +140,8 @@ export function laneForLegacyIntent(intent: MobileCreationBrief["intent"]): Mobi
     teach_practice: "workbook",
     support_clients: "client_tool",
     explain_offer: "offer_guide",
-    short_story: "adult_story"
+    short_story: "adult_story",
+    unspecified: "auto"
   } as const satisfies Record<MobileCreationBrief["intent"], MobileCreationLane>;
   return lanes[intent];
 }
@@ -176,6 +177,7 @@ export function productBookTypeForLane(lane: MobileCreationLane): MobileCreation
 }
 
 export function intentForLane(lane: MobileCreationLane): MobileCreationBrief["intent"] {
+  if (lane === "auto") return "unspecified";
   if (lane === "workbook") return "teach_practice";
   if (lane === "client_tool") return "support_clients";
   if (lane === "offer_guide") return "explain_offer";

@@ -14,6 +14,7 @@ import {
   mobileCreationResearchSchema,
   type MobileBookRecipe,
   type MobileCreationDraftPayload,
+  type MobileCreationLane,
   type MobileCreationMessage,
   type MobileCreationOptionalDetails,
   type MobileCreationPresets
@@ -100,7 +101,11 @@ const creationTurnAiPatchObjectSchema = z
     shapePreview: z.array(z.string()).min(1).max(8).optional(),
     warnings: z.array(z.string()).max(5).optional(),
     language: z.string().trim().min(2).max(40).optional(),
-    buildRequested: z.boolean().optional()
+    buildRequested: z.boolean().optional(),
+    // The book shape the conversation has settled on while the reader left
+    // the type on Auto ("auto" while it is still open). Recorded beside the
+    // choice, never as one: see `applyCreationTurnPatch`.
+    autoLane: mobileCreationLaneSchema.optional()
   })
   .strict();
 
@@ -132,6 +137,9 @@ export const creationTurnAiPatchSchema = z.preprocess((value) => {
 }, creationTurnAiPatchObjectSchema);
 
 export type CreationTurnAiPatch = Partial<z.infer<typeof creationTurnAiPatchSchema>>;
+
+/** A cleaned turn patch: the turn's own fields plus the interviewer's settled Auto shape. */
+export type CreationTurnPatch = Partial<MobileCreationTurn> & { autoLane?: MobileCreationLane | undefined };
 
 export type MobileCreationTurn = z.infer<typeof mobileCreationTurnSchema>;
 export type MobileCreationCoverPreview = NonNullable<MobileCreationTurn["coverPreview"]>;
@@ -266,7 +274,7 @@ export function turnHasEnoughSubstance(request: MobileCreationTurnRequest): bool
 }
 
 /** Empty enrichment patch — nothing to merge onto the deterministic turn. */
-export function creationEnrichmentIsEmpty(patch: Partial<MobileCreationTurn>): boolean {
+export function creationEnrichmentIsEmpty(patch: CreationTurnPatch): boolean {
   return (
     !patch.assistantMessage?.trim() &&
     patch.question === undefined &&
@@ -282,10 +290,8 @@ export function creationEnrichmentIsEmpty(patch: Partial<MobileCreationTurn>): b
   );
 }
 
-export function cleanCreationTurnPatch(
-  patch: CreationTurnAiPatch | Partial<MobileCreationTurn>
-): Partial<MobileCreationTurn> {
-  const cleaned: Partial<MobileCreationTurn> = {};
+export function cleanCreationTurnPatch(patch: CreationTurnAiPatch | CreationTurnPatch): CreationTurnPatch {
+  const cleaned: CreationTurnPatch = {};
   const research = "research" in patch ? patch.research : undefined;
   if (patch.assistantMessage?.trim()) {
     cleaned.assistantMessage = patch.assistantMessage.trim();
@@ -326,10 +332,13 @@ export function cleanCreationTurnPatch(
   if (patch.buildRequested !== undefined) {
     cleaned.buildRequested = patch.buildRequested;
   }
+  if (patch.autoLane !== undefined) {
+    cleaned.autoLane = patch.autoLane;
+  }
   return cleaned;
 }
 
-export function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<MobileCreationTurn>): MobileCreationTurn {
+export function applyCreationTurnPatch(base: MobileCreationTurn, patch: CreationTurnPatch): MobileCreationTurn {
   // The AI may switch the book type mid-chat (e.g. "actually make it a
   // children's story"). Accept the switch when its patched presets name a
   // concrete bookTypeChoice different from the base; the prompt instructs it
@@ -344,16 +353,6 @@ export function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<
   // the model confirming a hand-off the stored state contradicted.
   const patchedToAuto = patchedChoice === "auto" && base.presets.bookTypeChoice !== "auto";
   const detectedLane = laneFromPatch ?? base.detectedLane;
-  // The brief's title means "stated by the user". A stated title arrives on
-  // the update_settings channel (patch.title, folded into optionalDetails by
-  // the route); the base carries any previously stated one. A title the model
-  // writes into its brief patch instead is an invention — the prompt forbids
-  // it — and would show in the app as the book's working name.
-  const brief = mobileBookRecipeSchema.parse({
-    ...(patch.brief ?? base.brief),
-    title: patch.title ?? base.brief.title,
-    lane: detectedLane
-  });
   const patchedPresets = patch.presets
     ? mobileCreationPresetsSchema.parse({
         ...patch.presets,
@@ -361,6 +360,34 @@ export function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<
         bookTypeChoice: laneFromPatch ? patchedChoice : patchedToAuto ? "auto" : base.presets.bookTypeChoice
       })
     : base.presets;
+  // **Auto is resolved beside the choice, never by changing it.** The reader
+  // who leaves the type on Auto still gets the shape the conversation made
+  // clear — "a practical guide for renters…" used to build as an Auto book of
+  // flowing essay prose, because nothing ever recorded that it was a guide and
+  // every downstream reader (the toolkit path, the KIDS routing) saw "auto".
+  // Kept from the base when the interviewer says nothing this turn, cleared
+  // by its "auto", and dropped the moment the reader picks a type.
+  const autoLane =
+    patchedPresets.bookTypeChoice !== "auto"
+      ? undefined
+      : patch.autoLane === undefined
+        ? base.brief.autoLane
+        : patch.autoLane === "auto"
+          ? undefined
+          : patch.autoLane;
+  // The brief's title means "stated by the user". A stated title arrives on
+  // the update_settings channel (patch.title, folded into optionalDetails by
+  // the route); the base carries any previously stated one. A title the model
+  // writes into its brief patch instead is an invention — the prompt forbids
+  // it — and would show in the app as the book's working name. The settled
+  // Auto shape is code's in the same way, so a brief patch's own is dropped.
+  const { autoLane: _briefAutoLane, ...briefFields } = patch.brief ?? base.brief;
+  const brief = mobileBookRecipeSchema.parse({
+    ...briefFields,
+    title: patch.title ?? base.brief.title,
+    lane: detectedLane,
+    ...(autoLane && autoLane !== "auto" ? { autoLane } : {})
+  });
   const buildRequested = patch.buildRequested ?? base.buildRequested;
   const question = patch.question ?? null;
   const quickReplies =

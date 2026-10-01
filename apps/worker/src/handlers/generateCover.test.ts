@@ -43,7 +43,7 @@ vi.mock("node:fs/promises", () => ({ mkdir: vi.fn(), writeFile: mocks.writeFile 
 vi.mock("../generation/characterReferences.js", () => ({
   characterReferencePromptInstruction: () => "",
   ensureCharacterReferenceAssets: mocks.ensureCharacterReferenceAssets,
-  selectReferenceImagePaths: async () => ({ paths: [], libraryFaceNames: [] })
+  selectCoverReferenceImagePaths: async () => ({ paths: [], libraryFaceNames: [] })
 }));
 vi.mock("../generation/characterReferenceRunLog.js", () => ({
   appendCharacterReferenceRunLog: mocks.appendCharacterReferenceRunLog

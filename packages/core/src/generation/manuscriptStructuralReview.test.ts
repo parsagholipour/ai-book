@@ -208,6 +208,17 @@ describe("corroborateStructuralReview", () => {
     ).toEqual([]);
   });
 
+  it("speaks of one duplicate page in the singular", () => {
+    // "Page 3 is the strongest treatment; pages 12 repeat its subject" (2026-10-01).
+    const issues = corroborateStructuralReview({
+      result: { clusters: [cluster({ duplicatePageIndexes: [2] })] },
+      packs: [pack],
+      candidateFindings: [candidate]
+    });
+    expect(issues[0]?.message).toContain("page 2 repeats its subject");
+    expect(issues[0]?.message).not.toContain("pages 2");
+  });
+
   it("names canonical and duplicate pages on the corroborated issue", () => {
     const issues = corroborateStructuralReview({
       result: { clusters: [cluster()] },

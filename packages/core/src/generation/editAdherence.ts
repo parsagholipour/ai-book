@@ -60,6 +60,14 @@ export type ReviewAppliedBookEditOptions = {
   textModel: TextModelAdapter;
   /** A literal edit is computable and must never spend a provider call. */
   exactReplacement?: ExactReplacement | undefined;
+  /**
+   * Facts code established over the whole edited book — pages the reviewer is
+   * not shown included. A reviewer handed only the changed pages cannot
+   * confirm "every occurrence throughout the book", and refused a correct word
+   * swap three rounds running on exactly that (2026-10-01); code can, so it
+   * says what it checked and the reviewer is told to take it as proven.
+   */
+  codeVerifiedFacts?: string[] | undefined;
 };
 
 const verdictProseSchema = z
@@ -117,6 +125,19 @@ export async function reviewAppliedBookEdit(
   }
 }
 
+/**
+ * **The model reviewers read what prints — a page's title and its prose —
+ * never its stored summary.** The summary is a synopsis the reader never sees,
+ * and the surgical patch tier is told to touch it only when the change alters
+ * what it says; shown it as page text, the reviewer held it to the
+ * instruction and refused a correct word swap three rounds running because one
+ * synopsis still said "a tray" (2026-10-01). The code-only exact-replacement
+ * check above still compares summaries: it rewrites them itself.
+ */
+export function printedPage(page: EditAdherencePage): Omit<EditAdherencePage, "summary"> {
+  return { index: page.index, title: page.title, markdown: page.markdown };
+}
+
 function figureBlindPages(options: ReviewAppliedBookEditOptions): ReviewAppliedBookEditOptions {
   const standIn = (pages: EditAdherencePage[]) => pages.map((page) => ({ ...page, markdown: figureStandInMarkdown(page.markdown) }));
   return { ...options, beforePages: standIn(options.beforePages), afterPages: standIn(options.afterPages) };
@@ -130,8 +151,9 @@ function wholeSetReviewMessages(options: ReviewAppliedBookEditOptions): ChatMess
       content: JSON.stringify({
         reviewPhase: "global-whole-set",
         approvedInstruction: options.instruction,
-        beforePages: options.beforePages,
-        afterPages: options.afterPages,
+        beforePages: options.beforePages.map(printedPage),
+        afterPages: options.afterPages.map(printedPage),
+        ...(options.codeVerifiedFacts?.length ? { codeVerifiedFacts: options.codeVerifiedFacts } : {}),
         outputContract: WHOLE_SET_VERDICT_CONTRACT
       })
     }

@@ -1072,9 +1072,11 @@ heartbeat-protected scratch directories. S3 copies and uploads preserve the publ
   for once per page, and every *other* character redrawn per page, which is the consistency the
   sheets exist to provide. `PlanVersion.characterReferenceRefusals` is that record and
   `characterReferenceSetIsSettled` is the gate that reads it — a sheet or a refusal for every
-  character. It is written in the same transaction as the `ImageAsset` rows, because a settlement
+  character of the cast (`characterReferenceCast`: the whole plan cast for a book with illustrated
+  pages, only the characters the cover concept names for a cover-only AI book, and no sheet for one
+  whose saved artwork the cover attaches instead). It is written in the same transaction as the `ImageAsset` rows, because a settlement
   without them re-renders nothing and sheets without it rebuild per page. The pass that runs owns
-  the whole answer: it attempted every character, so a name it does not refuse this time is one it
+  the whole answer: it attempted every character of the cast, so a name it does not refuse this time is one it
   drew, and a later pass that draws everyone clears the column.
   **But no later pass runs, which is why a refusal needs a door out of the product.** That clearing
   is real — `supersedes` is built on it — and it is only ever reached by a pass that was *already

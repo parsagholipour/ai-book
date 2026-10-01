@@ -117,6 +117,18 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   `imageInsertion`, through the same `addImageQuotaLimit` decision the original Apply used.
   **Known, pre-existing gap:** a chat replan copy carrying `illustrationsEnabled` generates an
   illustrated book through the worker's self-approval, with no approve step and no claim.
+- **Reading a book in the app spends nothing; only taking its file out spends the export unlock,
+  and the app asks first.** A generated book's unlock is granted by its generation charge
+  (`grantExportEntitlement` on the plan approval attempt), so its reader never met the price. A
+  Studio book and an import have no such charge, and the reader downloaded through the same
+  `/export/pdf` route that settles the unlock — so the first open of an author's own book spent 150
+  credits without a word, and every Open/Share in the menu, the book page and the saved-export card
+  spent it on the tap. The reader now fetches `readUrl` (`GET /api/mobile/projects/:id/read/pdf`,
+  PDF only, owner-scoped, the same provenance headers and repair as the download, no entitlement),
+  and `confirmProjectExportUnlock` (`project_export_actions.dart`) asks before any surface spends the
+  unlock. The read route hands the owner bytes the unlock would otherwise sell — their own book, in
+  the app they made it in — which is the trade: public reach still goes through the share preview's
+  cap and the full share's unlock.
 - **Chat replies never name a credit price.** The number travels as
   `metadata.creditsCharged` (queued work) or `metadata.editProposal.credits` (a proposal), and the
   app draws it as the tappable badge in `credit_cost_badge.dart` — one place that also explains what
@@ -734,6 +746,24 @@ of the same manuscript can have fixed.
   pass the busy gate makes its transaction meet an ordinary edit's `EDITING` with no presentation
   predecessor to supply the settled-status fallback; guessing one would let the reprint steal that
   edit's lifecycle and quality policy.
+- **A picture book's page design is not page text either, and it is changed only where it shows.**
+  A children's book printed one scene a sheet without pictures wears a design from the catalog in
+  `packages/core/src/generation/storyPageDesigns.ts` — night sky, under the sea, fairy tale, plain
+  classic… — chosen from its own words unless the reader picked one. "Make the pages look like the
+  night sky", "plain layout please", "change the design" is a `page_design` intent
+  (`apps/api/src/bookEditPageDesign.ts`, matching router edit target and `pageDesign` field): free,
+  it sets `mediaSettings.storyPageDesign` through `applyPresentationPreference`
+  (`mobile/pageDesignEdits.ts`), and both compiles read it back through `storyPageDesignFor`. The
+  recogniser needs a design word *next to* a look-word and refuses a named page, "writing style",
+  "the story's theme", the cover, the illustrations and the font, because each of those is a real
+  edit a free reprint would answer with nothing; "something different" (no design named, or the
+  only one named refused) picks the book's own match or the next design, never plain; "which
+  designs are there?" is answered from the catalog, changes nothing, and is allowed while a job
+  runs. **The preference is written only where the stylesheet dresses the sheets** — the story
+  layout (`storyPageLayoutFor`) with no picture, figure, table or code in any scene and no
+  illustration row on a page. Anywhere else the edit says so and changes nothing: writing it would
+  recompile an identical book and tell the reader it changed. The three presentation kinds are
+  dispatched from `mobile/presentationIntents.ts`.
 - **A request about one kind of content is an edit of the pages that carry it, and the router is
   told what each page carries.** The router sees page titles and summaries, and a summary does not
   say whether a page has a code block; "Use JavaScript in the codes" therefore routed as
@@ -768,7 +798,14 @@ of the same manuscript can have fixed.
 - **A verified exact replacement is free, and the verification is what makes it safe.**
   Exact eligibility is proved from the complete standalone `editInstruction`, never inferred by
   taking everything between a replacement verb and its connector. Unquoted terms must each be one
-  atomic token; multiword phrases, determiners/roles and punctuation need explicit quotes. Router
+  atomic token; multiword phrases, roles ("the hero Rabbit") and punctuation need explicit quotes —
+  only "the word / term / name X" is read as naming X. A message that *is* one such swap is
+  recognised before the router (`exactReplacementIntentFromMessage`), because the router rewrote
+  "replace the word tray with saucer everywhere" into a plural-aware instruction the parse refused
+  and quoted a model edit of every page; a word the book does not hold is told so, never priced. Two
+  plain lowercase words swap as words (`wordForms`): the regular plural, and the capitalised form
+  only where English capitalises any word (sentence start, heading, title) — a mid-sentence "Rose"
+  is a name. The queue payload drops the flag, so the worker re-derives it from the instruction. Router
   `replacementFrom`/`replacementTo` fields only corroborate that shared core parse, and an
   incomplete or disagreeing pair is stored as an explicit null on the intent so proposal rebuild,
   Apply and worker redelivery cannot re-enable the fast path by parsing again without that evidence.

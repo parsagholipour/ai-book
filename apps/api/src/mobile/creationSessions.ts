@@ -20,7 +20,7 @@ import {
   type MobileCreationSessionDto
 } from "./dto.js";
 import { sendMobileError } from "./httpErrors.js";
-import { jsonRecord } from "./support.js";
+import { clipText, jsonRecord } from "./support.js";
 import { type CreationAttachment } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { type FastifyReply } from "fastify";
@@ -40,7 +40,9 @@ export function _chatTitleForPayload(payload: MobileCreationDraftPayload): strin
   const firstUser = payload.messages?.length
     ? conversationMessagesFromPayload(payload).find((m) => m.role === "user")
     : undefined;
-  if (firstUser?.content?.trim()) return firstUser.content.trim().slice(0, 60);
+  // Cut at a word with an ellipsis: a bare slice labelled the chat "…keeper
+  // in Oma", which reads as a finished (wrong) word rather than a cut.
+  if (firstUser?.content?.trim()) return clipText(firstUser.content, 60);
   return "New book";
 }
 

@@ -249,12 +249,15 @@ class _CollapsedContextState extends State<_CollapsedContext> {
         ],
       );
     }
+    void expand() => setState(() => _expanded = true);
     return Semantics(
+      container: true,
       button: true,
       label: '$count unchanged paragraphs. Tap to show them.',
+      onTap: expand,
       child: ExcludeSemantics(
         child: InkWell(
-          onTap: () => setState(() => _expanded = true),
+          onTap: expand,
           borderRadius: BorderRadius.circular(AppRadii.compact),
           child: Container(
             constraints: const BoxConstraints(

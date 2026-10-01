@@ -1,5 +1,6 @@
 import { backMatterIntent } from "./bookEditBackMatter.js";
 import { chapterHeadingEditFromDecision, chapterHeadingIntent } from "./bookEditChapterHeading.js";
+import { pageDesignEditFromDecision, pageDesignIntent } from "./bookEditPageDesign.js";
 import { imageInsertionIntentFromDecision, imageLayoutIntentFromDecision } from "./bookEditImage.js";
 import {
   anchorModelPageIndex,
@@ -266,6 +267,10 @@ function intentFromProposeEditBase(
       chapterHeadingEditFromDecision(decision.chapterHeadingStyle, decision.chapterHeadingLabel),
       decision
     );
+  }
+
+  if (target === "page_design") {
+    return pageDesignIntent(pageDesignEditFromDecision(decision.pageDesign), decision);
   }
 
   if (target === "insert_image") {

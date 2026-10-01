@@ -14,6 +14,7 @@ import {
   approvedPlanRecord,
   bearer,
   buildMobileApp,
+  editablePages,
   generatedPages,
   jobRecord,
   mockAccessTokens,
@@ -113,6 +114,10 @@ describe("mobile pending edit recovery", () => {
 
   it("uses a whole-book follow-up to resolve the previous pending edit scope", async () => {
     mockAccessTokens({ "token-a": "user-a" });
+    // The swap is planned against the pages as stored, so they are in the
+    // database too: an empty one is a book without the word, which is told
+    // so rather than priced as a rewrite.
+    state.pages = editablePages();
     state.projectChatMessages.push(
       {
         id: "chat-old-user",
@@ -185,7 +190,8 @@ describe("mobile pending edit recovery", () => {
           type: "APPLY_BOOK_EDIT",
           payload: expect.objectContaining({
           request: "Replace rabbit with fly throughout the whole book.",
-          exactReplacement: { from: "rabbit", to: "fly" },
+          exactReplacement: { from: "rabbit", to: "fly", wordForms: true },
+          mode: "exact",
           affectedPageIndexes: [1, 2]
         })
       })
@@ -195,6 +201,10 @@ describe("mobile pending edit recovery", () => {
 
   it("recovers a whole-book follow-up from legacy scope questions without pending metadata", async () => {
     mockAccessTokens({ "token-a": "user-a" });
+    // The swap is planned against the pages as stored, so they are in the
+    // database too: an empty one is a book without the word, which is told
+    // so rather than priced as a rewrite.
+    state.pages = editablePages();
     state.projectChatMessages.push(
       {
         id: "chat-old-user",
@@ -293,7 +303,8 @@ describe("mobile pending edit recovery", () => {
         type: "APPLY_BOOK_EDIT",
         payload: expect.objectContaining({
           request: "Replace rabbit with fly throughout the whole book.",
-          exactReplacement: { from: "rabbit", to: "fly" },
+          exactReplacement: { from: "rabbit", to: "fly", wordForms: true },
+          mode: "exact",
           affectedPageIndexes: [1, 2]
         })
       })
@@ -303,6 +314,10 @@ describe("mobile pending edit recovery", () => {
 
   it("uses a stranded whole-book scope when the user confirms the old edit", async () => {
     mockAccessTokens({ "token-a": "user-a" });
+    // The swap is planned against the pages as stored, so they are in the
+    // database too: an empty one is a book without the word, which is told
+    // so rather than priced as a rewrite.
+    state.pages = editablePages();
     state.projectChatMessages.push(
       {
         id: "chat-old-user",
@@ -404,7 +419,8 @@ describe("mobile pending edit recovery", () => {
         type: "APPLY_BOOK_EDIT",
         payload: expect.objectContaining({
           request: "Replace rabbit with fly throughout the whole book.",
-          exactReplacement: { from: "rabbit", to: "fly" },
+          exactReplacement: { from: "rabbit", to: "fly", wordForms: true },
+          mode: "exact",
           affectedPageIndexes: [1, 2]
         })
       })

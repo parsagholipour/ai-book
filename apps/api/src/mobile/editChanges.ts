@@ -9,6 +9,7 @@ import {
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
+import { type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { type MobileEditChangesDto, type MobileEditPageChangeDto } from "./dto.js";
 import { demotedImageAssetsFromClassifier, previousImageAssetsFromClassifier } from "./imageEditRecords.js";
 import { jsonRecord } from "./support.js";
@@ -91,6 +92,24 @@ export async function loadEditChanges(
     }
   }
   return afterPath ? serializeEditChanges(operation, afterPath) : serializeEditChanges(operation);
+}
+
+/**
+ * Each page's printed number beside its model index. The chat card that opens
+ * this view names printed pages ("Pages 2, 3, 4"), so a heading reading
+ * "Page 1" for the first of them looked like a different edit. A removed page
+ * gets none: its old index names whatever sits there now.
+ */
+export function withReaderPages(changes: MobileEditChangesDto, numbering: ReaderPageNumbering): MobileEditChangesDto {
+  if (!numbering.pdfPageMap) {
+    return changes;
+  }
+  return {
+    ...changes,
+    pages: changes.pages.map((page) =>
+      page.structuralChange === "removed" ? page : { ...page, readerPage: numbering.displayPage(page.pageIndex) }
+    )
+  };
 }
 
 export function serializeEditChanges(

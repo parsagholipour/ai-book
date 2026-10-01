@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -271,6 +272,37 @@ void main() {
     expect(find.text('Coverless Guide'), findsNWidgets(2));
   });
 
+  testWidgets('a screen reader can open a book and hold it for its options', (
+    tester,
+  ) async {
+    // The cover announced itself as a button with a long-press hint, but its
+    // gestures sat under ExcludeSemantics and nothing carried them up: TalkBack
+    // could neither open the book nor reach its options.
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      shelfTestApp([
+        shelfProject(
+          id: 'done',
+          title: 'Finished Book',
+          status: 'complete',
+          hasPlan: true,
+          exportsReady: true,
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    final cover = find.semantics.byLabel(RegExp(r'^Finished Book\.'));
+    final data = tester.getSemantics(find.byType(BookCover)).getSemanticsData();
+    expect(data.hasAction(SemanticsAction.tap), isTrue);
+    expect(data.hasAction(SemanticsAction.longPress), isTrue);
+
+    tester.semantics.longPress(cover);
+    await tester.pumpAndSettle();
+    expect(find.text('Open PDF'), findsOneWidget);
+    handle.dispose();
+  });
+
   testWidgets('holding a finished book offers open and share per format', (
     tester,
   ) async {
@@ -375,6 +407,32 @@ void main() {
     expect(find.text('Open Word'), findsNothing);
     expect(find.text('Upgrade for Word'), findsNothing);
     expect(find.text('Open EPUB'), findsOneWidget);
+  });
+
+  testWidgets('holding a published Studio book offers Keep writing beside its chat', (
+    tester,
+  ) async {
+    // Keep writing was offered only before the first publish, so an author's
+    // published book had no way back to its working copy from the shelf.
+    await tester.pumpWidget(
+      shelfTestApp([
+        shelfProject(
+          id: 'studio-book',
+          title: 'Letters',
+          status: 'complete',
+          hasPlan: true,
+          exportsReady: true,
+          source: 'written',
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(BookCover));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Keep writing'), findsOneWidget);
+    expect(find.text('Go to chat'), findsOneWidget);
   });
 
   testWidgets('Go to chat opens the selected book chat', (tester) async {
@@ -715,8 +773,10 @@ MobileProjectSummary shelfProject({
   int progressPercent = 0,
   int? pageCount,
   DateTime? updatedAt,
+  String? source,
 }) {
   return MobileProjectSummary(
+    source: source ?? 'generated',
     id: id,
     title: title,
     bookType: 'workbook',

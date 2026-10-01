@@ -36,7 +36,10 @@ export const mobileCreationIntentSchema = z.enum([
   "teach_practice",
   "support_clients",
   "explain_offer",
-  "short_story"
+  "short_story",
+  // An Auto book whose shape is still open: filing it under collect_leads
+  // labelled every undecided brief a lead magnet.
+  "unspecified"
 ]);
 
 export const mobileCreationLaneSchema = z.enum([
@@ -186,7 +189,16 @@ export const mobileBookRecipeSchema = z
     theme: optionalText(400),
     nextStep: optionalText(400),
     exercises: optionalText(500),
-    mustInclude: optionalText(1200)
+    mustInclude: optionalText(1200),
+    /**
+     * The shape the creation chat settled on while the book type is Auto —
+     * written by code from the interviewer's `autoLane`, never by the model's
+     * brief patch, and only while the choice is Auto. `lane` stays "auto" in
+     * the chat (the app's header reads it) and the build-time advisor turns
+     * this into the recipe's lane. A separate key, because a stored `lane`
+     * under Auto can be a stale explicit choice; this one cannot.
+     */
+    autoLane: mobileCreationLaneSchema.optional()
   })
   .strict();
 

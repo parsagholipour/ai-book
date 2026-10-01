@@ -203,8 +203,11 @@ export function corroborateStructuralReview(options: {
         severity,
         source: "model",
         message:
-          `Page ${cluster.canonicalPageIndex} is the strongest treatment; pages ${duplicates.join(", ")} ` +
-          `repeat its subject (${cluster.repeatedSubject}) and overlap evidence or conclusion.`,
+          `Page ${cluster.canonicalPageIndex} is the strongest treatment; ` +
+          (duplicates.length === 1
+            ? `page ${duplicates[0]} repeats its subject (${cluster.repeatedSubject}) and overlaps`
+            : `pages ${duplicates.join(", ")} repeat its subject (${cluster.repeatedSubject}) and overlap`) +
+          " evidence or conclusion.",
         guidance:
           "Review the canonical page and the duplicates in Edit Mode. Do not automatically consolidate the prose.",
         affectedPageIndexes: affected,

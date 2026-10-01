@@ -436,7 +436,11 @@ describe("localizeImagesInMarkdown", () => {
     expect(footer).toContain("۱");
     expect(footer).not.toMatch(/\bPage\b/);
 
-    expect(execFileSync("pdffonts", [outputPath], { encoding: "utf8" })).toMatch(/Vazirmatn/i);
+    const fonts = execFileSync("pdffonts", [outputPath], { encoding: "utf8" });
+    expect(fonts).toMatch(/Vazirmatn/i);
+    // The "." in an Arabic-script run fell through to a system serif while Source
+    // Serif's faces declared a different weight range from Vazirmatn's.
+    expect(fonts).not.toMatch(/Liberation|DejaVu|FreeSerif|FreeSans/i);
     // The assertion that actually proves the reported bug is gone: extraction
     // only succeeds when the glyphs carry a real ToUnicode map, so a tofu
     // render would come back empty even though pdffonts still named a font.

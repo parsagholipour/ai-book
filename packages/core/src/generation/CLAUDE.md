@@ -1060,6 +1060,40 @@ holds the event loop open and vitest will never exit.
   silent and anything that sizes a box, names a page or decides a line break is not. Subtractive on
   purpose: a property nobody thought of is in scope by default, which is the only way round a
   tripwire fails safe. It is the alarm, not the check — the corpus render is the check.
+- **Every face a family is assembled from declares one weight range, or Chrome never falls back
+  across its packages.** Chrome groups a family's `@font-face` rules by their exact descriptors,
+  picks one group for the requested style and reads `unicode-range` only inside it. Source Serif 4
+  declares `200 900` and every script package `100 900` (Noto Naskh `400 700`), so a Persian run
+  settled on Vazirmatn's group, never saw Source Serif's Latin face, and every `.`, `:`, `«`, `»` and
+  Western digit in a Persian, Arabic, Hebrew, Devanagari or Thai PDF fell to the next family in the
+  stack — "Times New Roman", which fontconfig answers with Liberation Serif. `embedFontFaceCss`
+  (`fontEmbedding.ts`) now writes the union of a family's ranges onto every face it emits; a variable
+  font asked for a weight past its axis clamps. The fixture corpus moved only `persian-rtl` (CJK
+  packages carry their own Latin faces), and `pdf.test.ts`'s Persian render refuses any system face.
+- **A text-only story sheet is sized to its paragraphs and centred on its sheet, and it wears the
+  design the reader chose — or, for a children's book, the one its own words point to.** A picture
+  book with no pictures printed each scene at 20pt from 48mm down: a 40-word page filled the top
+  quarter of an A4 sheet, and a 120-word one spilled two lines onto a sheet of its own.
+  `storySceneLength` (`pdfStoryPages.ts`) estimates each scene's printed height per paragraph — a
+  page of short dialogue costs far more than its characters, which is why counting characters sent
+  a six-line exchange to two sheets — against `STORY_SCENE_TIERS`, the table the stylesheet is
+  generated from, and picks the largest size that fits; the scene is a flex column as tall as the
+  writing area, centred by auto margins that collapse to zero when it outgrows the sheet. What
+  fills the rest of the sheet is a **design** (`storyPageDesigns.ts`): pastel storybook, night sky,
+  under the sea, garden meadow, rainbow, outer space, fairy tale, or plain `classic` — each one data
+  (card, colours cycled per sheet, CSS-drawn shapes, face, ornament) from which the stylesheet, the
+  estimate's card padding and face width, and the embedded fonts (`STORY_ROUND_FONT` Nunito,
+  `STORY_DISPLAY_FONT` Playfair Display, only for a design that sets in them) all derive. Which
+  one is `storyPageDesignFor`: the row-owned `mediaSettings.storyPageDesign` the chat's free
+  `page_design` edit writes, else for a KIDS book `chooseStoryPageDesign` over the prompt and the
+  plan — a design named next to a look-word wins ("a plain layout", "the night sky design"), and a
+  design word alone is a subject that only counts as a topic — else nothing, the plain sheet. Both
+  compiles call it with the project row and the plan they compile, so they cannot disagree.
+  `pdfStoryPages.test.ts` renders the longest scene each size accepts, prose and dialogue, in
+  every design and in none, and asserts one sheet each. An illustrated book keeps its layout on
+  every scene. **No margin box may name a face only the cards use**: the faces are
+  `font-display: block` and loaded on use, so a Nunito footer on an illustrated children's book —
+  where no card uses it — printed invisibly.
 - **The coverless title sheet is capped at exactly one page, and it clips from the tail.**
   `@page pdf-title` carries `counter-reset: page 0` like the cover, and it resets on *every* sheet it
   names — so a title page that fragmented left two unnumbered sheets where `printedPageOffset`

@@ -146,6 +146,7 @@ MobileExportAvailability pdfExport({
   int creditsRequired = 0,
   int revision = 1,
   int byteSize = 100,
+  String? readUrl,
 }) {
   return MobileExportAvailability(
     format: 'pdf',
@@ -153,6 +154,7 @@ MobileExportAvailability pdfExport({
     unlocked: unlocked,
     creditsRequired: creditsRequired,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
+    readUrl: readUrl,
     filename: 'the-race.pdf',
     contentType: 'application/pdf',
     revision: revision,

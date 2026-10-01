@@ -46,6 +46,24 @@ export type ExactReplacement = {
    * silently falling back to regenerating every page.
    */
   preserveCase?: boolean | undefined;
+  /**
+   * The swap is of a *word*, not a spelling: its regular plural is swapped
+   * with it ("trays" → "saucers"), its capitalised form where English
+   * capitalises any word (a sentence start, a heading, a title), and its
+   * all-capitals form anywhere — each carried over to the replacement.
+   *
+   * Set by the parser, never by a caller, and only when both terms are one
+   * plain lowercase word of three letters or more. "Replace the word tray with
+   * saucer everywhere" used to leave every "trays" and every sentence-initial
+   * "Tray" behind, because a whole-word match stops at the "s" and a literal
+   * match at the capital — so the router paraphrased the request into a
+   * plural-aware model edit instead, priced at every page of the book.
+   * A capitalised form mid-sentence is somebody's name ("Rose", "New York")
+   * and is left alone; a lowercase term with no regular plural ("mouse" →
+   * "mice") keeps that form. Never a substring: "ashtray" and "portrayal"
+   * stop at the same word boundaries as the literal walk.
+   */
+  wordForms?: boolean | undefined;
 };
 
 const REPLACEMENT_VERB = /^(?:replace|change|rename|swap|switch|turn)\b/i;
@@ -131,8 +149,9 @@ export function exactReplacementFromInstruction(instruction: string): ExactRepla
     return null;
   }
   let remainder = body.slice(verb[0].length).trimStart();
-  remainder = remainder.replace(/^(?:the\s+)?(?:(?:all|every|each)\s+)?occurrences?\s+of\s+/i, "");
+  remainder = remainder.replace(/^(?:the\s+)?(?:(?:all|every|each)\s+)?(?:occurrences?|instances?|mentions?)\s+of\s+/i, "");
   remainder = remainder.replace(/^(?:all|every|each)\s+/i, "");
+  remainder = withoutTermRole(remainder);
 
   const quotedFrom = readQuotedTerm(remainder);
   if (quotedFrom) {
@@ -140,7 +159,7 @@ export function exactReplacementFromInstruction(instruction: string): ExactRepla
     if (!connector) {
       return null;
     }
-    const quotedTo = readQuotedTerm(quotedFrom.rest.trimStart().slice(connector[0].length).trimStart());
+    const quotedTo = readQuotedTerm(withoutTermRole(quotedFrom.rest.trimStart().slice(connector[0].length).trimStart()));
     if (!quotedTo || !isHarmlessReplacementTail(quotedTo.rest)) {
       return null;
     }
@@ -156,7 +175,7 @@ export function exactReplacementFromInstruction(instruction: string): ExactRepla
     return null;
   }
   const from = unquoted[1]!;
-  const to = unquoted[2]!;
+  const to = withoutTermRole(unquoted[2]!);
   if (
     !UNQUOTED_ATOMIC_TERM.test(from) ||
     !UNQUOTED_ATOMIC_TERM.test(to) ||
@@ -169,6 +188,46 @@ export function exactReplacementFromInstruction(instruction: string): ExactRepla
     return null;
   }
   return exactTerms(from, to, false);
+}
+
+/**
+ * The two terms a replacement instruction opens with, read loosely: a router's
+ * own wording ("Replace every occurrence of the word \"tray\" with \"saucer\"
+ * throughout the book, including plural forms…") names them in quotes and then
+ * keeps talking. Never a licence for the free path — that is
+ * `exactReplacementFromInstruction`, which refuses anything it cannot prove —
+ * only what code may check and report to a model reviewer, and which pages a
+ * model edit of the term has anything to do on.
+ */
+export function replacementTermsFromInstruction(instruction: string): { from: string; to: string } | null {
+  const strict = exactReplacementFromInstruction(instruction);
+  if (strict) return { from: strict.from, to: strict.to };
+  const body = stripPolitePrefix(instruction.trim());
+  const verb = body.match(REPLACEMENT_VERB);
+  if (!verb) return null;
+  let remainder = body.slice(verb[0].length).trimStart();
+  remainder = remainder.replace(/^(?:the\s+)?(?:(?:all|every|each)\s+)?(?:occurrences?|instances?|mentions?)\s+of\s+/i, "");
+  remainder = withoutTermRole(remainder.replace(/^(?:all|every|each)\s+/i, ""));
+  const from = readQuotedTerm(remainder);
+  if (!from) return null;
+  const connector = from.rest.trimStart().match(REPLACEMENT_CONNECTOR);
+  if (!connector) return null;
+  const to = readQuotedTerm(withoutTermRole(from.rest.trimStart().slice(connector[0].length).trimStart()));
+  return to && !isGrammaticalTerm(from.value) ? { from: from.value, to: to.value } : null;
+}
+
+/**
+ * Whole-word occurrences of `term` in any capitalisation — and of its regular
+ * plural when it is one plain word — outside figure fences. What a reader
+ * would call "the word is still there", which is broader than what
+ * `wordForms` rewrites: a capitalised form mid-sentence counts here.
+ */
+export function termOccurrences(text: string, term: string): number {
+  const forms = PLAIN_WORD.test(term) ? [term, regularPlural(term)] : [term];
+  return forms.reduce(
+    (total, form) => total + mapOccurrencesOutsideFigures(text, { from: form, to: form, preserveCase: true }, (match) => match).count,
+    0
+  );
 }
 
 /** The queue object is only trusted when it says exactly what the instruction says. */
@@ -190,6 +249,17 @@ export function applyExactReplacement(text: string, replacement: ExactReplacemen
   return mapOccurrencesOutsideFigures(text, replacement, (match) =>
     replacement.preserveCase ? matchCase(match, replacement.to) : replacement.to
   ).text;
+}
+
+/**
+ * Every spelling the replacement rewrites, for a search that must find each
+ * page it would touch — a regular plural need not contain its singular
+ * ("cities" does not contain "city").
+ */
+export function exactReplacementSearchTerms(replacement: ExactReplacement): string[] {
+  if (!replacement.wordForms) return [replacement.from];
+  const plural = regularPlural(replacement.from);
+  return plural.includes(replacement.from) ? [replacement.from] : [replacement.from, plural];
 }
 
 export function countExactMatches(text: string, replacement: ExactReplacement): number {
@@ -308,7 +378,9 @@ function mapOccurrencesOutsideFigures(
   const rewritten = mapFigureRegions(
     text,
     (span) => {
-      const mapped = mapOccurrences(span, replacement.from, fold, render);
+      const mapped = replacement.wordForms && PLAIN_WORD.test(replacement.from) && PLAIN_WORD.test(replacement.to)
+        ? mapWordForms(span, replacement)
+        : mapOccurrences(span, replacement.from, fold, render);
       count += mapped.count;
       return mapped.text;
     },
@@ -391,6 +463,86 @@ function mapOccurrences(
 }
 
 /**
+ * The `wordForms` walk: the singular and its regular plural, each in the
+ * casings English gives a common word. One pass over the text, so a
+ * replacement that contains the term ("dog" → "dog house") is never matched
+ * again, and the longer form wins where both start (the plural over the
+ * singular inside it).
+ */
+function mapWordForms(text: string, replacement: ExactReplacement): { text: string; count: number } {
+  const forms = [{ needle: regularPlural(replacement.from), to: regularPlural(replacement.to) }, { needle: replacement.from, to: replacement.to }]
+    .filter((form, index, all) => all.findIndex((other) => other.needle === form.needle) === index);
+  // ASCII-only lowercasing keeps every index aligned with the original text;
+  // the needles are ASCII by construction, so nothing else needs folding.
+  const haystack = text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  const titleLike = !text.includes("\n") && text.length <= 200 && !/[.!?]\s/.test(text);
+  let out = "";
+  let cursor = 0;
+  let emitted = 0;
+  let count = 0;
+  for (;;) {
+    let found = -1;
+    for (const form of forms) {
+      const at = haystack.indexOf(form.needle, cursor);
+      if (at !== -1 && (found === -1 || at < found)) found = at;
+    }
+    if (found === -1) break;
+    let replaced: { end: number; value: string } | null = null;
+    for (const form of forms) {
+      if (haystack.startsWith(form.needle, found) === false) continue;
+      const end = found + form.needle.length;
+      if (!stopsAtWordBoundaries(text, found, end, form.needle)) continue;
+      const value = recasedForm(text.slice(found, end), form, () =>
+        Boolean(replacement.preserveCase) || titleLike || startsSentenceOrHeading(text, found)
+      );
+      if (value !== null) {
+        replaced = { end, value };
+        break;
+      }
+    }
+    if (!replaced) {
+      cursor = found + 1;
+      continue;
+    }
+    out += text.slice(emitted, found) + replaced.value;
+    emitted = replaced.end;
+    cursor = replaced.end;
+    count += 1;
+  }
+  return { text: out + text.slice(emitted), count };
+}
+
+/** The replacement in the match's casing, or null when that casing is not the word's. */
+function recasedForm(match: string, form: { needle: string; to: string }, capitalisedHere: () => boolean): string | null {
+  if (match === form.needle) return form.to;
+  if (match === form.needle.toUpperCase()) return form.to.toUpperCase();
+  if (match === form.needle[0]!.toUpperCase() + form.needle.slice(1) && capitalisedHere()) {
+    return form.to[0]!.toUpperCase() + form.to.slice(1);
+  }
+  return null;
+}
+
+/** Where English capitalises any word: the start of a sentence, a line or a heading. */
+function startsSentenceOrHeading(text: string, start: number): boolean {
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  if (/^\s*#/.test(text.slice(lineStart, start))) return true;
+  for (let index = start - 1; index >= 0; index -= 1) {
+    const character = text[index]!;
+    if (character === "\n") return true;
+    if (/[\s"“”‘'([*_>+-]/.test(character)) continue;
+    return /[.!?…:]/.test(character);
+  }
+  return true;
+}
+
+/** The regular English plural; an irregular one ("mice") is simply not matched. */
+function regularPlural(word: string): string {
+  if (/(?:s|x|z|ch|sh)$/.test(word)) return `${word}es`;
+  if (/[^aeiou]y$/.test(word)) return `${word.slice(0, -1)}ies`;
+  return `${word}s`;
+}
+
+/**
  * Carries the capitalization of the replaced text onto its replacement, the way
  * a "preserve case" replace does in an editor: RABBIT → FLY, Rabbit → Fly,
  * rabbit → fly.
@@ -441,7 +593,19 @@ function exactTerms(fromValue: string, toValue: string, collapseWhitespace: bool
   if (isGrammaticalTerm(from) || isGrammaticalTerm(to)) {
     return null;
   }
-  return { from, to };
+  return PLAIN_WORD.test(from) && PLAIN_WORD.test(to) && from.length >= 3 ? { from, to, wordForms: true } : { from, to };
+}
+
+/** One lowercase English word: what `wordForms` may inflect and recase. */
+const PLAIN_WORD = /^[a-z]+$/;
+
+/**
+ * "The word", "the term" and "the name" say what kind of thing the next term
+ * is, never part of it — unlike a role ("the hero Rabbit"), whose boundary with
+ * the name cannot be recovered, so roles still fail closed.
+ */
+function withoutTermRole(value: string): string {
+  return value.replace(/^(?:the\s+)?(?:word|term|name)\s+(?=\S)/i, "");
 }
 
 /** A term that *is* one closed-class word — quotes around it change nothing. */
@@ -466,16 +630,7 @@ function stripPolitePrefix(value: string): string {
 function removeHarmlessReplacementTail(value: string): string | null {
   let clean = value.trim().replace(/\s*(?:please\s*)?[.!?]+$/i, "").trim();
   clean = clean.replace(/\s*,\s*please$/i, "").trim();
-  for (let split = clean.length - 1; split >= 0; split -= 1) {
-    if (!/[\s,]/.test(clean[split]!)) {
-      continue;
-    }
-    const tail = clean.slice(split + 1).trim();
-    if (HARMLESS_SCOPE.test(tail)) {
-      return clean.slice(0, split).replace(/,\s*$/, "").trim();
-    }
-  }
-  return clean;
+  return withoutHarmlessScopes(clean);
 }
 
 function isHarmlessReplacementTail(value: string): boolean {
@@ -484,5 +639,29 @@ function isHarmlessReplacementTail(value: string): boolean {
     return true;
   }
   const scoped = tail.match(/^,?\s*(.*?)\s*(?:,?\s*please)?\s*[.!?]*$/i);
-  return Boolean(scoped && HARMLESS_SCOPE.test(scoped[1]!));
+  return Boolean(scoped && withoutHarmlessScopes(scoped[1]!) === "");
+}
+
+/**
+ * Strips book-wide scopes off the end, as many as are chained — "everywhere
+ * in the book" is two, and stripping one left "saucer everywhere" as the
+ * replacement term, which failed the whole parse.
+ */
+function withoutHarmlessScopes(value: string): string {
+  let clean = value.trim();
+  for (;;) {
+    if (HARMLESS_SCOPE.test(clean)) return "";
+    let stripped = clean;
+    for (let split = clean.length - 1; split >= 0; split -= 1) {
+      if (!/[\s,]/.test(clean[split]!)) {
+        continue;
+      }
+      if (HARMLESS_SCOPE.test(clean.slice(split + 1).trim())) {
+        stripped = clean.slice(0, split).replace(/,\s*$/, "").trim();
+        break;
+      }
+    }
+    if (stripped === clean) return clean;
+    clean = stripped;
+  }
 }

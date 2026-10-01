@@ -66,6 +66,10 @@ vi.mock("@book-maker/storage", async (importOriginal) => {
 });
 vi.mock("@book-maker/core", () => ({
   shouldGenerateCharacterReferences: () => true,
+  // An illustrated book's cast: everyone. The cover-only narrowing is core's, tested there.
+  characterReferenceCast: (_input: unknown, plan: { characters: unknown[] }) => plan.characters,
+  coverCastCharacters: () => [],
+  coverPortraitCharacters: () => [],
   shouldUseCharacterReferenceImages: () => true,
   buildCharacterReferencePrompt: ({ character }: { character: { name: string } }) => `draw ${character.name}`,
   optimizeImageForStorage: async () => ({ bytes: Buffer.from(""), extension: "png" }),

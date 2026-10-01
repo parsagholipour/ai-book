@@ -111,7 +111,7 @@ void main() {
     expect(find.text(reply), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('creationBriefHeader')));
     await tester.pumpAndSettle();
-    expect(find.text('Cover: Included'), findsOneWidget);
+    expect(find.text('Cover: AI art'), findsOneWidget);
     expect(find.text('Illustrations: Included'), findsOneWidget);
 
     final buildFinder = find.widgetWithText(FilledButton, 'Build the plan');
@@ -153,7 +153,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Cover: Included'), findsOneWidget);
+    expect(find.text('Cover: AI art'), findsOneWidget);
     expect(find.text('Who is this book for?'), findsOneWidget);
     expect(
       tester.getBottomLeft(find.text('Skip and build the plan')).dy,

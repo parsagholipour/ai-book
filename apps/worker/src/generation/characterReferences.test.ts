@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   updateJobProgress: vi.fn(),
   shouldGenerateCharacterReferences: vi.fn(),
+  characterReferenceCast: vi.fn(),
+  coverCastCharacters: vi.fn(),
+  coverPortraitCharacters: vi.fn(),
   shouldUseCharacterReferenceImages: vi.fn(),
   buildCharacterReferencePrompt: vi.fn(),
   optimizeImageForStorage: vi.fn(),
@@ -72,6 +75,9 @@ vi.mock("@book-maker/storage", async (importOriginal) => {
 });
 vi.mock("@book-maker/core", () => ({
   shouldGenerateCharacterReferences: mocks.shouldGenerateCharacterReferences,
+  characterReferenceCast: mocks.characterReferenceCast,
+  coverCastCharacters: mocks.coverCastCharacters,
+  coverPortraitCharacters: mocks.coverPortraitCharacters,
   shouldUseCharacterReferenceImages: mocks.shouldUseCharacterReferenceImages,
   buildCharacterReferencePrompt: mocks.buildCharacterReferencePrompt,
   optimizeImageForStorage: mocks.optimizeImageForStorage,
@@ -104,11 +110,7 @@ vi.mock("@book-maker/core", () => ({
   libraryCharacterFaceInstruction: (names: string[]) => (names.length > 0 ? `faces:${names.join(",")}` : "")
 }));
 
-import {
-  characterReferencePromptInstruction,
-  ensureCharacterReferenceAssets,
-  selectReferenceImagePaths
-} from "./characterReferences.js";
+import { ensureCharacterReferenceAssets } from "./characterReferences.js";
 
 const plan = {
   characters: [
@@ -138,6 +140,9 @@ describe("ensureCharacterReferenceAssets", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.shouldGenerateCharacterReferences.mockReturnValue(true);
+    mocks.characterReferenceCast.mockImplementation((_input: unknown, castPlan: { characters: unknown[] }) => castPlan.characters);
+    mocks.coverCastCharacters.mockReturnValue([]);
+    mocks.coverPortraitCharacters.mockReturnValue([]);
     mocks.shouldUseCharacterReferenceImages.mockReturnValue(true);
     mocks.buildCharacterReferencePrompt.mockReturnValue("a prompt");
     mocks.optimizeImageForStorage.mockResolvedValue({ bytes: Buffer.from(""), extension: "png" });
@@ -210,6 +215,34 @@ describe("ensureCharacterReferenceAssets", () => {
     expect(mocks.generateImageBytes).toHaveBeenCalledTimes(2);
     expect(mocks.imageAsset.create).toHaveBeenCalledTimes(2);
     expect(result).toHaveLength(2);
+  });
+
+  it("draws only the cast it is given, and a set covering that cast is settled", async () => {
+    // A cover-only book whose cover shows Ada: Beatrice gets no sheet, and the
+    // next caller finds Ada's sheet enough rather than redrawing for Beatrice.
+    mocks.characterReferenceCast.mockReturnValue([{ name: "Ada", role: "protagonist", description: "", traits: [], visualRules: [] }]);
+    mocks.imageAsset.findMany.mockResolvedValue([]);
+
+    const result = await ensureCharacterReferenceAssets(baseOptions());
+
+    expect(mocks.generateImageBytes).toHaveBeenCalledTimes(1);
+    expect(result.map((asset) => (asset.metadata as { characterName: string }).characterName)).toEqual(["Ada"]);
+
+    vi.clearAllMocks();
+    mocks.characterReferenceCast.mockReturnValue([{ name: "Ada" }]);
+    mocks.planVersion.findUnique.mockResolvedValue({ characterReferenceRefusals: null });
+    mocks.imageAsset.findMany.mockResolvedValue([assetRow("Ada")]);
+    await ensureCharacterReferenceAssets(baseOptions());
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
+  });
+
+  it("spends nothing, and reads nothing, for a cast of nobody", async () => {
+    mocks.characterReferenceCast.mockReturnValue([]);
+
+    expect(await ensureCharacterReferenceAssets(baseOptions())).toEqual([]);
+    expect(mocks.imageAsset.findMany).not.toHaveBeenCalled();
+    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
   });
 
   it("makes no model call while the advisory-lock transaction is open", async () => {
@@ -713,183 +746,5 @@ describe("ensureCharacterReferenceAssets", () => {
       });
       consoleWarn.mockRestore();
     });
-  });
-});
-
-describe("selectReferenceImagePaths", () => {
-  const sheetAsset = (characterName: string) => ({
-    id: `asset-${characterName}`,
-    path: `http://api.test/assets/images/project-1/character-reference-${characterName.toLowerCase()}.png`,
-    metadata: { planId: "plan-1", characterName }
-  });
-
-  const selectionOptions = (maxReferenceImages: number) =>
-    ({
-      input: {},
-      plan,
-      assets: [sheetAsset("Ada"), sheetAsset("Beatrice")],
-      projectId: "project-1",
-      image: { capabilities: () => ({ supportsReferenceImages: true, maxReferenceImages }) },
-      context: "Ada waves"
-    }) as never;
-
-  const libraryAda = {
-    id: "lib-ada",
-    name: "Ada",
-    description: "",
-    fields: [],
-    portraitFile: "user-1/lib-ada-portrait.webp"
-  };
-
-  const withAdasArtworkOnDisk = () => {
-    mocks.libraryCharactersFromMediaSettings.mockReturnValue([libraryAda]);
-    mocks.matchLibraryCharacter.mockImplementation((name: string) => (name === "Ada" ? libraryAda : null));
-    mocks.libraryCharacterObjectKey.mockReturnValue("images/characters/user-1/lib-ada-portrait.webp");
-    mocks.head.mockResolvedValue({ isFile: () => true });
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.projectFindUnique.mockResolvedValue({ userId: "user-1" });
-    mocks.libraryCharactersFromMediaSettings.mockReturnValue([]);
-    mocks.matchLibraryCharacter.mockReturnValue(null);
-    mocks.libraryCharacterObjectKey.mockReturnValue(null);
-    mocks.head.mockResolvedValue(null);
-    mocks.selectCharacterReferenceAssets.mockImplementation(
-      ({ assets, maxReferences }: { assets: Array<{ path: string }>; maxReferences: number }) =>
-        assets.slice(0, maxReferences)
-    );
-  });
-
-  it("returns nothing for an adapter that cannot take reference images", async () => {
-    const result = await selectReferenceImagePaths({
-      ...(selectionOptions(3) as object),
-      image: { capabilities: () => ({ supportsReferenceImages: false, maxReferenceImages: 0 }) }
-    } as never);
-
-    expect(result).toEqual({ paths: [], libraryFaceNames: [] });
-    expect(mocks.projectFindUnique).not.toHaveBeenCalled();
-  });
-
-  it("reads the library id the sheet recorded rather than matching its name again", async () => {
-    // The seeding pass already answered this and wrote the answer on the row.
-    // Running the matcher a second time can reach a *different* answer — here
-    // it insists on Bea — and the face it attaches then belongs to somebody
-    // else, which is the whole reported bug one layer down.
-    const libraryBea = {
-      id: "lib-bea",
-      name: "Bea",
-      description: "",
-      fields: [],
-      portraitFile: "user-1/lib-bea-portrait.webp"
-    };
-    mocks.libraryCharactersFromMediaSettings.mockReturnValue([libraryAda, libraryBea]);
-    mocks.matchLibraryCharacter.mockReturnValue(libraryBea);
-    mocks.libraryCharacterObjectKey.mockImplementation(
-      (file: string) => `images/characters/${file}`
-    );
-    mocks.head.mockResolvedValue({ isFile: () => true });
-
-    const result = await selectReferenceImagePaths({
-      ...(selectionOptions(4) as object),
-      assets: [
-        {
-          ...sheetAsset("Ada"),
-          metadata: { planId: "plan-1", characterName: "Ada", libraryCharacterId: "lib-ada" }
-        }
-      ]
-    } as never);
-
-    expect(result.paths.at(-1)).toBe("object://images/characters/user-1/lib-ada-portrait.webp");
-    expect(result.libraryFaceNames).toEqual(["Ada"]);
-    expect(mocks.matchLibraryCharacter).not.toHaveBeenCalled();
-  });
-
-  it("attaches nothing when the recorded id names no snapshot", async () => {
-    // The snapshot set moved out from under the sheet; a name guess against a
-    // moved set is exactly what the recorded id exists to avoid.
-    withAdasArtworkOnDisk();
-
-    const result = await selectReferenceImagePaths({
-      ...(selectionOptions(4) as object),
-      assets: [
-        {
-          ...sheetAsset("Ada"),
-          metadata: { planId: "plan-1", characterName: "Ada", libraryCharacterId: "lib-gone" }
-        }
-      ]
-    } as never);
-
-    expect(result.libraryFaceNames).toEqual([]);
-    expect(mocks.matchLibraryCharacter).not.toHaveBeenCalled();
-  });
-
-  it("appends the reader's own artwork after the sheets when the budget has room", async () => {
-    // No recorded id: a sheet rendered before it existed, which is the one case
-    // still resolved by name.
-    withAdasArtworkOnDisk();
-
-    const result = await selectReferenceImagePaths(selectionOptions(3));
-
-    expect(result.paths).toEqual([
-      "object://images/project-1/character-reference-ada.png",
-      "object://images/project-1/character-reference-beatrice.png",
-      "object://images/characters/user-1/lib-ada-portrait.webp"
-    ]);
-    expect(result.libraryFaceNames).toEqual(["Ada"]);
-    expect(characterReferencePromptInstruction(result)).toContain("faces:Ada");
-  });
-
-  it("never displaces a sheet: a full budget carries no faces at all", async () => {
-    // Losing a character's sheet to gain another character's face would trade
-    // one consistency problem for a worse one.
-    withAdasArtworkOnDisk();
-
-    const result = await selectReferenceImagePaths(selectionOptions(2));
-
-    expect(result.paths).toEqual([
-      "object://images/project-1/character-reference-ada.png",
-      "object://images/project-1/character-reference-beatrice.png"
-    ]);
-    expect(result.libraryFaceNames).toEqual([]);
-    expect(characterReferencePromptInstruction(result)).not.toContain("faces:");
-  });
-
-  it("does not read the project row when no snapshot carries artwork", async () => {
-    const result = await selectReferenceImagePaths(selectionOptions(3));
-
-    expect(result.libraryFaceNames).toEqual([]);
-    expect(mocks.projectFindUnique).not.toHaveBeenCalled();
-  });
-
-  it("refuses artwork in another user's directory", async () => {
-    const planted = { ...libraryAda, portraitFile: "victim-user/stolen-portrait.webp" };
-    mocks.libraryCharactersFromMediaSettings.mockReturnValue([planted]);
-    mocks.matchLibraryCharacter.mockReturnValue(planted);
-    mocks.libraryCharacterObjectKey.mockReturnValue("images/characters/victim-user/stolen-portrait.webp");
-    mocks.head.mockResolvedValue({ isFile: () => true });
-
-    const result = await selectReferenceImagePaths(selectionOptions(4));
-
-    expect(result.paths).not.toContain("object://images/characters/victim-user/stolen-portrait.webp");
-    expect(result.libraryFaceNames).toEqual([]);
-  });
-
-  it("skips artwork whose file has gone", async () => {
-    withAdasArtworkOnDisk();
-    mocks.head.mockResolvedValue(null);
-
-    const result = await selectReferenceImagePaths(selectionOptions(4));
-
-    expect(result.libraryFaceNames).toEqual([]);
-  });
-
-  it("seeds nothing for a book with no owner (the operator console)", async () => {
-    withAdasArtworkOnDisk();
-    mocks.projectFindUnique.mockResolvedValue(null);
-
-    const result = await selectReferenceImagePaths(selectionOptions(4));
-
-    expect(result.libraryFaceNames).toEqual([]);
   });
 });

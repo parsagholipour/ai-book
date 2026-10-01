@@ -94,12 +94,18 @@ class _BookNoteCardState extends State<BookNoteCard> {
       now: widget.now,
       localizations: MaterialLocalizations.of(context),
     );
-    final label = [
+    final label = noteSemanticsLabel([
       if (note.pinned) 'Pinned',
       title,
       if (preview.isNotEmpty) preview,
       'Edited $edited',
-    ].join('. ');
+    ]);
+
+    void openMenu() {
+      AppHaptics.longPress();
+      final box = context.findRenderObject()! as RenderBox;
+      _openMenu(_pressedAt ?? box.localToGlobal(box.size.center(Offset.zero)));
+    }
 
     final content = Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(
@@ -176,8 +182,11 @@ class _BookNoteCardState extends State<BookNoteCard> {
               // The card opens the note; the menu button beside it is its own
               // target, so it is not folded into the note's description.
               child: Semantics(
+                container: true,
                 button: true,
                 label: label,
+                onTap: widget.onOpen,
+                onLongPress: openMenu,
                 customSemanticsActions: {
                   CustomSemanticsAction(
                     label: note.pinned ? 'Unpin' : 'Pin to top',
@@ -191,14 +200,7 @@ class _BookNoteCardState extends State<BookNoteCard> {
                     key: ValueKey('book-note-${note.id}'),
                     onTap: widget.onOpen,
                     onTapDown: (details) => _pressedAt = details.globalPosition,
-                    onLongPress: () {
-                      AppHaptics.longPress();
-                      final box = context.findRenderObject()! as RenderBox;
-                      _openMenu(
-                        _pressedAt ??
-                            box.localToGlobal(box.size.center(Offset.zero)),
-                      );
-                    },
+                    onLongPress: openMenu,
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(
                         minHeight: AppSizes.minimumTouchTarget + 24,

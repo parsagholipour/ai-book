@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PROJECT_PROMPT_MAX_LENGTH } from "@book-maker/core";
 import { mobileComposedProjectCreateSchema } from "./mobile/schemas.js";
+import { completeRecipe } from "./mobileCreationAdvisor.js";
 import {
   COMPOSED_PROJECT_PROMPT_MAX,
   adviseMobileBook,
@@ -577,6 +578,21 @@ describe("creation chat attachments", () => {
   it("answers upload capability questions deterministically", () => {
     expect(metaAnswerForMessage("Can I upload a PDF?")).toContain("paperclip");
     expect(metaAnswerForMessage("how do I attach a photo?")).toContain("paperclip");
+  });
+
+  it("states declined in-book illustrations beside a recipe that calls the book illustrated", () => {
+    const base = {
+      payloadVersion: 3,
+      rawIdea: "A bedtime story about a shy tortoise",
+      messages: [{ role: "user", content: "A bedtime story about a shy tortoise" }],
+      recipe: { ...completeRecipe(mobileCreationDraftPayloadSchema.parse({ payloadVersion: 3, rawIdea: "x" }), "children_story"), artifact: "Illustrated children's bedtime storybook" }
+    };
+    const presets = { bookType: "short_story", bookTypeChoice: "children_story", lengthPreset: "short", qualityPreset: "balanced", coverEnabled: true };
+    const declined = mobileCreationDraftPayloadSchema.parse({ ...base, selectedPresets: { ...presets, illustrationsEnabled: false } });
+    const wanted = mobileCreationDraftPayloadSchema.parse({ ...base, selectedPresets: { ...presets, illustrationsEnabled: true } });
+
+    expect(composeMobileProjectPrompt(declined, deterministicAdvisor(declined))).toContain("Visuals: no in-book illustrations");
+    expect(composeMobileProjectPrompt(wanted, deterministicAdvisor(wanted))).not.toContain("Visuals:");
   });
 
   it("references uploaded files in the project prompt without inlining their content", () => {

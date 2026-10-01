@@ -190,4 +190,21 @@ describe("loadPricingDrivers", () => {
     expect(report.drivers.audiobookBase).toBe(1);
     expect(report.drivers.audiobookPerPage).toBe(8);
   });
+
+  it("counts a stamped plan revision at its tier and an unstamped one at the old flat rate", async () => {
+    primeWindow({ edits: [], chargedCredits: 80 });
+    mockPrisma.$queryRaw.mockImplementation((...args: unknown[]) => {
+      const sql = sqlFromQueryRawCall(args);
+      if (sql.includes("AUDIOBOOK_GENERATION") && sql.includes("metadata")) return Promise.resolve([]);
+      return Promise.resolve([
+        { project_id: "fast-book", operation: "PLAN_REVISION", count: 3, pricing_key: "planRevisionFast" },
+        { project_id: "old-book", operation: "PLAN_REVISION", count: 2, pricing_key: null }
+      ]);
+    });
+
+    const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
+
+    expect(report.drivers.planRevisionFast).toBe(3);
+    expect(report.drivers.planRevision).toBe(2);
+  });
 });

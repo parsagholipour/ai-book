@@ -6,7 +6,7 @@ import {
 } from "../mobileCreation.js";
 import { normalizeProjectQuality } from "../projectStatus.js";
 import { imageSettingsFromMediaSettings } from "./imageSettings.js";
-import { loadProjectQualityReport, qualityWithExportsOnDisk } from "./qualityVerdict.js";
+import { loadProjectQualityReport, qualityForReader } from "./qualityVerdict.js";
 import {
   serializeExportSet,
   serializeImage,
@@ -25,6 +25,7 @@ import {
   type MobileProjectDetailDto,
   type MobileProjectRecord,
   type MobileProjectRevisionOriginDto,
+  type MobileBookShape,
   type MobileProjectSummaryDto,
   type MobileQualityPreset
 } from "./dto.js";
@@ -76,6 +77,8 @@ export async function serializeProjectSummary(
     subtitle: project.subtitle ?? null,
     authorName: project.authorName ?? null,
     bookType: mobile?.bookType ?? inferBookType(project.category, project.subcategory),
+    bookTypeChoice: mobile?.bookTypeChoice ?? null,
+    bookShape: bookShapeForCategory(project.category, project.subcategory),
     lengthPreset: mobile?.lengthPreset ?? "custom",
     qualityPreset: qualityPresetForProject(project.mediaSettings, mobile?.qualityPreset),
     ...imageSettings,
@@ -154,7 +157,7 @@ export async function serializeProjectDetail(
         imageFailed: image === null && Boolean(page.imageFailureReason)
       };
     }),
-    quality: qualityWithExportsOnDisk(normalizeProjectQuality(qualityReport), summary.exports)
+    quality: qualityForReader(normalizeProjectQuality(qualityReport), summary.exports)
   };
 }
 
@@ -227,6 +230,14 @@ export function mobileMetadataFromMediaSettings(mediaSettings: unknown): MobileM
     targetPages: targetPages.success ? targetPages.data : 0,
     pageCountSource: pageCountSource.data
   };
+}
+
+export function bookShapeForCategory(category: string, subcategory: string | null): MobileBookShape {
+  if (category === "KIDS") return "children_story";
+  if (category === "STORY" || subcategory === "Short Story") return "story";
+  if (category === "EDUCATION" || subcategory === "Workbook or Study Guide") return "workbook";
+  if (category === "BUSINESS" || category === "SELF_HELP" || subcategory === "Lead Magnet Ebook") return "guide";
+  return "book";
 }
 
 export function inferBookType(category: string, subcategory: string | null): MobileProjectSummaryDto["bookType"] {

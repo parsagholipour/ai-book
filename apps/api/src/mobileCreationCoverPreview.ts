@@ -74,6 +74,7 @@ export function creationCoverPreview(input: {
 export function withCreationCoverPreview(turn: MobileCreationTurn): MobileCreationTurn {
   return {
     ...turn,
-    coverPreview: creationCoverPreview({ lane: turn.detectedLane, brief: turn.brief })
+    // A book left on Auto is previewed in the shape its chat settled on.
+    coverPreview: creationCoverPreview({ lane: turn.brief.autoLane ?? turn.detectedLane, brief: turn.brief })
   };
 }

@@ -41,8 +41,13 @@ void main() {
     expect(find.text('Question 1 of 2'), findsOneWidget);
     expect(find.text('Busy solo teachers'), findsOneWidget);
     expect(find.text('Question 2 of 2'), findsNothing);
-    expect(find.text('Cover: Included'), findsOneWidget);
+    // A cover is always made; the chip says whether a model draws it.
+    expect(find.text('Cover: AI art'), findsOneWidget);
     expect(find.text('Illustrations: Not included'), findsOneWidget);
+    // A workbook is offered a workbook's ideas, and a revision says its price
+    // before it is sent, at the book's own tier.
+    expect(find.text('Add more exercises'), findsOneWidget);
+    expect(find.text('A revision costs 40 credits.'), findsOneWidget);
 
     await tester.pumpWidget(
       MaterialApp(

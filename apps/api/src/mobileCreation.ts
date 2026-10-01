@@ -49,6 +49,7 @@ import {
   mobileCreationTurnSchema,
   payloadFromTurnRequest,
   turnHasEnoughSubstance,
+  type CreationTurnPatch,
   type MobileCreationResearch,
   type MobileCreationTurn,
   type MobileCreationTurnRequest
@@ -66,7 +67,7 @@ export * from "./mobileCreationCoverPreview.js";
 
 type CreationTurnOptions = {
   enrich?:
-    | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>)
+    | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<CreationTurnPatch>)
     | undefined;
   timeoutMs?: number | undefined;
   /** Called when enrichment fails and the turn uses its safe fallback. */
@@ -157,7 +158,9 @@ export function deterministicCreationTurn(
       settingsAck,
       attachmentAck
     }),
-    brief: base.recipe,
+    // The chat keeps the advisor's lane for the type (the app's header reads
+    // it); a book still on Auto carries its settled shape as `autoLane`.
+    brief: { ...base.recipe, lane: base.detectedLane },
     presets,
     detectedLane: base.detectedLane,
     quickReplies: deterministicQuickReplies(buildRequested, metaAnswer !== null),
@@ -166,7 +169,7 @@ export function deterministicCreationTurn(
     titleSuggestions: base.titleSuggestions,
     shapePreview: base.bookShapePreview,
     warnings: base.warnings,
-    coverPreview: creationCoverPreview({ lane: base.detectedLane, brief: base.recipe }),
+    coverPreview: creationCoverPreview({ lane: base.recipe.lane, brief: base.recipe }),
     ...(language ? { language } : {}),
     buildRequested
   });
@@ -180,6 +183,7 @@ const CREATION_ASSISTANT_FACTS = [
   "Books can be written in almost any language; the user can just write in their language or ask for one.",
   "Page count can be set in chat (for example: make it 40 pages) or picked when building; 1 to 600 pages are supported.",
   "The cover and in-book illustrations are independent choices that can be changed by asking in chat or in Advanced settings.",
+  "A children's book printed without in-book illustrations is laid out one scene a page on designed pages: storybook pastels, night sky, under the sea, garden meadow, rainbow, outer space, fairy tale, or plain classic. The app matches one to the story, a design the user names here is used instead, and it can be changed later by asking in the book's chat. Agree when the user names one; never claim the pages will be plain or that the design cannot be chosen.",
   "Building the plan and generating the book use credits from the account balance. Planning costs depend on the Effort setting and are listed in Account; writing is a separate charge shown before you approve.",
   "A typical book takes a few minutes to plan and several minutes to fully write, depending on length.",
   "After generation the user can keep chatting to fix wording, rewrite pages or chapters, undo the last edit, or rebuild the whole book as a new copy."
@@ -202,7 +206,7 @@ export function creationTurnMessages(request: MobileCreationTurnRequest, base: M
         "Questions about the app: answer capability and process questions briefly and accurately using ONLY these facts, then steer back to the book: " +
         CREATION_ASSISTANT_FACTS +
         " Off-topic messages: respond kindly in one short sentence, do not lecture, and gently bring the chat back to the book. " +
-        "Support every kind of book. If currentPresets.bookTypeChoice is auto, keep the book type unresolved instead of declaring a genre; if clarification is genuinely required, keep that question neutral about book shape. Keep refining the structured brief from the whole conversation, including conversationSummary if present. " +
+        "Support every kind of book. If currentPresets.bookTypeChoice is auto, never change that choice and keep any clarification question neutral about book shape; instead record in finish_turn's autoLane the shape the user's own words have made clear: practical_guide (a how-to or step-by-step guide to doing something), workbook (lessons with exercises the reader fills in), client_tool (a worksheet or workbook a professional hands to clients), offer_guide (explains a paid service or offer ahead of a sales conversation), lead_magnet (a short free guide meant to win leads for a business), children_story (a story for young children), or adult_story (fiction for teens or adults). Set autoLane to auto while the shape is genuinely open, and never infer it from the topic alone: a book about gardening can be a guide, a story or a history. currentAutoLane is the shape you recorded earlier; keep it unless the user's latest message changes it. When bookTypeChoice is not auto, omit autoLane. Keep refining the structured brief from the whole conversation, including conversationSummary if present. " +
         "Finishing the turn: ALWAYS end your turn by calling finish_turn exactly once - never reply in plain text. finish_turn must include both assistantMessage and question. When assistantMessage only acknowledges what the user just said and leads into your question, keep it to 1-3 short sentences with no jargon; whenever the reply lists several things — search results or ordinary interview content such as options, facts, or examples — use a numbered (1.) or bulleted (-) list, one item per line, not a hand-numbered run-on sentence, and a web-search turn still puts that list in assistantMessage as described above. assistantMessage is " +
         CHAT_REPLY_MARKDOWN_PROMPT +
         " If you ask a question, question must contain that same question in the same language as assistantMessage, with options only when its answerKind is \"choice\" or \"multi\". If you do not ask a question, set question to null. Never mention AI models, providers, or internal systems. Never state specific credit prices."
@@ -217,6 +221,7 @@ export function creationTurnMessages(request: MobileCreationTurnRequest, base: M
           characters: request.characters ?? null,
           currentBrief: base.brief,
           currentPresets: base.presets,
+          currentAutoLane: base.brief.autoLane ?? null,
           heuristicSettingChanges: heuristicSettingChangesForTurn(request),
           detectedLane: base.detectedLane,
           bookLanguage: request.language ?? base.language ?? null,
@@ -312,7 +317,7 @@ export async function enrichCreationTurnWithSearch(
   options: SearchCreationTurnOptions,
   request: MobileCreationTurnRequest,
   base: MobileCreationTurn
-): Promise<Partial<MobileCreationTurn>> {
+): Promise<CreationTurnPatch> {
   const language = await withTimeout(resolveCreationBookLanguage(options.textModel, request), 8000);
   request = { ...request, language };
   base = { ...base, language };
@@ -450,13 +455,13 @@ export async function enrichCreationTurnWithSearch(
  * cannot override a multilingual model decision.
  */
 function applyCreationToolSideEffects(
-  patch: Partial<MobileCreationTurn>,
+  patch: CreationTurnPatch,
   options: {
     buildRequestedByTool: boolean;
     settingsFromTool: z.infer<typeof creationUpdateSettingsArgsSchema>;
     basePresets: MobileCreationTurn["presets"];
   }
-): Partial<MobileCreationTurn> {
+): CreationTurnPatch {
   const settings = options.settingsFromTool;
   const hasSettings =
     settings.bookTypeChoice !== undefined ||

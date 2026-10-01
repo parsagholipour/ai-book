@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderClipRect;
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
@@ -278,6 +279,48 @@ void main() {
         tester.getSize(find.byKey(const ValueKey('b'))).width,
         greaterThan(resting),
       );
+    });
+  });
+
+  group('AppButton semantics', () {
+    testWidgets('a screen reader can press it, and it stands apart from the '
+        'text around it', (tester) async {
+      final handle = tester.ensureSemantics();
+      var taps = 0;
+      await tester.pumpWidget(
+        _app(
+          AppEmptyState(
+            title: 'Notes for this book',
+            message: 'Keep ideas here.',
+            actionLabel: 'New note',
+            onAction: () => taps += 1,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final button = find.bySemanticsLabel('New note');
+      expect(button, findsOneWidget);
+      final data = tester.getSemantics(button).getSemanticsData();
+      expect(data.hasAction(SemanticsAction.tap), isTrue);
+      expect(data.label, 'New note');
+
+      tester.semantics.tap(find.semantics.byLabel('New note'));
+      await tester.pump();
+      expect(taps, 1);
+      handle.dispose();
+    });
+
+    testWidgets('a disabled one offers no tap', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _app(const AppButton.primary(label: 'Send', onPressed: null)),
+      );
+      final data = tester
+          .getSemantics(find.bySemanticsLabel('Send'))
+          .getSemanticsData();
+      expect(data.hasAction(SemanticsAction.tap), isFalse);
+      handle.dispose();
     });
   });
 

@@ -15,6 +15,7 @@ import {
   creditCostForOperation,
   estimateFullBookCreditCost,
   planGenerationCreditCost,
+  planRevisionCreditCost,
   tierPrice
 } from "./billing.js";
 import { createProjectSchema } from "./schemas/book.js";
@@ -171,6 +172,21 @@ describe("tier rates", () => {
     setCreditPricing({ ...DEFAULT_CREDIT_COSTS, planGenerationFast: 27 });
     expect(planGenerationCreditCost(fast).credits).toBe(27);
     expect(planGenerationCreditCost(fast, { ...DEFAULT_CREDIT_COSTS, planGenerationFast: 31 }).credits).toBe(31);
+  });
+
+  it.each([
+    ["fast", 20, "planRevisionFast"],
+    ["balanced", 40, "planRevision"],
+    ["premium", 80, "planRevisionPremium"],
+    ["ultra", 120, "planRevisionUltra"]
+  ] as const)("quotes a %s plan revision on the same ladder as its first plan", (modelTier, credits, pricingKey) => {
+    // A flat 40 charged a Quick Draft revision twice the plan it revised.
+    expect(planRevisionCreditCost({ modelTier })).toEqual({ credits, modelTier, pricingKey });
+  });
+
+  it("prices a revision of a book with no tier recorded as Balanced", () => {
+    expect(planRevisionCreditCost({})).toEqual({ credits: 40, modelTier: "balanced", pricingKey: "planRevision" });
+    expect(planRevisionCreditCost(null).credits).toBe(40);
   });
 });
 

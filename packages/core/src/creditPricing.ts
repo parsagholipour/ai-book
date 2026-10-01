@@ -58,7 +58,12 @@ export const DEFAULT_CREDIT_COSTS = {
   coverRegeneration: 120,
   premiumReview: 200,
   exportUnlock: 150,
+  // A revision runs the same planner the first plan ran, so it climbs the same
+  // ladder; the unsuffixed key is still the balanced rate.
   planRevision: 40,
+  planRevisionFast: 20,
+  planRevisionPremium: 80,
+  planRevisionUltra: 120,
   bookTextEditBase: 25,
   bookTextEditPerPage: 10,
   pageRegenerationPerPage: 80,
@@ -68,7 +73,7 @@ export const DEFAULT_CREDIT_COSTS = {
   // revision written before tiers were priced still means exactly what it
   // meant, and `normalizeCreditPricing` backfills these from the defaults.
   // Read them only through `tierPrice` in `billing.ts`; see `TIER_PRICED_KEYS`
-  // for why these five rates and not the flat charges beside them.
+  // for why these rates and not the flat charges beside them.
   //
   // The per-page rates are floored at the *Max* plan's break-even, not the
   // ratio to balanced. A credit is worth $0.002832 to a Creator subscriber but
@@ -187,6 +192,9 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   premiumReview: 20_000,
   exportUnlock: 20_000,
   planRevision: 5_000,
+  planRevisionFast: 5_000,
+  planRevisionPremium: 5_000,
+  planRevisionUltra: 5_000,
   bookTextEditBase: 5_000,
   bookTextEditPerPage: 2_000,
   pageRegenerationPerPage: 5_000,

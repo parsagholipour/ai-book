@@ -10,7 +10,6 @@
 
 import {
   createProjectSchema,
-  creditCostForOperation,
   creditPricing,
   estimateFullBookCreditCost,
   inputWithReplanSettings,
@@ -86,7 +85,9 @@ export function bookEditCreditCost(
     const requested = inputWithReplanSettings(current, options.replanSettings);
     return pricing.bookReplanBase + estimateFullBookCreditCost(requested, pricing).totalCredits;
   }
-  return creditCostForOperation("PLAN_REVISION", pricing);
+  // A plan revision runs the planner the first plan ran, so it follows the
+  // book's tier exactly as the charge in `queueChargedPlanRevision` does.
+  return tierPrice(pricing, "planRevision", tier);
 }
 
 export function operationKindForIntent(

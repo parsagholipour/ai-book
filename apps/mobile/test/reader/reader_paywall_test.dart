@@ -58,6 +58,22 @@ void main() {
     expect(find.text('Open book'), findsOneWidget);
   });
 
+  testWidgets(
+    'opens a locked book for reading when the server serves it free',
+    (tester) async {
+      // The unlock is for taking the file out of the app; a Studio book has no
+      // generation charge to include it, and reading it used to need credits.
+      await _openLockedReader(
+        tester,
+        readUrl: '/api/mobile/projects/project-1/read/pdf',
+      );
+
+      expect(find.byType(BillingPaywall), findsNothing);
+      expect(find.text('Unlock to read'), findsNothing);
+      expect(find.byType(ReaderView), findsOneWidget);
+    },
+  );
+
   testWidgets('reopens the paywall when the reader asks for it', (
     tester,
   ) async {
@@ -177,9 +193,15 @@ void main() {
 }
 
 /// Pushes the reader onto a book whose export costs more than the balance
-/// holds, from a screen the reader can go back to.
-Future<void> _openLockedReader(WidgetTester tester) async {
-  final locked = pdfExport(unlocked: false, creditsRequired: 150);
+/// holds, from a screen the reader can go back to. [readUrl] is the server's
+/// free reading route; without it the reader has to download through the
+/// route that spends the unlock, which is what an older server offers.
+Future<void> _openLockedReader(WidgetTester tester, {String? readUrl}) async {
+  final locked = pdfExport(
+    unlocked: false,
+    creditsRequired: 150,
+    readUrl: readUrl,
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [

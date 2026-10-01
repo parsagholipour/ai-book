@@ -43,6 +43,7 @@ class MobileExportAvailability {
     required this.downloadUrl,
     required this.filename,
     required this.contentType,
+    this.readUrl,
     this.label,
     this.requiresSubscription = false,
     this.revision = 0,
@@ -63,6 +64,11 @@ class MobileExportAvailability {
   final bool requiresSubscription;
   final int creditsRequired;
   final String downloadUrl;
+
+  /// Where the in-app reader fetches this file, free of the export unlock —
+  /// the PDF only. Reading a book here costs nothing; [downloadUrl] is for
+  /// taking the file out of the app, which is what the unlock buys.
+  final String? readUrl;
   final String filename;
   final String contentType;
 
@@ -85,6 +91,7 @@ class MobileExportAvailability {
       requiresSubscription: json['requiresSubscription'] as bool? ?? false,
       creditsRequired: json['creditsRequired'] as int,
       downloadUrl: json['downloadUrl'] as String,
+      readUrl: json['readUrl'] as String?,
       filename: json['filename'] as String,
       contentType: json['contentType'] as String,
       revision: json['revision'] as int? ?? 0,

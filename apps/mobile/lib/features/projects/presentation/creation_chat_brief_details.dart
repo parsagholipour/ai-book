@@ -26,7 +26,7 @@ class _BriefDetails extends StatelessWidget {
   final bool built;
   final MobileProjectDetail? project;
   final MobileProjectStatus? liveStatus;
-  final Future<void> Function()? onOpenAdvanced;
+  final Future<void> Function({_AdvancedSection? section})? onOpenAdvanced;
 
   /// Opens the title sheet; null once built. Lives here as the pen chip
   /// rather than beside the headline, so the collapsed bar stays plain.
@@ -45,6 +45,11 @@ class _BriefDetails extends StatelessWidget {
     final onChipTap = onOpenAdvanced == null
         ? null
         : () => unawaited(onOpenAdvanced!());
+    // A chip opens the sheet at its own setting; on a phone the Visuals
+    // switches sit two screens down from where the sheet starts.
+    VoidCallback? chipTap(_AdvancedSection section) => onOpenAdvanced == null
+        ? null
+        : () => unawaited(onOpenAdvanced!(section: section));
     final sectionStyle = Theme.of(
       context,
     ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800);
@@ -102,33 +107,35 @@ class _BriefDetails extends StatelessWidget {
                     ? presets.bookTypeChoice
                     : 'auto',
               ),
-              onTap: onChipTap,
+              onTap: chipTap(_AdvancedSection.bookType),
             ),
             _TappableBriefChip(
               label: 'Size',
               value: pageCountLabelFor(presets),
-              onTap: onChipTap,
+              onTap: chipTap(_AdvancedSection.pages),
             ),
             _TappableBriefChip(
               label: 'Effort',
               value: qualityLabel(presets.qualityPreset),
-              onTap: onChipTap,
+              onTap: chipTap(_AdvancedSection.effort),
             ),
+            // A declined AI cover still buys a designed one, so the chip says
+            // which cover the book gets — "Not included" read as no cover.
             _TappableBriefChip(
               label: 'Cover',
-              value: presets.coverEnabled ? 'Included' : 'Not included',
-              onTap: onChipTap,
+              value: presets.coverEnabled ? 'AI art' : 'Designed',
+              onTap: chipTap(_AdvancedSection.visuals),
             ),
             _TappableBriefChip(
               label: 'Illustrations',
               value: presets.illustrationsEnabled ? 'Included' : 'Not included',
-              onTap: onChipTap,
+              onTap: chipTap(_AdvancedSection.visuals),
             ),
             if (state.language != 'en')
               _TappableBriefChip(
                 label: 'Language',
                 value: languageLabel(state.language),
-                onTap: onChipTap,
+                onTap: chipTap(_AdvancedSection.more),
               ),
           ],
         ),

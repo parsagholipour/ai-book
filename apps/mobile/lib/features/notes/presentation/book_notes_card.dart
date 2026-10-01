@@ -100,8 +100,10 @@ class _Header extends StatelessWidget {
       children: [
         Expanded(
           child: Semantics(
+            container: true,
             button: true,
             label: label,
+            onTap: onOpen,
             child: ExcludeSemantics(
               child: InkWell(
                 key: const ValueKey('book-notes-open'),
@@ -186,8 +188,10 @@ class _RecentNote extends StatelessWidget {
       localizations: MaterialLocalizations.of(context),
     );
     return Semantics(
+      container: true,
       button: true,
-      label: '$title. Edited $edited',
+      label: noteSemanticsLabel([title, 'Edited $edited']),
+      onTap: onTap,
       child: ExcludeSemantics(
         child: InkWell(
           key: ValueKey('book-notes-recent-${note.id}'),

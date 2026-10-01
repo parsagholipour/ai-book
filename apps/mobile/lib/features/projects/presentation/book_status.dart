@@ -84,7 +84,10 @@ MobileProjectSummary projectWithLiveStatus(
     authorName: project.authorName,
     source: project.source,
     coverImage: project.coverImage,
+    revisedFrom: project.revisedFrom,
     bookType: project.bookType,
+    bookTypeChoice: project.bookTypeChoice,
+    bookShape: project.bookShape,
     lengthPreset: project.lengthPreset,
     qualityPreset: project.qualityPreset,
     coverEnabled: status.imageSettingsReported

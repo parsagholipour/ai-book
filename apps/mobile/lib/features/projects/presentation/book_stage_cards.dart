@@ -258,6 +258,10 @@ class _BookQualityNoticeState extends State<BookQualityNotice> {
     final duration = AppMotion.reducedMotion(context)
         ? Duration.zero
         : AppMotion.medium;
+    void toggle() {
+      AppHaptics.selection();
+      setState(() => _open = !_open);
+    }
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -273,15 +277,14 @@ class _BookQualityNoticeState extends State<BookQualityNotice> {
             _header(
               context,
               toggle: Semantics(
+                container: true,
                 button: true,
                 expanded: _open,
                 label: '$title. $subtitle',
+                onTap: toggle,
                 child: ExcludeSemantics(
                   child: InkWell(
-                    onTap: () {
-                      AppHaptics.selection();
-                      setState(() => _open = !_open);
-                    },
+                    onTap: toggle,
                     child: Padding(
                       padding: const EdgeInsetsDirectional.fromSTEB(
                         AppSpacing.md,

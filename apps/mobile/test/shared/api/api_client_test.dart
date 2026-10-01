@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/shared/api/api_client.dart';
@@ -404,6 +405,75 @@ void main() {
       );
     });
   });
+
+  test('cancelling an event stream aborts its HTTP request', () async {
+    // A cancelled subscription used to leave the socket open, and the server
+    // polled the database each second for every abandoned stream.
+    final adapter = EndlessEventStreamAdapter();
+    final apiClient = ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = adapter,
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    final first = Completer<ServerSentEvent>();
+    final subscription = apiClient
+        .getServerSentEvents('/api/mobile/projects/p/status/events')
+        .listen(first.complete);
+    expect((await first.future).event, 'status');
+    expect(adapter.aborted, isFalse);
+
+    await subscription.cancel();
+    await Future<void>.delayed(Duration.zero);
+    expect(adapter.aborted, isTrue);
+  });
+
+  testWidgets(
+    'image auth headers renew before the access token they carry expires',
+    (tester) async {
+      // A visible cover keeps the provider alive indefinitely; the header it
+      // computed first used to outlive its fifteen-minute token.
+      final now = DateTime.now().toUtc();
+      final tokenStore = MemoryAuthTokenStore(
+        MobileSessionTokens(
+          accessToken: 'access-token-1',
+          accessTokenExpiresAt: now.add(const Duration(seconds: 47)),
+          refreshToken: 'refresh-token',
+          refreshTokenExpiresAt: now.add(const Duration(days: 1)),
+        ),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          apiClientProvider.overrideWithValue(
+            ApiClient(dio: Dio(), tokenStore: tokenStore),
+          ),
+        ],
+      );
+      container.listen(apiAuthHeadersProvider, (_, _) {});
+
+      await tester.pump();
+      expect(container.read(apiAuthHeadersProvider).value, {
+        'Authorization': 'Bearer access-token-1',
+      });
+
+      // What a refresh elsewhere in the app leaves in the store.
+      await tokenStore.write(validTokens());
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        container.read(apiAuthHeadersProvider).value?['Authorization'],
+        'Bearer access-token-1',
+      );
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+      expect(container.read(apiAuthHeadersProvider).value, {
+        'Authorization': 'Bearer access-token',
+      });
+      // In the body, not a tear-down: the next renewal timer must be gone
+      // before the binding checks for pending timers.
+      container.dispose();
+    },
+  );
 }
 
 MobileSessionTokens staleAccessTokens() {
@@ -424,6 +494,35 @@ MobileSessionTokens validTokens() {
     refreshToken: 'refresh-token',
     refreshTokenExpiresAt: now.add(const Duration(days: 1)),
   );
+}
+
+/// Answers with an event stream that never ends, and records whether Dio
+/// asked to abort it.
+class EndlessEventStreamAdapter implements HttpClientAdapter {
+  bool aborted = false;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    unawaited(cancelFuture?.then((_) => aborted = true));
+    final controller = StreamController<Uint8List>();
+    controller.add(
+      Uint8List.fromList(utf8.encode('event: status\ndata: {"a":1}\n\n')),
+    );
+    return ResponseBody(
+      controller.stream,
+      200,
+      headers: {
+        Headers.contentTypeHeader: ['text/event-stream'],
+      },
+    );
+  }
 }
 
 class RecordingHttpClientAdapter implements HttpClientAdapter {

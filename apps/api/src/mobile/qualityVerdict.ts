@@ -107,3 +107,32 @@ export function qualityWithExportsOnDisk(
     issues
   };
 }
+
+/**
+ * Issues that record the reviewer's own uncertainty rather than anything about
+ * the book. `BRIEF_COVERAGE_UNVERIFIED` means the coverage review could not
+ * validate its evidence ("Read-aloud rhythm — Unverified assessment:
+ * Repetition … support a read-aloud rhythm. The cited evidence could not be
+ * validated."), which painted a finished picture book "Review recommended" with
+ * a note the reader can neither act on nor understand. The operator report
+ * keeps it; the reader's card does not.
+ */
+const READER_SILENT_ISSUE_CODES = new Set(["BRIEF_COVERAGE_UNVERIFIED"]);
+
+/** The quality card a reader is shown: exports settled from disk, reviewer uncertainty left out. */
+export function qualityForReader(
+  quality: ProjectQualityStatus,
+  exports: Record<CompanionExportFormat, { available: boolean }>
+): ProjectQualityStatus {
+  const settled = qualityWithExportsOnDisk(quality, exports);
+  if (!settled.issues.some((issue) => READER_SILENT_ISSUE_CODES.has(issue.code))) {
+    return settled;
+  }
+  const issues = settled.issues.filter((issue) => !READER_SILENT_ISSUE_CODES.has(issue.code));
+  const blocked = issues.some((issue) => issue.severity === "error" && issue.source === "deterministic");
+  return {
+    ...settled,
+    state: settled.state === "pending" ? "pending" : blocked ? "blocked" : issues.length > 0 ? "review_recommended" : "passed",
+    issues
+  };
+}

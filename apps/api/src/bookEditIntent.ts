@@ -1,6 +1,7 @@
 import { createSourceTools, SOURCE_INSTRUCTIONS, type SourceService } from "@book-maker/core";
 import {
   chapterDisplayHeading,
+  exactReplacementFromInstruction,
   runToolLoop,
   withRecoverableNetworkRetry,
   type ReplanSettings,
@@ -11,6 +12,7 @@ import { z } from "zod";
 import type { StructuralPageEdit } from "@book-maker/core";
 import { backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
 import { chapterHeadingIntentFromMessage, type ChapterHeadingEdit } from "./bookEditChapterHeading.js";
+import { pageDesignIntentFromMessage, type PageDesignEdit } from "./bookEditPageDesign.js";
 import { narrowCodeLanguageIntent } from "./bookEditCodeScope.js";
 import { intentFromDecideAction } from "./bookEditDecision.js";
 import { classifyWithDegradedHeuristics, classifyWithHeuristics } from "./bookEditHeuristics.js";
@@ -71,6 +73,7 @@ export type BookEditIntentKind =
   | "continue_book"
   | "back_matter"
   | "chapter_heading"
+  | "page_design"
   | "add_image"
   | "move_image"
   | "remove_image"
@@ -178,6 +181,8 @@ export type BookEditIntent = {
   backMatter?: BackMatterEdit | null;
   /** Set for chapter_heading intents: how a chapter heading should read. */
   chapterHeading?: ChapterHeadingEdit | null;
+  /** Set for page_design intents: the design a picture book's pages print in. */
+  pageDesign?: PageDesignEdit | null;
   /** Set for add_image intents: the picture to generate and where it goes. */
   imageEdit?: ImageInsertionEdit | null;
   /** Set for move_image / remove_image: which picture, and for a move where it goes. */
@@ -345,6 +350,25 @@ export async function classifyProjectChatMessage(options: {
   if (chapterHeading) {
     return chapterHeading;
   }
+  // A page design is a compile preference too, for the same reason and with
+  // the same escape from forcedDecision's whole-book widening.
+  const pageDesign = options.stage === "complete" ? pageDesignIntentFromMessage(message) : null;
+  if (pageDesign) {
+    return pageDesign;
+  }
+  // A message that is, in full, one word or phrase swap is proved by the same
+  // parse the free path runs, so it never reaches the router, which rewrites
+  // it. "Replace the word tray with saucer everywhere in the book" came back
+  // as a plural-aware instruction with no replacement terms: the free,
+  // code-verified path could not qualify, the reader was quoted a model edit
+  // of all twelve pages, and the adherence review refused it three times. A
+  // selection or a reply narrows the request to a place, which is the
+  // router's to read, so neither takes this path.
+  const exactReplacement =
+    options.stage === "complete" && !readerSelection && !options.replyTo ? exactReplacementIntentFromMessage(message) : null;
+  if (exactReplacement) {
+    return exactReplacement;
+  }
   // Image requests have no regex fast path: the router's insert_image target is
   // the one classifier (a deliberate product call — extraction from free text is
   // model work). Without a model they degrade to the heuristics' clarify, and a
@@ -415,6 +439,30 @@ export async function classifyProjectChatMessage(options: {
   } catch {
     return narrowCode(normalizeIntentForStage(degraded(), options.stage, clarifyExhausted));
   }
+}
+
+/**
+ * The whole message as one exact replacement, scoped to the book. The pages
+ * come later: `planExactReplacement` keeps only those that hold the term, and
+ * a book that holds it nowhere is told so rather than rewritten.
+ */
+export function exactReplacementIntentFromMessage(message: string): BookEditIntent | null {
+  const replacement = exactReplacementFromInstruction(message);
+  if (!replacement) {
+    return null;
+  }
+  return {
+    kind: "local_patch",
+    confidence: 1,
+    reasoning: "The message is one exact replacement, so it is applied and verified by code.",
+    affectedPageIndexes: [],
+    assistantMessage: `I’ll replace “${replacement.from}” with “${replacement.to}” wherever it appears.`,
+    scope: "all_pages",
+    impact: "small_text",
+    clarification: "none",
+    editInstruction: message,
+    exactReplacement: { from: replacement.from, to: replacement.to }
+  };
 }
 
 /** Model-call budget for the whole routing loop (reads + final decision). */

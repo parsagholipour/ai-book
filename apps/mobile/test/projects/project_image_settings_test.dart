@@ -200,6 +200,34 @@ void main() {
     expect(estimate('ultra', live), 133);
   });
 
+  test('a plan revision mirrors the same tier ladder and live overrides', () {
+    // A flat 40 charged a Quick Draft revision twice the plan it revised.
+    int estimate(
+      String qualityPreset, [
+      Map<String, dynamic> creditCosts = const {},
+    ]) => estimatePlanRevisionCredits(
+      qualityPreset: qualityPreset,
+      creditCosts: creditCosts,
+    );
+
+    expect(estimate('fast'), 20);
+    expect(estimate('balanced'), 40);
+    expect(estimate('premium'), 80);
+    expect(estimate('ultra'), 120);
+    expect(estimate('custom'), 40);
+
+    const live = {
+      'planRevisionFast': 9,
+      'planRevision': 41,
+      'planRevisionPremium': 77,
+      'planRevisionUltra': 101,
+    };
+    expect(estimate('fast', live), 9);
+    expect(estimate('balanced', live), 41);
+    expect(estimate('premium', live), 77);
+    expect(estimate('ultra', live), 101);
+  });
+
   test('cover adds one image charge independently from illustrations', () {
     int estimate({
       required bool coverEnabled,
@@ -279,6 +307,30 @@ void main() {
         targetPages: 5,
       ),
       1,
+    );
+  });
+
+  test('a children\'s story is quoted for every page up to its cap', () {
+    // It is written as a KIDS book, which illustrates every page; the server
+    // bills min(4, pages) for it, while page 1 + every 8th quoted two.
+    int count(String? choice, int pages) => estimatedInteriorImageCount(
+      bookType: 'short_story',
+      bookTypeChoice: choice,
+      illustrationsEnabled: true,
+      targetPages: pages,
+    );
+    expect(count('children_story', 12), 4);
+    expect(count('children_story', 3), 3);
+    expect(count('short_story', 12), 2);
+    // Auto stays custom, ceil(pages / 8), whatever lane the chat resolved.
+    expect(
+      estimatedInteriorImageCount(
+        bookType: 'custom',
+        bookTypeChoice: 'auto',
+        illustrationsEnabled: true,
+        targetPages: 24,
+      ),
+      3,
     );
   });
 

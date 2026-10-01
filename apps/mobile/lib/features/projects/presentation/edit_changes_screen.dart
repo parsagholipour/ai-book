@@ -340,7 +340,7 @@ class _PageChangeSection extends StatelessWidget {
                 child: Semantics(
                   header: true,
                   child: Text(
-                    'Page ${page.pageIndex}',
+                    'Page ${page.shownPage}',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),

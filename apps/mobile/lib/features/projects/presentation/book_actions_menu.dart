@@ -21,8 +21,9 @@ typedef _ExportChoice = ({_BookAction action, MobileExportAvailability export});
 /// Formats that have not been compiled yet stay visible but disabled — a book
 /// mid-write should still show what will be there, rather than a menu whose
 /// items appear and disappear as generation progresses. Formats that are ready
-/// but not unlocked follow the export panel's rule: spend credits when the
-/// balance covers it, and only open the paywall when it does not. A format the
+/// but not unlocked follow the export panel's rule: ask before spending the
+/// unlock when the balance covers it (`confirmProjectExportUnlock`), and open
+/// the paywall when it does not. A format the
 /// plan does not include (the Word file) is offered with a lock and opens the
 /// paywall; the server rules on the request either way.
 Future<void> showBookActionsMenu({
@@ -56,7 +57,9 @@ Future<void> showBookActionsMenu({
       Offset.zero & overlay.size,
     ),
     items: [
-      if (unpublished)
+      // The author owns this text, so Edit is the Writing Studio whether or
+      // not it has been published; a published one also has its book chat.
+      if (project.isAuthorManuscript)
         const PopupMenuItem<Object>(
           value: _BookAction.write,
           child: Row(
@@ -69,8 +72,8 @@ Future<void> showBookActionsMenu({
               ),
             ],
           ),
-        )
-      else
+        ),
+      if (!unpublished)
         const PopupMenuItem<Object>(
           value: _BookAction.chat,
           child: Row(

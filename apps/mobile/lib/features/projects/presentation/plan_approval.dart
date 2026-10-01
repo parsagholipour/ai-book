@@ -12,7 +12,9 @@ import '../domain/project_models.dart';
 
 // The creation chat's part files reach the plan review's shared pieces through
 // this file, which the screen already imports.
-export 'book_plan_review.dart' show PlanChapterList, planRevisionSuggestions;
+export '../domain/plan_revision_suggestions.dart'
+    show planRevisionSuggestions, planRevisionSuggestionsFor;
+export 'book_plan_review.dart' show PlanChapterList;
 
 /// Shared credit/paywall/confirm + approve flow used by the project detail
 /// screen and the in-chat plan stage so approval behaves identically.

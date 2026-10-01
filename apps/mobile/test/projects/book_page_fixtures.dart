@@ -117,6 +117,7 @@ MobileProjectDetail bookProject({
   MobileManuscriptSummary? manuscript,
   String statusLabel = 'Status',
   MobileProjectQuality quality = const MobileProjectQuality.pending(),
+  String bookType = 'short_story',
 }) {
   final resolvedPlan = withPlan ? (plan ?? bookPlan()) : null;
   return MobileProjectDetail(
@@ -124,7 +125,7 @@ MobileProjectDetail bookProject({
     title: 'The Lighthouse Letter',
     subtitle: subtitle,
     authorName: 'Parsa',
-    bookType: 'short_story',
+    bookType: bookType,
     lengthPreset: 'standard',
     qualityPreset: 'balanced',
     imagesEnabled: true,

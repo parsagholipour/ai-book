@@ -75,7 +75,16 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
       }
 
       reply.hijack();
+      // Hijacked, so nothing the reply was given is sent unless it is written
+      // here — the CORS headers `@fastify/cors` set on request among them, and
+      // a browser refused every event stream for want of them.
+      const inherited = Object.fromEntries(
+        Object.entries(reply.getHeaders()).filter(
+          (entry): entry is [string, string | number | string[]] => entry[1] !== undefined
+        )
+      );
       reply.raw.writeHead(200, {
+        ...inherited,
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",

@@ -8,6 +8,8 @@ import 'package:tomeza/features/projects/presentation/book_edit_screen.dart';
 import 'package:tomeza/features/projects/presentation/book_edit_widgets.dart';
 import 'package:tomeza/features/projects/presentation/project_chat_screen.dart';
 
+import 'book_page_fixtures.dart';
+
 class _BookRepository implements ProjectsRepository {
   @override
   Future<MobileEditableBook> getEditableBook(String projectId) async =>
@@ -39,7 +41,7 @@ class _BookRepository implements ProjectsRepository {
 
 Object? launchExtra;
 
-Widget _app() {
+Widget _app({ProviderContainer? container}) {
   final router = GoRouter(
     routes: [
       GoRoute(
@@ -55,11 +57,15 @@ Widget _app() {
       ),
     ],
   );
+  final app = MaterialApp.router(routerConfig: router);
+  if (container != null) {
+    return UncontrolledProviderScope(container: container, child: app);
+  }
   return ProviderScope(
     overrides: [
       projectsRepositoryProvider.overrideWithValue(_BookRepository()),
     ],
-    child: MaterialApp.router(routerConfig: router),
+    child: app,
   );
 }
 
@@ -81,6 +87,59 @@ void main() {
       'Rewrite this passage: "Boats came home". Make it warmer.',
     );
     expect(BookEditAsk.picture.draft(''), 'Add a picture to this page.');
+  });
+
+  testWidgets('shows the review notes that sent the reader here', (
+    tester,
+  ) async {
+    // The book page's "Review" opens Edit Mode at the first flagged page; the
+    // page used to open with nothing on it saying why.
+    final container = ProviderContainer(
+      overrides: [
+        projectsRepositoryProvider.overrideWithValue(_BookRepository()),
+        projectDetailProvider('project-1').overrideWith(
+          (ref) async => bookProject(
+            quality: const MobileProjectQuality(
+              state: 'review_recommended',
+              affectedPageIndexes: [2],
+              issues: [
+                MobileProjectQualityIssue(
+                  code: 'CHAPTER_SHORT',
+                  severity: 'warning',
+                  source: 'deterministic',
+                  message: 'The harbour chapter runs short.',
+                  guidance: 'Develop the arrival at dusk.',
+                  affectedPageIndexes: [2],
+                ),
+                MobileProjectQualityIssue(
+                  code: 'BRIEF',
+                  severity: 'warning',
+                  source: 'model',
+                  message: 'The book never names the lighthouse.',
+                  guidance: 'Name it once.',
+                  affectedPageIndexes: [],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    // What the book page underneath keeps alive.
+    container.listen(projectDetailProvider('project-1'), (_, _) {});
+    await container.read(projectDetailProvider('project-1').future);
+
+    await tester.pumpWidget(_app(container: container));
+    await tester.pumpAndSettle();
+    expect(find.text('1 review note on the whole book'), findsOneWidget);
+    expect(find.text('The book never names the lighthouse.'), findsNothing);
+
+    await tester.tap(find.text('Page 2'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 review note on this page'), findsOneWidget);
+    expect(find.text('The harbour chapter runs short.'), findsOneWidget);
+    expect(find.text('Develop the arrival at dusk.'), findsOneWidget);
   });
 
   testWidgets('shows every page in a strip and switches between them', (

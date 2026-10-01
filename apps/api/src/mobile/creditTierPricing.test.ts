@@ -7,6 +7,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
 import { enqueueGenerationJob } from "../queue.js";
+import { bookEditCreditCost } from "./bookEditPricing.js";
 import {
   approvedPlanRecord,
   bearer,
@@ -222,6 +223,57 @@ describe("direct project planning prices by quality tier", () => {
  * equal by two implementations agreeing — which is only worth anything if a
  * change to either has to be typed out here.
  */
+describe("plan revisions price by quality tier", () => {
+  beforeEach(resetMobileHarness);
+  afterEach(teardownMobileHarness);
+
+  const REVISION_KEYS = {
+    fast: "planRevisionFast",
+    balanced: "planRevision",
+    premium: "planRevisionPremium",
+    ultra: "planRevisionUltra"
+  } as const;
+
+  for (const tier of TIERS) {
+    it(`charges a ${tier} revision what that tier's first plan cost`, async () => {
+      // A flat 40 charged a Quick Draft revision twice the plan it revised.
+      mockAccessTokens({ "token-a": "user-a" });
+      const project = projectAtTier(tier);
+      mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
+        id: "plan-1",
+        projectId: "project-1",
+        status: "DRAFT",
+        project
+      });
+      mockPrisma.project.findUnique.mockResolvedValue(project);
+      mockPrisma.project.update.mockResolvedValue({});
+      vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-revise", type: "REVISE_PLAN" }));
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/plans/plan-1/revise",
+        headers: bearer("token-a"),
+        payload: { message: "Make the examples warmer." }
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(reserveCredits).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: "PLAN_REVISION",
+          amountCredits: PLAN_TOTALS[tier],
+          metadata: expect.objectContaining({ modelTier: tier, pricingKey: REVISION_KEYS[tier] })
+        })
+      );
+      await app.close();
+    });
+
+    it(`quotes a ${tier} chat plan revision at the same rate`, () => {
+      expect(bookEditCreditCost("plan_revision", 0, projectAtTier(tier) as never)).toBe(PLAN_TOTALS[tier]);
+    });
+  }
+});
+
 describe("plan approval prices by quality tier", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);

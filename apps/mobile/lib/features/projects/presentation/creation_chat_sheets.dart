@@ -29,11 +29,12 @@ extension _CreationChatSheets on _CreationChatScreenState {
     }
   }
 
-  Future<void> openAdvancedSheet() async {
+  /// Opens at [section] when a chip asked for one, at the top otherwise.
+  Future<void> openAdvancedSheet({_AdvancedSection? section}) async {
     final controller = ref.read(creationChatControllerProvider.notifier);
     await showAppBottomSheet<void>(
       context,
-      builder: (_) => _AdvancedSheet(controller: controller),
+      builder: (_) => _AdvancedSheet(controller: controller, section: section),
     );
   }
 
@@ -481,13 +482,57 @@ class _TitleSheetState extends State<_TitleSheet> {
   }
 }
 
-class _AdvancedSheet extends ConsumerWidget {
-  const _AdvancedSheet({required this.controller});
+const _yourChoiceBadge = AppStatusBadge(
+  label: 'Your choice',
+  icon: Icons.tune_outlined,
+);
+
+/// The settings a brief chip can open the sheet at.
+enum _AdvancedSection { bookType, pages, effort, visuals, more }
+
+class _AdvancedSheet extends ConsumerStatefulWidget {
+  const _AdvancedSheet({required this.controller, this.section});
 
   final CreationChatController controller;
+  final _AdvancedSection? section;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AdvancedSheet> createState() => _AdvancedSheetState();
+}
+
+class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
+  final _sectionKeys = {
+    for (final section in _AdvancedSection.values) section: GlobalKey(),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    final section = widget.section;
+    if (section == null) return;
+    // After the sheet's first layout, so the section has a place to scroll to.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _sectionKeys[section]?.currentContext;
+      if (!mounted || target == null) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          target,
+          duration: AppMotion.reducedMotion(context)
+              ? Duration.zero
+              : AppMotion.medium,
+          curve: AppMotion.enter,
+        ),
+      );
+    });
+  }
+
+  /// A zero-height mark where a section starts: what a chip scrolls to.
+  Widget _sectionAnchor(_AdvancedSection section) =>
+      SizedBox(key: _sectionKeys[section]);
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
     final state = ref.watch(creationChatControllerProvider);
     final presets = state.presets;
     // Watched (not read) so the page-cost estimate reacts to Finish and
@@ -535,6 +580,7 @@ class _AdvancedSheet extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
+                  _sectionAnchor(_AdvancedSection.bookType),
                   _BookTypePicker(
                     title: 'Book type',
                     yourChoice: state.userChoices.contains(
@@ -548,6 +594,7 @@ class _AdvancedSheet extends ConsumerWidget {
                     onChanged: controller.setBookType,
                   ),
                   const SizedBox(height: AppSpacing.lg),
+                  _sectionAnchor(_AdvancedSection.pages),
                   _PageCountControl(
                     title: 'Pages',
                     yourChoice: state.userChoices.contains(
@@ -567,6 +614,7 @@ class _AdvancedSheet extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
+                  _sectionAnchor(_AdvancedSection.effort),
                   _AdvancedGroup(
                     title: 'Effort',
                     yourChoice: state.userChoices.contains(
@@ -583,47 +631,50 @@ class _AdvancedSheet extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
+                  _sectionAnchor(_AdvancedSection.visuals),
                   const _FieldTitle('Visuals'),
                   const SizedBox(height: AppSpacing.xs),
-                  AppToggleTile(
+                  StableToggleTile(
                     value: presets.coverEnabled,
-                    onChanged: controller.setCoverEnabled,
-                    icon: Icons.auto_stories_outlined,
-                    title: 'AI cover art',
-                    titleBadge: state.userChoices.contains(CreationChoice.cover)
-                        ? const AppStatusBadge(
-                            label: 'Your choice',
-                            icon: Icons.tune_outlined,
-                          )
-                        : null,
-                    subtitle: _coverSubtitle(
-                      presets.coverEnabled,
-                      imageCredits: imageCredits,
+                    chosen: state.userChoices.contains(CreationChoice.cover),
+                    canBeChosen: true,
+                    tileFor: (value, chosen) => AppToggleTile(
+                      value: value,
+                      onChanged: controller.setCoverEnabled,
+                      icon: Icons.auto_stories_outlined,
+                      title: 'AI cover art',
+                      titleBadge: chosen ? _yourChoiceBadge : null,
+                      subtitle: _coverSubtitle(
+                        value,
+                        imageCredits: imageCredits,
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  AppToggleTile(
+                  StableToggleTile(
                     value: presets.illustrationsEnabled,
-                    onChanged: controller.setIllustrationsEnabled,
-                    icon: Icons.image_outlined,
-                    title: 'In-book illustrations',
-                    titleBadge:
-                        state.userChoices.contains(CreationChoice.illustrations)
-                        ? const AppStatusBadge(
-                            label: 'Your choice',
-                            icon: Icons.tune_outlined,
-                          )
-                        : null,
-                    subtitle: _illustrationsSubtitle(
-                      presets.illustrationsEnabled,
-                      presets.bookType,
-                      ref.watch(billingProvider).asData?.value.imageQuota,
-                      imageCredits: imageCredits,
+                    chosen: state.userChoices.contains(
+                      CreationChoice.illustrations,
+                    ),
+                    canBeChosen: true,
+                    tileFor: (value, chosen) => AppToggleTile(
+                      value: value,
+                      onChanged: controller.setIllustrationsEnabled,
+                      icon: Icons.image_outlined,
+                      title: 'In-book illustrations',
+                      titleBadge: chosen ? _yourChoiceBadge : null,
+                      subtitle: _illustrationsSubtitle(
+                        value,
+                        presets.bookType,
+                        ref.watch(billingProvider).asData?.value.imageQuota,
+                        imageCredits: imageCredits,
+                      ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   // Set values open the fold by themselves, so nothing chosen
                   // is ever hidden behind it.
+                  _sectionAnchor(_AdvancedSection.more),
                   _MoreOptions(
                     summary: moreSummary,
                     initiallyOpen:

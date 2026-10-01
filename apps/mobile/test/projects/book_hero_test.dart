@@ -191,6 +191,24 @@ void main() {
     expect(bookMetaLine(stage: BookStage.planReview, project: project), isNull);
   });
 
+  test('an author\'s own book names no AI effort tier', () {
+    // A Studio book read "1 chapter · 1 page · Balanced".
+    final generated = bookProject(pageCount: 16, bookType: 'custom');
+    final written = bookProject(
+      pageCount: 16,
+      bookType: 'custom',
+      source: 'written',
+    );
+    expect(
+      bookMetaLine(stage: BookStage.ready, project: generated),
+      '2 chapters · 16 pages · Balanced',
+    );
+    expect(
+      bookMetaLine(stage: BookStage.ready, project: written),
+      '2 chapters · 16 pages',
+    );
+  });
+
   group('export rows', () {
     Widget panel(MobileExportSet exports, {VoidCallback? onRefresh}) {
       return MaterialApp(

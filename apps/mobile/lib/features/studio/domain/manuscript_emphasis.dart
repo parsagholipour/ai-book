@@ -16,7 +16,11 @@
 /// * A space typed at the end of a bold word goes after the word, and Enter
 ///   inside one ends the bold before the break and starts it again after.
 /// * Typing style: turning bold on with the cursor between words writes
-///   nothing; the marks go round the next thing typed.
+///   nothing; the marks go round the next thing typed. Spaces typed at the
+///   end of a bold run keep its style on, and the next word joins the run;
+///   Bold again at the end of the run steps out of it.
+/// * A keyboard edit made on text a formatter has since rewritten is made
+///   again on the rewrite ([ManuscriptImeRebase]).
 ///
 /// Everything here is a pure function of a [TextEditingValue].
 library;
@@ -26,6 +30,7 @@ import 'package:flutter/services.dart';
 import 'manuscript_inline.dart';
 
 part 'manuscript_emphasis_edit.dart';
+part 'manuscript_emphasis_ime.dart';
 part 'manuscript_emphasis_toggle.dart';
 
 /// `**bold**` or `*italic*` (either spelling): the two marks and what they

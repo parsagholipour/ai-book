@@ -63,4 +63,53 @@ describe("explicit illustration slots", () => {
     expect(interiorIllustrationSlotCount(kids)).toBe(10);
     expect(estimateInteriorImageCount(kids)).toBe(4);
   });
+
+  it("never draws more interiors for an app book than its quote bills, spread across the story", () => {
+    const appBook = (category: string, targetPages: number, bookType?: string, cadence = "template-driven") => {
+      const input = project(cadence, category, targetPages);
+      (input.mediaSettings as Record<string, unknown>).mobile = bookType ? { bookType } : {};
+      return input;
+    };
+    // A 12-page children's story: KIDS illustrates every page, the app quotes 4.
+    const story = appBook("KIDS", 12, "short_story");
+    const pages = Array.from({ length: 12 }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(story, index));
+    expect(pages).toEqual([1, 4, 7, 10]);
+    expect(interiorIllustrationSlotCount(story)).toBe(estimateInteriorImageCount(story));
+    // Never a page the quote did not cover.
+    expect(pageGetsInteriorIllustration(story, 13)).toBe(false);
+    // A 24-page lead magnet's cadence picks seven pages; it is billed four.
+    expect(interiorIllustrationSlotCount(appBook("BUSINESS", 24, "lead_magnet"))).toBe(4);
+    for (const category of ["KIDS", "STORY", "BUSINESS", "EDUCATION", "SCIENCE", "CUSTOM"]) {
+      for (const bookType of [undefined, "custom", "short_story", "lead_magnet", "workbook"]) {
+        for (const cadence of ["template-driven", "every-page", "every-third-page"]) {
+          for (const targetPages of [4, 8, 12, 24, 40, 60]) {
+            const input = appBook(category, targetPages, bookType, cadence);
+            expect(interiorIllustrationSlotCount(input)).toBe(estimateInteriorImageCount(input));
+          }
+        }
+      }
+    }
+  });
+
+  it("bills and draws an Auto book at the cap the app quotes, whatever category its lane chose", () => {
+    // Auto books are filed under their resolved lane's category now; the app
+    // quotes Auto as `custom`, ceil(pages / 8), and so must the charge.
+    const auto = (category: string, targetPages: number) => {
+      const input = project("template-driven", category, targetPages);
+      (input.mediaSettings as Record<string, unknown>).mobile = { bookType: "custom" };
+      return input;
+    };
+    expect(estimateInteriorImageCount(auto("BUSINESS", 24))).toBe(3);
+    expect(estimateInteriorImageCount(auto("EDUCATION", 24))).toBe(3);
+    expect(estimateInteriorImageCount(auto("KIDS", 12))).toBe(2);
+    expect(estimateInteriorImageCount(auto("CUSTOM", 5))).toBe(1);
+    expect(interiorIllustrationSlotCount(auto("EDUCATION", 24))).toBe(3);
+  });
+
+  it("leaves an operator book, which no quote covers, every slot its cadence picks", () => {
+    const operator = project("template-driven", "KIDS", 12);
+    expect(interiorIllustrationSlotCount(operator)).toBe(12);
+    expect(pageGetsInteriorIllustration(operator, 13)).toBe(true);
+  });
 });
+

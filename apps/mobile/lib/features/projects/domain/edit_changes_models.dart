@@ -80,9 +80,19 @@ class MobileEditPageChange {
     this.illustrationAfter,
     this.structuralChange,
     this.pageIndexBefore,
+    this.readerPage,
   });
 
+  /// The model page — what the jump and the reader link navigate by.
   final int pageIndex;
+
+  /// The number printed on the PDF for this page, when the server measured
+  /// one. The chat card that opens this screen names printed pages.
+  final int? readerPage;
+
+  /// The number to show the reader: printed when known, else the model page.
+  int get shownPage => readerPage ?? pageIndex;
+
   final String titleBefore;
   final String titleAfter;
   final bool titleChanged;
@@ -131,6 +141,7 @@ class MobileEditPageChange {
         _ => null,
       },
       pageIndexBefore: json['pageIndexBefore'] as int?,
+      readerPage: json['readerPage'] as int?,
     );
   }
 }

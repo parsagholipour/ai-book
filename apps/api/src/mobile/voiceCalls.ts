@@ -262,7 +262,56 @@ export async function sweepStaleVoiceCalls(now = new Date()): Promise<number> {
     );
     await settleCall(call, elapsedSeconds, "heartbeat_lost");
   }
-  return stale.length;
+  return stale.length + (await releaseOrphanedVoiceCallHolds(cutoff));
+}
+
+/** A hold's key, `{prefix}{n}`, read back into the call it belongs to. */
+const VOICE_CALL_HOLD_KEY = /^mobile:voice-call:([^:]+):hold:\d+$/;
+
+/**
+ * Releases the holds of calls that are no longer running.
+ *
+ * `settleCall` releases by the call's key prefix, so a call it settles cannot
+ * strand one. A call settled before it did could: the hold was reserved in one
+ * statement and its pointer written in the next, and a call that ended between
+ * the two released only the holds its row knew about. One such hold sat
+ * RESERVED from July to October 2026, shown to the reader as "180 on hold for
+ * books in progress" with nothing in progress, and nothing would ever have let
+ * it go — the stale sweep reads ACTIVE calls, and this call had ENDED. So the
+ * ledger is read for any hold whose call is not ACTIVE (or no longer exists),
+ * and the release goes through the same prefix `settleCall` uses.
+ */
+async function releaseOrphanedVoiceCallHolds(cutoff: Date): Promise<number> {
+  const holds = await prisma.creditLedgerEntry.findMany({
+    where: {
+      status: "RESERVED",
+      operation: "VOICE_CALL_MINUTE",
+      idempotencyKey: { startsWith: "mobile:voice-call:" },
+      createdAt: { lt: cutoff }
+    },
+    select: { idempotencyKey: true },
+    take: 100
+  });
+  const callIds = [
+    ...new Set(holds.flatMap((hold) => VOICE_CALL_HOLD_KEY.exec(hold.idempotencyKey)?.slice(1, 2) ?? []))
+  ];
+  if (callIds.length === 0) {
+    return 0;
+  }
+  const running = await prisma.voiceCall.findMany({
+    where: { id: { in: callIds }, status: "ACTIVE" },
+    select: { id: true }
+  });
+  const runningIds = new Set(running.map((call) => call.id));
+  let released = 0;
+  for (const callId of callIds) {
+    if (runningIds.has(callId)) continue;
+    released += await releaseReservationsByKeyPrefix(
+      voiceCallHoldKeyPrefix(callId),
+      "Voice call hold released (the call had already ended)."
+    );
+  }
+  return released;
 }
 
 /** Whole seconds this call has verifiably been open, by the server's clock. */

@@ -143,24 +143,30 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              AppToggleTile(
+              StableToggleTile(
                 value: _coverEnabled,
-                onChanged: (value) => setState(() => _coverEnabled = value),
-                icon: Icons.auto_stories_outlined,
-                title: 'AI cover art',
-                subtitle: _coverSubtitle(_coverEnabled),
+                tileFor: (value, _) => AppToggleTile(
+                  value: value,
+                  onChanged: (value) => setState(() => _coverEnabled = value),
+                  icon: Icons.auto_stories_outlined,
+                  title: 'AI cover art',
+                  subtitle: _coverSubtitle(value),
+                ),
               ),
               const SizedBox(height: 8),
-              AppToggleTile(
+              StableToggleTile(
                 value: _illustrationsEnabled,
-                onChanged: (value) =>
-                    setState(() => _illustrationsEnabled = value),
-                icon: Icons.image_outlined,
-                title: 'In-book illustrations',
-                subtitle: _illustrationsSubtitle(
-                  _illustrationsEnabled,
-                  widget.presets.bookType,
-                  billing?.imageQuota,
+                tileFor: (value, _) => AppToggleTile(
+                  value: value,
+                  onChanged: (value) =>
+                      setState(() => _illustrationsEnabled = value),
+                  icon: Icons.image_outlined,
+                  title: 'In-book illustrations',
+                  subtitle: _illustrationsSubtitle(
+                    value,
+                    widget.presets.bookType,
+                    billing?.imageQuota,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
