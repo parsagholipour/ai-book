@@ -4,9 +4,14 @@ import '../../../shared/ui/authed_network_image.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
 
-/// Standard proportions of a printed trade paperback. Every cover in the app
-/// uses this so a shelf of books lines up.
-const double kBookCoverAspectRatio = 2 / 3;
+/// The proportions of the cover the server renders (1800 × 2400, `COVER_WIDTH`
+/// and `COVER_HEIGHT` in packages/core/src/generation/cover.ts). Every cover in
+/// the app uses this so a shelf of books lines up.
+///
+/// It used to be a trade paperback's 2:3. Real covers are 3:4 with their title
+/// typeset into the picture, so a 2:3 box either letterboxed them (shorter than
+/// the placeholders beside them) or, filled, trimmed the edges of the type.
+const double kBookCoverAspectRatio = 3 / 4;
 
 /// A book cover tile.
 ///

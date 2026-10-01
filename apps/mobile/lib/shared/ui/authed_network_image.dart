@@ -79,6 +79,17 @@ class AuthedNetworkImage extends ConsumerWidget {
             }
             return AnimatedSwitcher(
               duration: duration,
+              // The switcher's default stack hands its child loose
+              // constraints, so inside a fixed box the picture was laid out
+              // at its own aspect and centred instead of taking [fit] — and
+              // the loading placeholder shrank to its content. Passing the
+              // parent's constraints through means the cross-fade lays out
+              // exactly as the image would without it.
+              layoutBuilder: (current, previous) => Stack(
+                fit: StackFit.passthrough,
+                alignment: Alignment.center,
+                children: [...previous, ?current],
+              ),
               child: KeyedSubtree(
                 key: ValueKey(loaded),
                 child: loaded ? child : loadingPlaceholder,

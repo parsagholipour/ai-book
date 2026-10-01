@@ -34,9 +34,8 @@ class CharacterNetworkImage extends StatelessWidget {
   final Widget? placeholder;
   final Widget? errorPlaceholder;
 
-  /// Fills whatever box it is given. The cross-fade below wraps the image in an
-  /// `AnimatedSwitcher`, whose stack hands its child *loose* constraints — so
-  /// without an explicit size a picture whose aspect differs from the box is
+  /// Fills whatever box it is given, even one that hands it loose constraints:
+  /// without an explicit size a picture whose aspect differs from such a box is
   /// drawn at its own aspect, centred, with the box's colour showing either
   /// side. Header and strip tiles set this; the fullscreen viewer, which wants
   /// `contain` inside an unbounded pager page, does not.

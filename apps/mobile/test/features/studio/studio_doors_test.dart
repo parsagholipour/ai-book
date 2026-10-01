@@ -196,7 +196,7 @@ void main() {
     final status = bookStatusInfo(_writtenDraft());
     expect(status.kind, BookStatusKind.inProgress);
     // The shelf's short form; the library card spells out the server's label.
-    expect(status.label, 'Writing');
+    expect(status.label, 'Draft');
     expect(status.progress, isNull);
   });
 

@@ -137,7 +137,7 @@ class _NowPlayingHeader extends StatelessWidget {
     // The text under the cover scales with the reader's settings, so the cover
     // is what gives way.
     final textRoom = 132 * scale;
-    final byHeight = (maxHeight - textRoom - 32) / 1.5;
+    final byHeight = (maxHeight - textRoom - 32) * kBookCoverAspectRatio;
     final coverWidth = math.max(
       88.0,
       math.min(math.min(228.0, width * 0.6), byHeight),

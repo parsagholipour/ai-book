@@ -49,9 +49,10 @@ BookStatusInfo bookStatusInfo(MobileProjectSummary project) {
   }
   // Not a book being generated, so no percentage and no "draft saved". The
   // short form suits the shelf; the library spells out the server's own label
-  // ("Writing · 3,200 words").
+  // ("Writing · 3,200 words"). Not "Writing" here: on the shelf it sits beside
+  // books the model is writing, and read as one of them.
   if (project.isUnpublishedManuscript) {
-    return const BookStatusInfo(BookStatusKind.inProgress, 'Writing');
+    return const BookStatusInfo(BookStatusKind.inProgress, 'Draft');
   }
   if (project.isLive) {
     final percent = project.progressPercent.clamp(0, 100);

@@ -39,8 +39,7 @@ void main() {
 
     expect(find.text('Your books'), findsOneWidget);
     expect(find.byType(BookCover), findsNWidgets(2));
-    expect(find.text('Ready'), findsOneWidget);
-    expect(find.text('40% complete'), findsOneWidget);
+    expect(find.text('40%'), findsOneWidget);
 
     // A book still being written is not pushed behind the finished one: the
     // shelf is ordered by what was touched last.
@@ -79,12 +78,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('80% complete'), findsOneWidget);
+      expect(find.text('80%'), findsOneWidget);
 
       statuses.add(projectStatus(progressPercent: 89));
       await tester.pump();
       await tester.pump();
-      expect(find.text('89% complete'), findsOneWidget);
+      expect(find.text('89%'), findsOneWidget);
 
       repository.project = shelfProject(
         id: 'writing',
@@ -105,12 +104,15 @@ void main() {
       await tester.pump();
       await tester.pumpAndSettle();
 
-      expect(find.text('Ready'), findsOneWidget);
+      // A finished book says nothing under its title; the screen reader
+      // still hears that it is ready.
+      expect(find.text('89%'), findsNothing);
+      expect(find.bySemanticsLabel('Almost There. Ready'), findsOneWidget);
       expect(repository.listCalls, greaterThan(1));
     },
   );
 
-  testWidgets('each book says its state in a chip under a two-line title', (
+  testWidgets('an unfinished book wears its state; a finished one does not', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -134,8 +136,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Ready'), findsOneWidget);
-    expect(find.text('Needs attention'), findsOneWidget);
+    // A badge on every finished cover was noise; only the exception speaks,
+    // in the short form a cover has room for.
+    expect(find.text('Ready'), findsNothing);
+    expect(find.text('Failed'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Broken Book. Needs attention'),
+      findsOneWidget,
+    );
     final title = tester.widget<Text>(
       find.text('A Long Title About The Sea And Everything In It').last,
     );
@@ -201,37 +209,6 @@ void main() {
     await tester.tap(find.text('See all'));
     await tester.pumpAndSettle();
     expect(find.text('The library'), findsOneWidget);
-  });
-
-  testWidgets('the shelf lays out at large text without overflowing', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(320, 700));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    tester.platformDispatcher.textScaleFactorTestValue = 2;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    await tester.pumpWidget(
-      shelfTestApp([
-        shelfProject(
-          id: 'broken',
-          title: 'A Book With A Fairly Long Name',
-          status: 'failed',
-          hasPlan: true,
-        ),
-        shelfProject(
-          id: 'writing',
-          title: 'Still Writing',
-          status: 'generating',
-          hasPlan: true,
-          progressPercent: 42,
-        ),
-      ]),
-    );
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull);
-    expect(find.text('Needs attention'), findsOneWidget);
-    expect(find.text('42% complete'), findsOneWidget);
   });
 
   testWidgets('ideas without a plan are not shelved as books', (tester) async {

@@ -77,6 +77,41 @@ void main() {
     expect(find.text('auth failed'), findsOneWidget);
   });
 
+  testWidgets('the cross-fade lays out in the box it was given', (
+    tester,
+  ) async {
+    // The fade wraps the picture in an AnimatedSwitcher, whose default stack
+    // loosens its child's constraints: 3:4 cover art was drawn at its own
+    // aspect, centred, inside the 2:3 cover beside full-height placeholders.
+    // The loading placeholder sits in the same slot, so it shows the layout.
+    await tester.pumpWidget(
+      _app(
+        const Center(
+          child: SizedBox(
+            width: 120,
+            height: 180,
+            child: AuthedNetworkImage(
+              url: '/cover.png',
+              cacheBuster: null,
+              fit: BoxFit.cover,
+              transitionDuration: Duration(milliseconds: 200),
+              loadingPlaceholder: ColoredBox(
+                key: ValueKey('loading'),
+                color: Colors.teal,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('loading'))),
+      const Size(120, 180),
+    );
+  });
+
   testWidgets('converts logical decode width to physical cache width', (
     tester,
   ) async {
