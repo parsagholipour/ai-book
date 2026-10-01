@@ -20,6 +20,8 @@ export type PaginatedChapter = {
 };
 
 const HEADING_LINE = /^\s{0,3}#{1,6}\s/;
+/** A toolkit chapter's section heading (`instructionalBook.ts`), the one heading a composed chapter may keep. */
+const SUBHEADING_LINE = /^\s{0,3}###\s+\S/;
 const PAGE_MARKER_LINE = /^\s*(?:page|صفحه|página|seite)\s*\d+\s*$/iu;
 const CHAPTER_LINE = /^\s*(?:chapter|part)\s+(?:\d+|[ivxlc]+)\b[^\n]{0,80}$/i;
 const SENTENCE_BREAK = /(?<=[.!?…؟。])\s+/u;
@@ -29,7 +31,10 @@ const SENTENCE_BREAK = /(?<=[.!?…؟。])\s+/u;
  * headings, a title line, page markers, "Chapter N" lines, and any leading
  * blank lines. Fenced code is kept whole.
  */
-export function normalizeChapterMarkdown(markdown: string, options: { chapterTitle?: string | undefined } = {}): string {
+export function normalizeChapterMarkdown(
+  markdown: string,
+  options: { chapterTitle?: string | undefined; /** A toolkit chapter keeps its `###` section headings; every other heading still goes. */ keepSubheadings?: boolean | undefined } = {}
+): string {
   const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
   const kept: string[] = [];
   let inFence = false;
@@ -42,6 +47,10 @@ export function normalizeChapterMarkdown(markdown: string, options: { chapterTit
     }
     if (inFence) {
       kept.push(line);
+      continue;
+    }
+    if (options.keepSubheadings && SUBHEADING_LINE.test(line) && line.trim().replace(/^#+\s*/, "").toLowerCase() !== title) {
+      kept.push(line.trim());
       continue;
     }
     if (HEADING_LINE.test(line) || PAGE_MARKER_LINE.test(line) || CHAPTER_LINE.test(line)) {
@@ -122,7 +131,14 @@ function splitBlockInTwo(block: string): [string, string] | undefined {
  */
 export function paginateChapterMarkdown(markdown: string, pageCount: number): PaginatedChapter {
   const pages = Math.max(1, Math.floor(pageCount));
-  let blocks = chapterBlocks(markdown);
+  // A heading never ends a page: it travels with the block it heads. Only a
+  // toolkit chapter keeps headings, so every other chapter cuts as it did.
+  let blocks = chapterBlocks(markdown).reduce<string[]>((joined, block) => {
+    const previous = joined.at(-1);
+    if (previous !== undefined && SUBHEADING_LINE.test(previous.split("\n").at(-1) ?? "")) joined[joined.length - 1] = `${previous}\n\n${block}`;
+    else joined.push(block);
+    return joined;
+  }, []);
   if (blocks.length === 0) {
     return { pages: Array.from({ length: pages }, () => ""), wordCounts: Array.from({ length: pages }, () => 0), totalWords: 0 };
   }

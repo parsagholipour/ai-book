@@ -91,26 +91,26 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     summary: "After research-led replanning when enabled, every chapter gets 3 to 8 sections with a form from the palette and one landing. Variety is checked deterministically; one repair call, then rotation.",
     purposes: ["plan-chapter-forms", "architect-book", "develop-book-plan", "review-book-development"],
     lane: "prose",
-    calls: "1 form plan plus at most 1 repair; research-led development adds up to 2 proposals and 2 reviews",
-    gates: ["figures", "bookDevelopment"]
+    calls: "1 form plan plus at most 1 repair (none when the repair gate is off); research-led development adds up to 2 proposals and 2 reviews",
+    gates: ["figures", "formPlanRepair", "bookDevelopment"]
   },
   {
     id: "compose",
     label: "Compose chapter",
     summary: "A continuous chapter from the stance, form plan, prior chapters and researched cases. Evidence-required runs extract and review case claims from source passages before drafting, then check the written claims.",
-    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "case-source-search", "extract-excerpts", "compose-scene", "build-case-evidence", "verify-case-evidence", "inventory-chapter-claims", "review-chapter-evidence"],
+    purposes: ["compose-chapter", "judge-chapter-drafts", "plan-episodes", "case-source-search", "extract-excerpts", "compose-scene", "build-case-evidence", "verify-case-evidence", "inventory-chapter-claims", "review-chapter-evidence", "extract-chapter-facts"],
     lane: "prose",
     calls: "1 draft per chapter, up to 1 length retry; evidence adds extraction, packet reviews and prose checks, with bounded research retries",
-    gates: ["creativeContract", "materialFirst", "caseEvidence", "chapterFocus"]
+    gates: ["creativeContract", "materialFirst", "caseEvidence", "chapterFocus", "wideSourceGathering", "chapterFactLedger"]
   },
   {
     id: "edit",
     label: "Line edit",
     summary: "A chapter line edit after developmental changes when enabled, with no automatic padding. Legacy runs retain their original chapter edit order.",
-    purposes: ["edit-chapter", "review-chapter-edit-acceptance"],
+    purposes: ["edit-chapter", "review-chapter-edit-acceptance", "check-chapter-arithmetic"],
     lane: "prose",
     calls: "1 edit per chapter; each changed candidate gets 1 contextual acceptance review when enabled",
-    gates: ["chapterEditorPass", "chapterEditAcceptance"]
+    gates: ["chapterEditorPass", "chapterEditAcceptance", "proseArithmeticCheck"]
   },
   {
     id: "describe",
@@ -137,7 +137,7 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     purposes: ["revise-page", "extract-story-state"],
     lane: "mixed",
     calls: "0 or 1 revise per failing page",
-    gates: ["pageLocalQa", "smartUnslop", "pageQaRewrite", "storyExtractAudit"]
+    gates: ["pageLocalQa", "smartUnslop", "pageQaRewrite", "storyExtractAudit", "storyNotesTogether"]
   },
   {
     id: "compile",
@@ -145,8 +145,8 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
     summary: "Deterministic manuscript audit, targeted structural review and evidence-backed brief coverage, then render. The per-page final-QA repair loop is skipped.",
     purposes: ["review-manuscript-structure", "inventory-brief-requirements", "read-manuscript", "chapterize-export"],
     lane: "mechanical",
-    calls: "0 or 1 structural review, plus 2 brief-coverage calls on initial publication; unchanged recompiles reuse coverage",
-    gates: []
+    calls: "0 or 1 structural review, plus 1 brief-coverage read on initial publication when enabled; unchanged recompiles reuse coverage",
+    gates: ["briefCoverageReview"]
   }
 ];
 

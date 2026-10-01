@@ -676,7 +676,9 @@ export class LoggingResearchAdapter implements ResearchAdapter {
           operation: "research.search",
           callId,
           durationMs: durationBetweenTimestamps(requestAt, responseAt),
-          usage: result.usage
+          usage: result.usage,
+          searchGrounding: result.grounding,
+          searchGroundingAllowances: config
         });
       }
       await assertJobNotStopped(this.generationJobId);

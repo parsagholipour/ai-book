@@ -8,7 +8,9 @@ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { FIGURE_FORM_PLAN_CONTRACT, FIGURE_FORM_PLAN_RULE } from "./figures/figurePrompt.js";
 import { figurePlanSchema } from "./figures/figureSpec.js";
 import { assignedSectionCount, sectionCountForPages, sustainedSectionShare } from "./chapterSectionCount.js";
-import { ANALYTICAL_FORMS, formPaletteFor, type SectionForm } from "./chapterFormPalette.js";
+import { EXAMPLE_CAST_RULE, FIXED_EXAMPLE_CAST_RULE, exampleCastFrom, type ExampleCastMember } from "./exampleCast.js";
+import { ANALYTICAL_FORMS, PINNED_FORMS, formPaletteFor, type SectionForm } from "./chapterFormPalette.js";
+import type { InstructionalSetting, InstructionalToolkit } from "../schemas/instructional.js";
 import { inferWritingMode } from "./styleContract.js";
 export { formPaletteFor, type SectionForm } from "./chapterFormPalette.js";
 export {
@@ -40,14 +42,23 @@ export const PLAN_CHAPTER_FORMS_PURPOSE = "plan-chapter-forms";
 export const chapterSectionSchema = z.object({
   form: z.string().min(1),
   subject: z.string().min(1),
-  /** Any positive number: models answer in fractions or percentages, and shares are renormalised to sum to one. */
-  share: z.number().positive().optional(),
+  /**
+   * Any positive number: models answer in fractions or percentages, and shares
+   * are renormalised to sum to one. A zero, negative or non-finite share is no
+   * share: refused, it cost the section's whole chapter its planned sections
+   * (the q2 workbook's last chapter went to the keyBeat fallback over one `0.0`).
+   */
+  share: z.preprocess((value) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined), z.number().positive().optional()),
   owns: z.array(z.string()).default([]),
   note: z.string().optional(),
   /** The question or unfinished business this section hands to the next: the seam the writer carries across. */
   handoff: z.string().optional(),
   /** A chart or flow diagram this section carries, assigned here for an eligible book and drawn at compile; see `figures/`. */
-  figure: figurePlanSchema.optional()
+  figure: figurePlanSchema.optional(),
+  /** A toolkit section's subheading, printed as `###` (`instructionalBook.ts`); dropped from every other plan. */
+  heading: z.string().trim().min(1).max(120).optional(),
+  /** The brief requirement ids a toolkit section delivers (`requirementCoverageIssues`). */
+  covers: z.array(z.string()).optional()
 });
 
 export const chapterCompositionSchema = z.object({
@@ -205,13 +216,13 @@ export function compositionVarietyIssues(
     }
     if (forms.length >= 3) {
       for (const [form, count] of counts) {
-        if (count * 2 > forms.length) {
+        if (count * 2 > forms.length && !PINNED_FORMS.has(form)) {
           issues.push(`Chapter ${composition.chapterIndex} gives more than half its sections the form "${form}".`);
         }
       }
     }
     for (let index = 1; index < forms.length; index += 1) {
-      if (forms[index] === forms[index - 1] && forms[index] !== "entry-cluster") {
+      if (forms[index] === forms[index - 1] && forms[index] !== "entry-cluster" && !PINNED_FORMS.has(forms[index]!)) {
         issues.push(`Chapter ${composition.chapterIndex} has two consecutive "${forms[index]}" sections.`);
         break;
       }
@@ -234,7 +245,7 @@ export function compositionVarietyIssues(
   }
   if (totalSections >= 6) {
     for (const [form, count] of bookCounts) {
-      if (count > totalSections * MAX_BOOK_FORM_SHARE && form !== "entry-cluster" && form !== "scene") {
+      if (count > totalSections * MAX_BOOK_FORM_SHARE && form !== "entry-cluster" && form !== "scene" && !PINNED_FORMS.has(form)) {
         issues.push(`The form "${form}" is used for ${count} of ${totalSections} sections across the book; keep any one form under 40%.`);
       }
     }
@@ -263,7 +274,7 @@ export function positionalIssues(compositions: readonly ChapterComposition[]): s
       counts.set(form, (counts.get(form) ?? 0) + 1);
     }
     for (const [form, count] of counts) {
-      if (chaptersWithPosition >= 5 && count > chaptersWithPosition * MAX_POSITIONAL_SHARE && form !== "scene") {
+      if (chaptersWithPosition >= 5 && count > chaptersWithPosition * MAX_POSITIONAL_SHARE && form !== "scene" && !PINNED_FORMS.has(form)) {
         issues.push(`The form "${form}" sits in position ${position + 1} of ${count} chapters out of ${chaptersWithPosition}; move it earlier or later in most of them.`);
       }
     }
@@ -289,14 +300,14 @@ export function rotatePositionsForVariety(compositions: readonly ChapterComposit
     if (holdersAt(position).length < 5) continue;
     const forms = new Set(holdersAt(position).map((composition) => composition.sections[position]!.form));
     for (const form of forms) {
-      if (form === "scene") continue;
+      if (form === "scene" || PINNED_FORMS.has(form)) continue;
       for (const composition of holdersAt(position)) {
         if (countAt(position, form) <= allowedAt(position)) break;
         const section = composition.sections[position]!;
         if (section.form !== form) continue;
         const partners = composition.sections
           .map((_, index) => index)
-          .filter((index) => index !== position && composition.sections[index]!.form !== form)
+          .filter((index) => index !== position && composition.sections[index]!.form !== form && !PINNED_FORMS.has(composition.sections[index]!.form))
           .sort((left, right) => countAt(left, form) - countAt(right, form));
         const partner = partners.find(
           (index) =>
@@ -406,7 +417,9 @@ function leastUsedForm(
 export function normalizeChapterCompositions(
   raw: unknown,
   ranges: readonly ChapterFormRange[],
-  palette: readonly SectionForm[]
+  palette: readonly SectionForm[],
+  /** A toolkit plan keeps each section's heading and covers; every other plan drops them, as it did before they existed. */
+  options: { toolkit?: boolean | undefined } = {}
 ): ChapterComposition[] {
   const parsed = chapterCompositionsResponseSchema.safeParse(raw);
   const byChapter = new Map<number, ChapterComposition>();
@@ -427,7 +440,10 @@ export function normalizeChapterCompositions(
     let sections = source.sections
       .map((section) => {
         const form = canonicalFormId(section.form, palette);
-        return form ? { ...section, form } : undefined;
+        if (!form) return undefined;
+        if (options.toolkit) return { ...section, form };
+        const { heading: _heading, covers: _covers, ...legacy } = section;
+        return { ...legacy, form };
       })
       .filter((section): section is ChapterSection => section !== undefined)
       .slice(0, bounds.max);
@@ -544,13 +560,13 @@ export function rotateFormsForVariety(
       if (previous) exclude.add(previous);
       if (index === 0 && previousOpening) exclude.add(previousOpening);
       const overused = total >= 6 && (counts.get(section.form) ?? 0) + 1 > total * MAX_BOOK_FORM_SHARE && section.form !== "scene";
-      if (exclude.has(section.form) || overused) {
+      if ((exclude.has(section.form) || overused) && !PINNED_FORMS.has(section.form)) {
         section.form = leastUsedForm(palette, counts, exclude);
       }
       counts.set(section.form, (counts.get(section.form) ?? 0) + 1);
     }
     let sequence = sections.map((section) => section.form).join(">");
-    if (sequences.has(sequence) && sections.length > 1) {
+    if (sequences.has(sequence) && sections.length > 1 && !PINNED_FORMS.has(sections[1]!.form)) {
       const target = sections[1]!;
       const exclude = new Set([sections[0]!.form, sections[2]?.form ?? ""]);
       target.form = leastUsedForm(palette, counts, exclude);
@@ -567,6 +583,11 @@ export type ChapterFormsResult = {
   /** Variety issues still standing after repair; empty on a clean plan. */
   issues: string[];
   source: "model" | "repaired" | "rotated" | "fallback";
+  /** The recurring example people (`exampleCast.ts`): planned when asked for, or the fixed cast handed back. */
+  cast?: ExampleCastMember[] | undefined;
+  /** A toolkit book's whole-book decisions (`instructionalPlanning.ts`), and how its brief's asks were homed. */
+  toolkit?: InstructionalToolkit | undefined;
+  coverage?: { issues: string[]; homed: string[]; shared: string[] } | undefined;
 };
 
 export type PlanChapterFormsOptions = {
@@ -580,8 +601,27 @@ export type PlanChapterFormsOptions = {
   figures?: boolean | undefined;
   /** The book's episodes when they were planned first: the cases each chapter is built from, so the planner does not choose a second set. */
   episodes?: BookEpisodes | undefined;
+  /** The `formPlanRepair` gate: false goes straight from a plan with issues to the rotation. Defaults to true. */
+  repair?: boolean | undefined;
+  /** What the brief explicitly asks the book to contain (its requirement inventory): each is given a section. */
+  requirements?: readonly string[] | undefined;
+  /** "plan" asks for a cast of recurring example people; a cast is the one earlier chapters use, kept as it is. */
+  exampleCast?: "plan" | readonly ExampleCastMember[] | undefined;
+  /** A toolkit book's setting, decided with its research leads (`planResearchLeads`). */
+  setting?: InstructionalSetting | undefined;
+  /** A toolkit book's stored decisions: handed back unchanged and planned against. */
+  toolkit?: InstructionalToolkit | undefined;
   textModel: TextModelAdapter;
 };
+
+/**
+ * The brief's explicit asks, as sections. Readers kept finding a promised item
+ * missing — no question bank, no meeting cadence, a tracker or a worksheet
+ * referred to and never printed (2026-09-30) — because nothing assigned it to
+ * a chapter; the compile's coverage review only found it afterwards.
+ */
+const BRIEF_REQUIREMENTS_RULE =
+  "briefRequirements lists what the request explicitly asks the book to contain. Give every one a home: name it in the subject or owns of the one section that delivers it, and give a requested table, worksheet, template, checklist, tracker or list of questions a section whose form can print it. Do not drop one, and do not spread one across chapters.";
 
 const CASE_ASSIGNMENTS_RULE =
   "caseAssignments is the material already selected for this book. Build each chapter's sections from its assigned episodes and their specific contributions; do not invent a second competing case list. A case has one home for its full treatment. Other chapters may use a brief comparison that adds a new inference, without retelling the episode. Use the chapter's remaining space to explain how its own events, institutions or documents worked.";
@@ -591,8 +631,8 @@ const CHAPTER_FOCUS_RULE =
 
 /**
  * One call for the whole book, so variety can be global, then one repair
- * call against the deterministic issues, then rotation. Never blocks: a
- * provider failure drafts from the rotated fallback.
+ * call against the deterministic issues (unless `repair` is false), then
+ * rotation. Never blocks: a provider failure drafts from the rotated fallback.
  */
 export async function planChapterForms(options: PlanChapterFormsOptions): Promise<ChapterFormsResult> {
   const mode = inferWritingMode(options.input, options.plan);
@@ -600,7 +640,8 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
   const fixedIndexes = new Set((options.fixed ?? []).map((composition) => composition.chapterIndex));
   const open = options.ranges.filter((range) => !fixedIndexes.has(range.chapter.index));
   if (open.length === 0) {
-    return { compositions: [...(options.fixed ?? [])], issues: [], source: "model" };
+    const kept = Array.isArray(options.exampleCast) && options.exampleCast.length > 0 ? { cast: [...options.exampleCast] } : {};
+    return { compositions: [...(options.fixed ?? [])], issues: [], source: "model", ...kept };
   }
   // Every chapter's cases, the written ones included, so an open chapter is
   // planned around what its neighbours already own; never the search queries.
@@ -613,6 +654,9 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
         }))
       : undefined;
   const anyFocus = options.episodes?.chapters.some((chapter) => chapter.focus !== undefined) ?? false;
+  const requirements = options.requirements?.length ? options.requirements : undefined;
+  const fixedCast = Array.isArray(options.exampleCast) && options.exampleCast.length > 0 ? [...options.exampleCast] : undefined;
+  const planCast = options.exampleCast === "plan" || Boolean(fixedCast);
   // A disabled gate strips any figure the model volunteered; chapters already
   // written keep theirs, since their pages already carry the block. The cap
   // is a ceiling against a figure in every chapter, not a target: the first
@@ -643,6 +687,8 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
             "Each section's subject is concrete and specific to this book; owns lists the particular cases, sources, scenes, people or objects that section alone treats, and no two sections anywhere in the book own the same one.",
             ...(caseAssignments ? [CASE_ASSIGNMENTS_RULE] : []),
             ...(anyFocus ? [CHAPTER_FOCUS_RULE] : []),
+            ...(requirements ? [BRIEF_REQUIREMENTS_RULE] : []),
+            ...(planCast ? [EXAMPLE_CAST_RULE, ...(fixedCast ? [FIXED_EXAMPLE_CAST_RULE] : [])] : []),
             "landing is the claim this chapter adds to the book's argument, particular to this chapter's cases: what the author concludes from them, in one sentence. It is never a restatement of the book's thesis, never a general statement about institutions, capacities or human nature, and never built as a negation and its correction (\"X did not simply A; it B\"). No two landings share a shape or a subject. The writer reasons toward it in the chapter's final paragraph rather than quoting it.",
             "Each section carries a handoff: the question or unfinished business it leaves for the next section, so the chapter reads as one argument in movements rather than a stack of separate essays. The last section's handoff is empty.",
             ...(options.figures ? [FIGURE_FORM_PLAN_RULE] : []),
@@ -692,6 +738,8 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
                 ...(range.job ? { job: range.job } : {})
               })),
               ...(caseAssignments ? { caseAssignments } : {}),
+              ...(requirements ? { briefRequirements: requirements } : {}),
+              ...(fixedCast ? { exampleCast: fixedCast } : {}),
               ...(options.fixed && options.fixed.length > 0
                 ? {
                     alreadyWrittenChapters: options.fixed.map((composition) => ({
@@ -721,7 +769,8 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
                     landing: "The claim this chapter adds to the book's argument, in one sentence.",
                     avoid: ["What earlier chapters already established."]
                   }
-                ]
+                ],
+                ...(planCast ? { cast: [{ name: "A first name", role: "The one situation this person is in, in every chapter." }] } : {})
               }
             },
             null,
@@ -732,45 +781,53 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
     });
 
   let planned: ChapterComposition[];
+  // The cast rides every return: a fixed one always, a planned one when the reply carried it.
+  let cast = fixedCast;
+  const withCast = (result: ChapterFormsResult): ChapterFormsResult => (cast ? { ...result, cast } : result);
   try {
-    planned = normalizeChapterCompositions((await request(undefined)).data, open, palette);
+    const reply = (await request(undefined)).data;
+    planned = normalizeChapterCompositions(reply, open, palette);
+    if (!fixedCast && planCast) cast = exampleCastFrom(reply);
   } catch (error) {
     if (isStopLike(error)) throw error;
     const fallback = settleFormVariety(
       merge(open.map((range) => fallbackChapterComposition(range, palette, range.chapter.index))),
       palette
     );
-    return { compositions: capped(fallback), issues: compositionVarietyIssues(fallback, palette, { thesis: options.stance?.thesis }), source: "fallback" };
+    return withCast({ compositions: capped(fallback), issues: compositionVarietyIssues(fallback, palette, { thesis: options.stance?.thesis }), source: "fallback" });
   }
   const thesis = options.stance?.thesis;
   let merged = merge(planned);
   let issues = compositionVarietyIssues(merged, palette, { thesis });
   // Shape issues ride along to the one repair call; they never block and the
-  // deterministic settle below is not asked to clear them.
+  // deterministic settle below is not asked to clear them. Without the call
+  // (the formPlanRepair gate) they stand, and the rotation alone settles
+  // the forms — never the landings, which only the repair rewrites.
+  const repair = options.repair !== false;
   const shape = compositionShapeIssues(merged);
-  if (issues.length === 0 && shape.length === 0) {
-    return { compositions: capped(merged), issues, source: "model" };
+  if (issues.length === 0 && (shape.length === 0 || !repair)) {
+    return withCast({ compositions: capped(merged), issues, source: "model" });
   }
-  try {
-    const repaired = normalizeChapterCompositions(
-      (await request({ compositions: planned, issues: [...issues, ...shape] })).data,
-      open,
-      palette
-    );
-    const repairedMerged = merge(repaired);
-    const repairedIssues = compositionVarietyIssues(repairedMerged, palette, { thesis });
-    if (repairedIssues.length + compositionShapeIssues(repairedMerged).length < issues.length + shape.length) {
-      merged = repairedMerged;
-      issues = repairedIssues;
+  if (repair) {
+    try {
+      const reply = (await request({ compositions: planned, issues: [...issues, ...shape] })).data;
+      const repaired = normalizeChapterCompositions(reply, open, palette);
+      if (!fixedCast && planCast) cast = exampleCastFrom(reply) ?? cast;
+      const repairedMerged = merge(repaired);
+      const repairedIssues = compositionVarietyIssues(repairedMerged, palette, { thesis });
+      if (repairedIssues.length + compositionShapeIssues(repairedMerged).length < issues.length + shape.length) {
+        merged = repairedMerged;
+        issues = repairedIssues;
+      }
+      if (issues.length === 0) {
+        return withCast({ compositions: capped(merged), issues, source: "repaired" });
+      }
+    } catch (error) {
+      if (isStopLike(error)) throw error;
     }
-    if (issues.length === 0) {
-      return { compositions: capped(merged), issues, source: "repaired" };
-    }
-  } catch (error) {
-    if (isStopLike(error)) throw error;
   }
   const rotated = settleFormVariety(merged, palette);
-  return { compositions: capped(rotated), issues: compositionVarietyIssues(rotated, palette, { thesis }), source: "rotated" };
+  return withCast({ compositions: capped(rotated), issues: compositionVarietyIssues(rotated, palette, { thesis }), source: "rotated" });
 }
 
 /** A stop must escape every best-effort catch here; it is recognised by name so this module stays free of worker imports. */
@@ -796,7 +853,8 @@ export function compositionWriterLines(
     const note = section.note ? ` Note: ${section.note}` : "";
     const share = section.share ?? 1 / composition.sections.length;
     const length = targetWords ? ` About ${Math.max(120, Math.round(share * targetWords))} words.` : "";
-    return `Section ${index + 1}, form "${section.form}" (${rules.get(section.form) ?? "as its name says"}): ${section.subject}.${owns}${note}${length}`;
+    const heading = section.heading ? `, headed "${section.heading}"` : "";
+    return `Section ${index + 1}${heading}, form "${section.form}" (${rules.get(section.form) ?? "as its name says"}): ${section.subject}.${owns}${note}${length}`;
   });
 }
 

@@ -277,7 +277,9 @@ describe("voice character helpers", () => {
     expect(persona.voiceProfile.warmth).toBe("high");
   });
 
-  it("does not cap voice character JSON output with app-level max tokens", async () => {
+  // An uncapped extraction on gpt-6-luna ran to its 128,000-token ceiling in 638 s
+  // (2026-09-30). The fuses sit about twice above the largest logged replies.
+  it("sends both voice calls with an output fuse above their largest replies", async () => {
     const requests: Array<{ purpose: string | undefined; hasMaxTokens: boolean; maxTokens: number | undefined }> = [];
     const textModel: TextModelAdapter = {
       async generateText(options) {
@@ -344,13 +346,13 @@ describe("voice character helpers", () => {
     expect(requests).toEqual([
       {
         purpose: "extract-voice-character-candidates",
-        hasMaxTokens: false,
-        maxTokens: undefined
+        hasMaxTokens: true,
+        maxTokens: 4_000
       },
       {
         purpose: "build-voice-character-persona",
-        hasMaxTokens: false,
-        maxTokens: undefined
+        hasMaxTokens: true,
+        maxTokens: 8_000
       }
     ]);
   });

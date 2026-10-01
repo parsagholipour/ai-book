@@ -14,7 +14,10 @@ type MockGenerationJobSelection =
   | { qualityReport: unknown }
   | null;
 
-export const isDefaultCompileQualityFeature = isPagePipelineQaFeature;
+// The suites' balanced compile: page QA, the final verdict, and the brief-coverage read a
+// composed book skips only on a tier without `briefCoverageReview`.
+export const isDefaultCompileQualityFeature = (feature: string): boolean =>
+  isPagePipelineQaFeature(feature) || feature === "briefCoverageReview";
 
 // The durable coordinator and illustration fan-out have dedicated real-module
 // suites. Legacy publication tests hold those boundaries steady so their staged

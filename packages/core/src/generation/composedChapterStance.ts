@@ -2,6 +2,7 @@ import { authorStancePromptLines } from "./authorStance.js";
 import { arcChapterLines } from "./bookArc.js";
 import type { ComposeChapterOptions } from "./composedChapter.js";
 import { inferWritingMode } from "./styleContract.js";
+import { activeToolkit } from "./instructionalBook.js";
 
 /**
  * The stance as one chapter's writer and editor see it. Split from
@@ -27,6 +28,9 @@ const ROTATE_STANCE_POSITIONS = false;
  */
 export function stanceLinesFor(options: ComposeChapterOptions): string[] {
   const mode = inferWritingMode(options.input, options.plan);
+  if (activeToolkit(options.input, options.plan, options.toolkit)) {
+    return authorStancePromptLines(options.stance, mode, { practical: true });
+  }
   if (options.material?.focus) {
     return authorStancePromptLines(options.stance, mode, { exemplarOnly: true });
   }

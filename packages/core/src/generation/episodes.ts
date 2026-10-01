@@ -9,6 +9,9 @@ import { isNarrativeWritingMode } from "./authorStance.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { episodeCollisions, focusContractIssues } from "./planContract.js";
 import { inferWritingMode } from "./styleContract.js";
+import { usesToolkit } from "./instructionalBook.js";
+import { planResearchLeads } from "./instructionalPlanning.js";
+import type { InstructionalSetting } from "../schemas/instructional.js";
 
 /**
  * Material-first, step one: the episodes. One call plans two or three
@@ -90,6 +93,8 @@ export type EpisodePlanContract = {
 
 export type PlanEpisodesResult = {
   episodes?: BookEpisodes | undefined;
+  /** A toolkit book's country, currency and year, decided with its research leads (`planResearchLeads`). */
+  setting?: InstructionalSetting | undefined;
   failure?: string | undefined;
   contract?: EpisodePlanContract | undefined;
 };
@@ -109,7 +114,14 @@ export async function planEpisodes(options: {
    */
   focus?: boolean | undefined;
 }): Promise<PlanEpisodesResult> {
-  const focused = options.focus !== false && !isNarrativeWritingMode(inferWritingMode(options.input, options.plan));
+  // A practical guide's or a workbook's episodes are research leads, never documented cases (`instructionalBook.ts`).
+  if (usesToolkit(options.input, options.plan)) return planResearchLeads(options);
+  const mode = inferWritingMode(options.input, options.plan);
+  const focused = options.focus !== false && !isNarrativeWritingMode(mode);
+  // The scene quota was measured on history books (rung 3, candidate 8). On a
+  // how-to or a workbook it cast public figures as decoration — a strike
+  // leader in a freelancer's budgeting lesson (Quick Draft, 2026-09-30).
+  const sceneQuota = !focused && mode === "analytical-history";
   const ask = async (feedback: string[] | undefined): Promise<BookEpisodes | undefined> => {
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: PLAN_EPISODES_PURPOSE,
@@ -125,9 +137,9 @@ export async function planEpisodes(options: {
               : `You are the author of "${options.plan.title}", filling the shoebox before writing a word: for every chapter of the plan, the distinct documented episodes the chapter will be made from — three or four for a chapter of eight or more pages, two or three for a shorter one.`,
             "An episode is a particular documented case, event, worked result or text relevant to this book. It is never a theme, a period or a generalisation. Identify a document the reader could consult. Prefer accessible original records or authoritative expositions; do not force historical anecdotes into an instructional or technical book. Public repositories include Wikisource, Project Gutenberg and the Internet Archive.",
             `kind says what the chapter will do with it: scene (an event told in time), document (a text read closely), figure (a number or a table worked through), dispute (two named people or works that disagree about it), portrait (one person followed). Choose the treatment the evidence supports. ${
-              focused
-                ? "A scene is optional."
-                : "Where a chapter's material includes a datable event with a named participant in a named place, make one of that chapter's episodes a scene (an event told in time); across the book at least half the chapters carry one scene, no scene where the material is a text or a table alone, and never a scene in every chapter."
+              sceneQuota
+                ? "Where a chapter's material includes a datable event with a named participant in a named place, make one of that chapter's episodes a scene (an event told in time); across the book at least half the chapters carry one scene, no scene where the material is a text or a table alone, and never a scene in every chapter."
+                : "A scene is optional."
             }`,
             ...(options.evidenceRequired ? ["Every central case must subsequently pass source verification. Select cases with accessible substantive documentation, not famous names used as decoration. If feedback names unavailable cases, choose different documented material serving the same requested coverage."] : []),
             "searchQueries: two or three distinct searches for actual source text on the web or in a library. Start with an original paper, official record or authoritative technical documentation; use a broader author/topic/mechanism query as the fallback when an exact title is unavailable. Prefer the source's author or publishing institution and the edition appropriate to the claim. Cover the chapter's required technical explanations and keyBeats as well as historical cases. why: identify the factual claims or mechanism this source must establish. Proposed names, dates and claims remain search hypotheses until passages support them.",

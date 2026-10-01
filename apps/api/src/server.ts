@@ -23,12 +23,14 @@ import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from ".
 import { sweepStaleVoiceCalls } from "./mobile/voiceCalls.js";
 import { startStudioImageSweep, studioImageSweepMode } from "./mobile/studioImageSweep.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
+import { publicShareRoutes } from "./mobile/shares/publicShareRoutes.js";
 import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
 import { adminAnalyticsRoutes } from "./routes/adminAnalytics.js";
 import { adminGenerationQualityRoutes } from "./routes/adminGenerationQuality.js";
 import { adminPricingRoutes } from "./routes/adminPricing.js";
 import { adminProjectExportRoutes } from "./routes/adminProjectExports.js";
 import { adminSafetyRoutes } from "./routes/adminSafety.js";
+import { adminShareRoutes } from "./routes/adminShares.js";
 import { projectRoutes } from "./routes/projects.js";
 
 const config = loadConfig();
@@ -218,8 +220,11 @@ await app.register(mobilePasswordResetRoutes, { mailer });
 await app.register(mobileProjectRoutes);
 await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);
+// Outside /api/ and outside the auth surface; also named in deploy/nginx.conf.
+await app.register(publicShareRoutes);
 await app.register(adminPricingRoutes);
 await app.register(adminSafetyRoutes);
+await app.register(adminShareRoutes);
 await app.register(adminGenerationQualityRoutes);
 await app.register(adminProjectExportRoutes);
 await app.register(adminAnalyticsRoutes);
@@ -310,6 +315,9 @@ function shouldReturnNotFound(requestUrl: string): boolean {
   return (
     pathname.startsWith("/api") ||
     pathname.startsWith("/docs") ||
+    // The share surface never falls through to the console's index.html.
+    pathname === "/s" ||
+    pathname.startsWith("/s/") ||
     pathname.startsWith("/assets/images/") ||
     pathname.startsWith("/assets/voice/") ||
     pathname.includes(".")

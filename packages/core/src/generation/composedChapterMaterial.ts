@@ -1,6 +1,8 @@
 import type { ChapterWordBudget } from "./composedChapter.js";
 import type { ChapterEpisode, ChapterFocus, DossierExcerpt, CaseEvidencePacket } from "../schemas/episodes.js";
 import { CASE_EVIDENCE_WRITER_RULES } from "./caseEvidence.js";
+import { HISTORY_DOSSIER_RULE, HISTORY_RECONSTRUCTION_RULE, HISTORY_SOURCE_RULE, historyDossierPayload } from "./historySources.js";
+import { TOOLKIT_FACTS_LINE } from "./instructionalBook.js";
 
 /**
  * Material-first, as the writer sees it: the contract it writes under, the
@@ -66,7 +68,13 @@ export const CREATIVE_RECONSTRUCTION_RULE =
 export const FOCUSED_RECONSTRUCTION_RULE =
   "When narrating a real event, use only actions and descriptions supported by a supplied passage for scene-level details. Do not invent dialogue, private thoughts, remembered objects, gestures or sensory effects. General historical knowledge can supply contextual facts and explanation, but a plausible detail is not a witnessed fact. If the record supports only a short account, write that account and continue the chapter’s explanation.";
 
-export type ComposedChapterText = { markdown: string; words: number; attempts: number };
+export type ComposedChapterText = {
+  markdown: string;
+  words: number;
+  attempts: number;
+  /** The length retry failed and the earlier draft was kept; this is why, for the run log. */
+  lengthRetryError?: string | undefined;
+};
 
 /**
  * In place of the shape rules and the per-section form quotas for a focused
@@ -99,11 +107,12 @@ export function remainingBudget(budget: ChapterWordBudget, sceneWords: number): 
  * case reservations and the chapter's focus, but not the compose-time
  * opening-scene instructions that materialLines() adds.
  */
-export function materialEditLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean }): string[] {
+export function materialEditLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean; history?: boolean; practical?: boolean }): string[] {
+  if (options.practical) return toolkitMaterialLines(options.material);
   return [
     ...sourceSupportLines(options),
     ...chapterFocusLines(options),
-    ...(options.material?.focus ? [FOCUSED_RECONSTRUCTION_RULE] : []),
+    ...(options.material?.focus ? [options.history ? HISTORY_RECONSTRUCTION_RULE : FOCUSED_RECONSTRUCTION_RULE] : []),
     ...(options.material?.evidencePackets?.length ? CASE_EVIDENCE_WRITER_RULES : []),
     ...caseReservationLines(options),
   ];
@@ -115,9 +124,10 @@ export function materialEditLines(options: { material?: ChapterMaterial | undefi
  * never a shape rule, and named in the payload keys (`episodes`, `dossier`,
  * `openingScene`) so the writer does not have to spell them from prose.
  */
-export function materialLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean }): string[] {
+export function materialLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean; history?: boolean; practical?: boolean; contract?: ComposeContract | undefined }): string[] {
   const material = options.material;
   if (!material) return [];
+  if (options.practical) return toolkitMaterialLines(material);
   const lines = [
     material.focus
       ? "episodes is the material available for this chapter, not a checklist of equally long case studies. Follow the investigation through the material that answers it. Give a consequential sequence, a difficult explanation or a revealing passage the space it needs; a supporting case can enter briefly. Each return to an episode must add an event, evidence or inference, not repeat its earlier conclusion. The chapter need not end by comparing or re-listing its cases."
@@ -130,20 +140,23 @@ export function materialLines(options: { material?: ChapterMaterial | undefined;
   if (material.evidencePackets?.length) lines.push(...CASE_EVIDENCE_WRITER_RULES);
   if (material.excerpts.length > 0) {
     lines.push(
-      "`dossier` holds verbatim passages from primary sources, each with the document it comes from. Quote from them — a phrase, a sentence, up to a whole passage — with quotation marks and the document named, wherever a passage says something better than you could; these are the only words you put quotation marks around. Paraphrase the rest of what they say freely."
+      options.history
+        ? HISTORY_DOSSIER_RULE
+        : "`dossier` holds verbatim passages from primary sources, each with the document it comes from. Quote from them — a phrase, a sentence, up to a whole passage — with quotation marks and the document named, wherever a passage says something better than you could; these are the only words you put quotation marks around. Paraphrase the rest of what they say freely."
     );
   }
   if (material.scene) {
     lines.push(
-      `The chapter's first ${material.scene.words} words are already written and printed: \`openingScene\`, the episode "${material.scene.episodeTitle}" told as a scene. Do not rewrite, repeat or summarise it. Begin where it stops — its last paragraph is still on the reader's page — and let the first thing you write follow from it.`
+      `The chapter's first ${material.scene.words} words are already written and printed: \`openingScene\`, the episode "${material.scene.episodeTitle}" told as a scene. Do not rewrite, repeat or summarise it, and give none of its events, dates, figures or quotations a second time anywhere in the chapter: a later reference to it is a clause. Begin where it stops — its last paragraph is still on the reader's page — and let the first thing you write follow from it.`
     );
   }
   return lines;
 }
 
-export function materialPayload(options: { material?: ChapterMaterial | undefined }) {
+export function materialPayload(options: { material?: ChapterMaterial | undefined; history?: boolean; practical?: boolean }) {
   const material = options.material;
   if (!material) return {};
+  if (options.practical) return toolkitMaterialPayload(material);
   return {
     episodes: material.episodes.map((episode) => ({
       title: episode.title,
@@ -166,7 +179,7 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
     ...(material.evidencePackets?.length ? { caseEvidence: material.evidencePackets } : {}),
     ...(material.excerpts.length > 0
       ? {
-          dossier: material.excerpts.map((excerpt) => ({
+          dossier: options.history ? historyDossierPayload(material.excerpts, { ids: true }) : material.excerpts.map((excerpt) => ({
             id: excerpt.id,
             document: excerpt.documentTitle,
             url: excerpt.documentUrl,
@@ -181,7 +194,34 @@ export function materialPayload(options: { material?: ChapterMaterial | undefine
   };
 }
 
-function sourceSupportLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean }): string[] {
+function sourceSupportLines(options: { material?: ChapterMaterial | undefined; nonfiction?: boolean; history?: boolean; contract?: ComposeContract | undefined }): string[] {
   if (!options.material || !options.nonfiction) return [];
+  // Under the creative contract the dossier is material, not a boundary: the
+  // grounded line below made the writer withhold what it knew and say so
+  // ("the material available here does not establish…"), and three blind
+  // readers ranked that hedging first among Quick Draft's defects (2026-09-30).
+  // A history book states the passages' facts and names no document (historySources.ts).
+  if (options.contract === "creative" && options.history) return [HISTORY_SOURCE_RULE];
+  if (options.contract === "creative") return ["The dossier's passages are primary sources: when you quote, quote them exactly and name the document, and let their particulars carry the chapter. Episodes and search summaries are leads, not quotations. Beyond them, write as an author who knows this subject. Never tell the reader what the sources do or do not establish, and do not print internal passage IDs or research-process commentary."];
   return ["For factual assertions, dossier passages and reviewed caseEvidence are the supplied evidence. Episodes, search summaries, the plan and the author's stance are research leads or assignments, not proof. Preserve the passages' scope, attribution and time period; an old standard does not establish a current recommendation. Support material technical explanations, historical specifics, dates, quantities and quotations from these passages. When support is missing, omit the unsupported specific and develop the explanation through explicit assumptions or worked toy examples. Never fill evidence gaps with invented facts. Do not print internal passage IDs or research-process commentary."];
+}
+
+/**
+ * A toolkit book's research as its writer and editor see it
+ * (`instructionalBook.ts`): facts a sentence uses, never the chapter's spine,
+ * and no other chapter's cases to route around.
+ */
+function toolkitMaterialLines(material: ChapterMaterial | undefined): string[] {
+  return material && (material.episodes.length > 0 || material.excerpts.length > 0) ? [TOOLKIT_FACTS_LINE] : [];
+}
+
+function toolkitMaterialPayload(material: ChapterMaterial) {
+  return {
+    ...(material.episodes.length > 0
+      ? { facts: material.episodes.map((episode) => ({ fact: episode.title, use: episode.why, ...(episode.person || episode.document ? { from: [episode.person, episode.document].filter(Boolean).join(", ") } : {}) })) }
+      : {}),
+    ...(material.excerpts.length > 0
+      ? { dossier: material.excerpts.map((excerpt) => ({ id: excerpt.id, document: excerpt.documentTitle, ...(excerpt.author ? { author: excerpt.author } : {}), ...(excerpt.year ? { year: excerpt.year } : {}), text: excerpt.text })) }
+      : {})
+  };
 }

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show TextSelection;
 
 import '../../../shared/api/api_error.dart';
 import '../data/studio_local_drafts.dart';
@@ -129,6 +130,7 @@ class StudioSession extends ChangeNotifier {
 
   bool _loading = true;
   bool _switching = false;
+  bool _addingChapter = false;
   Object? _loadError;
   Manuscript? _manuscript;
   ManuscriptChapter? _chapter;
@@ -142,6 +144,9 @@ class StudioSession extends ChangeNotifier {
 
   /// Another chapter is being opened.
   bool get switching => _switching;
+
+  /// A chapter is being added; every "Add chapter" shows it and waits.
+  bool get addingChapter => _addingChapter;
   Object? get loadError => _loadError;
   Manuscript? get manuscript => _manuscript;
   ManuscriptChapter? get chapter => _chapter;

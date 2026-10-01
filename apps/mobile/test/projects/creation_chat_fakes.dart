@@ -79,6 +79,10 @@ class ScriptedCreationRepository
   final sentMessages = <String>[];
   final sentAttachmentIds = <List<String>>[];
   final startedMessages = <String>[];
+
+  /// The remix slug and presets each session-starting request carried.
+  final startedRemixSlugs = <String?>[];
+  final startedPresets = <MobileCreationPresets?>[];
   final editRequests = <String>[];
   final replyRequests = <String?>[];
   final branchSwitches = <({String messageId, String direction})>[];
@@ -246,7 +250,10 @@ class ScriptedCreationRepository
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
     List<String>? mentionedCharacterIds,
+    String? remixSlug,
   }) async {
+    startedRemixSlugs.add(remixSlug);
+    startedPresets.add(presets);
     if (message != null) {
       startedMessages.add(message);
       return sendConversationMessage(draftId: 'draft-1', message: message);

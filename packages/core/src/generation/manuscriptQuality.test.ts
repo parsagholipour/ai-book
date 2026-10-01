@@ -7,6 +7,18 @@ import {
 } from "./manuscriptQuality.js";
 
 describe("persistent manuscript quality gate", () => {
+  it("reads the word placeholder in prose as prose, and a scaffold marker as a placeholder", () => {
+    // Quick Draft workbook, 2026-09-30: "choose a cautious placeholder only for organizing cash"
+    // blocked the whole book as PLACEHOLDER_TEXT.
+    const codes = (markdown: string) => runDeterministicManuscriptChecks({ expectedPageCount: 1, pages: [{ index: 1, title: "Taxes", markdown }] })
+      .map((issue) => issue.code);
+    expect(codes("Choose a cautious placeholder only for organizing cash, and mark it as unverified.")).not.toContain("PLACEHOLDER_TEXT");
+    expect(codes("Write the date (to be decided if unknown) and a todo list for the week.")).not.toContain("PLACEHOLDER_TEXT");
+    for (const scaffold of ["TODO: finish this page.", "Rent is due on TBD.", "PLACEHOLDER", "Lorem ipsum dolor sit amet.", "Dear [insert client name],", "[placeholder for chart]"]) {
+      expect(codes(scaffold)).toContain("PLACEHOLDER_TEXT");
+    }
+  });
+
   it("blocks publication for deterministic integrity failures", () => {
     const issues = runDeterministicManuscriptChecks({
       expectedPageCount: 2,

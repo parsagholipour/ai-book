@@ -106,6 +106,7 @@ vi.mock("@book-maker/core", async () => {
 import { compileExport } from "./compileExport.js";
 import { pendingExportPaths } from "../generation/exportArtifacts.js";
 import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
+import { updateJobProgress } from "../runtime/jobLifecycle.js";
 
 describe("brief coverage at publication", () => {
   let storage: string;
@@ -240,7 +241,7 @@ describe("brief coverage at publication", () => {
   it("flags Balanced's explicitly requested comparison table when extraction is disabled", async () => {
     mocks.inputForPlanVersion.mockReturnValue({ ...input, prompt: "Explain public keys. Include at least one useful comparison table." });
     mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: pages.map((page) => ({ ...page, markdown: `A different explanation on page ${page.index}.` })) });
-    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: () => false });
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: (feature: string) => feature === "briefCoverageReview" });
     coverageReview.mockResolvedValue({ status: "reviewed", requirements: [], issues: [{
       code: "MISSING_BRIEF_REQUIREMENT", severity: "warning", source: "model",
       message: "The requested comparison table is missing.", guidance: "Add the requested comparison table.", affectedPageIndexes: []
@@ -272,6 +273,30 @@ describe("brief coverage at publication", () => {
       expect.objectContaining({ code: "UNPAID_PROMISE", severity: "warning", source: "model" })
     ]) });
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
+  });
+
+  it("skips Quick Draft's brief-coverage read for a composed book and files nothing in its place", async () => {
+    const promise = "Explain forward secrecy.";
+    mocks.rebuildProjectStoryState.mockResolvedValue({ promises: [{ id: "plan-1", text: promise, status: "open" as const, openedAtPage: 0 }], facts: [], entities: {}, unanswered: [] });
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: { ...plan, promises: [promise] }, inputSnapshot: null });
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: pages.map((page) => ({ ...page, markdown: "An explanation of public keys." })) });
+    // Every gate but the read, the continuity audit whose open promise would otherwise stand in for it included.
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: (feature: string) => feature !== "briefCoverageReview" });
+    await compileExport(job({ contentRevision: 4 }));
+    expect(coverageReview).not.toHaveBeenCalled();
+    expect(inventoryReview).not.toHaveBeenCalled();
+    expect(vi.mocked(updateJobProgress)).not.toHaveBeenCalledWith("gj-1", { message: "Checking the finished book against your request" });
+    expect(persistedQualityReport().issues.map((issue) => issue.code)).not.toContain("BRIEF_COVERAGE_UNVERIFIED");
+    expect(persistedQualityReport()).not.toHaveProperty("briefCoverage");
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
+  });
+
+  it("keeps the brief-coverage read for a per-page book on the same tier", async () => {
+    mocks.strategy.executionMode = "whole-book";
+    mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: pages.map((page) => ({ ...page, markdown: "An explanation of public keys." })) });
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: (feature: string) => feature !== "briefCoverageReview" });
+    await compileExport(job({ contentRevision: 4 }));
+    expect(coverageReview).toHaveBeenCalledOnce();
   });
 
   it.each([2, 6])("reviews and exports the current %i chapters even when the plan proposed four", async (count) => {

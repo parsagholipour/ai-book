@@ -160,13 +160,22 @@ class ApiClient {
     return _request('PATCH', path, data: data, requiresAuth: requiresAuth);
   }
 
-  /// A JSON body replacing a resource (the Writing Studio's chapter saves).
+  /// A JSON body replacing a resource (the Writing Studio's chapter saves, a
+  /// book's share). [receiveTimeout] is for a replace the server answers only
+  /// after a model has read it.
   Future<Response<dynamic>> putJson(
     String path, {
     Object? data,
     bool requiresAuth = true,
+    Duration? receiveTimeout,
   }) {
-    return _request('PUT', path, data: data, requiresAuth: requiresAuth);
+    return _request(
+      'PUT',
+      path,
+      data: data,
+      requiresAuth: requiresAuth,
+      receiveTimeout: receiveTimeout,
+    );
   }
 
   /// Same transport as [postBytes] with PUT semantics (idempotent replace).

@@ -37,6 +37,7 @@ import '../../characters/domain/character_models.dart';
 import '../../characters/domain/library_mentions.dart';
 import '../../characters/presentation/character_avatar.dart';
 import '../../characters/presentation/character_library_screen.dart';
+import '../../sharing/domain/book_remix.dart';
 import '../../studio/presentation/start_writing_sheet.dart';
 import '../data/creation_prefs_store.dart';
 import '../data/projects_repository.dart';
@@ -99,6 +100,7 @@ part 'creation_chat_app_bar.dart';
 part 'creation_chat_welcome.dart';
 part 'creation_chat_bubble_chrome.dart';
 part 'creation_chat_jump_latest.dart';
+part 'creation_chat_start.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({
@@ -106,10 +108,15 @@ class CreationChatScreen extends ConsumerStatefulWidget {
     this.startFresh = false,
     this.draftId,
     this.resetToken,
+    this.remix,
   });
 
   final bool startFresh;
   final String? draftId;
+
+  /// A shared book's format to start this new chat from ("Make a book like
+  /// this"): its presets applied and the composer's first line written.
+  final BookRemix? remix;
 
   /// A per-navigation nonce carried from [newBookChatLocation]. `startFresh`
   /// and `draftId` alone are `true`/`null` on every "New book" tap, so
@@ -128,7 +135,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         _CreationComposerContext,
         _CreationChatResume,
         _LiveOutputRefresh,
-        _ComposerMentions {
+        _ComposerMentions,
+        _CreationChatStart {
   @override
   final _composerController = TextEditingController();
   @override
@@ -175,7 +183,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.startFresh == widget.startFresh &&
         oldWidget.draftId == widget.draftId &&
-        oldWidget.resetToken == widget.resetToken) {
+        oldWidget.resetToken == widget.resetToken &&
+        identical(oldWidget.remix, widget.remix)) {
       return;
     }
     _resetLocalConversationState();
@@ -191,20 +200,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _revisionController.dispose();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _initConversation({bool force = false}) {
-    unawaited(
-      Future<void>.microtask(() async {
-        if (!mounted) return;
-        final controller = ref.read(creationChatControllerProvider.notifier);
-        await controller.init(
-          fresh: widget.startFresh,
-          draftId: widget.draftId,
-          force: force,
-        );
-      }),
-    );
   }
 
   Future<void> _restoreArchivedChat() async {

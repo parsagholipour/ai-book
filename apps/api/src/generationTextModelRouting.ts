@@ -13,9 +13,11 @@ import { prisma } from "@book-maker/db";
 /**
  * The live routing revision (the operator's Quality tab), read at each logical
  * call so an inline API call and a worker call made at the same moment answer
- * to the same models.
+ * to the same models. Exported for the inline decision route
+ * (`userTextModeration.ts`), whose fast-decision model is the same Quality-tab
+ * choice the worker's screens read.
  */
-function liveRoutingLoader(config: AppConfig): () => Promise<GenerationTextModelRouting> {
+export function liveRoutingLoader(config: AppConfig): () => Promise<GenerationTextModelRouting> {
   const compiled = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
   return async () => {
     try {

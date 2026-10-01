@@ -404,6 +404,20 @@ describe("createProjectSchema", () => {
     expect(jsonSchema.required ?? []).not.toContain("researchNotes");
   });
 
+  it("never offers the planner the shelved book arc", () => {
+    // Shown as an optional field, the planner filled it in on ~40% of plans,
+    // and every such book ran the arc path BOOK_ARC keeps off — including
+    // "do not state the book's answer" in every chapter of a how-to guide
+    // (2026-09-30 Quick Draft runs).
+    const fallback = bookPlanSchema.parse(minimalPlan("template-driven"));
+    for (const compact of [false, true]) {
+      const jsonSchema = z.toJSONSchema(bookPlanModelOutputSchemaWithFallback(fallback, compact), {
+        unrepresentable: "any"
+      }) as { properties?: Record<string, unknown> };
+      expect(jsonSchema.properties).not.toHaveProperty("bookArc");
+    }
+  });
+
   it("recovers a partial plan from an echoed planning prompt envelope", () => {
     const fallbackOutline = minimalPlan("template-driven");
     const plan = bookPlanSchema.parse({

@@ -15,6 +15,17 @@ export function supportsBookDevelopment(input: CreateProjectInput, plan: BookPla
   return input.category !== "KIDS" && !isNarrativeWritingMode(inferWritingMode(input, plan));
 }
 
+/**
+ * Whether this book is written from gathered sources — the chapter research
+ * expansion, the episodes and the dossier. The stance answers for the book as
+ * described (`STANCE_RESEARCH_RULE`); a stance that did not say, which is
+ * every plan written before 2026-09-30, falls back to the writing mode.
+ */
+export function sourceResearchFits(input: CreateProjectInput, plan: BookPlan, stance: AuthorStance | undefined = planAuthorStance(plan)): boolean {
+  if (input.category === "KIDS") return false;
+  return stance?.research ? stance.research === "sources" : supportsBookDevelopment(input, plan);
+}
+
 export function developmentCoverage(plan: BookPlan): BookDevelopment["coverage"] {
   return [
     ...plan.chapters.flatMap((chapter) => [

@@ -30,6 +30,8 @@ export const GENERATION_STAGE_EFFORT: Record<GenerationModelStageId, EffortRecom
   "detemplate-chapter": { score: 5, reason: "Vary repetitive structure while retaining the chapter's content and voice." },
   "cut-chapter": { score: 6, reason: "Meet the length target while preserving essential reasoning and evidence." },
   "describe-pages": { score: 2, reason: "Produce concise titles and summaries from prose that already exists." },
+  "check-chapter-arithmetic": { score: 4, reason: "Propose wrong totals, balances and ratios in the prose; code keeps only the ones its own computation confirms." },
+  "extract-chapter-facts": { score: 2, reason: "List the names, relations, dates and figures a draft fixes; the next chapter waits for it, so keep it fast." },
   "read-manuscript": { score: 9, reason: "Track repetition, argument, and continuity across the entire manuscript." },
   "inventory-brief-requirements": { score: 4, reason: "Extract explicit obligations and exact source quotations from the brief without judging the manuscript." },
   "rewrite-seams": { score: 6, reason: "Connect neighboring chapters without duplicating or distorting their content." },

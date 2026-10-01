@@ -132,7 +132,7 @@ describe("the chapterFocus option", () => {
     // scene call runs on a `scene` or `portrait` episode, and the planner
     // returned documents and figures nearly everywhere.
     const unfocused = scriptedDevelopmentModel([noFocusAnswer]);
-    await planEpisodes({ input: developmentInput, plan, stance, textModel: unfocused.model, focus: false });
+    await planEpisodes({ input: { ...developmentInput, category: "HISTORY" }, plan, stance, textModel: unfocused.model, focus: false });
     const system = systemPrompt(unfocused.calls[0]!);
     expect(system).toContain("a datable event with a named participant in a named place");
     expect(system).toContain("at least half the chapters carry one scene");
@@ -142,6 +142,13 @@ describe("the chapterFocus option", () => {
     await planEpisodes({ input: developmentInput, plan, stance, textModel: focused.model, focus: true });
     expect(systemPrompt(focused.calls[0]!)).toContain("A scene is optional.");
     expect(systemPrompt(focused.calls[0]!)).not.toContain("at least half the chapters carry one scene");
+  });
+
+  it("leaves scenes optional in an instructional book, where the quota cast public figures as decoration", async () => {
+    const instructional = scriptedDevelopmentModel([noFocusAnswer]);
+    await planEpisodes({ input: developmentInput, plan, stance, textModel: instructional.model, focus: false });
+    expect(systemPrompt(instructional.calls[0]!)).toContain("A scene is optional.");
+    expect(systemPrompt(instructional.calls[0]!)).not.toContain("at least half the chapters carry one scene");
   });
 
   it("keeps the focused prompt when the option is omitted or true", async () => {

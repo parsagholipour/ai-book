@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../domain/manuscript_formatting.dart';
+import '../domain/manuscript_inline.dart' show EmphasisKind;
 import '../domain/manuscript_word_count.dart';
 import 'studio_document.dart';
 import 'studio_session.dart';
@@ -9,7 +10,10 @@ import 'studio_session.dart';
 /// The formatting bar that rides on top of the keyboard while a text segment
 /// has focus. Every button edits the focused segment's text through the pure
 /// functions in `manuscript_formatting.dart`, so what it writes is ordinary
-/// markdown and every change lands in that segment's undo history.
+/// markdown and every change lands in that segment's undo history. Bold and
+/// Italic go through the segment's controller instead: their marks are not
+/// drawn, so it knows which text is bold, and it holds the typing style for
+/// the case of nothing selected.
 ///
 /// It sits in the text fields' tap region: a tap on it is not a tap outside
 /// the field, so the field keeps focus (and the keyboard stays up) on
@@ -70,15 +74,35 @@ class StudioToolbar extends StatelessWidget {
                           onPressed: undo.canRedo ? entry.undo.redo : null,
                         ),
                         const _ToolDivider(),
-                        _ToolButton(
-                          tooltip: 'Bold',
-                          icon: Icons.format_bold_rounded,
-                          onPressed: () => _apply(toggleBold),
-                        ),
-                        _ToolButton(
-                          tooltip: 'Italic',
-                          icon: Icons.format_italic_rounded,
-                          onPressed: () => _apply(toggleItalic),
+                        // Lit while the cursor is in bold (or italic) text, and
+                        // after the button is pressed with nothing selected:
+                        // the marks are not drawn, so this is the one sign.
+                        ListenableBuilder(
+                          listenable: entry.controller,
+                          builder: (context, _) => Row(
+                            children: [
+                              _ToolButton(
+                                tooltip: 'Bold',
+                                icon: Icons.format_bold_rounded,
+                                selected: entry.controller.isStyleOn(
+                                  EmphasisKind.bold,
+                                ),
+                                onPressed: () => entry.controller.toggleStyle(
+                                  EmphasisKind.bold,
+                                ),
+                              ),
+                              _ToolButton(
+                                tooltip: 'Italic',
+                                icon: Icons.format_italic_rounded,
+                                selected: entry.controller.isStyleOn(
+                                  EmphasisKind.italic,
+                                ),
+                                onPressed: () => entry.controller.toggleStyle(
+                                  EmphasisKind.italic,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         _ToolButton(
                           tooltip: 'Heading',
@@ -146,6 +170,7 @@ class _ToolButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.color,
+    this.selected = false,
     super.key,
   });
 
@@ -153,6 +178,9 @@ class _ToolButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onPressed;
   final Color? color;
+
+  /// Lit: the formatting it applies is on where the cursor is.
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -162,12 +190,16 @@ class _ToolButton extends StatelessWidget {
       child: IconButton(
         tooltip: tooltip,
         onPressed: onPressed,
+        isSelected: selected,
         icon: Icon(icon, size: 22),
-        color: color ?? colors.onSurface,
+        color: selected ? colors.primary : color ?? colors.onSurface,
         disabledColor: colors.onSurface.withValues(alpha: 0.28),
         // 40 by 44, like a keyboard's own accessory bar: eight tools and the
         // two pinned ones nearly fit a 390dp phone without scrolling.
         style: IconButton.styleFrom(
+          backgroundColor: selected
+              ? colors.primary.withValues(alpha: 0.12)
+              : null,
           minimumSize: const Size(40, 44),
           fixedSize: const Size(40, 44),
           padding: EdgeInsets.zero,

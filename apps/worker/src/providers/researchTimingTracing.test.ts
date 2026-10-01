@@ -3,7 +3,13 @@ import { GeminiResearchAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { MemoryObjectStore, readRunLog, setObjectStoreForTests } from "@book-maker/storage";
 
-vi.mock("@book-maker/db", () => ({ Prisma: {}, prisma: { providerCallLog: { create: vi.fn() } } }));
+vi.mock("@book-maker/db", () => {
+  const create = vi.fn();
+  const providerCallLog = { create };
+  // A grounded search claims its allowance ordinal in a transaction (searchGroundingAllowance.ts).
+  const tx = { providerCallLog, $queryRaw: vi.fn(async () => [{ units: 1 }]) };
+  return { Prisma: {}, prisma: { providerCallLog, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
+});
 vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: vi.fn(), updateJobProgress: vi.fn() }));
 

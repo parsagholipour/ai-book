@@ -28,6 +28,10 @@ import '../../features/notes/presentation/book_note_editor_screen.dart';
 import '../../features/notes/presentation/book_notes_screen.dart';
 import '../../features/notes/presentation/notes_location.dart';
 import '../../features/reader/presentation/book_reader_screen.dart';
+import '../../features/sharing/data/pending_remix.dart';
+import '../../features/sharing/domain/book_remix.dart';
+import '../../features/sharing/presentation/remix_location.dart';
+import '../../features/sharing/presentation/remix_screen.dart';
 import '../../features/studio/presentation/studio_screen.dart';
 import '../../shared/api/api_error.dart';
 import '../../shared/ui/app_components.dart';
@@ -163,6 +167,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/home',
     refreshListenable: authRefresh,
     redirect: (context, state) {
+      // "Make a book like this" arrives as the whole `tomeza://remix/<slug>`
+      // URI. Becoming `/remix/<slug>` here sends it back through this
+      // redirect, where the rules below apply to it like any other location.
+      final remixDeepLink = remixLocationForDeepLink(state.uri);
+      if (remixDeepLink != null) return remixDeepLink;
+
       final authState = ref.read(authControllerProvider);
       final path = state.uri.path;
       final isAuthRoute = path.startsWith('/auth');
@@ -171,18 +181,38 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final currentSession = authState.asData?.value;
       final hasSession = currentSession != null;
 
+      // A remix link that has to wait — for the splash, for signing in, for
+      // the terms — is held until the remix screen opens (which clears it),
+      // and wherever the reader would have landed afterwards is that screen
+      // instead. It is only ever peeked here, never taken: one navigation can
+      // run this redirect twice for the same location, and the second run has
+      // to reach the same answer as the first.
+      final pendingRemix = ref.read(pendingRemixProvider);
+      final remixSlug = remixSlugFromPath(path);
+      String detour(String location) {
+        if (remixSlug != null) pendingRemix.remember(remixSlug);
+        return location;
+      }
+
+      String landing() {
+        final slug = pendingRemix.slug;
+        return slug == null ? '/home' : remixLocation(slug);
+      }
+
       if (authState.isLoading && currentSession == null) {
-        return isAuthRoute || isSplash ? null : '/splash';
+        return isAuthRoute || isSplash ? null : detour('/splash');
       }
 
       if (authState.hasError && currentSession == null) {
-        return isAuthRoute || isSplash ? null : '/splash';
+        return isAuthRoute || isSplash ? null : detour('/splash');
       }
 
       if (!hasSession) {
         // The sample book is the one signed-out destination besides auth:
         // reading it is how someone decides to create an account at all.
-        return isAuthRoute || path == '/sample-book' ? null : '/auth/sign-in';
+        return isAuthRoute || path == '/sample-book'
+            ? null
+            : detour('/auth/sign-in');
       }
 
       if (currentSession.user.legalAcceptanceRequired) {
@@ -193,13 +223,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         if (!ref.read(legalGateDismissedProvider)) {
           return isLegalAcceptance || path.startsWith('/account')
               ? null
-              : '/legal/acceptance';
+              : detour('/legal/acceptance');
         }
-        return isAuthRoute || isSplash ? '/home' : null;
+        return isAuthRoute || isSplash ? landing() : null;
       }
 
       if (isAuthRoute || isSplash || isLegalAcceptance) {
-        return '/home';
+        return landing();
       }
 
       return null;
@@ -284,9 +314,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               // didUpdateWidget can tell two "New book" taps apart even
               // though startFresh/draftId are identical both times.
               resetToken: state.uri.queryParameters['r'],
+              // Handed over by the remix screen once the format has arrived.
+              remix: state.extra is BookRemix ? state.extra as BookRemix : null,
             ),
           );
         },
+      ),
+      GoRoute(
+        // "Make a book like this": fetches the shared book's format, then
+        // replaces itself with a new chat. See `remix_location.dart`.
+        path: '/remix/:slug',
+        pageBuilder: (context, state) =>
+            _rootPage(state, RemixScreen(slug: state.pathParameters['slug']!)),
       ),
       GoRoute(
         path: '/books/import',

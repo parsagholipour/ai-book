@@ -1,13 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../domain/manuscript_emphasis.dart';
+import '../domain/manuscript_inline.dart';
+
 /// A text controller that draws markdown as it will read in the book, without
 /// changing a single character of it.
 ///
 /// Headings are large and bold, `**bold**` is bold, `*italic*` is italic,
 /// quotes are italic and quiet, list markers take the brand tint and a scene
 /// break is muted and spaced out. The syntax marks themselves stay in the text
-/// — offsets, selection, undo and the saved markdown are all the plain text —
-/// but are drawn faint and a little smaller, so the page reads as prose.
+/// — offsets, selection, undo and the saved markdown are all the plain text.
+/// The marks of bold and italic are not drawn at all, so the words are simply
+/// bold and italic; the others (a heading's `#`, a quote's `>`, a link's
+/// brackets) are drawn faint and a little smaller, so the page reads as prose.
+///
+/// Because a hidden mark is still a character, the controller also keeps the
+/// cursor from resting inside one and holds the *typing style* (bold switched
+/// on with nothing selected). The rules are in `manuscript_emphasis.dart`; the
+/// edits that break marks are corrected by [ManuscriptEmphasisFormatter],
+/// which the field it is in has to be given.
 ///
 /// A blank line is drawn at about half height. Paragraphs in markdown are
 /// separated by one, so this is what paragraph spacing looks like here.
@@ -19,6 +30,54 @@ import 'package:flutter/material.dart';
 /// from the lines in use on every pass, so it never outgrows the text.
 class ManuscriptEditingController extends TextEditingController {
   ManuscriptEditingController({super.text});
+
+  Set<EmphasisKind> _typingStyle = const {};
+
+  /// Bold and italic switched on with the cursor between words: nothing is
+  /// written until the next thing is typed, which the marks then go round.
+  /// It belongs to the place it was asked for and is let go of when the cursor
+  /// moves or the text changes.
+  Set<EmphasisKind> get typingStyle => _typingStyle;
+
+  /// The formatter that keeps hidden marks whole and applies [typingStyle].
+  late final ManuscriptEmphasisFormatter emphasisFormatter =
+      ManuscriptEmphasisFormatter(typingStyle: () => _typingStyle);
+
+  @override
+  set value(TextEditingValue newValue) {
+    final snapped = snapSelection(value, newValue);
+    if (_typingStyle.isNotEmpty &&
+        (snapped.text != value.text || snapped.selection != value.selection)) {
+      _typingStyle = const {};
+    }
+    super.value = snapped;
+  }
+
+  /// The Bold and Italic buttons and their shortcuts.
+  ///
+  /// On a selection or a word it changes the text (see [toggleEmphasis]). With
+  /// the cursor between words there is nothing to change, so it switches the
+  /// typing style instead — unless the cursor is already in text of that
+  /// style, where there is nothing to switch on.
+  void toggleStyle(EmphasisKind kind) {
+    final current = value;
+    if (current.selection.isValid &&
+        current.selection.isCollapsed &&
+        !cursorTouchesWord(current)) {
+      if (emphasisAt(current, kind)) return;
+      _typingStyle = _typingStyle.contains(kind)
+          ? ({..._typingStyle}..remove(kind))
+          : {..._typingStyle, kind};
+      notifyListeners();
+      return;
+    }
+    value = toggleEmphasis(current, kind);
+  }
+
+  /// Whether the cursor or selection is in [kind] text, or [kind] is about to
+  /// be typed: what the toolbar button shows.
+  bool isStyleOn(EmphasisKind kind) =>
+      _typingStyle.contains(kind) || emphasisAt(value, kind);
 
   ManuscriptSpanPalette? _palette;
   Map<_LineKey, _StyledLine> _cache = {};
@@ -58,33 +117,27 @@ class ManuscriptEditingController extends TextEditingController {
     final spans = <TextSpan>[];
     final used = <_LineKey, _StyledLine>{};
     final lines = text.split('\n');
-    var inFence = false;
-    String? fenceMarker;
+    var fence = (inFence: false, openedWith: null as String?);
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
-      final key = _LineKey(line, inFence);
+      final key = _LineKey(line, fence.inFence);
       final styled =
           used[key] ??
           _cache[key] ??
           (() {
             debugStyledLines++;
-            return _styleLine(line, inFence, palette);
+            return _styleLine(line, fence.inFence, palette);
           })();
       used[key] = styled;
       spans.addAll(styled.spans);
       if (i < lines.length - 1) {
         spans.add(TextSpan(text: '\n', style: styled.newline));
       }
-      final fence = _fenceLine.firstMatch(line);
-      if (fence != null) {
-        if (!inFence) {
-          inFence = true;
-          fenceMarker = fence.group(1);
-        } else if (fence.group(1) == fenceMarker) {
-          inFence = false;
-          fenceMarker = null;
-        }
-      }
+      fence = fenceStateAfter(
+        line,
+        inFence: fence.inFence,
+        openedWith: fence.openedWith,
+      );
     }
     _cache = used;
     final children = composing.isValid && !composing.isCollapsed
@@ -94,91 +147,6 @@ class ManuscriptEditingController extends TextEditingController {
     // what the field measures a "line" by: see [ManuscriptCaret].
     return TextSpan(style: palette.blankLine, children: children);
   }
-}
-
-/// Where the field draws its caret, so it sits on the line being written.
-///
-/// A blank line is drawn at about half height (see the controller), which the
-/// field does not expect. It centres the caret on a strut box at the line's
-/// baseline, and puts the caret at the end of the text — on the empty line
-/// after a paragraph break — a "standard line" above the last baseline. With
-/// the body's own line as that standard both come out right on a text line and
-/// wrong everywhere else, so the standard is the blank line instead: the strut
-/// and the root span are a blank line's size, every text line is taller than
-/// them, and the field's caret arithmetic agrees with itself.
-///
-/// A blank line keeps its baseline near its bottom (negative *even* leading,
-/// see [ManuscriptSpanPalette.blankStyleFor]), which makes the caret's centre
-/// the centre of the line it is on, blank or not. A caret the height of a text
-/// line would poke out of a blank one, so on an empty line it is the height of
-/// the line and grows to full height when the first letter lands.
-@immutable
-class ManuscriptCaret {
-  const ManuscriptCaret({required this.height, required this.emptyLineHeight});
-
-  /// Measures the caret for a field whose text is [body], at [scaler].
-  factory ManuscriptCaret.measure({
-    required TextStyle body,
-    required TextScaler scaler,
-    required TextDirection textDirection,
-  }) {
-    final strut = ManuscriptSpanPalette.strutFor(
-      body,
-    ).inheritFromTextStyle(body);
-    TextPainter measure(TextStyle style) => TextPainter(
-      text: TextSpan(text: 'A', style: style),
-      textDirection: textDirection,
-      textScaler: scaler,
-      strutStyle: strut,
-    )..layout();
-    final bodyLine = measure(body);
-    final blankLine = measure(ManuscriptSpanPalette.blankStyleFor(body));
-    final caret = ManuscriptCaret(
-      // What a stock text field draws: the line, less the field's own 2px
-      // inset at each end.
-      height: bodyLine.height - 4,
-      emptyLineHeight: blankLine.height,
-    );
-    bodyLine.dispose();
-    blankLine.dispose();
-    return caret;
-  }
-
-  /// The caret on a line of text.
-  final double height;
-
-  /// The caret on a blank line.
-  final double emptyLineHeight;
-
-  /// The caret's height with the cursor where [value] puts it.
-  ///
-  /// An empty chapter is not a blank line: its one line is as tall as the
-  /// text that will fill it.
-  double heightFor(TextEditingValue value) =>
-      value.text.isNotEmpty && caretOnEmptyLine(value)
-      ? emptyLineHeight
-      : height;
-
-  @override
-  bool operator ==(Object other) =>
-      other is ManuscriptCaret &&
-      other.height == height &&
-      other.emptyLineHeight == emptyLineHeight;
-
-  @override
-  int get hashCode => Object.hash(height, emptyLineHeight);
-}
-
-/// Whether [value] is a cursor on a line with nothing on it: the empty last
-/// line after a paragraph break, an empty chapter, or a blank line between two
-/// paragraphs.
-bool caretOnEmptyLine(TextEditingValue value) {
-  final selection = value.selection;
-  if (!selection.isValid || !selection.isCollapsed) return false;
-  final text = value.text;
-  final at = selection.baseOffset.clamp(0, text.length);
-  return (at == 0 || text.codeUnitAt(at - 1) == 0x0a) &&
-      (at == text.length || text.codeUnitAt(at) == 0x0a);
 }
 
 /// Every style the controller draws with, derived once per theme and base
@@ -217,6 +185,16 @@ class ManuscriptSpanPalette {
       letterSpacing: level <= 2 ? -0.3 : -0.1,
     );
   }
+
+  /// A bold or italic mark: there, in the text, and not drawn.
+  late final TextStyle hidden = base.copyWith(
+    fontSize: 0,
+    letterSpacing: 0,
+    height: 1,
+    fontWeight: FontWeight.w400,
+    fontStyle: FontStyle.normal,
+    decoration: TextDecoration.none,
+  );
 
   late final TextStyle marker = base.copyWith(
     color: scheme.onSurface.withValues(alpha: 0.32),
@@ -324,232 +302,114 @@ class _StyledLine {
   final TextStyle newline;
 }
 
-final _fenceLine = RegExp(r'^\s{0,3}(```|~~~)');
-final _heading = RegExp(r'^(#{1,6})([ \t]+)(.*)$');
-final _thematicBreak = RegExp(
-  r'^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$',
-);
-final _quote = RegExp(r'^([ \t]{0,3}>[ \t]?)(.*)$');
-final _list = RegExp(r'^([ \t]*)([-*+]|\d+[.)])([ \t]+)(.*)$');
-final _imageOnly = RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$');
-final _linkOrImage = RegExp(r'(!?)\[([^\]\n]*)\]\(([^)\s]*)(?:\s+"[^"]*")?\)');
-
 _StyledLine _styleLine(String line, bool inFence, ManuscriptSpanPalette p) {
-  if (inFence) {
-    final style = _fenceLine.hasMatch(line) ? p.marker : p.codeBlock;
-    return _StyledLine(_span(line, style), p.codeBlock);
+  final parsed = parseLine(line, inFence: inFence);
+  switch (parsed.kind) {
+    case LineKind.code:
+      return _StyledLine(
+        _span(line, parsed.isFence ? p.marker : p.codeBlock),
+        p.codeBlock,
+      );
+    case LineKind.blank:
+      return _StyledLine(_span(line, p.body), p.blankLine);
+    case LineKind.heading:
+      final style = p.heading(parsed.headingLevel);
+      return _StyledLine([
+        ..._prefix(line, parsed, p),
+        ..._inline(line, parsed.inline, style, p),
+      ], style);
+    case LineKind.sceneBreak:
+      return _StyledLine(_span(line, p.sceneBreak), p.body);
+    case LineKind.marker:
+      return _StyledLine(_span(line, p.marker), p.body);
+    case LineKind.quote:
+      return _StyledLine([
+        ..._prefix(line, parsed, p),
+        ..._inline(line, parsed.inline, p.quote, p),
+      ], p.body);
+    case LineKind.listItem:
+      return _StyledLine([
+        ..._prefix(line, parsed, p),
+        ..._inline(line, parsed.inline, p.body, p),
+      ], p.body);
+    case LineKind.text:
+      return _StyledLine(_inline(line, parsed.inline, p.body, p), p.body);
   }
-  if (line.trim().isEmpty) {
-    return _StyledLine(_span(line, p.body), p.blankLine);
-  }
-  if (_fenceLine.hasMatch(line)) {
-    return _StyledLine(_span(line, p.marker), p.codeBlock);
-  }
-  final heading = _heading.firstMatch(line);
-  if (heading != null) {
-    final style = p.heading(heading.group(1)!.length);
-    return _StyledLine([
-      TextSpan(text: heading.group(1)! + heading.group(2)!, style: p.marker),
-      ..._inline(heading.group(3)!, style, p),
-    ], style);
-  }
-  if (_thematicBreak.hasMatch(line)) {
-    return _StyledLine(_span(line, p.sceneBreak), p.body);
-  }
-  if (line.trim() == '<!-- page -->' || _imageOnly.hasMatch(line)) {
-    return _StyledLine(_span(line, p.marker), p.body);
-  }
-  final quote = _quote.firstMatch(line);
-  if (quote != null) {
-    return _StyledLine([
-      TextSpan(text: quote.group(1), style: p.marker),
-      ..._inline(quote.group(2)!, p.quote, p),
-    ], p.body);
-  }
-  final item = _list.firstMatch(line);
-  if (item != null) {
-    return _StyledLine([
-      if (item.group(1)!.isNotEmpty)
-        TextSpan(text: item.group(1), style: p.body),
-      TextSpan(text: item.group(2), style: p.listMarker),
-      TextSpan(text: item.group(3), style: p.body),
-      ..._inline(item.group(4)!, p.body, p),
-    ], p.body);
-  }
-  return _StyledLine(_inline(line, p.body, p), p.body);
 }
 
 List<TextSpan> _span(String text, TextStyle style) =>
     text.isEmpty ? const [] : [TextSpan(text: text, style: style)];
 
-const _escapable = r'\`*_{}[]()#+-.!~>';
+List<TextSpan> _prefix(
+  String line,
+  ManuscriptLine parsed,
+  ManuscriptSpanPalette p,
+) => [
+  for (final part in parsed.prefix)
+    TextSpan(
+      text: line.substring(part.start, part.end),
+      style: switch (part.role) {
+        PrefixRole.marker => p.marker,
+        PrefixRole.plain => p.body,
+        PrefixRole.listMarker => p.listMarker,
+      },
+    ),
+];
 
-/// Inline markdown on one line: code spans, bold, italic, strikethrough,
-/// links and pictures. Unbalanced markers stay plain text.
-List<TextSpan> _inline(String s, TextStyle style, ManuscriptSpanPalette p) {
+/// The spans for the parse of a line's text.
+///
+/// A bold or italic mark is drawn at no size at all: the text is bold or
+/// italic and nothing shows that a `*` is there. The other marks (a link's
+/// brackets, a code span's ticks, a strikethrough's `~~`) stay faint.
+List<TextSpan> _inline(
+  String line,
+  List<InlineNode> nodes,
+  TextStyle style,
+  ManuscriptSpanPalette p,
+) {
   final out = <TextSpan>[];
-  final plain = StringBuffer();
-  void flush() {
-    if (plain.isEmpty) return;
-    out.add(TextSpan(text: plain.toString(), style: style));
-    plain.clear();
-  }
-
   TextStyle markerIn(TextStyle host) =>
       p.marker.copyWith(fontSize: (host.fontSize ?? p._size) * 0.86);
+  TextSpan slice(int start, int end, TextStyle style) =>
+      TextSpan(text: line.substring(start, end), style: style);
 
-  var i = 0;
-  while (i < s.length) {
-    final c = s[i];
-    if (c == r'\' && i + 1 < s.length && _escapable.contains(s[i + 1])) {
-      flush();
-      out.add(TextSpan(text: c, style: markerIn(style)));
-      plain.write(s[i + 1]);
-      i += 2;
-      continue;
-    }
-    if (c == '`') {
-      final close = s.indexOf('`', i + 1);
-      if (close > i + 1) {
-        flush();
-        out
-          ..add(TextSpan(text: '`', style: markerIn(style)))
-          ..add(TextSpan(text: s.substring(i + 1, close), style: p.code))
-          ..add(TextSpan(text: '`', style: markerIn(style)));
-        i = close + 1;
-        continue;
-      }
-    }
-    if (c == '!' || c == '[') {
-      final match = _linkOrImage.matchAsPrefix(s, i);
-      if (match != null) {
-        flush();
-        if (match.group(1)!.isNotEmpty) {
-          out.add(TextSpan(text: match.group(0), style: markerIn(style)));
-        } else {
-          final label = match.group(2)!;
+  void walk(List<InlineNode> nodes, TextStyle style) {
+    for (final node in nodes) {
+      switch (node) {
+        case TextNode():
+          out.add(slice(node.start, node.end, style));
+        case EscapeNode():
+          out.add(slice(node.at, node.at + 1, markerIn(style)));
+        case CodeNode():
           out
-            ..add(TextSpan(text: '[', style: markerIn(style)))
-            ..addAll(_inline(label, style.merge(p.link), p))
-            ..add(
-              TextSpan(
-                text: match.group(0)!.substring(label.length + 1),
-                style: markerIn(style),
-              ),
-            );
-        }
-        i = match.end;
-        continue;
-      }
-    }
-    final pair = i + 1 < s.length ? s.substring(i, i + 2) : '';
-    if (pair == '**' || pair == '__' || pair == '~~') {
-      final close = _closerFor(s, pair, i + 2);
-      if (close != null) {
-        flush();
-        final inner = switch (pair) {
-          '~~' => style.copyWith(
-            decoration: TextDecoration.lineThrough,
-            decorationColor: style.color?.withValues(alpha: 0.6),
-          ),
-          _ => style.copyWith(fontWeight: FontWeight.w800),
-        };
-        out
-          ..add(TextSpan(text: pair, style: markerIn(style)))
-          ..addAll(_inline(s.substring(i + 2, close), inner, p))
-          ..add(TextSpan(text: pair, style: markerIn(style)));
-        i = close + 2;
-        continue;
-      }
-    }
-    if (c == '*' || c == '_') {
-      final close = _italicCloser(s, c, i);
-      if (close != null) {
-        flush();
-        out
-          ..add(TextSpan(text: c, style: markerIn(style)))
-          ..addAll(
-            _inline(
-              s.substring(i + 1, close),
-              style.copyWith(fontStyle: FontStyle.italic),
-              p,
+            ..add(slice(node.open.start, node.open.end, markerIn(style)))
+            ..add(slice(node.inner.start, node.inner.end, p.code))
+            ..add(slice(node.close.start, node.close.end, markerIn(style)));
+        case ImageNode():
+          out.add(slice(node.range.start, node.range.end, markerIn(style)));
+        case LinkNode():
+          out.add(slice(node.open.start, node.open.end, markerIn(style)));
+          walk(node.label, style.merge(p.link));
+          out.add(slice(node.tail.start, node.tail.end, markerIn(style)));
+        case EmphasisNode():
+          final mark = node.marksAreHidden ? p.hidden : markerIn(style);
+          out.add(slice(node.open.start, node.open.end, mark));
+          walk(node.children, switch (node.kind) {
+            EmphasisKind.strike => style.copyWith(
+              decoration: TextDecoration.lineThrough,
+              decorationColor: style.color?.withValues(alpha: 0.6),
             ),
-          )
-          ..add(TextSpan(text: c, style: markerIn(style)));
-        i = close + 1;
-        continue;
+            EmphasisKind.bold => style.copyWith(fontWeight: FontWeight.w800),
+            EmphasisKind.italic => style.copyWith(fontStyle: FontStyle.italic),
+          });
+          out.add(slice(node.close.start, node.close.end, mark));
       }
     }
-    plain.write(c);
-    i++;
   }
-  flush();
+
+  walk(nodes, style);
   return out;
 }
-
-/// Where a `**`, `__` or `~~` opened at [from] - 2 closes, or null.
-///
-/// The closer is the last two characters of the next run of that character,
-/// so `***word***` closes bold on its final two stars and leaves the inner
-/// `*word*` to italic.
-int? _closerFor(String s, String pair, int from) {
-  if (from >= s.length || _isBlank(s.codeUnitAt(from))) return null;
-  final char = pair[0];
-  var j = from + 1;
-  while (j < s.length) {
-    if (s[j] == char) {
-      var run = 1;
-      while (j + run < s.length && s[j + run] == char) {
-        run++;
-      }
-      if (run >= 2 && !_isBlank(s.codeUnitAt(j - 1))) return j + run - 2;
-      j += run;
-      continue;
-    }
-    j++;
-  }
-  return null;
-}
-
-/// Where a single `*` or `_` opened at [open] closes, or null. Runs of two or
-/// more are bold inside the italic and are skipped. An `_` must sit at word
-/// edges, so snake_case and file_names stay plain.
-int? _italicCloser(String s, String char, int open) {
-  final start = open + 1;
-  if (start >= s.length || _isBlank(s.codeUnitAt(start))) return null;
-  if (char == '_' && open > 0 && _isWordUnit(s.codeUnitAt(open - 1))) {
-    return null;
-  }
-  var j = start;
-  while (j < s.length) {
-    if (s[j] == char) {
-      var run = 1;
-      while (j + run < s.length && s[j + run] == char) {
-        run++;
-      }
-      final closes =
-          run == 1 &&
-          j > start &&
-          !_isBlank(s.codeUnitAt(j - 1)) &&
-          (char != '_' ||
-              j + 1 >= s.length ||
-              !_isWordUnit(s.codeUnitAt(j + 1)));
-      if (closes) return j;
-      j += run;
-      continue;
-    }
-    j++;
-  }
-  return null;
-}
-
-bool _isBlank(int unit) => unit == 0x20 || unit == 0x09 || unit == 0xa0;
-
-bool _isWordUnit(int unit) =>
-    (unit >= 0x30 && unit <= 0x39) ||
-    (unit >= 0x41 && unit <= 0x5a) ||
-    (unit >= 0x61 && unit <= 0x7a) ||
-    unit > 0x7f;
 
 /// [spans] with [range] underlined, splitting the spans it cuts through. The
 /// cached spans are never modified; the ones touched are replaced.

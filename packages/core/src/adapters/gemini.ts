@@ -32,6 +32,7 @@ import { missingNativeImageError } from "./geminiNativeImageRefusal.js";
 import { resolveGroundingRedirects } from "./groundingRedirect.js";
 import type { TextModelThinkingEffort } from "../schemas/book.js";
 import { optionalMaxRetries } from "./optionalMaxRetries.js";
+import { ProviderHttpError } from "./retry.js";
 
 export type GeminiAdapterOptions = {
   maxRetries?: number | undefined;
@@ -470,6 +471,57 @@ function sumTokenCounts(...counts: unknown[]): number | undefined {
   return reported.length === 0 ? undefined : reported.reduce((total, count) => total + count, 0);
 }
 
+/**
+ * How long one grounded search is waited for. Three of 124 searches in the
+ * 2026-09-30 Quick Draft runs took 243–250 s against a median of 10.5 s and a
+ * p90 of 19 s, each holding a chapter's evidence loop the whole time; with no
+ * deadline the SDK waits as long as the connection stays open. A stalled
+ * attempt ends as a retryable network timeout, which the worker's provider
+ * retry re-asks and every caller already degrades on.
+ */
+export const RESEARCH_REQUEST_TIMEOUT_MS = 45_000;
+
+/**
+ * The most a grounded search may write, thinking included where a model still
+ * thinks. Over the seven days to 2026-10-01, 1,055 of 1,060 logged searches
+ * answered in under 10k tokens — p99 4,782 for `case-source-search`, a maximum
+ * of 4,424 for `chapter-research` — and the other five ran away to 64–73k
+ * tokens, about 250 s and $0.16–0.19 each. The deadline above bounds the wait
+ * but not what was generated before it fired, and a 504 is then retried into
+ * the same loop. At the runaways' ~280 tokens a second this cap lands in about
+ * 30 s, inside the deadline, so the call ends as a short answer rather than a
+ * timeout — for ~$0.02 — and it leaves a model that still thinks (p99 ~3k
+ * thinking tokens) room to answer.
+ */
+export const RESEARCH_MAX_OUTPUT_TOKENS = 8_192;
+
+/**
+ * A 504, never an `AbortError` — the Jev deadline's rule (adapters/CLAUDE.md):
+ * callers read an abort as the user stopping the book (`isStopOrAbortError`)
+ * and rethrow it, so a timeout spelled as one would fail the book instead of
+ * skipping a search, while a 504 is retried by status.
+ */
+function researchTimeoutError(): ProviderHttpError {
+  return new ProviderHttpError(`Grounded research did not answer within ${RESEARCH_REQUEST_TIMEOUT_MS / 1000} s.`, { status: 504 });
+}
+
+/**
+ * Grounded searches run with thinking off on 2.5 Flash and Flash-Lite — the
+ * models it was measured on, and the only ones where a zero budget is valid
+ * (2.5 Pro rejects it, 3.x takes a thinking level). A replay of 22 logged
+ * dossier searches (2026-09-30, adapters/CLAUDE.md) ran the same four searches
+ * per prompt and cited as many sources: primary documents among the three the
+ * dossier fetches 2.45 against 2.50, URL overlap with the default 56% against
+ * the default's own run-to-run 51% — for 45% less token spend and a p90 of
+ * 8 s instead of 13 s. Every other model keeps the request it had.
+ */
+function researchThinkingConfig(model: string): { thinkingConfig?: { thinkingBudget: number } } {
+  const normalized = model.trim().replace(/^models\//, "").toLowerCase();
+  return /^gemini-2\.5-flash(?:-lite)?(?:-(?:preview|latest|\d)[\w.-]*)?$/.test(normalized)
+    ? { thinkingConfig: { thinkingBudget: 0 } }
+    : {};
+}
+
 export class GeminiResearchAdapter implements ResearchAdapter {
   private readonly ai: any;
   private readonly model: string;
@@ -484,6 +536,9 @@ export class GeminiResearchAdapter implements ResearchAdapter {
 
   async search(query: ResearchQuery): Promise<ResearchResult> {
     const startedAt = performance.now();
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), RESEARCH_REQUEST_TIMEOUT_MS);
+    timer.unref?.();
     const response = await this.ai.models.generateContent({
       model: this.model,
       contents: [
@@ -500,13 +555,22 @@ export class GeminiResearchAdapter implements ResearchAdapter {
       ].join("\n"),
       config: {
         tools: [{ googleSearch: {} }],
-        temperature: 0.1
+        temperature: 0.1,
+        ...researchThinkingConfig(this.model),
+        maxOutputTokens: RESEARCH_MAX_OUTPUT_TOKENS,
+        abortSignal: deadline.signal
       }
-    });
+    }).catch((error: unknown) => {
+      throw deadline.signal.aborted ? researchTimeoutError() : error;
+    }).finally(() => clearTimeout(timer));
     const providerFinishedAt = performance.now();
 
     const rawText = response.text ?? "";
-    const text = sanitizeResearchText(rawText);
+    // An answer that reached the cap is, on the record above, a runaway: its
+    // grounding survives the cut (measured) and is kept, while its text — the
+    // brief a writer would be handed for a chapter search — is dropped.
+    const truncated = response.candidates?.[0]?.finishReason === "MAX_TOKENS";
+    const text = truncated ? "" : sanitizeResearchText(rawText);
     const grounding = response.candidates?.[0]?.groundingMetadata;
     const chunks = grounding?.groundingChunks ?? [];
     const excerptsByChunk = collectGroundingExcerpts(grounding?.groundingSupports ?? [], rawText);
@@ -532,15 +596,21 @@ export class GeminiResearchAdapter implements ResearchAdapter {
     return {
       query: query.query,
       summary: text,
+      ...(truncated ? { truncated: true } : {}),
       provider: "gemini",
       model: response.modelVersion ?? this.model,
       usage: usageFromGeminiResponse(response),
+      // Counted before redirects resolve: a cited source is billed whether or not its link unwraps.
+      grounding: {
+        searchQueries: Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.length : 0,
+        webSources: grounded.length
+      },
       timings: {
         providerRequestMs: providerFinishedAt - startedAt,
         groundingRedirectsMs: finishedAt - redirectsStartedAt,
         totalMs: finishedAt - startedAt
       },
-      sources: sources.length > 0 ? sources : [{ title: "Gemini grounded summary", summary: text }]
+      sources: sources.length > 0 ? sources : truncated ? [] : [{ title: "Gemini grounded summary", summary: text }]
     };
   }
 }

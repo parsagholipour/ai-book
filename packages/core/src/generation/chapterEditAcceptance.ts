@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { isCancellationError } from "../adapters/retry.js";
 import type { CaseEvidencePacket, DossierExcerpt } from "../schemas/episodes.js";
-import { chapterWordBudget, EDITOR_EXTEND_BELOW_SHARE, type EditChapterOptions } from "./composedChapter.js";
+import { CAVEAT_ONCE_ACCEPTANCE_RULE, chapterWordBudget, EDITOR_EXTEND_BELOW_SHARE, establishedFactLinesFor, type EditChapterOptions } from "./composedChapter.js";
+import { ESTABLISHED_FACTS_ACCEPTANCE_RULE } from "./chapterFacts.js";
 import { chapterResearchNotesForPrompt, CHAPTER_RESEARCH_CONTEXT_RULE } from "./chapterResearchContext.js";
 import { materialPayload } from "./composedChapterMaterial.js";
 import { proseWordCount, FIGURE_WORD_EQUIVALENT } from "./figures/figureBlocks.js";
@@ -60,6 +61,16 @@ const RUBRICS = {
 } as const;
 
 /**
+ * The reviewer's instructions. Each editor rule that licenses a removal the general
+ * rubric would call lost meaning is told to the reviewer too, only where the editor
+ * was given it: the fact ledger's continuity correction, and the caveat stated once,
+ * which every line edit is given and a deletion-only cut is not.
+ */
+export function chapterEditAcceptanceSystem(options: { cut: boolean; establishedFacts: boolean }): string {
+  return `${COMMON}${options.establishedFacts ? ` ${ESTABLISHED_FACTS_ACCEPTANCE_RULE}` : ""}${options.cut ? "" : ` ${CAVEAT_ONCE_ACCEPTANCE_RULE}`} Make both judgments separately. ${RUBRICS.meaning} ${RUBRICS.intent} Return JSON {"meaning":"pass|regression|needs_review","intent":"pass|regression|needs_review","meaningReason":"specific before/after evidence","intentReason":"specific improvement or retained passage"}.${options.cut ? ' Also return removedSpanReviews with exactly one entry per removedSpans index: {"index":0,"meaning":"pass|regression|needs_review","join":"pass|regression|needs_review","retainedEvidence":"quote the retained passage preserving this removed meaning","joinReason":"quote the actual surviving local antecedent and explain the transition"}. Read each before/after pair as consecutive prose. A pronoun, definite reference or connective must resolve in the surviving local text; an antecedent in the removed span or a distant chapter cannot repair the join. If no local antecedent is needed, explain why. An ambiguous or weakened join is needs_review even when all facts survive elsewhere.' : ""}`;
+}
+
+/**
  * One contextual text review, through the caller's logged adapter, is the gate. A decision-model
  * screen (Jev: a meaning question and an intent question, two confident passes accepting without
  * the review) ran ahead of it across four Balanced evaluations (2026-09-19: a 50-page and three
@@ -87,6 +98,7 @@ export async function acceptsChapterEdit(options: EditChapterOptions, candidate:
   const wordBudget = chapterWordBudget(options.input, options.chapterPageEnd - options.chapterPageStart + 1,
     { figureWords: cut ? 0 : plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
   const removedSpans = cut ? chapterRemovedSpans(prefix + options.markdown, prefix + candidate) : [];
+  const establishedFacts = establishedFactLinesFor(options, options.markdown);
   const payload = {
     chapterIndex: options.chapter.index,
     operation: cut ? "deletion_only_cut" : "chapter_edit",
@@ -103,6 +115,7 @@ export async function acceptsChapterEdit(options: EditChapterOptions, candidate:
     earlierChapterSummaries: options.earlierChapters,
     surroundingChapters: options.surroundingChapters,
     continuityNotes: options.continuityNotes, storyStateLines: options.storyStateLines,
+    ...(establishedFacts.length > 0 ? { establishedFacts } : {}),
     readerNotes: cut?.notes ?? options.readerNotes ?? [], bookNotes: cut?.bookNotes ?? [],
     allowExtension: !cut && options.allowExtension !== false && proseWordCount(options.markdown) < wordBudget.target * EDITOR_EXTEND_BELOW_SHARE,
     wordBudget,
@@ -118,7 +131,7 @@ export async function acceptsChapterEdit(options: EditChapterOptions, candidate:
       purpose: "review-chapter-edit-acceptance", temperature: 0.1, maxTokens: 2000,
       ...(signal ? { signal } : {}), schema: reviewSchema,
       messages: [
-        { role: "system", content: `${COMMON} Make both judgments separately. ${RUBRICS.meaning} ${RUBRICS.intent} Return JSON {"meaning":"pass|regression|needs_review","intent":"pass|regression|needs_review","meaningReason":"specific before/after evidence","intentReason":"specific improvement or retained passage"}.${cut ? ' Also return removedSpanReviews with exactly one entry per removedSpans index: {"index":0,"meaning":"pass|regression|needs_review","join":"pass|regression|needs_review","retainedEvidence":"quote the retained passage preserving this removed meaning","joinReason":"quote the actual surviving local antecedent and explain the transition"}. Read each before/after pair as consecutive prose. A pronoun, definite reference or connective must resolve in the surviving local text; an antecedent in the removed span or a distant chapter cannot repair the join. If no local antecedent is needed, explain why. An ambiguous or weakened join is needs_review even when all facts survive elsewhere.' : ""}` },
+        { role: "system", content: chapterEditAcceptanceSystem({ cut: Boolean(cut), establishedFacts: establishedFacts.length > 0 }) },
         { role: "user", content: context }
       ]
     });

@@ -32,7 +32,8 @@ vi.mock("./pagePublication.js", () => ({
   },
   publishStagedGeneratedPage: vi.fn()
 }));
-vi.mock("./qualityEnrichment.js", () => ({ persistKeeperStoryDelta: async () => null }));
+vi.mock("./qualityEnrichment.js", () => ({ keeperStoryExtractForSave: async () => null, persistStoryExtract: async () => null }));
+vi.mock("./qualitySettings.js", () => ({ loadQualityContext: async () => ({ enabled: () => false }) }));
 vi.mock("./storyStateStore.js", () => ({ loadProjectStoryState: async () => null }));
 vi.mock("./wholeBookPageReview.js", () => ({
   reviewWholeBookDraftPages: async (options: { pages: IndexedPageDraft[] }) => options.pages.map((draft) => ({

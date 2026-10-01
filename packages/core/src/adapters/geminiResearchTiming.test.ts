@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { GeminiResearchAdapter } from "./gemini.js";
+import { GeminiResearchAdapter, RESEARCH_REQUEST_TIMEOUT_MS } from "./gemini.js";
+import { isRecoverableNetworkError, isStopOrAbortError } from "./retry.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -43,3 +44,27 @@ it.each(["resolved", "unresolved", "direct"] as const)(
     expect(fetchMock).toHaveBeenCalledTimes(outcome === "direct" ? 0 : 1);
   }
 );
+
+it("gives up on a stalled grounded search as a retryable timeout, never as a stop", async () => {
+  // Quick Draft, 2026-09-30: three of 124 searches took 243–250 s against a
+  // median of 10.5 s, each holding a chapter's evidence loop the whole time.
+  vi.useFakeTimers();
+  try {
+    const adapter = new GeminiResearchAdapter({ apiKey: "fixture", textModel: "gemini-2.5-flash" });
+    let signal: AbortSignal | undefined;
+    Object.assign(adapter, { ai: { models: { generateContent: (request: { config: { abortSignal?: AbortSignal } }) => {
+      signal = request.config.abortSignal;
+      return new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }))));
+    } } } });
+    const pending = adapter.search({ query: "stalled search" });
+    const settled = pending.then(() => undefined, (error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(RESEARCH_REQUEST_TIMEOUT_MS);
+    const error = await settled;
+    expect(signal?.aborted).toBe(true);
+    expect(isStopOrAbortError(error)).toBe(false);
+    expect(isRecoverableNetworkError(error)).toBe(true);
+    expect(error).toMatchObject({ status: 504 });
+  } finally {
+    vi.useRealTimers();
+  }
+});

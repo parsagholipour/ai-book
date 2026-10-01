@@ -51,6 +51,26 @@ describe("exported markdown page boundaries", () => {
     expect(compiled.markdown).toContain(`${first}\n${second}\n${third}\n\nAfter the table.`);
   });
 
+  it("starts a new table when the next page opens on a header row and its delimiter", async () => {
+    // r1-bal-guide / r2-bal-workbook (2026-10-01): a worksheet printed filled and then blank, the
+    // page cut between the two. On one newline the blank one's header printed as a data row,
+    // followed by a row of `---`.
+    const filled = "| Fact | Next step |\n|---|---|\n| Two notes omitted the owner. | Agree an owner. |";
+    const blank = "| Fact | Next step |\n|---|---|\n|  |  |";
+    const { compiled, body } = await renderPages([filled, blank, "After the tables."]);
+    expect(compiled.markdown).toContain(`${filled}\n\n${blank}\n\nAfter the tables.`);
+    expect(body.match(/<table\b/g)).toHaveLength(2);
+    expect(body.match(/<th>/g)).toHaveLength(4);
+    expect(body.match(/<td>/g)).toHaveLength(4);
+    expect(body).not.toContain("<td>---</td>");
+    expect(body).toMatch(/<table id="bp-2">/);
+  });
+
+  it("keeps a header-shaped line that is prose, not a table, on one newline", async () => {
+    const { compiled } = await renderPages(["Use A | B as an operator.", "| Fact | Next step |\n|---|---|\n| one | two |"]);
+    expect(compiled.markdown).toContain("Use A | B as an operator.\n| Fact | Next step |");
+  });
+
   it.each([
     ["paragraph", "The sentence continues", "across pages.", "<p>"],
     ["list", "- One", "- Two", "<ul>"],

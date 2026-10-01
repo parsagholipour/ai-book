@@ -38,6 +38,35 @@ const INSTRUCTIONAL_FORMS: readonly SectionForm[] = [
   { id: "quiet-transition", rule: "a short connective passage with no thesis" }
 ];
 
+/**
+ * A practical guide's or a workbook's sections are deliverables
+ * (`instructionalBook.ts`). The instructional palette above stays for every
+ * instructional book off that path. Gone here: `principle` (it owned the source
+ * titles), `story-from-practice` ("framed as such" printed "This is an
+ * illustrative scene…"), `open-question` (hedging), and the exercise's "expected
+ * result", which ended every exercise on "The expected result is…".
+ */
+export const TOOLKIT_FORMS: readonly SectionForm[] = [
+  { id: "situation", rule: "one moment the reader will face, with one example person, told briefly in the present: what happens, what is said, and the choice the reader now faces, stated once; it stops at the choice" },
+  { id: "script", rule: "the words to use, as dialogue lines: the reader's line, a realistic reply — pushback, silence or an upset answer included — and the reader's next line, for two or three exchanges, then at most one sentence on why the wording works; the exchange is never retold or summarised afterwards" },
+  { id: "tool", rule: "a question bank, template, checklist, agenda or tracker printed in full and ready to copy — a table of five columns at most, so it fits the page — introduced in one sentence and used once on the section's example" },
+  { id: "worksheet", rule: "a named worksheet with real columns and rows, five columns at most so it fits the page, printed exactly twice: once filled in for the example (a workbook's running case) with its numbers and no empty rows, then once blank for the reader with the same columns" },
+  { id: "decision-rule", rule: "a rule the reader can apply without the book: when this happens, do that, with the number or trigger that decides it and the one exception" },
+  { id: "worked-example", rule: "one example carried from start to finish with every step and number shown, once, ending on the answer" },
+  { id: "procedure", rule: "steps in order as a numbered list, each step an action" },
+  { id: "failure-case", rule: "something done wrong, what it cost, and what would have caught it" },
+  { id: "diagnosis", rule: "how to tell which situation you are in, by observable signs" },
+  { id: "objection", rule: "the reader's strongest doubt, taken seriously, then answered or conceded in the author's own words" },
+  { id: "exercise", rule: "something the reader does now, with their own situation, in a few minutes" },
+  { id: "quiet-transition", rule: "a short connective passage with no thesis" }
+];
+
+/** Deliverables the variety rotation never reassigns: moved to another form they would stop being the tool the brief asked for. No other palette has these ids. */
+export const PINNED_FORMS: ReadonlySet<string> = new Set(["situation", "script", "tool", "worksheet", "decision-rule"]);
+
+/** The forms a toolkit chapter's long section may take (`deliverableCarriesLength`). */
+export const LONG_SECTION_FORMS: ReadonlySet<string> = new Set(["tool", "worksheet", "worked-example", "script"]);
+
 const NARRATIVE_FORMS: readonly SectionForm[] = [
   { id: "scene", rule: "continuous action in one place and time, dramatised, with dialogue where people would speak" },
   { id: "sequel", rule: "the reaction after a scene: feeling, dilemma, decision, in that order, kept short" },

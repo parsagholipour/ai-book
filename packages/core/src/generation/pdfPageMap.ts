@@ -300,6 +300,47 @@ export function buildBookPdfPageMap(input: BuildBookPdfPageMapInput): BookPdfPag
   };
 }
 
+/**
+ * Why a render that was handed an anchor plan came back without a map.
+ *
+ * Diagnostics for the fallback log and nothing else: the render, the
+ * publication and the cover-numbering stub are the same whatever this says.
+ * The fallback used to be silent, and a stub is indistinguishable from a
+ * measured book everywhere but chat, so two books shipped one unnoticed.
+ */
+export type BookPdfPageMapFailure = {
+  reason: "no-anchors" | "no-destinations" | "unanchored-pages" | "anchors-out-of-order";
+  /** Model pages whose destination the PDF lacks, or that land before the page ahead of them. */
+  pageIndexes: number[];
+};
+
+/** The first refusal {@link buildBookPdfPageMap} would make of these destinations, spelled out. */
+export function explainBookPdfPageMapFailure(
+  anchors: readonly BookPageAnchor[],
+  extracted: PdfNamedDestinations | undefined
+): BookPdfPageMapFailure {
+  if (anchors.length === 0) {
+    return { reason: "no-anchors", pageIndexes: [] };
+  }
+  if (!extracted) {
+    return { reason: "no-destinations", pageIndexes: [] };
+  }
+  const ordered = [...anchors].sort((a, b) => a.pageIndex - b.pageIndex);
+  const pdfPageOf = (anchor: BookPageAnchor): number | undefined => {
+    const dest = extracted.destinations.get(anchor.destName);
+    return dest && dest.pdfPage >= 1 && dest.pdfPage <= extracted.pageCount ? dest.pdfPage : undefined;
+  };
+  const unanchored = ordered.filter((anchor) => pdfPageOf(anchor) === undefined);
+  if (unanchored.length > 0) {
+    return { reason: "unanchored-pages", pageIndexes: unanchored.map((anchor) => anchor.pageIndex) };
+  }
+  const backwards = ordered.filter((anchor, position) => {
+    const previous = ordered[position - 1];
+    return previous !== undefined && (pdfPageOf(anchor) ?? 0) < (pdfPageOf(previous) ?? 0);
+  });
+  return { reason: "anchors-out-of-order", pageIndexes: backwards.map((anchor) => anchor.pageIndex) };
+}
+
 /** The model pages a reader-visible PDF page holds, in order. Empty for furniture pages. */
 export function modelPageIndexesForPdfPage(map: BookPdfPageMap, pdfPage: number): number[] {
   return map.pages

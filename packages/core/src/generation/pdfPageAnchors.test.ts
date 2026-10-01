@@ -163,17 +163,31 @@ describe("injectBookPageAnchorMarkers + placeBookPageAnchorIds", () => {
     expect(normalized(html)).toBe(normalized(render(markdown)));
   });
 
-  it("drops the anchor rather than corrupt a table that straddles the boundary", () => {
-    const markdown = "| a | b |\n| - | - |\n| r1 | r1 |\n| r2 | r2 |\n| r3 | r3 |";
-    const offset = markdown.indexOf("| r2");
-    const injected = injectBookPageAnchorMarkers(markdown, {
-      pageAnchors: [{ pageIndex: 2, destName: "bp-2", markdownOffset: offset }]
+  it("rides inside the first cell of a table row that straddles the boundary", () => {
+    const markdown = "| a | b |\n| - | - |\n| r1 | r1 |\n| r2 | r2 |\n|  | r3 |\n| r4 | r4 |";
+    const html = injectedHtml(markdown, {
+      pageAnchors: [
+        { pageIndex: 2, destName: "bp-2", markdownOffset: markdown.indexOf("| r2") },
+        { pageIndex: 3, destName: "bp-3", markdownOffset: markdown.indexOf("|  | r3") }
+      ]
     });
 
-    // No marker shape is neutral inside a table; the page stays unanchored and
-    // the map builder fails soft to no map.
+    // A marker line would split the table and a span before the pipe would
+    // shift every cell; inside the first cell the rows render unchanged. An
+    // empty cell keeps an empty span, which Chrome places on the row's own sheet.
+    expect(html.match(/<table>/g)).toHaveLength(1);
+    expect(html).toContain('<td><span id="bp-2">r2</span></td>');
+    expect(html).toContain('<td><span id="bp-3"></span></td>');
+    expect(normalized(html)).toBe(normalized(render(markdown)));
+  });
+
+  it("still leaves a delimiter row unanchored rather than unmake its table", () => {
+    const markdown = "| a | b |\n| --- | --- |\n| r1 | r1 |";
+    const injected = injectBookPageAnchorMarkers(markdown, {
+      pageAnchors: [{ pageIndex: 2, destName: "bp-2", markdownOffset: markdown.indexOf("| ---") }]
+    });
+
     expect(injected).toBe(markdown);
-    expect(normalized(placeBookPageAnchorIds(render(injected)))).toBe(normalized(render(markdown)));
   });
 
   it("neutralizes manuscript-authored reserved ids without moving a byte", () => {
@@ -282,6 +296,47 @@ describe("compileBookMarkdownWithPageAnchors", () => {
       }
       expect(html).toContain(`id="bp-${page}"`);
     }
+  });
+
+  describe("a page cut at a table", () => {
+    // r1-bal-guide (2026-10-01): chapter pagination cut between a worksheet
+    // printed filled and its blank copy, the join put the two tables on one
+    // newline, and page 20 opened inside the table above it. It was the one
+    // page with no marker, so the whole book published the cover-numbering stub.
+    const header = "| Observed fact | Assumption to check | Work impact | Question for the employee | Change or next step |";
+    const filled = `Use this sheet to keep the concern in view.\n\n${header}\n|---|---|---|---|---|\n| Two notes omitted the owner. | The handoff changed. | Delays. | What changed? | Agree an owner. |`;
+    const compile = (pageTwo: string) => compileBookMarkdownWithPageAnchors({
+      ...input,
+      pages: [
+        { index: 1, title: "Page 1", markdown: filled },
+        { index: 2, title: "Page 2", markdown: `${pageTwo}\n\nFor immediate danger, use emergency services.` },
+        { index: 3, title: "Page 3", markdown: "### A promise with no date\n\nRenee reaches for her notebook." },
+        { index: 4, title: "Page 4", markdown: "A date gives the commitment a point of return." }
+      ]
+    });
+    const anchoredHtml = (compiled: ReturnType<typeof compile>, separator: string) => {
+      const pageTwo = compiled.pageAnchors.find((anchor) => anchor.pageIndex === 2);
+      expect(pageTwo?.destName).toBe("bp-2");
+      expect(compiled.markdown.slice(0, pageTwo?.markdownOffset).endsWith(`Agree an owner. |${separator}`)).toBe(true);
+      const html = injectedHtml(compiled.markdown, compiled);
+      for (const anchor of compiled.pageAnchors) {
+        expect(html).toContain(`id="${anchor.destName}"`);
+      }
+      expect(normalized(html)).toBe(normalized(render(compiled.markdown)));
+      return html;
+    };
+
+    it("marks the blank copy of a worksheet as a table of its own", () => {
+      const html = anchoredHtml(compile(`${header}\n|---|---|---|---|---|\n|  |  |  |  |  |\n|  |  |  |  |  |`), "\n\n");
+      expect(html.match(/<table\b/g)).toHaveLength(2);
+      expect(html).toMatch(/<table id="bp-2">/);
+    });
+
+    it("marks a table continuing across the cut inside its first cell", () => {
+      const html = anchoredHtml(compile("| One more owner. | Unchanged. | None. | Who? | Name them. |"), "\n");
+      expect(html.match(/<table\b/g)).toHaveLength(1);
+      expect(html).toContain('<td><span id="bp-2">One</span> more owner.</td>');
+    });
   });
 
   it("reports the sources offset and cover flag", () => {

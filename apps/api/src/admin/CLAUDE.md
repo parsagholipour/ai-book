@@ -32,6 +32,25 @@ rather than inventing a cost.
   same set of calls and a missing rate card cannot flatter the tokens-per-dollar figures. Unrated is
   a text-only signal by construction: `recordProviderImageCost` and `recordProviderAudioCost` return
   early rather than write a row they cannot price, so an unpriced image model leaves no trace at all.
+- **A grounded search's `costHint` includes only the grounding fee Google bills, decided by the
+  prompt's ordinal in its pool's free allowance when the row is written.** Google bills Grounding
+  with Google Search per grounded prompt (2.5) or per search query (3.x) on top of tokens, and
+  waives the first 1,500 prompts a Pacific-time day (2.5 Flash and Flash-Lite together; 2.5 Pro
+  has its own) or 5,000 queries a month (3.x) per Google project. Every recorder — each worker and
+  the API's creation chat — claims the call's ordinal from `SearchGroundingAllowanceCounter` in the
+  transaction that writes its row, and prices it free inside the allowance and at list past it
+  (`packages/core/src/adapters/CLAUDE.md`). So `metadata.groundingFeeUsd` is a fee actually billed,
+  it is already inside `costHint`, and the rule above holds unchanged: a non-null `costHint` is a
+  settled, priced call, and nothing here nets anything out after the fact. Pricing every prompt at
+  list was tried first and is the reason for this: it recorded $12.78 on a dev day Google billed
+  nothing for. `searchGrounding.ts` breaks the fee out per allowance period — units used against
+  the allowance they were priced under, the free ones, the billed fee and the fee at list — and the
+  Costs tab shows exactly that. **The allowance it was priced under is a setting, not Google's
+  number**: the counter sees only calls this system logs, while Google's pool also counts every
+  other holder of the key, so production sharing a key sets `SEARCH_GROUNDING_FREE_*` lower, and 0
+  means list price always. Each row records its `groundingAllowance`, so the table shows what each
+  period was priced under even after the setting changes. A grounded row on a model with no
+  grounding rate has a null `costHint` and counts as unrated, never as priced on its tokens alone.
 
 ## Attribution and revenue
 

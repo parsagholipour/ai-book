@@ -405,6 +405,14 @@ export function rebuildProjectPdfExport(
         });
         const hasCoverPage =
           manuscript.pageMapPlan?.hasCoverPage ?? markdownOpensOnCoverSheet(manuscript.markdown);
+        if (!result.pageMap) {
+          // The stub below is otherwise silent; the worker's twin is `pdfPageMapAfterCompileRender`.
+          console.warn("PDF published without a measured page map; chat falls back to model page indexes", {
+            event: "export.pdf_page_map_fallback",
+            projectId,
+            ...(result.pageMapFailure ?? { reason: manuscript.pageMapPlan ? "unmeasured" : "unplanned-render", pageIndexes: [] })
+          });
+        }
         return {
           rendered: result.pdf,
           // A measured rebuild replaces ranges. An unmeasured one (saved

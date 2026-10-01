@@ -91,19 +91,56 @@ void main() {
     await closeStudio(tester);
   });
 
-  testWidgets('a new chapter goes after this one and opens', (tester) async {
+  testWidgets('Add chapter 4 goes at the end and opens, ready to be named', (
+    tester,
+  ) async {
     final repo = _repo();
+    // The first chapter is open: the add still goes at the end, where the
+    // button under the list says it will.
     await _openOutline(tester, repo);
-    await tester.tap(find.byKey(const ValueKey('outline-new-chapter')));
+    final add = find.byKey(const ValueKey('outline-new-chapter'));
+    expect(
+      find.descendant(of: add, matching: find.text('Add chapter 4')),
+      findsOneWidget,
+    );
+    await tester.tap(add);
     await settle(tester);
     expect(repo.chapters.map((c) => c.title), [
       'Arrival',
-      'Chapter 4',
       'The Harbour',
       'The Storm',
+      'Chapter 4',
     ]);
-    expect(find.text('CHAPTER 2'), findsOneWidget);
     expect(find.text('Start writing…'), findsOneWidget);
+    expect(find.textContaining('Chapter 4 of 4'), findsOneWidget);
+    // The title has the cursor, its placeholder selected: typing names it.
+    final title = tester.widget<TextField>(
+      find.byKey(const ValueKey('studio-title-field')),
+    );
+    expect(title.focusNode!.hasFocus, isTrue);
+    expect(
+      title.controller!.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 9),
+    );
+    await closeStudio(tester);
+  });
+
+  testWidgets('a chapter\'s menu adds one right after it', (tester) async {
+    final repo = _repo();
+    await _openOutline(tester, repo);
+    await tester.tap(
+      find.descendant(of: _row('c2'), matching: find.byIcon(Icons.more_vert)),
+    );
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('outline-add-after')));
+    await settle(tester);
+    expect(repo.chapters.map((c) => c.title), [
+      'Arrival',
+      'The Harbour',
+      'Chapter 3',
+      'The Storm',
+    ]);
+    expect(find.textContaining('Chapter 3 of 4'), findsOneWidget);
     await closeStudio(tester);
   });
 

@@ -65,7 +65,6 @@ void main() {
       ),
     );
     expect(_styleOf(spans, 'strong').fontWeight, FontWeight.w800);
-    expect(_styleOf(spans, '**').color!.a, lessThan(0.5));
     expect(_styleOf(spans, 'soft').fontStyle, FontStyle.italic);
     expect(_styleOf(spans, 'also').fontStyle, FontStyle.italic);
     expect(_styleOf(spans, 'gone').decoration, TextDecoration.lineThrough);
@@ -128,8 +127,67 @@ void main() {
     final newlines = spans.where((span) => span.text == '\n').toList();
     expect(newlines, hasLength(2));
     // The first ends "One."; the second is the blank line itself.
-    expect(newlines[0].style!.fontSize, 18);
-    expect(newlines[1].style!.fontSize, lessThan(12));
+    double lineHeight(TextStyle s) => s.fontSize! * (s.height ?? 1);
+    expect(lineHeight(newlines[0].style!), closeTo(18, 0.001));
+    expect(lineHeight(newlines[1].style!), lessThan(18 * 0.9));
+    // Short by negative even leading, which keeps the baseline low in the
+    // line: the field puts the caret by it. See ManuscriptCaret.
+    expect(
+      newlines[1].style!.leadingDistribution,
+      TextLeadingDistribution.even,
+    );
+  });
+
+  test('the marks of bold and italic are in the text and not drawn', () {
+    const text = 'a **strong** b *soft* c __also__ d _too_ e';
+    final spans = _spans(ManuscriptEditingController(text: text));
+    expect(spans.map((span) => span.text).join(), text);
+    final hidden = [
+      for (final span in spans)
+        if (span.style!.fontSize == 0) span.text,
+    ];
+    expect(hidden, ['**', '**', '*', '*', '__', '__', '_', '_']);
+    // Every character that is not a mark is drawn at its own size.
+    for (final span in spans) {
+      if (span.style!.fontSize == 0) continue;
+      expect(span.style!.fontSize, greaterThan(0), reason: '"${span.text}"');
+    }
+    expect(_styleOf(spans, 'strong').fontWeight, FontWeight.w800);
+    expect(_styleOf(spans, 'soft').fontStyle, FontStyle.italic);
+  });
+
+  test('a mark with nothing to close stays visible', () {
+    final spans = _spans(
+      ManuscriptEditingController(text: 'a **open and * lone and file_name'),
+    );
+    expect(spans.where((span) => span.style!.fontSize == 0), isEmpty);
+  });
+
+  test('other marks stay faint: strikethrough, code, links, headings', () {
+    final spans = _spans(
+      ManuscriptEditingController(
+        text: '## Title\n\n~~gone~~ `mono` [link](https://a.b)',
+      ),
+    );
+    for (final mark in ['## ', '~~', '`', '[', '](https://a.b)']) {
+      final style = _styleOf(spans, mark);
+      expect(style.fontSize, greaterThan(0), reason: mark);
+      expect(style.color!.a, lessThan(0.5), reason: mark);
+    }
+  });
+
+  test('marks inside a heading or a quote are hidden too', () {
+    final spans = _spans(
+      ManuscriptEditingController(text: '## A **big** day\n\n> *softly* said'),
+    );
+    expect(
+      [
+        for (final span in spans)
+          if (span.style!.fontSize == 0) span.text,
+      ],
+      ['**', '**', '*', '*'],
+    );
+    expect(_styleOf(spans, 'big').fontSize, greaterThan(18));
   });
 
   test('the composing region is underlined without moving text', () {

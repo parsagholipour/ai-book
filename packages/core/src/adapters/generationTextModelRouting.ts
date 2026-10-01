@@ -46,6 +46,8 @@ export const GENERATION_MODEL_STAGES = [
   { id: "detemplate-chapter", label: "Chapter form rewrite", group: "Chapters", role: "writer" },
   { id: "cut-chapter", label: "Chapter cuts", group: "Chapters", role: "writer" },
   { id: "describe-pages", label: "Page titles and summaries", group: "Chapters", role: "judgment" },
+  { id: "check-chapter-arithmetic", label: "Chapter arithmetic check", group: "Chapters", role: "judgment" },
+  { id: "extract-chapter-facts", label: "Chapter continuity ledger", group: "Chapters", role: "judgment" },
   { id: "read-manuscript", label: "Manuscript review", group: "Manuscript", role: "writer" },
   { id: "inventory-brief-requirements", label: "Brief requirement inventory", group: "Manuscript", role: "writer" },
   { id: "rewrite-seams", label: "Chapter transitions rewrite", group: "Manuscript", role: "writer" },
@@ -109,6 +111,12 @@ export function generationStageRoute(routing: GenerationTextModelRouting, tier: 
   if (id === "review-picture-book-continuity") return generationStageRoute(routing, tier, "review-page");
   // Splitting extraction must not silently change any saved model, effort or fallback.
   if (id === "inventory-brief-requirements") return generationStageRoute(routing, tier, "read-manuscript");
+  // A new mechanical check takes the story-state extraction's route until it is given its own.
+  if (id === "check-chapter-arithmetic") return generationStageRoute(routing, tier, "extract-story-state");
+  // The next chapter's compose waits on this extraction, so until it is given its own route it takes
+  // Quick Draft's page-description route on every tier: luna with no reasoning answered in 2.5–4.7 s
+  // on the 2026-09-30 books, Balanced's own (luna, low) in 6–10 s.
+  if (id === "extract-chapter-facts") return generationStageRoute(routing, "fast", "describe-pages");
   // New mechanical extraction inherits the operator's existing extraction route until
   // it receives its own saved setting; evidence adjudication retains its route.
   if (id === "inventory-chapter-claims" && routing[tier].stages?.["extract-excerpts"]) {

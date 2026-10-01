@@ -1,6 +1,6 @@
 import { isRecord, stripFigureFences, type ManuscriptQualityIssue } from "@book-maker/core";
 import type { EvidenceResidual } from "./composedEvidenceRepair.js";
-import { sourceClaimDigest } from "./sourceClaimState.js";
+import { SOURCE_CLAIM_REVIEW, sourceClaimDigest } from "./sourceClaimState.js";
 
 /** The residual findings a composed chapter's report carries, read off the brief a compile's page rows already hold. */
 export function storedEvidenceResiduals(brief: unknown, review: "evidence" | "arithmetic" = "evidence"): EvidenceResidual[] {
@@ -54,7 +54,9 @@ export function unsupportedCaseClaimIssues(
     const findings = residuals.filter((residual) => page.markdown.includes(residual.quote)).map((residual) => `“${residual.quote}”: ${residual.reason}`);
     if (findings.length) hits.push({ index: page.index, findings });
   }
-  const factual = sourceClaimVerificationIssues(pages);
+  // Off with the review itself: a stored ledger on an older book would
+  // otherwise flag every later edit as unverified, with nothing left to verify it.
+  const factual = SOURCE_CLAIM_REVIEW ? sourceClaimVerificationIssues(pages) : [];
   if (!hits.length) return factual;
   const findings = [...new Set(hits.flatMap((hit) => hit.findings))];
   return [...factual, {

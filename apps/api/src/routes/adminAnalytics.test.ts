@@ -18,6 +18,8 @@ const mockDb = vi.hoisted(() => {
     generationJob: { count: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
     voiceCall: { aggregate: vi.fn() },
     moderationReport: { count: vi.fn() },
+    bookShare: { groupBy: vi.fn(), aggregate: vi.fn() },
+    mobileCreationDraft: { count: vi.fn() },
     accountDeletionRequest: { findMany: vi.fn() },
     $queryRaw: vi.fn(),
     $queryRawUnsafe: vi.fn()
@@ -62,6 +64,9 @@ function stubEmpty() {
   p.generationJob.groupBy.mockResolvedValue([]);
   p.voiceCall.aggregate.mockResolvedValue({ _count: { _all: 0 }, _sum: { elapsedSeconds: null } });
   p.moderationReport.count.mockResolvedValue(0);
+  p.bookShare.groupBy.mockResolvedValue([]);
+  p.bookShare.aggregate.mockResolvedValue({ _sum: { viewCount: null } });
+  p.mobileCreationDraft.count.mockResolvedValue(0);
   p.$queryRaw.mockResolvedValue([]);
   p.$queryRawUnsafe.mockResolvedValue([]);
 }
@@ -146,7 +151,24 @@ describe("GET /api/admin/overview", () => {
     expect(body.money.cashMarginPercent).toBeNull();
     expect(body.money.unitMarginPercent).toBeNull();
     expect(body.work.jobFailureRate).toBeNull();
+    expect(body.sharing).toEqual({ sharesCreated: 0, previewShares: 0, fullShares: 0, pdfViews: 0, remixDrafts: 0, remixBooks: 0 });
     expect(body.series).toEqual([]);
+  });
+
+  it("follows one cohort of shares from share to built book", async () => {
+    mockDb.prisma.bookShare.groupBy.mockResolvedValue([
+      { mode: "PREVIEW", _count: { _all: 7 } },
+      { mode: "FULL", _count: { _all: 2 } }
+    ]);
+    mockDb.prisma.bookShare.aggregate.mockResolvedValue({ _sum: { viewCount: 41 } });
+    mockDb.prisma.mobileCreationDraft.count.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+      "createdProjectId" in where ? 1 : 3
+    );
+    app = await buildApp();
+
+    const sharing = (await app.inject({ method: "GET", url: "/api/admin/overview" })).json().sharing;
+
+    expect(sharing).toEqual({ sharesCreated: 9, previewShares: 7, fullShares: 2, pdfViews: 41, remixDrafts: 3, remixBooks: 1 });
   });
 
   it("reports cash and unit margins separately, because they answer different questions", async () => {
@@ -286,6 +308,7 @@ describe("GET /api/admin/costs", () => {
     expect(body.totals.usd).toBe(0);
     expect(body.operations).toEqual([]);
     expect(body.models).toEqual([]);
+    expect(body.searchGrounding).toMatchObject({ searchCalls: 0, units: 0, freeUnits: 0, billedFeeUsd: 0, periods: [] });
   });
 
   it("rejects a window it cannot report on", async () => {

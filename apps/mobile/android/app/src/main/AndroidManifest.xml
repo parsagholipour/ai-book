@@ -37,6 +37,20 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- "Make a book like this" on a shared book's page links to
+                 tomeza://remix/<slug> (as an intent:// URL with a Play Store
+                 fallback). Flutter hands the whole URI to go_router, whose
+                 top-level redirect turns it into /remix/<slug>. -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="true"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="tomeza" android:host="remix"/>
+            </intent-filter>
         </activity>
         <!-- Backs audiobook playback: the notification, the lock-screen
              controls, and staying alive while the app is in the background. -->

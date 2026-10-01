@@ -23,7 +23,9 @@ import { extractPdfNamedDestinations } from "./pdfNamedDestinations.js";
 import {
   buildBookPdfPageMap,
   contentsChapterPrintedPages,
-  type BookPdfPageMap
+  explainBookPdfPageMapFailure,
+  type BookPdfPageMap,
+  type BookPdfPageMapFailure
 } from "./pdfPageMap.js";
 import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
 import { separateStoryPagesForPdf, STORY_PAGE_PDF_CSS } from "./pdfStoryPages.js";
@@ -185,6 +187,8 @@ export type GenerateBookPdfResult = {
    * fail a compile over the map.
    */
   pageMap?: BookPdfPageMap | undefined;
+  /** Why a render given a plan has no `pageMap` — for the caller's log, never its decisions. */
+  pageMapFailure?: BookPdfPageMapFailure | undefined;
 };
 
 export async function generateBookPdfWithPageMap(
@@ -248,10 +252,17 @@ async function renderMappedPdfDocument(
 ): Promise<GenerateBookPdfResult> {
   let pdf = await renderPdfDocument(html, renderOptions);
   let pageMap: BookPdfPageMap | undefined;
+  let pageMapFailure: BookPdfPageMapFailure | undefined;
 
+  if (plan && plan.pageAnchors.length === 0) {
+    pageMapFailure = explainBookPdfPageMapFailure(plan.pageAnchors, undefined);
+  }
   if (plan && plan.pageAnchors.length > 0) {
     const measured = measureBookPageMap(pdf, plan, topMarginPt);
     pageMap = measured?.map;
+    if (!measured) {
+      pageMapFailure = explainBookPdfPageMapFailure(plan.pageAnchors, extractPdfNamedDestinations(pdf));
+    }
     // The Contents rows were compiled with model page indexes — the only
     // numbers that exist before a render does. Now that the chapters'
     // printed pages are measured, write those and render once more. The
@@ -292,7 +303,7 @@ async function renderMappedPdfDocument(
     }
   }
 
-  return { pdf, ...(pageMap ? { pageMap } : {}) };
+  return { pdf, ...(pageMap ? { pageMap } : {}), ...(pageMapFailure ? { pageMapFailure } : {}) };
 }
 
 /**

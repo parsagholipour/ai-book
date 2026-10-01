@@ -24,11 +24,12 @@ describe("dossier", () => {
     const episode = chapterEpisodeSchema.parse({ title: "The coronation", person: "Napoleon Bonaparte", place: "Paris", document: "Coronation memoir", searchQueries: ["coronation witness"] });
     const text = "We watched him take the crown from the cushion and raise it above his head. The company stood as the music began, and the clerk recorded the ceremony before the guests departed through the western door.";
     vi.spyOn(primarySources, "searchPrimarySources").mockResolvedValue([{ host: "web", title: "A witness's recollections", url: "https://example.org/record", textUrl: "https://example.org/record", author: "", year: "" }]);
-    vi.spyOn(primarySources, "fetchPrimaryText").mockResolvedValue(`${text} ${filler(100)}`);
+    vi.spyOn(primarySources, "fetchPrimaryDocument").mockResolvedValue({ text: `${text} ${filler(100)}`, title: "A witness's recollections" });
     const chapter = originalDevelopmentPlan().chapters[0]!;
-    const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{ windowId: `ch${chapter.index}-d1-w1`, firstWords: "We watched him take the crown from", lastWords: "guests departed through the western door.", episodeTitle: episode.title }] }, { verdict: "supported", reason: "Passage and attribution match source context." }]);
+    const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{ windowId: `ch${chapter.index}-d1-w1`, firstWords: "We watched him take the crown from", lastWords: "guests departed through the western door.", episodeTitle: episode.title }] }]);
     const result = await buildChapterDossier({ input: developmentInput, chapter, episodes: [episode], textModel: model, fetch: async () => ({ status: 200, text: "" }) });
-    expect(calls).toHaveLength(2);
+    // Extraction only: the provenance review is off (2026-09-30).
+    expect(calls).toHaveLength(1);
     expect(result.excerpts[0]?.text).toBe(text);
   });
   it("shows every fetched document to the extractor before spending slots on second windows", async () => {
@@ -45,25 +46,51 @@ describe("dossier", () => {
       .mockResolvedValueOnce(sources.slice(2, 4))
       .mockResolvedValueOnce(sources.slice(4));
     const relevantPassage = "We watched him take the crown from the cushion and raise it above his head. The company stood as the music began, and the clerk recorded the ceremony before the guests departed through the western door.";
-    vi.spyOn(primarySources, "fetchPrimaryText").mockImplementation(async (source) => source === sources[4]
+    vi.spyOn(primarySources, "fetchPrimaryDocument").mockImplementation(async (source) => ({ title: source.title, text: source === sources[4]
       ? `${relevantPassage} ${filler(100)}`
-      : Array(300).fill("The coronation was recorded in the memoir.").join(" "));
+      : Array(300).fill("The coronation was recorded in the memoir.").join(" ") }));
     const chapter = originalDevelopmentPlan().chapters[0]!;
     const { model, calls } = scriptedDevelopmentModel([{ excerpts: [{
       windowId: `ch${chapter.index}-d5-w1`, firstWords: "We watched him take the crown from",
       lastWords: "guests departed through the western door.", episodeTitle: episodes[2]!.title
-    }] }, { verdict: "supported", reason: "Passage and attribution match source context." }]);
+    }] }]);
 
     const result = await buildChapterDossier({ input: developmentInput, chapter, episodes, textModel: model, fetch: async () => ({ status: 200, text: "" }) });
 
     expect(result.documents).toHaveLength(5);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     const payload: { windows: Array<{ id: string; document: string; text: string }> } = JSON.parse(calls[0]!.messages[1]!.content);
     expect(payload.windows).toHaveLength(8);
     expect(new Set(payload.windows.map((window) => window.document))).toEqual(new Set(sources.map((source) => source.title)));
     expect(new Set(payload.windows.map((window) => window.id)).size).toBe(8);
     expect(payload.windows.find((window) => window.document === "Witness 5")?.text).toContain(relevantPassage);
     expect(result.excerpts[0]?.text).toBe(relevantPassage);
+  });
+
+  it("runs the episodes' searches together and still fetches in episode order", async () => {
+    const episodes = [1, 2, 3].map((index) => chapterEpisodeSchema.parse({
+      title: `The coronation ${index}`, person: "Napoleon Bonaparte", document: "Coronation memoir", searchQueries: [`coronation witness ${index}`]
+    }));
+    let inFlight = 0;
+    let peak = 0;
+    vi.spyOn(primarySources, "searchPrimarySources").mockImplementation(async (query) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      const index = query.at(-1);
+      return [{ host: "web" as const, title: `Witness ${index}`, url: `https://example.org/${index}`, textUrl: `https://example.org/${index}`, author: "", year: "" }];
+    });
+    const fetched: string[] = [];
+    vi.spyOn(primarySources, "fetchPrimaryDocument").mockImplementation(async (source) => {
+      fetched.push(source.title);
+      return { title: source.title, text: Array(120).fill("The coronation was recorded in the memoir.").join(" ") };
+    });
+    const chapter = originalDevelopmentPlan().chapters[0]!;
+    const { model } = scriptedDevelopmentModel([{ excerpts: [] }]);
+    await buildChapterDossier({ input: developmentInput, chapter, episodes, textModel: model, fetch: async () => ({ status: 200, text: "" }) });
+    expect(peak).toBe(3);
+    expect(fetched).toEqual(["Witness 1", "Witness 2", "Witness 3"]);
   });
 
   it("ranks windows by distinct episode-term hits and falls back to the opening", () => {
@@ -89,6 +116,29 @@ describe("dossier", () => {
     expect(sliceByAnchors(text, "they rode that night", "Then Temüjin said to Jamukha")).toBeUndefined();
     // Too short to be an excerpt.
     expect(sliceByAnchors(text, "Then Temüjin said to Jamukha", "make the Merkit our prey")).toBeUndefined();
+  });
+
+  it("matches anchors across hyphens, apostrophes and line breaks the fold splits inside one word", () => {
+    // Adobe's Check-in toolkit (2026-09-30 Quick Draft run): every anchor that
+    // crossed "Check-in", "that’s" or "mission-oriented" was rejected, because
+    // the window's word folded to one token "check in" and the anchor to two.
+    const body = "The purpose of Check-in is to make sure employees' expectations are clear, share feedback, and discuss\ndevelopment needs to enhance their performance. But that’s the textbook answer, and a manager who’s new to it " +
+      `${filler(20)} can plan actionable goals\nin terms of learning, career and mission-oriented experience.`;
+    const text = `${filler(10)} ${body} ${filler(10)}`;
+    const sliced = sliceByAnchors(text, "The purpose of Check-in is to make", "goals in terms of learning, career and mission-oriented experience.");
+    expect(sliced?.startsWith("The purpose of Check-in")).toBe(true);
+    expect(sliced?.endsWith("mission-oriented experience.")).toBe(true);
+    expect(sliceByAnchors(text, "But that's the textbook answer, and", "career and mission-oriented experience.")).toBeDefined();
+  });
+
+  it("scores a window on a name the fold splits, such as a hyphenated product name", () => {
+    const document: DossierDocument = {
+      id: "d1", title: "T", url: "u", host: "web", author: "", year: "", episodeTitle: "e",
+      text: `${filler(400)} Adobe's Check-in replaced the annual review. ${filler(400)}`
+    };
+    const windows = candidateWindows(document, ["check", "adobe"], { windowWords: 100, maxWindows: 1 });
+    expect(windows[0]!.text).toContain("Check-in");
+    expect(windows[0]!.score).toBe(2);
   });
 
   it("keeps a document only when it carries one of the episode's own names", () => {

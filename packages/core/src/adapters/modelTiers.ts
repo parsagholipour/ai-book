@@ -73,6 +73,9 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   // Page titles, summaries and continuity notes for a chapter the composed-
   // chapters pass has already written and paginated (`composedChapter.ts`).
   "describe-pages",
+  "check-chapter-arithmetic",
+  // The continuity ledger read off a composed draft (`chapterFacts.ts`): a strict-schema list.
+  "extract-chapter-facts",
   // A forced choice between two drafts of one chapter (`chapterJudge.ts`); the
   // pass hands it a fast-judgment adapter from another model family anyway.
   "judge-chapter-drafts",

@@ -2,6 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ retrieve: vi.fn(), config: { MOCK_AI: false } }));
 vi.mock("../runtime/config.js", () => ({ config: mocks.config }));
 vi.mock("./sourceDossier.js", async (original) => ({ ...await original<object>(), retrieveChapterSources: mocks.retrieve }));
+// The claim review is off in production (`SOURCE_CLAIM_REVIEW`); these tests keep its dormant path working.
+vi.mock("./sourceClaimState.js", async (original) => ({ ...await original<object>(), SOURCE_CLAIM_REVIEW: true }));
 
 import { FakeTextModelAdapter, makeFallbackPlan, createProjectSchema, dossierExcerptSchema } from "@book-maker/core";
 import { repairComposedClaims, sourceClaimDigest } from "./composedClaimReview.js";

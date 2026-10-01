@@ -5,7 +5,7 @@ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prom
 import type { ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import type { ChapterEpisode, DossierExcerpt } from "../schemas/episodes.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import { fetchPrimaryText, searchPrimarySources, textLooksLikeLanguage, type PrimarySourceCandidate, type PrimarySourceFetch, type PrimarySourceSearch } from "./primarySources.js";
+import { fetchPrimaryDocument, searchPrimarySources, textLooksLikeLanguage, type PrimarySourceCandidate, type PrimarySourceFetch, type PrimarySourceSearch } from "./primarySources.js";
 import { foldQuoteText } from "./quoteProvenance.js";
 import { reviewDossierProvenance } from "./dossierProvenance.js";
 
@@ -43,11 +43,23 @@ export type DossierWindow = { id: string; documentId: string; episodeTitle: stri
 
 type Token = { start: number; end: number; folded: string };
 
+/**
+ * One token per folded word. The fold turns punctuation inside a word into a
+ * space ("Check-in" → "check in", "that’s" → "that s"), and an anchor is split
+ * on those spaces, so each part is its own token, carrying the whole source
+ * word's span. Folding the word whole made every anchor that crossed a hyphen
+ * or an apostrophe unmatchable (2026-09-30: most rejected excerpts in a
+ * Quick Draft run), and a punctuation-only word ("•", "—") a token no anchor
+ * could contain.
+ */
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   for (const match of text.matchAll(/\S+/g)) {
-    const folded = foldQuoteText(match[0]);
-    tokens.push({ start: match.index!, end: match.index! + match[0].length, folded });
+    const start = match.index!;
+    const end = start + match[0].length;
+    for (const folded of foldQuoteText(match[0]).split(" ")) {
+      if (folded) tokens.push({ start, end, folded });
+    }
   }
   return tokens;
 }
@@ -291,6 +303,15 @@ export async function extractExcerpts(options: {
   return excerpts;
 }
 
+/**
+ * The per-excerpt provenance review (`dossierProvenance.ts`) is off with the
+ * worker's claim review (`SOURCE_CLAIM_REVIEW`, 2026-09-30): the writer reads
+ * excerpts as extracted, which are still verbatim spans of the fetched
+ * document. It was 18–90 calls a Quick Draft book. Nothing marks an excerpt
+ * `provenanceVerified` without it, so `chapterEpigraph` prints no epigraph.
+ */
+const DOSSIER_PROVENANCE_REVIEW = false;
+
 export type ChapterDossier = {
   excerpts: DossierExcerpt[];
   documents: Array<{ title: string; url: string; host: string; chapterIndex: number; words: number }>;
@@ -321,13 +342,14 @@ export async function buildChapterDossier(options: {
   const seenUrls = new Set<string>();
   const log = options.log ?? (() => undefined);
   const pastDeadline = () => options.deadline !== undefined && Date.now() > options.deadline;
-  for (const episode of options.episodes.slice(0, 3)) {
-    if (pastDeadline()) {
-      log("dossier.deadline", { chapterIndex: options.chapter.index, stage: "search", documents: documents.length });
-      break;
-    }
-    // One search per episode: Wikimedia answers about thirty requests a
-    // minute, and a book's dossier has to fit in its budget.
+  const episodes = options.episodes.slice(0, 3);
+  // One search per episode: Wikimedia answers about thirty requests a
+  // minute, and a book's dossier has to fit in its budget. The searches are
+  // independent and run together — the throttle still spaces each catalogue's
+  // requests — while fetching below stays in episode order. One after another,
+  // each ~12 s web search waited for the last, in the dossier and again in
+  // every chapter's claim retrieval (Quick Draft, 2026-09-30).
+  const searched = pastDeadline() ? undefined : await Promise.all(episodes.map(async (episode) => {
     const queryOffset = options.queryOffset ?? 0;
     const queries = episode.searchQueries.filter(Boolean).slice(queryOffset, queryOffset + 1);
     if (queries.length === 0 && episode.document) queries.push(`${episode.document} ${episode.person}`.trim());
@@ -343,6 +365,11 @@ export async function buildChapterDossier(options: {
         log("dossier.search_failed", { query, error: error instanceof Error ? error.message : String(error) });
       }
     }
+    return candidates;
+  }));
+  if (!searched && episodes.length > 0) log("dossier.deadline", { chapterIndex: options.chapter.index, stage: "search", documents: documents.length });
+  for (const [episodeIndex, episode] of (searched ? episodes : []).entries()) {
+    const candidates = searched![episodeIndex]!;
     let episodeDocuments = 0;
     for (const candidate of candidates) {
       if (episodeDocuments >= (options.maxDocumentsPerEpisode ?? DOSSIER_MAX_DOCUMENTS_PER_CHAPTER)) break;
@@ -354,7 +381,7 @@ export async function buildChapterDossier(options: {
       if (seenUrls.has(candidate.textUrl)) continue;
       seenUrls.add(candidate.textUrl);
       try {
-        const text = await fetchPrimaryText(candidate, options.fetch);
+        const { text, title } = await fetchPrimaryDocument(candidate, options.fetch);
         if (text.split(/\s+/).length < 80) continue;
         if (!options.evidence && !textLooksLikeLanguage(text, options.input.language)) {
           log("dossier.document_dropped", { chapterIndex: options.chapter.index, title: candidate.title, reason: "not the book's language" });
@@ -363,7 +390,7 @@ export async function buildChapterDossier(options: {
         episodeDocuments += 1;
         documents.push({
           id: `ch${options.chapter.index}-d${documents.length + 1}`,
-          title: candidate.title,
+          title,
           url: candidate.url,
           host: candidate.host,
           author: candidate.author,
@@ -399,7 +426,7 @@ export async function buildChapterDossier(options: {
   if (kept.length > 0) {
     try {
       excerpts = await extractExcerpts({ input: options.input, chapter: options.chapter, episodes: options.episodes, windows: kept, documents, textModel: options.textModel, evidence: options.evidence, log });
-      excerpts = await reviewDossierProvenance({ excerpts, documents, windows: kept, textModel: options.textModel, log });
+      if (DOSSIER_PROVENANCE_REVIEW) excerpts = await reviewDossierProvenance({ excerpts, documents, windows: kept, textModel: options.textModel, log });
     } catch (error) {
       if (error instanceof Error && /stop|abort/i.test(error.name + error.message)) throw error;
       log("dossier.extract_failed", { chapterIndex: options.chapter.index, error: error instanceof Error ? error.message : String(error) });

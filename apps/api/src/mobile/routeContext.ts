@@ -35,6 +35,8 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 import { createLiveFastJudgmentsTextModel, createLiveTieredTextModel } from "../generationTextModelRouting.js";
+import { withInlineResearchUsage } from "../inlineProviderUsage.js";
+import type { UserTextModerationDeps } from "../userTextModeration.js";
 
 /**
  * Shared setup for every mobile route group: config, rate limiters, the Google
@@ -88,6 +90,14 @@ export type MobileProjectRoutesOptions = {
   pageCountRecommendationTimeoutMs?: number;
   /** Test seam for minting Gemini Live call tokens; defaults to the core provider. */
   voiceSession?: (request: CreateGeminiLiveSessionRequest) => Promise<GeminiLiveSessionResponse>;
+  /**
+   * Test seam for the share note's moderation gate (`userTextModeration.ts`):
+   * a suite scripts the routing and the adapters here the way `routingTextModel`
+   * scripts the chat router. Unset is the live Quality-tab route.
+   */
+  userTextModeration?: Partial<Omit<UserTextModerationDeps, "config">>;
+  /** Per-user ceiling on share-note moderation calls. */
+  shareCaptionRateLimit?: Partial<RateLimitConfig>;
 };
 
 export type MobileRouteContext = {
@@ -201,7 +211,8 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
           enrichCreationTurnWithSearch(
             {
               textModel: createLiveFastJudgmentsTextModel(appConfig),
-              research: options.creationResearch ?? (() => createResearchAdapter(appConfig)),
+              // Recorded like the worker's searches, grounding fee included (inlineProviderUsage.ts).
+              research: options.creationResearch ?? (() => withInlineResearchUsage(createResearchAdapter(appConfig), { projectId: null, searchGroundingAllowances: appConfig })),
               searchTimeoutMs: options.creationSearchTimeoutMs
             },
             request,

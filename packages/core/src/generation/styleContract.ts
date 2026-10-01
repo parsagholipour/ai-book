@@ -155,6 +155,19 @@ export type StyleContractSource = {
 
 export function inferWritingMode(
   input: CreateProjectInput | undefined,
+  plan?: Pick<BookPlan, "title" | "premise" | "audience" | "authorStance">
+): WritingMode {
+  const mode = guessedWritingMode(input, plan);
+  // The stance's own answer about the book (STANCE_RESEARCH_RULE): a book
+  // written from no source is a story, whatever the category and cue words
+  // said. A fantasy novel about "the last era of a dying dynasty", filed as
+  // Custom, was composed with the history palette (2026-09-30).
+  const research = plan?.authorStance && typeof plan.authorStance === "object" ? (plan.authorStance as { research?: unknown }).research : undefined;
+  return research === "none" && mode !== "children-narrative" ? "narrative" : mode;
+}
+
+function guessedWritingMode(
+  input: CreateProjectInput | undefined,
   plan?: Pick<BookPlan, "title" | "premise" | "audience">
 ): WritingMode {
   const category = input?.category;

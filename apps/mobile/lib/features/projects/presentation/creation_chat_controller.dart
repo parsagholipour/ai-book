@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../billing/data/billing_repository.dart';
 import '../../../shared/api/api_error.dart';
+import '../../sharing/domain/book_remix.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
@@ -257,6 +258,7 @@ class CreationChatController extends Notifier<CreationChatState>
               optionalDetails: optionalDetails,
               mentionedCharacterIds: mentionedCharacterIds,
               requestId: serverRequestId,
+              remixSlug: state.remixSlug,
             )
           : await _repository.sendConversationMessage(
               draftId: draftId,
@@ -447,6 +449,7 @@ class CreationChatController extends Notifier<CreationChatState>
                   ? null
                   : failed.mentionedCharacterIds,
               requestId: serverRequestId,
+              remixSlug: state.remixSlug,
             )
           : await _repository.sendConversationMessage(
               draftId: draftId,
@@ -656,6 +659,7 @@ class CreationChatController extends Notifier<CreationChatState>
     try {
       final response = await _repository.startConversation(
         requestId: _newServerRequestId('session'),
+        remixSlug: state.remixSlug,
       );
       cache.write(response);
       if (state.draftId == null) {

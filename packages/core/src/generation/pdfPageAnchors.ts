@@ -232,9 +232,18 @@ function markerFor(
   // would split what the plain document keeps whole (measured: a comment
   // between two table rows ejects every following row as literal pipe text).
   if (newlines === 1 && previousLine !== undefined && startsBlockSyntax(previousLine)) {
-    // No marker shape is neutral inside a table: a comment splits it and a
-    // span shifts the cells. Fail soft — the map builder drops the whole map
-    // rather than the book shipping a corrupted table.
+    // No marker *line* is neutral inside a table: a comment splits it, and a
+    // span before the leading pipe becomes a cell of its own and shifts the
+    // rest (both measured). After that pipe the span is inline content of the
+    // row's first cell — cells hold nothing but inline content, so it is the
+    // proven-neutral shape of a paragraph's first word. A worksheet printed
+    // filled and then blank puts this boundary between two tables' rows.
+    // A delimiter row, or a row with no leading pipe, still fails soft: the
+    // map builder drops the whole map rather than ship a corrupted table.
+    const cellStart = line.match(/^[ \t]*\|[ \t]*/)?.[0];
+    if (cellStart !== undefined && !isTableDelimiterRow(line)) {
+      return { text: `<span id="${destName}"></span>`, at: offset + cellStart.length };
+    }
     if (/^\s*\|/.test(line) || /^\s*\|/.test(previousLine)) {
       return undefined;
     }
@@ -283,9 +292,14 @@ function interruptsParagraph(line: string, followingLine: string | undefined): b
     return true;
   }
   if (line.startsWith("|") && followingLine !== undefined) {
-    return /^ {0,3}\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(followingLine);
+    return isTableDelimiterRow(followingLine);
   }
   return false;
+}
+
+/** A GFM header/body delimiter row: `|---|:--:|`. Text in it unmakes the table. */
+function isTableDelimiterRow(line: string): boolean {
+  return /^ {0,3}\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(line);
 }
 
 function isPlainParagraphLine(line: string): boolean {

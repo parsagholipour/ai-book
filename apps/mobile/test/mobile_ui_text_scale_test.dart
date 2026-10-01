@@ -418,6 +418,7 @@ class _FakeCreationRepository
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
     List<String>? mentionedCharacterIds,
+    String? remixSlug,
   }) async {
     return fakeCreationConversation(withSession: true);
   }

@@ -4,7 +4,7 @@ import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { BreakdownBars, ColumnChart, SERIES_COLORS, TimeChart } from "./charts.js";
 import { count, percent, usd, usdShort } from "./format.js";
 import { useAdminOverview } from "./useAdminData.js";
-import type { AdminOverview } from "./types.js";
+import type { AdminOverview, ShareFunnel } from "./types.js";
 
 const RANGES = [7, 30, 90] as const;
 
@@ -168,32 +168,77 @@ function OverviewBody(props: { data: AdminOverview; days: number }) {
         />
       </div>
 
-      <section className="work-section">
-        <div className="section-title">
-          <h3>Also worth knowing</h3>
-        </div>
-        <ul className="fact-list">
-          <li>
-            <span>Voice calls</span>
-            <span>
-              {count(work.voiceCalls)} calls · {count(work.voiceMinutes)} minutes
-            </span>
-          </li>
-          <li>
-            <span>Projects failed</span>
-            <span>{count(work.projectsFailed)}</span>
-          </li>
-          <li>
-            <span>Disabled accounts</span>
-            <span>{count(people.disabledUsers)}</span>
-          </li>
-          <li className={work.pendingModerationReports > 0 ? "fact-flag" : ""}>
-            <span>Moderation queue</span>
-            <span>{count(work.pendingModerationReports)} pending</span>
-          </li>
-        </ul>
-      </section>
+      <div className="admin-columns-2">
+        <section className="work-section">
+          <div className="section-title">
+            <h3>Also worth knowing</h3>
+          </div>
+          <ul className="fact-list">
+            <li>
+              <span>Voice calls</span>
+              <span>
+                {count(work.voiceCalls)} calls · {count(work.voiceMinutes)} minutes
+              </span>
+            </li>
+            <li>
+              <span>Projects failed</span>
+              <span>{count(work.projectsFailed)}</span>
+            </li>
+            <li>
+              <span>Disabled accounts</span>
+              <span>{count(people.disabledUsers)}</span>
+            </li>
+            <li className={work.pendingModerationReports > 0 ? "fact-flag" : ""}>
+              <span>Moderation queue</span>
+              <span>{count(work.pendingModerationReports)} pending</span>
+            </li>
+          </ul>
+        </section>
+        {/* Guarded because an API from before sharing answers without the block. */}
+        {props.data.sharing ? <SharingFunnel sharing={props.data.sharing} windowLabel={windowLabel} /> : null}
+      </div>
     </>
+  );
+}
+
+/**
+ * One cohort followed from share to book: shares made in the window and the PDF
+ * views those shares have had, then the "Make a book like this" drafts started
+ * in the window and how many of them became a book.
+ */
+export function SharingFunnel(props: { sharing: ShareFunnel; windowLabel: string }) {
+  const { sharing } = props;
+  const remixConversion = sharing.remixDrafts > 0 ? Math.round((sharing.remixBooks / sharing.remixDrafts) * 100) : null;
+  return (
+    <section className="work-section">
+      <div className="section-title">
+        <h3>Sharing</h3>
+        <span className="muted">created in the {props.windowLabel}</span>
+      </div>
+      <ul className="fact-list">
+        <li>
+          <span>Shares created</span>
+          <span>
+            {count(sharing.sharesCreated)} · {count(sharing.previewShares)} preview / {count(sharing.fullShares)} full
+          </span>
+        </li>
+        <li>
+          <span>PDF views</span>
+          <span>{count(sharing.pdfViews)}</span>
+        </li>
+        <li>
+          <span>Remix drafts</span>
+          <span>{count(sharing.remixDrafts)}</span>
+        </li>
+        <li>
+          <span>Books from remix drafts</span>
+          <span>
+            {count(sharing.remixBooks)}
+            {remixConversion !== null ? ` · ${percent(remixConversion)} of drafts` : ""}
+          </span>
+        </li>
+      </ul>
+    </section>
   );
 }
 

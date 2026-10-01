@@ -347,6 +347,9 @@ export function cleanOcrText(text: string): string {
 export function normalizePrimaryText(text: string): string {
   return text
     .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, "")
+    // A PDF's bullet glyph glued to the next word mid-line ("cell •phone •payments")
+    // is an extraction artifact; a list bullet opens a line or is followed by a space.
+    .replace(/(?<=\p{L}) •(?=\p{Ll})/gu, " ")
     .replace(/\r\n?/g, "\n")
     .replace(/<[^>]{1,200}>/g, " ")
     .replace(/[ \t]+/g, " ")
@@ -458,28 +461,84 @@ async function archiveTextFallback(candidate: PrimarySourceCandidate, fetchImpl:
   return unavailable;
 }
 
+/**
+ * Whether a result's title is only its site's name. Gemini grounding reports
+ * a result's domain ("irs.gov") where a title belongs, and the provenance
+ * reviewer then refused verbatim IRS, SBA and Acas passages because the
+ * "title" did not match the document.
+ */
+export function isSiteNameTitle(title: string, url: string): boolean {
+  const folded = title.trim().toLowerCase().replace(/^www\./, "");
+  if (!folded) return true;
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    return folded === host || host.endsWith(`.${folded}`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A web result's title without the site name a page appends after a bar:
+ * the writer names the document it quotes, and "The Truck Driver Who
+ * Reinvented Shipping | Working Knowledge reports…" was printed in two
+ * Quick Draft books (2026-09-30). Only a bar, and only when what precedes
+ * it is a title of three words or more; a hyphen or a colon is left alone,
+ * because titles use both.
+ */
+export function withoutSiteSuffix(title: string): string {
+  const lead = title.split(/\s+[|｜]\s+/)[0]!.trim();
+  return lead !== title.trim() && lead.split(/\s+/).length >= 3 ? lead : title;
+}
+
+/** The page's own title: `og:title`, else `<title>`. */
+export function htmlDocumentTitle(html: string): string | undefined {
+  const head = html.slice(0, 200_000);
+  const og = [...head.matchAll(/<meta\b[^>]*>/gi)].map((match) => match[0]).find((tag) => /\bproperty\s*=\s*["']og:title["']/i.test(tag));
+  const raw = (og ? /\bcontent\s*=\s*(["'])([\s\S]*?)\1/i.exec(og)?.[2] : undefined) ?? /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(head)?.[1];
+  const title = raw ? htmlToText(raw).replace(/\s+/g, " ").trim().slice(0, 200) : "";
+  return title || undefined;
+}
+
 /** The document's text, capped, with the repository's own boilerplate removed; empty when the host has no plain text for it. */
 export async function fetchPrimaryText(
   candidate: PrimarySourceCandidate,
   fetchImpl: PrimarySourceFetch,
   maxChars: number = PRIMARY_TEXT_MAX_CHARS
 ): Promise<string> {
+  return (await fetchPrimaryDocument(candidate, fetchImpl, maxChars)).text;
+}
+
+/**
+ * `fetchPrimaryText` plus the title the document should be cited by: the
+ * candidate's own, unless a web result named only its site and the page
+ * names itself.
+ */
+export async function fetchPrimaryDocument(
+  candidate: PrimarySourceCandidate,
+  fetchImpl: PrimarySourceFetch,
+  maxChars: number = PRIMARY_TEXT_MAX_CHARS
+): Promise<{ text: string; title: string }> {
   let response = await throttledFetch(fetchImpl, candidate.textUrl);
   if (candidate.host === "archive" && response.status === 404) response = await archiveTextFallback(candidate, fetchImpl);
-  if (response.status !== 200 || !response.text) return "";
+  if (response.status !== 200 || !response.text) return { text: "", title: candidate.title };
   let text = response.text;
   if (candidate.host === "web") {
-    if (response.contentType?.includes("html") || /^\s*(?:<!doctype|<html)/i.test(text)) text = htmlToText(text);
-    return normalizePrimaryText(text).slice(0, maxChars);
+    let title = candidate.title;
+    if (response.contentType?.includes("html") || /^\s*(?:<!doctype|<html)/i.test(text)) {
+      if (isSiteNameTitle(title, candidate.url)) title = htmlDocumentTitle(text) ?? title;
+      text = htmlToText(text);
+    }
+    return { text: normalizePrimaryText(text).slice(0, maxChars), title: withoutSiteSuffix(title) };
   }
   if (candidate.host === "wikisource") {
     let parsed: WikisourceParse | undefined;
     try {
       parsed = wikisourceParse(JSON.parse(text));
     } catch {
-      return "";
+      return { text: "", title: candidate.title };
     }
-    if (!parsed) return "";
+    if (!parsed) return { text: "", title: candidate.title };
     text = stripWikisourceHeader(parsed.text);
     // A work split into chapters is a table of contents at its own title;
     // the first few chapters are fetched behind it.
@@ -503,5 +562,5 @@ export async function fetchPrimaryText(
   } else if (candidate.host === "archive") {
     text = cleanOcrText(text);
   }
-  return normalizePrimaryText(text).slice(0, maxChars);
+  return { text: normalizePrimaryText(text).slice(0, maxChars), title: candidate.title };
 }

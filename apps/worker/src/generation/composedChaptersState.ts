@@ -3,8 +3,10 @@ import {
   hasFigureFence,
   isRecord,
   proseWordCount,
+  storedChapterFact,
   type ChapterBrief,
   type ChapterComposition,
+  type ChapterFact,
   type DescribedPage,
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -78,6 +80,8 @@ export type StoredComposedChapter = {
   composition: ChapterComposition | undefined;
   /** The facts each page established, kept on the derived brief so a resumed finalize still publishes them. */
   pageNotes: Map<number, string[]>;
+  /** The continuity ledger's facts for this chapter (`report.facts`); absent when none were taken. */
+  facts?: ChapterFact[] | undefined;
 };
 
 export type StoredComposedPage = {
@@ -110,6 +114,8 @@ export async function loadComposedBookState(projectId: string): Promise<{
       const brief = isRecord(chapter.productionBrief) ? chapter.productionBrief : undefined;
       const sourceClaims = isRecord(brief?.report) && isRecord(brief.report.sourceClaims) ? brief.report.sourceClaims : undefined;
       const composition = brief ? chapterCompositionSchema.safeParse(brief.composition) : undefined;
+      const storedFacts = isRecord(brief?.report) && Array.isArray(brief.report.facts) ? brief.report.facts : undefined;
+      const facts = storedFacts?.flatMap((fact) => storedChapterFact(fact) ?? []);
       const pageNotes = new Map<number, string[]>();
       if (brief && Array.isArray(brief.pages)) {
         for (const page of brief.pages) {
@@ -129,7 +135,8 @@ export async function loadComposedBookState(projectId: string): Promise<{
         title: chapter.title,
         targetPages: chapter.targetPages,
         composition: composition?.success ? composition.data : undefined,
-        pageNotes
+        pageNotes,
+        ...(facts ? { facts } : {})
       };
     }),
     pages
@@ -188,6 +195,8 @@ export type ComposedChapterReport = {
   epigraph?: boolean | undefined;
   /** The arithmetic check: wrong numeric statements found, repair edits spent, and the statements still wrong. */
   arithmetic?: { findings: number; repairs: number; unresolved: Array<{ quote: string; reason: string }> } | undefined;
+  /** The continuity ledger's facts read off this chapter's draft (core `chapterFacts.ts`); a resumed run seeds its ledger from them. */
+  facts?: ChapterFact[] | undefined;
   /** The prose-evidence review: findings on the composed chapter, targeted repairs spent, what still stands, and findings dropped as unlocatable. */
   evidence?: { findings: number; repairs: number; unresolved: Array<{ quote: string; reason: string }>; dropped: number } | undefined;
 };

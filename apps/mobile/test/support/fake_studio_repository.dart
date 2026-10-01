@@ -291,14 +291,17 @@ class FakeStudioRepository implements StudioRepository {
     String? title,
   }) async {
     calls.add('addChapter');
+    // As the API reads it: a null is "before the first chapter", not "at the
+    // end" — an add meant for the end has to name the last chapter.
+    final after = afterChapterId == null
+        ? -1
+        : chapters.indexWhere((item) => item.id == afterChapterId);
     final chapter = FakeStudioChapter(
       id: 'c${_nextId++}',
-      title: title ?? 'Chapter ${chapters.length + 1}',
+      // Named by the place it lands in, as the API names it.
+      title: title ?? 'Chapter ${after + 2}',
       markdown: '',
     )..unpublished = true;
-    final after = afterChapterId == null
-        ? chapters.length - 1
-        : chapters.indexWhere((item) => item.id == afterChapterId);
     chapters.insert(after + 1, chapter);
     revision += 1;
     return (chapter: chapter.full(after + 2, _now), manuscript: snapshot());

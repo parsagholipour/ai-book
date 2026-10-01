@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { compactCount, count, duration, percent, usd, usdFine } from "./format.js";
 import { useAdminCosts } from "./useAdminData.js";
-import type { AdminCostBreakdown, CostKind, CostUsage, ModelCost, OperationCost } from "./types.js";
+import type { AdminCostBreakdown, CostKind, CostUsage, ModelCost, OperationCost, SearchGroundingSummary } from "./types.js";
 
 /**
  * What every provider call in the window actually cost, and what bought it.
@@ -94,10 +94,12 @@ function CostsBody(props: { data: AdminCostBreakdown; days: number }) {
           value={usdFine(totals.pricedCalls > 0 ? totals.usd / totals.pricedCalls : 0)}
           note={`averaged over ${count(totals.pricedCalls)} priced calls`}
         />
+        <SearchGroundingTile grounding={props.data.searchGrounding} />
       </div>
 
       <OperationsTable operations={operations} totalUsd={totals.usd} windowLabel={windowLabel} />
       <ModelsTable models={models} totalUsd={totals.usd} windowLabel={windowLabel} />
+      <SearchGroundingTable grounding={props.data.searchGrounding} />
     </>
   );
 }
@@ -267,6 +269,77 @@ function UnpricedNote(props: { totals: CostUsage }) {
       {parts.join(" · ")} — excluded from every figure above.
       {unratedCalls > 0 ? " Real spend is higher by whatever those cost." : ""}
     </p>
+  );
+}
+
+/**
+ * The grounding fee Google actually billed, broken out of the totals it is
+ * already in. Each grounded prompt was priced by its place in its pool's free
+ * allowance when it was recorded (apps/api/src/admin/searchGrounding.ts), so
+ * the free ones cost nothing here and nothing is subtracted afterwards.
+ */
+function SearchGroundingTile(props: { grounding: SearchGroundingSummary | undefined }) {
+  const grounding = props.grounding;
+  if (!grounding || grounding.searchCalls === 0) {
+    return null;
+  }
+  const parts = [
+    `${count(grounding.units)} billable grounded units, ${count(grounding.freeUnits)} inside the free allowance`,
+    `${usdFine(grounding.listFeeUsd)} at list price`,
+    grounding.unpricedCalls > 0 ? `${count(grounding.unpricedCalls)} on models with no grounding rate` : null
+  ].filter((part): part is string => part !== null);
+  return <StatTile label="Search grounding billed" value={usdFine(grounding.billedFeeUsd)} note={parts.join(" · ")} />;
+}
+
+/**
+ * One row per allowance period: how much of Google's free allowance the logged
+ * calls used, and what the rest was billed. The allowance is the deployment's
+ * setting when the calls were recorded; Google's pool also counts anything
+ * else holding the key, which this page cannot see.
+ */
+function SearchGroundingTable(props: { grounding: SearchGroundingSummary | undefined }) {
+  const periods = props.grounding?.periods ?? [];
+  if (periods.length === 0) {
+    return null;
+  }
+  return (
+    <section className="work-section">
+      <div className="section-title">
+        <h3>Search grounding by allowance period</h3>
+      </div>
+      <p className="muted chart-subtitle">
+        Grounded prompts (queries, on Gemini 3) per Pacific-time day or month against the free allowance they were priced
+        under. Only past the allowance is the list fee billed.
+      </p>
+      <div className="admin-table-scroll">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th>Pool</th>
+              <th className="numeric">Used / allowance</th>
+              <th className="numeric">Free</th>
+              <th className="numeric">Billed</th>
+              <th className="numeric">At list</th>
+            </tr>
+          </thead>
+          <tbody>
+            {periods.map((period) => (
+              <tr key={`${period.pool}:${period.period}`}>
+                <td>{period.period}</td>
+                <td>{period.pool}</td>
+                <td className="numeric">
+                  {count(period.countedThrough)} / {period.allowance === null ? "—" : count(period.allowance)}
+                </td>
+                <td className="numeric">{count(period.freeUnits)}</td>
+                <td className="numeric">{usdFine(period.billedFeeUsd)}</td>
+                <td className="numeric">{usdFine(period.listFeeUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

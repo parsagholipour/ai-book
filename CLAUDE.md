@@ -234,6 +234,7 @@ code in that area, however obvious the rule looks.
 - **The hole set is a query, and the `LIMIT` is what the backoff protects.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
 - **A cancellation raised inside a tool escapes the tool loop; only a tool *failure* becomes a tool result.** → packages/core/src/adapters/CLAUDE.md
 - **A Jev attempt carries its own deadline, and the deadline firing is a 504, never a cancellation.** → packages/core/src/adapters/CLAUDE.md
+- **A grounded search carries its own deadline, and the deadline firing is a 504, never a cancellation.** → packages/core/src/adapters/CLAUDE.md
 - **A page's independent loads fan out, and which failure comes back is decided rather than raced.** → apps/worker/src/handlers/CLAUDE.md
 - **Whether the writer tools run at all is decided by what this handler loaded, not by what the book is.** → apps/worker/src/handlers/CLAUDE.md
 - **An embedding write may degrade, never fail the page that produced it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
@@ -257,12 +258,14 @@ code in that area, however obvious the rule looks.
 ### Chat, edits and back matter
 
 - **The edit chat gets one clarifying question per request, and it is enforced three times.** → apps/api/src/mobile/CLAUDE.md
+- **A fallback brief says what the lane says; it echoes the idea only where it can tell where the echo ends.** → apps/api/CLAUDE.md
 - **Moving and removing a picture are free, and neither is a page edit.** → apps/api/src/mobile/CLAUDE.md + apps/worker/src/generation/CLAUDE.md + apps/worker/src/handlers/CLAUDE.md
 - **And a status poll may read which fork an apply took, because the kind is written before the job exists.** → apps/api/src/mobile/CLAUDE.md
 - **A question declares how many of its answers count, and the picker follows.** → packages/core/CLAUDE.md
 - **An alias is how the model spelled a plan field, never a weaker claim on it, so a candidate's aliases are canonicalised before it merges onto the fallback — and an answer the field's own schema refuses is dropped under every spelling, canonical included.** → packages/core/CLAUDE.md
 - **The Sources list at the end of a book is not page text.** → apps/api/src/mobile/CLAUDE.md
 - **A cited source is stored as the publisher's own address, never Google's.** → packages/core/src/adapters/CLAUDE.md
+- **A grounded search is priced at its tokens plus the grounding fee Google actually bills — nothing inside its pool's free allowance, list price past it — and on 2.5 Flash it runs with thinking off.** → packages/core/src/adapters/CLAUDE.md + packages/db/CLAUDE.md
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
 - **A model-backed page edit is patches first and a page second, and only a rewrite answers to page QA.** → apps/worker/src/handlers/CLAUDE.md + packages/core/src/generation/CLAUDE.md
@@ -282,6 +285,7 @@ code in that area, however obvious the rule looks.
 - **For every long book but a picture book the chapter is the unit of composition, and a page is where the typesetter cut.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
 - **A composed chapter has one landing, and variety is a property of the form plan, checked before any prose exists.** → packages/core/src/generation/CLAUDE.md
 - **A chapter's length is a property of its plan — its budget, its sections and its page count — never of the number the writer is asked for.** → packages/core/src/generation/CLAUDE.md
+- **A composed chapter is written against the facts every chapter before it fixed, never one after it, and chapter N waits for chapter N-1's.** → apps/worker/src/generation/CLAUDE.md
 - **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets the ban, the import exemption that silences it, and the hook fused to its payload key — or gets nothing.** → packages/core/src/generation/CLAUDE.md
 - **No best-of candidate samples hotter than the pass would have run at without candidates, and a band too narrow for the ladder compresses the step rather than widening the band.** → packages/core/src/generation/CLAUDE.md
 - **Page prompts take local style rules; distribution rules reach manuscript review only.** → packages/core/src/generation/CLAUDE.md
@@ -294,8 +298,14 @@ code in that area, however obvious the rule looks.
 - **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.** → apps/worker/src/generation/CLAUDE.md
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind panel names the performance; content assignments are the only lever that moved.** → packages/core/src/generation/CLAUDE.md
 - **The earlier plan contract is historical.** → packages/core/src/generation/CLAUDE.md
+- **The brief's explicit asks and a guide's example people are content assignments of the form plan, made in its one call.** → packages/core/src/generation/CLAUDE.md
+- **A chapter's prose arithmetic is proposed by a model and decided by code.** → packages/core/src/generation/CLAUDE.md
+- **A book written from no source is a story, whatever its category and cue words said.** → packages/core/src/generation/CLAUDE.md
+- **An opening scene's episode is taken back from the section and the material that also held it, or the chapter tells it twice.** → packages/core/src/generation/CLAUDE.md
 - **A nonfiction scene needs a passage of the record, and a fresh plan rarely has one; telling it anyway was measured and reverted.** → packages/core/src/generation/CLAUDE.md
 - **A catalogue search is waited for ten seconds and no longer, and a catalogue that keeps timing out is skipped, because a dossier's clock is its slowest host's.** → packages/core/src/generation/CLAUDE.md
+- **A dossier anchor is matched on the fold's word parts, and a search result titled by its domain has no title.** → packages/core/src/generation/CLAUDE.md
+- **Only a history book is owed scenes, and the planner is never offered the shelved arc.** → packages/core/src/generation/CLAUDE.md
 - **Names and numbers do not prove that an edit preserves meaning.** → packages/core/src/generation/CLAUDE.md
 - **A composed draft that is not prose is recomposed once and then fails the job; it is never edited, paginated and published.** → packages/core/src/generation/CLAUDE.md
 - **The manuscript read returns notes, so a read that fails is a skipped read, never a failed book; and a provider's input filter refusing a chapter is a fallback, never a failed book.** → packages/core/src/generation/CLAUDE.md
@@ -303,11 +313,20 @@ code in that area, however obvious the rule looks.
 - **An evidence packet carries no model-ordered chronology, and an unknown is never about provenance.** → packages/core/src/generation/CLAUDE.md
 - **A developed plan's thesis is its answer by construction, never a string the model is asked to copy.** → packages/core/src/generation/CLAUDE.md
 - **The deterministic contract gates a developed plan; the model review's objections are recorded, and a synthesis chapter inherits its prerequisites' cases.** → packages/core/src/generation/CLAUDE.md
+- **No claim or source is verified on any tier; the review is dormant behind one switch, and finalize and compile read the same switch.** → apps/worker/src/generation/CLAUDE.md
+- **The composed pass's preparation overlaps: the research expansion runs beside the episodes and the form plan, the form plan beside the dossier, and a chapter's story-state calls beside each other.** → apps/worker/src/generation/CLAUDE.md
+- **Whether a book is written from sources is the stance's answer about the book as described; the writing mode answers only for a stance that did not say.** → apps/worker/src/generation/CLAUDE.md
+- **The length floor that blocks is the book's, at the share of it that still prints the paid pages; a chapter under its own minimum in a book over that floor is a warning, and a stub still blocks.** → apps/worker/src/generation/CLAUDE.md
+- **A caveat is stated once, where it first matters, and the acceptance reviewer is told the rule the editor was.** → packages/core/src/generation/CLAUDE.md
+- **A streamed OpenAI reply that runs into blank lines has ended, and is returned as it stood.** → packages/core/src/adapters/CLAUDE.md
+- **The compile's brief inventory is taken while the chapters are written, and only an available one is stored.** → apps/worker/src/generation/CLAUDE.md
 - **A composed chapter's unsupported case claims are repaired twice, then recorded and flagged for review; a prose-review quote that resolves to nothing is re-asked once, then dropped.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md
 - **The chapter-edit gate is the contextual reviewer alone; the decision model that ran ahead of it was measured across four books and removed.** → packages/core/src/generation/CLAUDE.md
 - **Jev is a screen that skips a paid call on a confident pass, kept only where a measured pass has skipped one; a screen whose pass never accepts, or that runs beside the call it should replace, is removed rather than tuned.** → packages/core/src/adapters/CLAUDE.md
 - **A chapter's arithmetic is redone before it is judged, and a wrong number is a factual correction whose evidence is the computation.** → packages/core/src/generation/CLAUDE.md
 - **A composed chapter's wrong arithmetic is repaired through the evidence loop, then recorded and flagged for review like an unsupported claim.** → apps/worker/src/generation/CLAUDE.md
+- **A practical guide or a workbook is planned from what the reader walks away with, and only the reader's chosen book type takes that path.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
+- **A history writer is told who said a passage, never what it is called or where it lives, and states the rest as fact.** → packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 
@@ -425,6 +444,7 @@ code in that area, however obvious the rule looks.
 - **A costless call has four different causes and the Costs tab splits all four.** → apps/api/src/admin/CLAUDE.md
 - **"Revenue" is two different numbers and the dashboard shows both.** → apps/api/src/admin/CLAUDE.md
 - **A reversal is an amount, not a boolean.** → apps/api/src/admin/CLAUDE.md
+- **A grounded search's `costHint` includes only the grounding fee Google bills, decided by the prompt's ordinal in its pool's free allowance when the row is written.** → apps/api/src/admin/CLAUDE.md
 
 ### Writing Studio (author-written books)
 
@@ -442,6 +462,15 @@ code in that area, however obvious the rule looks.
 - **A takeover clears the generator's page verdicts and image slots, because the author compile still reads them.** → apps/api/src/mobile/CLAUDE.md
 - **An author's book compiles by its own rules, and a generated book never sees them.** → packages/core/src/generation/CLAUDE.md
 - **A revision-owned cover re-typesets the design the book already wears.** → apps/worker/src/handlers/CLAUDE.md
+- **A hidden bold or italic mark is still a character, so the cursor, the keyboard and the buttons must be taught it is not there.** → apps/mobile/lib/features/studio/CLAUDE.md
+- **A blank line is short and the text field's caret arithmetic assumes it is not; the strut, the root span and the blank line are one style for that reason.** → apps/mobile/lib/features/studio/CLAUDE.md
+
+### Book sharing
+
+- **The public share surface is `/s/`, outside `/api/` and the auth complement, and it exists in production only because `deploy/nginx.conf` names it.** → apps/api/src/mobile/CLAUDE.md
+- **The share note's Jev gate holds the note for review on no verdict and never allows on one; it is a gate, not a screen, which is why it stays.** → apps/api/src/mobile/CLAUDE.md
+- **The preview cap is the export loophole's only lock, and it is applied again at serve time.** → apps/api/src/mobile/CLAUDE.md
+- **A full share settles the export unlock last, through the download's own helper and key.** → apps/api/src/mobile/CLAUDE.md
 
 ### Local stack
 

@@ -5,6 +5,7 @@ import {
   bookPdfCoverNumbering,
   buildBookPdfPageMap,
   contentsChapterPrintedPages,
+  explainBookPdfPageMapFailure,
   modelPageIndexesForPdfPage,
   nearestModelPageForPdfPage,
   parseStoredBookPdfNumbering,
@@ -106,6 +107,24 @@ describe("buildBookPdfPageMap", () => {
       )
     });
     expect(map).toBeUndefined();
+  });
+
+  it("names the refusal it made, for the fallback log", () => {
+    const anchors: BookPageAnchor[] = [
+      { pageIndex: 19, destName: "bp-19" },
+      { pageIndex: 20, destName: "bp-20" },
+      { pageIndex: 21, destName: "chapter-6" },
+      { pageIndex: 22, destName: "bp-22" }
+    ];
+    // The r1-bal-guide shape: page 20 opened inside a table and was never marked.
+    const unanchored = extractedFixture([["bp-19", 19, 618], ["chapter-6", 21, 701], ["bp-22", 21, 138]], 24);
+    expect(buildBookPdfPageMap({ hasCoverPage: true, anchors, extracted: unanchored })).toBeUndefined();
+    expect(explainBookPdfPageMapFailure(anchors, unanchored)).toEqual({ reason: "unanchored-pages", pageIndexes: [20] });
+
+    const backwards = extractedFixture([["bp-19", 19], ["bp-20", 18], ["chapter-6", 21], ["bp-22", 21]], 24);
+    expect(explainBookPdfPageMapFailure(anchors, backwards)).toEqual({ reason: "anchors-out-of-order", pageIndexes: [20] });
+    expect(explainBookPdfPageMapFailure(anchors, undefined)).toEqual({ reason: "no-destinations", pageIndexes: [] });
+    expect(explainBookPdfPageMapFailure([], unanchored)).toEqual({ reason: "no-anchors", pageIndexes: [] });
   });
 
   it("treats the boundary as exclusive when the page geometry is unknown", () => {

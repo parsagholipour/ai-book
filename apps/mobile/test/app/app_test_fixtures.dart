@@ -20,15 +20,22 @@ import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/features/sharing/data/book_share_repository.dart';
+import 'package:tomeza/features/sharing/data/pending_remix.dart';
 
 Widget testApp({
   required FakeAuthRepository authRepository,
   FakeProjectsRepository? projectsRepository,
   FakeBillingRepository? billingRepository,
   FakeCreationRepository? creationRepository,
+  BookShareRepository? shareRepository,
 }) {
   return ProviderScope(
     overrides: [
+      // Always overridden: the file-backed store calls path_provider.
+      pendingRemixStoreProvider.overrideWithValue(MemoryPendingRemixStore()),
+      if (shareRepository != null)
+        bookShareRepositoryProvider.overrideWithValue(shareRepository),
       authRepositoryProvider.overrideWithValue(authRepository),
       creationRepositoryProvider.overrideWithValue(
         creationRepository ?? FakeCreationRepository(),
@@ -211,6 +218,7 @@ class FakeCreationRepository
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
     List<String>? mentionedCharacterIds,
+    String? remixSlug,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }

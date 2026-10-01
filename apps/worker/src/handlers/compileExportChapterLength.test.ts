@@ -117,7 +117,9 @@ describe("composed chapter length at publication", () => {
     ];
     const manuscript = pages.map((page) => ({ ...page,
       chapter: chapters[page.index <= 4 ? 0 : 1],
-      markdown: Array.from({ length: page.index <= 4 ? (page.index === 4 ? 341 : 343) : 500 }, (_, i) => `${String.fromCharCode(97 + page.index)}${i.toString(36).replace(/\d/g, (digit) => String.fromCharCode(107 + Number(digit)))}`).join(" ")
+      // The book is under the share of its floor that still prints the paid pages (4,322 of 5,160, 0.84),
+      // which is what makes chapter 1's shortfall an error rather than unevenness.
+      markdown: Array.from({ length: page.index <= 4 ? (page.index === 4 ? 341 : 343) : 369 }, (_, i) => `${String.fromCharCode(97 + page.index)}${i.toString(36).replace(/\d/g, (digit) => String.fromCharCode(107 + Number(digit)))}`).join(" ")
     }));
     mocks.prisma.project.findUnique.mockResolvedValue({ ...projectRecord(), pages: manuscript });
     mocks.strategy.executionMode = "composed-chapters";
@@ -130,7 +132,7 @@ describe("composed chapter length at publication", () => {
       code: "CHAPTER_LENGTH_SHORTFALL", severity: "error", affectedPageIndexes: [1, 2, 3, 4],
       message: expect.stringContaining("1370 readable words against a 1720-word minimum")
     }));
-    expect(persistedQualityReport().issues.filter((issue) => issue.severity === "error").map((issue) => issue.code)).toEqual(["CHAPTER_LENGTH_SHORTFALL"]);
+    expect(persistedQualityReport().issues.filter((issue) => issue.severity === "error").map((issue) => issue.code)).toEqual(["CHAPTER_LENGTH_SHORTFALL", "CHAPTER_LENGTH_SHORTFALL"]);
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "REVIEW_REQUIRED" }));
   });
 

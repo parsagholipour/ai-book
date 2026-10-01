@@ -7,10 +7,11 @@ import { config } from "../runtime/config.js";
 import type { RunLogger } from "../providers/runLogging.js";
 import { repairChapterEvidence, parseEvidenceFinding, type ChapterEvidenceRepair } from "./composedEvidenceRepair.js";
 import { recoverSourceClaimEvidence } from "./sourceClaimRetrieval.js";
-import { sourceClaimDigest, type StoredSourceClaimReview } from "./sourceClaimState.js";
-export { sourceClaimDigest, type StoredSourceClaimReview } from "./sourceClaimState.js";
+import { SOURCE_CLAIM_REVIEW, sourceClaimDigest, type StoredSourceClaimReview } from "./sourceClaimState.js";
+export { SOURCE_CLAIM_REVIEW, sourceClaimDigest, type StoredSourceClaimReview } from "./sourceClaimState.js";
+
 export function sourceClaimReviewApplies(input: CreateProjectInput, plan: BookPlan): boolean {
-  return !config.MOCK_AI && supportsBookDevelopment(input, plan);
+  return SOURCE_CLAIM_REVIEW && !config.MOCK_AI && supportsBookDevelopment(input, plan);
 }
 export function chapterSourcePassages(plan: BookPlan, chapterIndex: number): DossierExcerpt[] {
   const excerpts = [...plan.dossier?.excerpts.filter((excerpt) => excerpt.chapterIndex === chapterIndex) ?? [],

@@ -83,6 +83,7 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
 - [Voice and audiobook routes](#voice-and-audiobook-routes)
 - [Writing Studio](#writing-studio)
 - [Book notes](#book-notes)
+- [Book sharing](#book-sharing)
 
 ## Billing surfaces
 
@@ -1471,3 +1472,91 @@ device-local highlights.
   chapter PUT (which is also unlimited), and `draftLimiter`'s 120 an hour would refuse a long
   note mid-sentence. The 200-note cap is a count taken before the insert. It stops a runaway
   client, but two creates racing at 199 can both pass it, so nothing may treat it as a guarantee.
+
+## Book sharing
+
+A finished book published to an unlisted link: `routes/shares.ts` is the author's side
+(`/api/mobile/projects/:id/share` GET/PUT/DELETE, and `/api/mobile/shares/:slug/remix`), and
+`shares/publicShareRoutes.ts` is the stranger's (`/s/<slug>`, its `book.pdf`, `cover.jpg`,
+`report`, and the page's own files under `/s/_/`). One `BookShare` per book, updated in place;
+spec and measurement in `.scratch/book-sharing/`.
+
+- **The public share surface is `/s/`, outside `/api/` and the auth complement, and it exists in
+  production only because `deploy/nginx.conf` names it.** `shouldProtectPath` (`../auth.ts`) guards
+  `/api/`, `/docs` and the two asset prefixes, so nothing under `/s/` sees a cookie check or a
+  bearer; `allowsMobileBearer` and `isOperatorOnlyPath` are untouched, which
+  `shares/publicShareRoutes.test.ts` pins from both sides (a junk bearer on `/s/` still gets the
+  page; `/api/projects` and `/api/mobile/*` answer exactly as before). What a stranger reaches
+  is decided by the share row alone: ACTIVE serves the book, anything else — revoked, taken
+  down, a slug retired by a re-share, a book since deleted — is a 410 with no bytes and no book
+  details. **`deploy/nginx.conf` proxies only the prefixes it names and serves the operator
+  SPA for every other path**, so a public prefix missing there works under `pnpm dev` and 404s,
+  or renders the console, in production; `/s` is in its `location` regex, and `server.ts`'s
+  local SPA fallback answers 404 under `/s/` rather than `index.html`. The page is plain
+  server-rendered HTML under `script-src 'self'`: every person-written value is escaped in
+  `sharePage.ts`, `share.js` reads its inputs from `data-` attributes, and pdf.js is vendored
+  (`pdfjs-dist` legacy build, served from `/s/_/pdfjs/`) because Android Chrome downloads a
+  PDF instead of showing it. Every answer says `noindex` twice (header and meta), share bytes
+  cache for at most five minutes so a revoke bites quickly, and a view is counted on the
+  **PDF** fetch only — link-preview crawlers fetch just the HTML, so that keeps them out without
+  a user-agent list.
+- **The share note's Jev gate holds the note for review on no verdict and never allows on one; it
+  is a gate, not a screen, which is why it stays.** `moderateUserText`
+  (`../userTextModeration.ts`) is one `choose` on the Quality tab's fast-decision route. A
+  confident `allowed` shows the note; a confident violation — Jev at 0.70 or better, or the
+  fallback model it escalates to — is a 422 with one wire code per category (`shares/shareCopy.ts`)
+  and nothing written. Everything else is *no verdict*: the route resolves to `undefined`
+  because the operator moved fast decisions off Jev, the routing read fails, both attempts fail,
+  or the gate's own 25 s budget runs out. The share still goes live, **without** the note,
+  `captionStatus: PENDING_REVIEW`, and a system `ModerationReport` (`reporterUserId: null`,
+  `targetSnapshot.kind: "caption_review"`, every attempt's probabilities) is written in the same
+  transaction as the share. The client going away is a cancellation (`reply.raw`'s `close` before
+  the answer is written), not a verdict, and writes nothing — and it is read off the *response*:
+  Node destroys an `IncomingMessage` once its body is read, so `request.raw.destroyed` is true in
+  every handler with a body, and reading it cancelled every gate over a real socket while
+  `inject` never showed it. `allowed` is the first option on purpose: under `MOCK_AI` the
+  `FakeDecisionAdapter` picks the first option. Links are refused by `containsLink` before any
+  model runs. An unchanged note is never re-moderated, which is also what makes an operator's
+  REMOVED stick to that exact text. **This Jev path is a gate, not a screen, and that is why it
+  stays** although the adapters `CLAUDE.md` removes Jev screens that cannot show a paid call they
+  skipped: it replaces no call, it *is* the decision, so it is measured by its verdicts — 39/39
+  on the labelled set after one wording fix, benign dark blurbs at 0.93–1.00, ~0.4 s and
+  ~$0.00004 a note (`.scratch/book-sharing/jev-measurement.md`). A refused benign note is a bug
+  in the option wording: fix the words, never the threshold, and re-run the set. Every physical
+  attempt writes a `ProviderCallLog` row through `../inlineDecisionUsage.ts`, the API twin of the
+  worker's `recordDecisionAttempt`.
+- **The preview cap is the export loophole's only lock, and it is applied again at serve time.** A preview is a real PDF, free to
+  anyone holding the link, so without `maxPreviewPages` (`shares/sharePageRange.ts`, half the
+  book's reading pages, at least one) a 29-of-30 preview is the whole book for nothing and the
+  export unlock — what a full share and the PDF download both cost — buys nothing. The cap is
+  checked when the author saves and **again at serve time**, because a later edit can shrink the
+  book under a preview that was legal when saved. N counts reading pages, not sheets: the cover,
+  title sheet and Contents are always shown and never counted, measured from the published page
+  map only when its `pdfDigest` and sheet count describe the bytes being served; every fallback
+  counts a furniture sheet as a reading page, which shows less, never more. The slice is cut
+  server-side (`shares/sharePreviewPdf.ts`, pdf-lib) and cached under the book's own
+  `books/<projectId>/share-previews/`, keyed by the compile's digest. `copyPages` follows every
+  reference a page holds and `save` writes every object it copied, so a kept page's internal
+  links, article beads and additional actions are cut from the *source* before the copy — only
+  URI links survive — or the rest of the book rides along unseen.
+- **A full share settles the export unlock last, through the download's own helper and key.** `PUT` runs every
+  check first — the published PDF, the rights and likeness confirmations, the cap, the book text
+  screen (the Studio's windowed `assessManuscriptText`, page by page, at create and at every mode
+  change), the note's link check and its verdict — and only then calls
+  `ensureExportEntitlementForDownload` with the download's idempotency key, the rule `sendUnlocked`
+  documents. A locked book without `acceptExportUnlock` is answered 402 `EXPORT_UNLOCK_REQUIRED`
+  with the live price and charges nothing; an unlocked one shares in full for free; a downgrade
+  refunds nothing because the unlock is the book's. A write that fails after the charge leaves
+  the book unlocked, so the retry is free.
+- **The share follows the book's current compile, and there is no older copy to fall back on.**
+  An Edit Mode save deletes the published PDF until its recompile lands
+  (`invalidateCompiledProjectExports`), so a share in that window serves a "being updated" page
+  and a 503 for the PDF, and queues the same export repair the status watch does.
+- **A slug is never reissued because every slug ever minted is a row in `ShareSlug`.** Nothing
+  deletes from it — not a revoke, a re-share (which mints a new slug) or a project delete — so its
+  primary key is the guarantee, and a slug found there but on no live share answers 410, not 404.
+- **"Make a book like this" returns the format and nothing else.** `shares/shareRemix.ts` reads
+  the preset echo, the category and the page count; it never loads the brief, plan, chat, cast or
+  text. The chat it starts records `MobileCreationDraft.originShareId` — a column, because every
+  chat turn rebuilds the draft payload from scratch and a payload key would be gone by the second
+  message — and the Overview's sharing funnel (`../admin/shareFunnel.ts`) counts from it.

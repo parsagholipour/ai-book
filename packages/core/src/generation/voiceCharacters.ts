@@ -110,6 +110,18 @@ type VoiceCharacterModelPageSample = {
 
 const VOICE_CHARACTER_PAGE_CHUNK_CHAR_BUDGET = 24_000;
 
+/**
+ * Output fuses for the two voice calls, about twice the largest reply either has
+ * returned. With no fuse, one extraction on gpt-6-luna (effort none) ran on to the
+ * model's own 128,000-token ceiling in 638 s and failed its job (2026-09-30); across
+ * 1,832 logged extractions the largest was 1,955 tokens, and the largest persona was
+ * 4,503. These replaced the June caps of 1,200 and 1,800, which clipped DeepSeek's
+ * personas. `chapterOutputBudget` raises both for the route's reasoning effort, and a
+ * reply cut off anyway is re-asked once at a wider budget (`generateJsonWithRetry`).
+ */
+const VOICE_CHARACTER_CANDIDATES_MAX_TOKENS = 4_000;
+const VOICE_CHARACTER_PERSONA_MAX_TOKENS = 8_000;
+
 export function voiceCharactersDisabledForInput(input: Pick<CreateProjectInput, "category" | "prompt" | "subcategory">): boolean {
   if (input.category === "BIOGRAPHY" || input.category === "HISTORY") {
     return !looksFictional(input.prompt, input.subcategory);
@@ -155,6 +167,7 @@ export async function extractVoiceCharacterCandidates(options: {
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: "extract-voice-character-candidates",
       temperature: 0.2,
+      maxTokens: VOICE_CHARACTER_CANDIDATES_MAX_TOKENS,
       schema: voiceCharacterCandidateListSchema,
       messages: [
         {
@@ -216,6 +229,7 @@ export async function buildVoiceCharacterPersona(options: {
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: "build-voice-character-persona",
       temperature: 0.35,
+      maxTokens: VOICE_CHARACTER_PERSONA_MAX_TOKENS,
       schema: personaDraftSchema,
       messages: [
         {

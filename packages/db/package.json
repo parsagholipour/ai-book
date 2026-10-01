@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./billing": "./src/billing.ts",
     "./libraryMentions": "./src/libraryMentions.ts",
-    "./pageIllustrationOwnership": "./src/pageIllustrationOwnership.ts"
+    "./pageIllustrationOwnership": "./src/pageIllustrationOwnership.ts",
+    "./searchGroundingAllowance": "./src/searchGroundingAllowance.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

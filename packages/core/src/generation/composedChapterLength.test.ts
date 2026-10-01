@@ -26,26 +26,27 @@ function setup(pages = 4): ComposeChapterOptions {
 }
 
 describe("audited chapter length shortfalls", () => {
+  // Retried under LENGTH_FLOOR_SHARE of the actual minimum, the floor that still prints the paid pages (2026-10-01).
   it.each([
-    { tier: "Balanced", pages: 4, draftWords: 1498 },
-    { tier: "Quick", pages: 5, draftWords: 1779 },
-    { tier: "Ultra chapter 2", pages: 4, draftWords: 1540 },
-    { tier: "Ultra chapter 3", pages: 4, draftWords: 1266 }
-  ])("retries $tier at its actual minimum before paginating", async ({ pages, draftWords }) => {
+    { tier: "Balanced", pages: 4, draftWords: 1498, retried: false },
+    { tier: "Quick", pages: 5, draftWords: 1779, retried: true },
+    { tier: "Ultra chapter 2", pages: 4, draftWords: 1540, retried: false },
+    { tier: "Ultra chapter 3", pages: 4, draftWords: 1266, retried: true }
+  ])("retries $tier before paginating only under the length floor of its actual minimum", async ({ pages, draftWords, retried }) => {
     const options = setup(pages);
     const min = chapterWordBudget(input, pages).min;
     const generate = vi.spyOn(options.textModel, "generateText")
       .mockResolvedValueOnce({ text: prose(draftWords), model: "fake", provider: "fake" })
       .mockResolvedValueOnce({ text: prose(min), model: "fake", provider: "fake" });
     const result = await composeChapter(options);
-    expect(result.words).toBeGreaterThanOrEqual(min);
-    expect(generate).toHaveBeenCalledTimes(2);
+    expect(result.words).toBe(retried ? min : draftWords);
+    expect(generate).toHaveBeenCalledTimes(retried ? 2 : 1);
   });
 
   it.each([
     { before: 1498, after: 1370 },
-    { before: 1800, after: 1700 }
-  ])("keeps an ordinary edit from reducing $before words to $after below the floor", async ({ before, after }) => {
+    { before: 1800, after: 1450 }
+  ])("keeps an ordinary edit from reducing $before words to $after below the length floor", async ({ before, after }) => {
     const options = setup();
     vi.spyOn(options.textModel, "generateText").mockResolvedValue({ text: prose(after), model: "fake", provider: "fake" });
     const result = await editChapter({ ...options, markdown: prose(before), semanticAcceptance: false });
@@ -65,10 +66,10 @@ describe("audited chapter length shortfalls", () => {
   it("keeps the longer supported draft and stops after one retry if both remain short", async () => {
     const options = setup();
     const generate = vi.spyOn(options.textModel, "generateText")
-      .mockResolvedValueOnce({ text: prose(1498), model: "fake", provider: "fake" })
-      .mockResolvedValueOnce({ text: prose(1370), model: "fake", provider: "fake" });
+      .mockResolvedValueOnce({ text: prose(1400), model: "fake", provider: "fake" })
+      .mockResolvedValueOnce({ text: prose(1300), model: "fake", provider: "fake" });
     const result = await composeChapter(options);
-    expect(result.words).toBe(1498);
+    expect(result.words).toBe(1400);
     expect(result.attempts).toBe(2);
     expect(generate).toHaveBeenCalledTimes(2);
   });

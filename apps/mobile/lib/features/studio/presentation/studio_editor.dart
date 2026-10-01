@@ -7,9 +7,11 @@ import '../domain/manuscript_formatting.dart';
 import 'chapter_conflict_card.dart';
 import 'studio_ai_picture_card.dart';
 import 'studio_ai_tools_sheet.dart' show StudioSelectionTool;
+import 'studio_chapter_end.dart';
 import 'studio_document.dart';
 import 'studio_image_block.dart';
 import 'studio_picture_pages.dart';
+import 'manuscript_caret.dart';
 import 'manuscript_editing_controller.dart';
 import 'studio_session.dart';
 
@@ -135,6 +137,7 @@ class _EditorBody extends StatelessWidget {
                 ),
         ),
       _TapToContinue(document: document),
+      StudioChapterEnd(session: session),
     ];
 
     return Column(
@@ -442,7 +445,12 @@ class _StudioTextFieldState extends State<StudioTextField> {
       maxLines: null,
       textCapitalization: TextCapitalization.sentences,
       textDirection: direction,
-      inputFormatters: const [ManuscriptEnterFormatter()],
+      // Enter first (it makes a paragraph), then the marks of bold and italic
+      // are kept whole through whatever Enter or a key press did to them.
+      inputFormatters: [
+        const ManuscriptEnterFormatter(),
+        widget.entry.controller.emphasisFormatter,
+      ],
       style: widget.style,
       // A strut no taller than a blank line: each line takes its height from
       // its own spans, which is what lets a blank line (a paragraph break)

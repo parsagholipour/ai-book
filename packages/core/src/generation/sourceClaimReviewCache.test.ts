@@ -60,11 +60,37 @@ it("never caches a missing, duplicate or fabricated supporting verdict as comple
   expect(calls).toHaveLength(3);
 });
 
-it("lets cancellation interrupt a later batch without starting any more paid calls", async () => {
-  const claims = Array.from({ length: 31 }, (_, index) => ({ quote: `Assertion ${index}.`, searchQuery: "record" }));
-  const first = { claims: claims.slice(0, 15).map((_, index) => ({ id: `c${index + 1}`, status: "supported", reason: "Evidence.", support: [{ excerptId: "paper", quote }] })) };
+it("lets cancellation end the review and start no batch after it, with at most three in flight", async () => {
+  // Batches run three at a time (2026-09-30). A stop in one ends the review;
+  // batches already in flight finish, and none starts once it is seen.
+  const claims = Array.from({ length: 76 }, (_, index) => ({ quote: `Assertion ${index}.`, searchQuery: "record" }));
   const stopped = Object.assign(new Error("Stopped"), { name: "StopRequestedError" });
-  const { model, calls } = scriptedDevelopmentModel([{ complete: true, claims }, first, stopped]);
+  const { model } = scriptedDevelopmentModel([{ complete: true, claims }]);
+  const started: number[] = [];
+  let inFlight = 0;
+  let peak = 0;
+  let stoppedAt: number | undefined;
+  const inventoryCall = model.generateJson.bind(model);
+  model.generateJson = (async (options: Parameters<typeof inventoryCall>[0]) => {
+    if (options.purpose !== "review-chapter-evidence") return inventoryCall(options);
+    const batch = JSON.parse(options.messages.at(-1)!.content).batchIndex as number;
+    started.push(batch);
+    if (stoppedAt !== undefined) throw new Error(`batch ${batch} started after the stop`);
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    try {
+      if (batch === 2) {
+        stoppedAt = batch;
+        throw stopped;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const ids = JSON.parse(options.messages.at(-1)!.content).claims.map((claim: { id: string }) => claim.id);
+      return { data: { claims: ids.map((id: string) => ({ id, status: "insufficient_evidence", reason: "No passage.", support: [] })) }, text: "", provider: "fake", model: "fake" };
+    } finally {
+      inFlight -= 1;
+    }
+  }) as typeof model.generateJson;
   await expect(createSourceClaimReviewer(model)({ markdown: claims.map((claim) => claim.quote).join("\n"), excerpts: [excerpt] })).rejects.toBe(stopped);
-  expect(calls).toHaveLength(3);
+  expect(peak).toBeLessThanOrEqual(3);
+  expect(started.sort()).toEqual([1, 2, 3]);
 });

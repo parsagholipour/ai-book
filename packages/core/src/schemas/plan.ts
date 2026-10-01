@@ -12,6 +12,8 @@ import {
 import { bookArcSchema } from "./bookArc.js";
 import { bookDevelopmentSchema } from "./bookDevelopment.js";
 import { bookDossierSchema, bookEpisodesSchema } from "./episodes.js";
+import { exampleCastSchema } from "./exampleCast.js";
+import { instructionalToolkitSchema } from "./instructional.js";
 import { illustrationCadenceSchema } from "./mediaSettings.js";
 import {
   isWritingMode,
@@ -88,7 +90,14 @@ const authorStanceObjectSchema = z.object({
   thesis: z.string().min(1),
   positions: z.array(z.string()).default([]),
   refusals: z.array(z.string()).default([]),
-  voiceSample: z.string().min(1)
+  voiceSample: z.string().min(1),
+  /**
+   * Whether the book is written from gathered sources ("sources") or has
+   * nothing a published source could give it ("none": a novel, poems, a
+   * private story). Absent on older stances and unreadable answers, where the
+   * writing mode decides instead (`sourceResearchFits`).
+   */
+  research: z.enum(["sources", "none"]).optional().catch(undefined)
 });
 /**
  * Tolerant on purpose: the planner was asked for positions "each naming what
@@ -167,11 +176,13 @@ function normalizeAuthorStance(value: unknown): AuthorStance | undefined {
   if (!thesis || !voiceSample) {
     return undefined;
   }
+  const research = stringField(value, ["research", "sourceResearch", "source_research"])?.trim().toLowerCase();
   return {
     thesis,
     positions: stanceLines(firstPresentField(value, ["positions", "stands", "claims"])),
     refusals: stanceLines(firstPresentField(value, ["refusals", "refuses", "avoids"])),
-    voiceSample
+    voiceSample,
+    ...(research === "sources" || research === "none" ? { research } : {})
   };
 }
 
@@ -662,6 +673,10 @@ const bookPlanObjectSchema = z.object({
   /** Material-first (generation/episodes.ts, dossier.ts): stored beside the arc, dropped when they no longer parse. */
   episodes: z.preprocess((value) => (bookEpisodesSchema.safeParse(value).success ? value : undefined), bookEpisodesSchema.optional()),
   dossier: z.preprocess((value) => ((isRecord(value) && "evidencePackets" in value) || bookDossierSchema.safeParse(value).success ? value : undefined), bookDossierSchema.optional()),
+  /** A guide's recurring example people, planned with the chapter forms and stored for resume; dropped when it no longer parses. */
+  exampleCast: z.preprocess((value) => (exampleCastSchema.safeParse(value).success ? value : undefined), exampleCastSchema.optional()),
+  /** A practical guide's or a workbook's whole-book decisions (generation/instructionalBook.ts); dropped when it no longer parses. */
+  toolkit: z.preprocess((value) => (instructionalToolkitSchema.safeParse(value).success ? value : undefined), instructionalToolkitSchema.optional()),
   illustrationPlan: illustrationPlanSchema
 });
 
@@ -676,11 +691,14 @@ export function bookPlanSchemaWithFallback(fallback: BookPlan) {
  * from the model-facing schema prevents structured-output providers from
  * reproducing the source package in their response; the planner attaches the
  * original notes after this schema has parsed the creative plan fields.
+ * `bookArc` is the shelved arm-1 arc (`BOOK_ARC` is off): offered as an
+ * optional field, the planner filled it in on ~40% of plans and switched the
+ * arc's prompts on for those books alone.
  */
 export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compactStory = false): z.ZodType<Omit<BookPlan, "researchNotes">> {
   return z.preprocess(
     normalizeBookPlanWithFallback(fallback, true),
-    bookPlanObjectSchema.omit({ researchNotes: true, requirementInventory: true, bookDevelopment: true, episodes: true, dossier: true, storyTreatment: true,
+    bookPlanObjectSchema.omit({ researchNotes: true, requirementInventory: true, bookDevelopment: true, episodes: true, dossier: true, storyTreatment: true, bookArc: true, exampleCast: true, toolkit: true,
       ...(compactStory ? { authorStance: true as const, styleContract: true as const } : {}) })
   );
 }
@@ -689,7 +707,7 @@ export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compac
 export function pictureBookStoryPlanSchema(fallback: BookPlan) {
   return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema.omit({
     chapters: true, researchNotes: true, requirementInventory: true, bookDevelopment: true, episodes: true, dossier: true,
-    authorStance: true, styleContract: true, bookArc: true
+    authorStance: true, styleContract: true, bookArc: true, exampleCast: true, toolkit: true
   }).extend({ storyTreatment: z.string().trim().min(200).max(16_000) }));
 }
 

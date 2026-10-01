@@ -382,8 +382,13 @@ export function appendQualityIssue(
   };
 }
 
+/**
+ * Scaffold markers are shouted (`TODO`, `TBD`, `FIXME`, `PLACEHOLDER`) or bracketed (`[insert …]`);
+ * the same words in lower case are English. Matched case-insensitively, "choose a cautious placeholder
+ * only for organizing cash" blocked a whole Quick Draft workbook (2026-09-30).
+ */
 function containsPlaceholder(value: string): boolean {
-  return /\b(?:TODO|TBD|FIXME|LOREM IPSUM|PLACEHOLDER)\b|\[(?:insert|add|write|placeholder|todo)[^\]]*\]/i.test(value);
+  return /\b(?:TODO|TBD|FIXME|PLACEHOLDER)\b/.test(value) || /\blorem ipsum\b|\[(?:insert|add|write|placeholder|todo)[^\]]*\]/i.test(value);
 }
 
 function hasMalformedMarkdown(value: string): boolean {

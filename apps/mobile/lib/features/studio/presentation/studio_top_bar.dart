@@ -15,6 +15,7 @@ import 'studio_sheets.dart';
 /// has to do, which the AI drafts from) never sit side by side as twins.
 enum StudioMenuAction {
   chapters,
+  addChapter,
   bookNotes,
   settings,
   notes,
@@ -114,6 +115,15 @@ class StudioTopBar extends StatelessWidget implements PreferredSizeWidget {
                 value: StudioMenuAction.chapters,
                 child: _MenuRow(icon: Icons.toc_rounded, label: 'Chapters'),
               ),
+            PopupMenuItem(
+              key: const ValueKey('studio-menu-add-chapter'),
+              value: StudioMenuAction.addChapter,
+              enabled: !session.addingChapter,
+              child: _MenuRow(
+                icon: Icons.add_rounded,
+                label: session.addChapterLabel,
+              ),
+            ),
             if (onOpenNotes != null)
               const PopupMenuItem(
                 value: StudioMenuAction.bookNotes,

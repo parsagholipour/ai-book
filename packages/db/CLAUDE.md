@@ -25,8 +25,8 @@ don't flip the generator setting to make the root convention true.
 **Import `@book-maker/db/billing`, never a module behind it.** The API suites mock the facade with
 `vi.mock("@book-maker/db/billing")`; a deep import silently escapes that mock and the test stops
 covering you. The package's `exports` map names only whole facades — `.`, `./billing`,
-`./libraryMentions` and `./pageIllustrationOwnership` — and nothing behind one, to keep that
-honest.
+`./libraryMentions`, `./pageIllustrationOwnership` and `./searchGroundingAllowance` — and nothing
+behind one, to keep that honest.
 
 `./libraryMentions` is a subpath for the opposite reason: it holds no client at all (its Prisma
 import is types only), and both apps import it. The mobile API suites mock `@book-maker/db`
@@ -46,6 +46,18 @@ the main DB entry**. The worker and the DB restructure compensation share its ow
 while worker suites may replace both `@book-maker/db` and `@book-maker/core` with bare factories.
 Its Prisma dependency is types only and its record guard is local, so importing the subpath loads
 neither package barrel at runtime.
+
+`./searchGroundingAllowance` is the third of that shape. It owns the one statement that decides
+what a grounded search costs — the upsert-increment that hands each grounded prompt its ordinal in
+Google's free allowance — and both the worker's `recordProviderUsage` and the API's
+`recordInlineProviderUsage` run it, inside the transaction that writes the call's
+`ProviderCallLog` row, against the client they pass in. Its Prisma import is types only and it
+imports nothing from core (the pricing is core's `applySearchGroundingAllowance`, applied by the
+caller), so a suite that mocks `@book-maker/db` wholesale still runs the real claim against its own
+stand-in client. What only Postgres can settle — every ordinal handed out once under concurrent
+first inserts, and a rolled-back claim not spent — is measured in
+`searchGroundingAllowance.integration.test.ts`. Why the counter exists at all is in
+`packages/core/src/adapters/CLAUDE.md`.
 
 ## Adding a priced operation
 

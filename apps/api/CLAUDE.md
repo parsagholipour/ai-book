@@ -5,7 +5,8 @@ for anything long-running — that belongs in the worker.
 
 The short-lived exceptions are deliberate and time-boxed: creation-chat turns and the book advisor
 call a fast model inline with an explicit timeout (see `mobile/creationBuild.ts` and
-`mobileCreation.ts`). Anything that can take more than a few seconds gets a job.
+`mobileCreation.ts`), and the share-note moderation gate makes one Jev decision with a 25 s budget
+of its own (`userTextModeration.ts`). Anything that can take more than a few seconds gets a job.
 
 ## Route surfaces
 
@@ -15,6 +16,9 @@ call a fast model inline with an explicit timeout (see `mobile/creationBuild.ts`
   own `CLAUDE.md`; the short version is that a mobile bearer token is rejected there before any
   handler runs, and that is a security property rather than tidiness.
 - `src/admin/` — `/api/admin`, read by the operator dashboard only.
+- `src/mobile/shares/publicShareRoutes.ts` — `/s/*`, the public book-share pages. Deliberately
+  outside `/api/` and the auth hook's protected set, and proxied in production only because
+  `deploy/nginx.conf` names `/s/`; see "Book sharing" in `src/mobile/CLAUDE.md`.
 
 `src/mobileProjects.ts` is the composition root: it builds one `MobileRouteContext` and calls each
 `registerMobile*Routes(fastify, context)` in turn. They run on the same Fastify instance rather
@@ -44,6 +48,23 @@ Tests inject `MemoryObjectStore` in `src/testing/setupObjectStorage.ts`; fixture
 Everything protected is cookie-only except `/api/mobile/*` and the two asset prefixes.
 `allowsMobileBearer` in `src/requestAuth.ts` names that surface; `isOperatorOnlyPath` in
 `src/auth.ts` is literally its complement.
+
+## Creation chat
+
+- **A fallback brief says what the lane says; it echoes the idea only where it can tell where the
+  echo ends.** `completeRecipe` (`src/mobileCreationAdvisor.ts`) fills the brief the planner is
+  shown — "Audience or reader", "Promise or story shape" — from the model's recipe, and from
+  `src/mobileCreationLanes.ts` when the model gave none. Those fallbacks used to splice the raw
+  idea in: the audience was everything from "for" to the next comma, and the promise was "get a
+  useful first step for" plus a six-word "cleaned" title. A Quick Draft guide on 2026-09-30 went
+  to the planner with `Audience: new first-time managers on running genuinely useful one-on-one
+  meetings with their direct reports: how to structure them` and `Promise: get a useful first step
+  for i want a practical , what`. `promiseFallback` now takes only the lane, and `audienceFor`
+  returns a span only when it ends at a clause boundary, runs eight words or fewer and contains a
+  reader noun (`AUDIENCE_NOUN`), skipping a purpose ("for supply chains today") and a phrasal
+  "looking for" on the way to a reader behind it — otherwise it returns nothing, which also lets
+  `payload.brief.audience` speak before the lane's generic audience does; it never could, because
+  the old function always answered.
 
 ## Where the rest of the invariants live
 

@@ -102,14 +102,26 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
     }
   }
 
-  await maybeExpandStrategyResearch({
-    projectId,
-    input,
-    plan,
-    providers,
-    strategy,
-    generationJobId
-  });
+  // The composed pass starts the expansion itself: once its stance has said
+  // the book is written from sources (a novel searches nothing), beside the
+  // material and the form plan, since the notes are read only when a chapter
+  // is composed — and silently, since its step would move the bar back under
+  // theirs (2026-09-30: 17 s of a Quick Draft book). The finally keeps a
+  // failed pass from leaving it writing rows behind the job.
+  const composed = strategy.executionMode === "composed-chapters";
+  let research: Promise<{ error: unknown } | undefined> | undefined;
+  const startResearch = () => {
+    research ??= maybeExpandStrategyResearch({ projectId, input, plan, providers, strategy, generationJobId, announce: !composed })
+      .then(() => undefined, (error: unknown) => ({ error }));
+  };
+  const researchReady = async () => {
+    const failed = await research;
+    if (failed) throw failed.error;
+  };
+  if (!composed) {
+    startResearch();
+    await researchReady();
+  }
 
   switch (strategy.executionMode) {
     case "whole-book":
@@ -157,17 +169,22 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
       });
       return {};
     case "composed-chapters":
-      await generateBookComposedChapters({
-        projectId,
-        planId,
-        input,
-        plan,
-        providers,
-        strategy,
-        generationJobId,
-        judgeTextModel: createLoggedJudgeTextModel(job, input),
-        runLog: createRunLogger(job)
-      });
+      try {
+        await generateBookComposedChapters({
+          projectId,
+          planId,
+          input,
+          plan,
+          providers,
+          strategy,
+          generationJobId,
+          judgeTextModel: createLoggedJudgeTextModel(job, input),
+          runLog: createRunLogger(job),
+          research: { start: startResearch, ready: researchReady }
+        });
+      } finally {
+        await research;
+      }
       return {};
     case "sequential-pages":
       await generateBookSequential({
@@ -422,6 +439,8 @@ export async function maybeExpandStrategyResearch(options: {
   providers: ProviderSet;
   strategy: BookGenerationStrategy;
   generationJobId?: string | undefined;
+  /** False when it runs beside another step that owns the progress bar. */
+  announce?: boolean | undefined;
 }) {
   const cap = options.strategy.researchDepth ?? 0;
   if (cap <= 0) {
@@ -446,7 +465,9 @@ export async function maybeExpandStrategyResearch(options: {
     return;
   }
 
-  await advanceJobStep(options.generationJobId, "briefs", 15, "Expanding chapter research", { phase: "research" });
+  if (options.announce !== false) {
+    await advanceJobStep(options.generationJobId, "briefs", 15, "Expanding chapter research", { phase: "research" });
+  }
   const sources = await expandChapterResearch({
     input: options.input,
     plan: options.plan,

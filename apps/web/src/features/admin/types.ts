@@ -48,6 +48,8 @@ export type AdminOverview = {
     voiceMinutes: number;
     pendingModerationReports: number;
   };
+  /** Mirrors `ShareFunnel` in apps/api/src/admin/shareFunnel.ts: shares and remix drafts created in the window. */
+  sharing: ShareFunnel;
   series: MoneySeriesPoint[];
   creditsByOperation: NamedTotal[];
   spendByProvider: NamedTotal[];
@@ -77,12 +79,37 @@ export type ModelCost = CostUsage & { key: string; provider: string; model: stri
 
 export type OperationCost = CostUsage & { key: string; label: string; kind: CostKind; models: ModelCost[] };
 
+/** Mirrors `apps/api/src/admin/searchGrounding.ts` — `billedFeeUsd` is the grounding part of `totals`, nothing more. */
+export type SearchGroundingPeriodSummary = {
+  pool: string;
+  period: string;
+  units: number;
+  freeUnits: number;
+  countedThrough: number;
+  allowance: number | null;
+  billedFeeUsd: number;
+  listFeeUsd: number;
+};
+
+export type SearchGroundingSummary = {
+  searchCalls: number;
+  groundedPrompts: number;
+  searchQueries: number;
+  units: number;
+  freeUnits: number;
+  billedFeeUsd: number;
+  listFeeUsd: number;
+  unpricedCalls: number;
+  periods: SearchGroundingPeriodSummary[];
+};
+
 export type AdminCostBreakdown = {
   window: { days: number; since: string; until: string };
   totals: CostUsage;
   byKind: Array<CostUsage & { kind: CostKind }>;
   operations: OperationCost[];
   models: ModelCost[];
+  searchGrounding: SearchGroundingSummary;
 };
 
 /** Mirrors `apps/api/src/admin/operationEconomics.ts` — read its header on attribution. */
@@ -312,6 +339,15 @@ export type AdminProjectDetail = {
   ledger: Array<{ id: string; operation: string; entryType: string; status: string; amountCredits: number; pricingVersion: number | null; createdAt: string }>;
 };
 
+export type ShareFunnel = {
+  sharesCreated: number;
+  previewShares: number;
+  fullShares: number;
+  pdfViews: number;
+  remixDrafts: number;
+  remixBooks: number;
+};
+
 /** Shape of `serializeModerationReport` in apps/api/src/mobileSafety.ts — enums arrive lowercased. */
 export type ModerationReport = {
   id: string;
@@ -320,7 +356,13 @@ export type ModerationReport = {
   projectId: string | null;
   projectTitle: string | null;
   imageAssetId: string | null;
+  bookShareId: string | null;
+  /** "project", "image_asset" or "book_share". */
   targetType: string;
+  /** What the target looked like when the report was filed; read through `readShareSnapshot`. */
+  targetSnapshot?: unknown;
+  /** The share as it is now, on the list route only. Null once the share is gone. */
+  share?: AdminShare | null;
   reason: string;
   comment: string | null;
   status: string;
@@ -330,3 +372,48 @@ export type ModerationReport = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** Mirrors `AdminShareDto` in apps/api/src/routes/adminShares.ts. */
+export type AdminShare = {
+  id: string;
+  slug: string;
+  /** The public page; opened in a new tab. */
+  url: string;
+  projectId: string;
+  mode: "preview" | "full";
+  previewPages: number | null;
+  status: "active" | "revoked" | "taken_down";
+  caption: string | null;
+  captionStatus: "none" | "allowed" | "pending_review" | "removed";
+  /** A JSON column on the server; read through `readCaptionVerdict`, never trusted as typed. */
+  captionVerdict: unknown;
+  takedownReason: string | null;
+  viewCount: number;
+};
+
+/** One physical call to the moderation gate — `ModerationAttemptRecord` in apps/api/src/userTextModeration.ts. */
+export type ModerationAttempt = {
+  role: "primary" | "fallback";
+  provider: string;
+  model: string;
+  durationMs: number;
+  selectedOption?: string;
+  /** Jev's distribution over the options, summing to 1. */
+  probabilities?: Record<string, number>;
+  escalationReason?: string;
+  error?: string;
+};
+
+/** `verdictRecord` in apps/api/src/mobile/shares/shareRecords.ts, plus the operator's decision once one is made. */
+export type CaptionVerdict = {
+  surface: string | null;
+  verdict: "allowed" | "refused" | "undecided";
+  reason: string | null;
+  decidedBy: string | null;
+  violation: string | null;
+  decidedAt: string | null;
+  attempts: ModerationAttempt[];
+  operator: { action: string; reviewerUserId: string | null; at: string | null; reason: string | null } | null;
+};
+
+export type ShareModerationAction = "approve_caption" | "remove_caption" | "take_down";

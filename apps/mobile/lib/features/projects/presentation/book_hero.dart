@@ -7,6 +7,7 @@ import '../../../shared/ui/motion.dart';
 import '../../billing/domain/billing_models.dart';
 import '../domain/book_blurb.dart';
 import '../domain/project_models.dart';
+import '../../sharing/presentation/book_share_sheet.dart';
 import '../../studio/presentation/studio_cover_picker.dart';
 import '../../studio/presentation/studio_location.dart';
 import 'book_cover.dart';
@@ -21,7 +22,7 @@ import 'project_export_panel.dart';
 /// exports card that repeated the title's neighbourhood a third time. One hero
 /// carries the cover, the title, a single line of facts, the state the book is
 /// in, and, once there is something to read, the few things you do with a book:
-/// read it, listen to it, edit it, take a copy.
+/// read it, listen to it, edit it, take a copy, share a link to it.
 ///
 /// It is drawn from whichever of the two sources has arrived. The status knows
 /// the stage and the files; the detail knows the title and the cover. With only
@@ -115,6 +116,7 @@ class BookHero extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             _HeroActions(
               projectId: projectId,
+              bookTitle: project?.title,
               stage: stage,
               authorManuscript: project?.isAuthorManuscript ?? false,
               exports: exports!,
@@ -457,11 +459,13 @@ String? bookMetaLine({
   return parts.isEmpty ? null : parts.join(' · ');
 }
 
-/// Read, and the three things beside it. The export list opens in place under
-/// the row, so choosing a file never leaves the page or costs a scroll.
+/// Read, and the things beside it. The export list opens in place under the
+/// row, so choosing a file never leaves the page or costs a scroll; Share
+/// opens the book's public link in a sheet, whatever state that link is in.
 class _HeroActions extends StatefulWidget {
   const _HeroActions({
     required this.projectId,
+    required this.bookTitle,
     required this.stage,
     required this.authorManuscript,
     required this.exports,
@@ -474,6 +478,7 @@ class _HeroActions extends StatefulWidget {
   });
 
   final String projectId;
+  final String? bookTitle;
   final BookStage stage;
 
   /// The author owns this book's text, so its Edit is the Writing Studio.
@@ -573,6 +578,22 @@ class _HeroActionsState extends State<_HeroActions> {
                   onTap: () {
                     AppHaptics.selection();
                     setState(() => _exportsOpen = !_exportsOpen);
+                  },
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: _ActionTile(
+                  icon: Icons.link_rounded,
+                  label: 'Share',
+                  semanticLabel: 'Share a link to this book',
+                  onTap: () {
+                    AppHaptics.tap();
+                    showBookShareSheet(
+                      context,
+                      projectId: id,
+                      bookTitle: widget.bookTitle,
+                    );
                   },
                 ),
               ),

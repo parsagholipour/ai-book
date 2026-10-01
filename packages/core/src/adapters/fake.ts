@@ -425,6 +425,12 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       return { pages: fakeDescribedPages(options) };
     }
 
+    // One fact per chapter, so a dry run carries a ledger into the next chapter's prompts.
+    if (options.purpose === "extract-chapter-facts") {
+      const index = Number(JSON.parse(options.messages.find((message) => message.role === "user")?.content ?? "{}")?.chapter?.index ?? 0);
+      return { subjects: [{ name: `Dry-run chapter ${index}`, kind: "thing", facts: [{ attribute: "turns", value: "numbered" }] }] };
+    }
+
     if (options.purpose === "read-manuscript") {
       return { chapters: [], bookNotes: ["Fake read: no chapter needs a second pass."] };
     }

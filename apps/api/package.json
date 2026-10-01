@@ -13,6 +13,7 @@
   "dependencies": {
     "@book-maker/core": "workspace:*",
     "@book-maker/db": "workspace:*",
+    "@book-maker/storage": "workspace:*",
     "@fastify/cors": "^11.1.0",
     "@fastify/static": "^8.3.0",
     "@fastify/swagger": "^9.6.1",
@@ -22,8 +23,10 @@
     "fastify": "^5.6.2",
     "ioredis": "^5.8.2",
     "nodemailer": "^9.0.5",
-    "zod": "^4.1.13",
-    "@book-maker/storage": "workspace:*"
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
+    "sharp": "^0.34.5",
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.1",

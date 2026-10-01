@@ -3,12 +3,13 @@ import type { GenerateTextOptions } from "./types.js";
 
 const SHORT_STRUCTURED_PURPOSES = new Set([
   "extract-story-state", "describe-pages", "critique-plan", "select-cover-design",
-  "review-dossier-provenance", "review-chapter-edit-acceptance", "review-page",
+  "review-dossier-provenance", "extract-excerpts", "review-chapter-edit-acceptance", "review-page", "check-chapter-arithmetic", "extract-chapter-facts",
   "critique-page-map", "generate-chapter-brief", "book.final_qa.chapter_transitions",
   "final-book-qa", "audit-page-style", "review-manuscript-structure",
   "generate-page", "polish-page", "revise-page", "repair-page-brief", "judge-page-drafts",
   "author-assist-rewrite", "author-assist-proofread", "author-assist-continue", "author-assist-describe",
-  "author-assist-brainstorm", "author-assist-ask", "author-chapter-feedback", "author-consistency", "author-outline"
+  "author-assist-brainstorm", "author-assist-ask", "author-chapter-feedback", "author-consistency", "author-outline",
+  "extract-voice-character-candidates", "build-voice-character-persona"
 ]);
 
 const CHAPTER_PURPOSES = new Set([
@@ -27,6 +28,14 @@ const CHAPTER_PURPOSES = new Set([
  * visible-answer allowance. Premium page rewrites also exhausted their 3,200
  * cap with 3,083–3,200 reasoning tokens, so structured page drafts and repairs
  * use the same allowance as their critics. These are ceilings, not target token consumption.
+ * The excerpt extractor asked for 4,000 and reasoned up to 5,371 at medium, so it
+ * truncated in three of six Quick Draft books; it takes the structured floor.
+ * Medium and low need a chapter-scale floor as well: Quick Draft's forms planner
+ * (gpt-6-luna, medium) spent 4,000–5,600 tokens reasoning beside ~4,400 of JSON
+ * and truncated at 6,400, 7,100 and the widened 9,600, so two of three books
+ * paid two calls and one drafted from the rotated fallback forms (2026-09-30).
+ * Low takes 12,000 since Quick Draft plans its forms at low effort (2026-09-30):
+ * a seven-chapter plan is 5,000–7,000 tokens of JSON before any reasoning.
  * Unrecognized purposes and non-reasoning calls retain their explicit fuse.
  */
 export function chapterOutputBudget(options: GenerateTextOptions, effort: TextModelThinkingEffort | undefined): number | undefined {
@@ -37,6 +46,7 @@ export function chapterOutputBudget(options: GenerateTextOptions, effort: TextMo
     return Math.max(options.maxTokens, floor);
   }
   if (!CHAPTER_PURPOSES.has(options.purpose ?? "")) return options.maxTokens;
-  const floor = effort === "max" || effort === "xhigh" ? 48_000 : effort === "high" ? 32_000 : 0;
+  const floor = effort === "max" || effort === "xhigh" ? 48_000 : effort === "high" ? 32_000
+    : effort === "medium" ? 16_000 : effort === "low" ? 12_000 : 0;
   return Math.max(options.maxTokens, floor);
 }

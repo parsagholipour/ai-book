@@ -15,6 +15,7 @@ import {
 import { optionalMaxRetries } from "./optionalMaxRetries.js";
 import { PartialOutputPreview } from "./partialOutputPreview.js";
 import { JsonOutputRepetitionError, JsonOutputRepetitionGuard } from "./jsonOutputRepetition.js";
+import { WhitespaceRunawayGuard } from "./whitespaceRunaway.js";
 import { isCancellationError, ProviderHttpError, ProviderStreamInterruptedError } from "./retry.js";
 import type {
   ChatMessage,
@@ -197,9 +198,17 @@ export class OpenAITextAdapter implements TextModelAdapter {
         openAiRequestOptions(options)
       );
       let completed: ResponseRecord | undefined;
+      const whitespace = new WhitespaceRunawayGuard();
       for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           options.signal?.throwIfAborted();
+          if (whitespace.append(event.delta)) {
+            // The reply ended where the blank lines began. Leaving the loop closes the
+            // SDK iterator, which aborts the request; the text so far is the answer.
+            console.warn("OpenAI reply ran into blank lines; ending it there", {
+              event: "text.whitespace_runaway", purpose: options.purpose, model, characters: partialOutput.snapshot().characters });
+            return { status: "completed", model };
+          }
           partialOutput.append(event.delta);
           jsonGuard?.append(event.delta);
           yield event.delta;

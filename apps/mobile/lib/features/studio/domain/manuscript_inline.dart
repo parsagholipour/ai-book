@@ -273,19 +273,14 @@ List<InlineNode> parseInline(String s, {int at = 0}) {
       if (match != null) {
         flush(at + i);
         if (match.group(1)!.isNotEmpty) {
-          out.add(
-            ImageNode(TextRange(start: at + i, end: at + match.end)),
-          );
+          out.add(ImageNode(TextRange(start: at + i, end: at + match.end)));
         } else {
           final label = match.group(2)!;
           out.add(
             LinkNode(
               TextRange(start: at + i, end: at + i + 1),
               parseInline(label, at: at + i + 1),
-              TextRange(
-                start: at + i + 1 + label.length,
-                end: at + match.end,
-              ),
+              TextRange(start: at + i + 1 + label.length, end: at + match.end),
             ),
           );
         }
@@ -396,3 +391,23 @@ bool _isWordUnit(int unit) =>
     (unit >= 0x41 && unit <= 0x5a) ||
     (unit >= 0x61 && unit <= 0x7a) ||
     unit > 0x7f;
+
+final _wordChar = RegExp(r"[\p{L}\p{N}\p{M}'’]", unicode: true);
+
+/// The word [offset] is in or touching, or null between words.
+({int start, int end})? wordAround(String text, int offset) {
+  bool isWord(int index) =>
+      index >= 0 &&
+      index < text.length &&
+      _wordChar.hasMatch(String.fromCharCode(text.codeUnitAt(index)));
+  var start = offset;
+  var end = offset;
+  while (isWord(start - 1)) {
+    start--;
+  }
+  while (isWord(end)) {
+    end++;
+  }
+  if (start == end) return null;
+  return (start: start, end: end);
+}

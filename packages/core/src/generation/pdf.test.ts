@@ -808,6 +808,24 @@ describe("generateBookPdfWithPageMap", () => {
     expect(contentsText).not.toMatch(/\b5\b/);
   }, 120_000);
 
+  it("measures a page that opens inside the table the page before ended in", async () => {
+    // Body rows continuing across the cut; the r1-bal-guide shape (a new table) now joins on a blank line.
+    const imageStorageDir = join(tmpdir(), `book-pdf-table-map-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    const row = (cells: string) => `| ${cells} | ${cells} | ${cells} | ${cells} | ${cells} |`;
+    const table = (body: string) => `${row("Observed fact")}\n|---|---|---|---|---|\n${body}`;
+    const prose = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(40);
+    const compiled = compileBookMarkdownWithPageAnchors({
+      plan: { title: "Tables", premise: "p", audience: "a", characters: [], questions: [],
+        chapters: [{ index: 1, title: "One", summary: "s", targetPages: 2 }, { index: 2, title: "Two", summary: "s", targetPages: 2 }] } as never,
+      pages: [prose, prose, `${prose}\n\n${table(row("A filled answer"))}`, `${row(" ")}\n${row(" ")}\n\n${prose}`]
+        .map((markdown, i) => ({ index: i + 1, title: `Page ${i + 1}`, markdown }))
+    });
+    const result = await generateBookPdfWithPageMap(compiled.markdown, { imageStorageDir, publicApiUrl: "http://localhost:4001", pageMapPlan: compiled });
+    expect(result.pageMapFailure).toBeUndefined();
+    expect(result.pageMap?.pages.map((page) => page.index)).toEqual([1, 2, 3, 4]);
+  }, 60_000);
+
   it("returns no map — and a whole book — when no plan is given", async () => {
     const imageStorageDir = join(tmpdir(), `book-pdf-no-plan-test-${randomUUID()}`);
     tempDirs.push(imageStorageDir);

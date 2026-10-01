@@ -416,6 +416,39 @@ void main() {
     expect(published.publishLabel, 'Update book');
   });
 
+  testWidgets('adds at the end unless told where, one add at a time', (
+    tester,
+  ) async {
+    final repo = _repo();
+    final (:session, delegate: _, drafts: _) = _session(repo);
+    await session.start(chapterId: 'c1');
+    expect(session.addChapterLabel, 'Add chapter 3');
+
+    // A second add while the first is on its way adds nothing.
+    final first = session.addChapter();
+    expect(session.addingChapter, isTrue);
+    expect(await session.addChapter(), isFalse);
+    expect(await first, isTrue);
+    expect(session.addingChapter, isFalse);
+    expect(repo.chapters.map((c) => c.title), [
+      'The Lamp',
+      'The Harbour',
+      'Chapter 3',
+    ]);
+    expect(session.chapterPosition, 3);
+    expect(session.addChapterLabel, 'Add chapter 4');
+
+    expect(await session.addChapter(afterChapterId: 'c1'), isTrue);
+    expect(repo.chapters.map((c) => c.title), [
+      'The Lamp',
+      'Chapter 2',
+      'The Harbour',
+      'Chapter 3',
+    ]);
+    expect(session.chapterPosition, 2);
+    expect(repo.calls.where((call) => call == 'addChapter'), hasLength(2));
+  });
+
   testWidgets('deleting a chapter can be undone; the last one stays', (
     tester,
   ) async {

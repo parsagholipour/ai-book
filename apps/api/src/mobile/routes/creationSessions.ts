@@ -256,9 +256,11 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           });
         }
         payload = { ...payload, lastMessageAt: new Date().toISOString() };
+        const originShareId = await remixOriginShareId(parsedBody.data.remixSlug);
         const draft = await persistMessageReply((tx) => tx.mobileCreationDraft.create({
           data: {
             ...(parsedBody.data.requestId ? { requestId: parsedBody.data.requestId } : {}),
+            ...(originShareId ? { originShareId } : {}),
             userId: auth.user.id,
             status: "ACTIVE",
             payload: jsonInputValue(payload),
@@ -750,4 +752,17 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       );
     }
   );
+}
+
+/**
+ * The live share a remix slug names, as the draft's origin — or nothing. The
+ * origin is attribution for the share funnel, never a gate: a stopped, taken
+ * down or unknown share still opens an ordinary chat.
+ */
+async function remixOriginShareId(slug: string | undefined): Promise<string | null> {
+  if (!slug) {
+    return null;
+  }
+  const share = await prisma.bookShare.findUnique({ where: { slug }, select: { id: true, status: true } });
+  return share?.status === "ACTIVE" ? share.id : null;
 }

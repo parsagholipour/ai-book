@@ -10,6 +10,7 @@ import { bookArcSchema } from "./bookArc.js";
 import { paginateChapterMarkdown } from "./chapterPagination.js";
 import { proseWordCount } from "./figures/figureBlocks.js";
 import {
+  CAVEAT_ONCE_EDITOR_RULE,
   COMPOSE_CALL_WORDS,
   COMPOSE_PROMPT_MODE,  chapterDigest,
   chapterWordBudget,
@@ -125,6 +126,32 @@ describe("composeChapter", () => {
     expect(prompt).toContain("Do not state the book's answer");
   });
 
+  it("lets a how-to book set its steps, checklists and worksheets as lists or a table, and keeps every other book in paragraphs", async () => {
+    // Quick Draft, 2026-09-30: a workbook's worksheets came out as run-on
+    // sentences ("months reviewed: ____; income received: ____; …") and a
+    // one-on-one guide's promised checklist as prose, under "Paragraphs only".
+    const systemFor = async (bookInput: CreateProjectInput) => {
+      const plan = makeFallbackPlan(bookInput);
+      const chapter = plan.chapters[0]!;
+      const composition = fallbackChapterComposition({ chapter, startPage: 1, endPage: chapter.targetPages }, formPaletteFor("instructional"), 0);
+      const fake = new FakeTextModelAdapter(bookInput);
+      const seen: GenerateTextOptions[] = [];
+      const recording = { ...fake, generateText: (options: GenerateTextOptions) => { seen.push(options); return fake.generateText(options); } } as unknown as FakeTextModelAdapter;
+      const stance = await generateAuthorStance({ input: bookInput, plan, textModel: fake });
+      await composeChapter({ input: bookInput, plan, stance, chapter, composition, chapterPageStart: 1, chapterPageEnd: chapter.targetPages,
+        earlierChapters: [], continuityNotes: [], researchNotes: [], textModel: recording });
+      return seen[0]!.messages[0]!.content;
+    };
+    const workbook = await systemFor({ ...input, category: "EDUCATION", prompt: "A money workbook for freelancers with worksheets and exercises." });
+    expect(workbook).toContain("a numbered list");
+    expect(workbook).toContain("Markdown table");
+    expect(workbook).not.toContain("Paragraphs only");
+    expect(workbook).not.toContain("never as labelled entries");
+    const history = await systemFor(input);
+    expect(history).toContain("Paragraphs only");
+    expect(history).not.toContain("Markdown table");
+  });
+
   it("composes a chapter from the stance and form plan and returns paginatable prose", async () => {
     const { plan, chapter, composition } = setup();
     const fake = new FakeTextModelAdapter(input);
@@ -172,6 +199,30 @@ describe("composeChapter", () => {
     const paginated = paginateChapterMarkdown(composed.markdown, chapter.targetPages);
     expect(paginated.pages).toHaveLength(chapter.targetPages);
     expect(paginated.pages.every((page) => page.trim().length > 0)).toBe(true);
+  });
+
+  it("lets a nonfiction writer under the creative contract use what it knows, not only the dossier", async () => {
+    // 2026-09-30: with claim review off, the grounded line ("omit the unsupported specific") only
+    // made the writer hedge about its sources, the readers' first complaint on every Quick Draft book.
+    const systemFor = async (contract: "creative" | "grounded") => {
+      const { plan, chapter, composition } = setup();
+      const fake = new FakeTextModelAdapter(input);
+      const seen: GenerateTextOptions[] = [];
+      const recording = { ...fake, generateText: (options: GenerateTextOptions) => { seen.push(options); return fake.generateText(options); } } as unknown as FakeTextModelAdapter;
+      const stance = await generateAuthorStance({ input, plan, textModel: fake });
+      await composeChapter({ input, plan, stance, chapter, composition, contract, chapterPageStart: 1, chapterPageEnd: chapter.targetPages,
+        material: { episodes: [], excerpts: [dossierExcerptSchema.parse({ id: "record", chapterIndex: chapter.index, documentTitle: "Test original record",
+          documentUrl: "https://example.org/record", text: "The record documents the meeting and the order issued afterward." })] },
+        earlierChapters: [], continuityNotes: [], researchNotes: [], textModel: recording });
+      return seen[0]!.messages[0]!.content;
+    };
+    const creative = await systemFor("creative");
+    expect(creative).toContain("draw on your own knowledge");
+    expect(creative).toContain("Quotation marks are a promise");
+    expect(creative).not.toContain("omit the unsupported specific");
+    const grounded = await systemFor("grounded");
+    expect(grounded).toContain("omit the unsupported specific");
+    expect(grounded).not.toContain("draw on your own knowledge");
   });
 
   it("asks once more when the first answer is far too short", async () => {
@@ -264,11 +315,45 @@ describe("editChapter", () => {
       readerNotes: ["Paragraph beginning 'The wall': cut the closing sentence."],
       textModel: recording
     });
-    expect(system).toContain("Keep a caveat when it limits an inference");
+    expect(system).toContain(`Judge pacing through the chapter's evidence and explanation. ${CAVEAT_ONCE_EDITOR_RULE}`);
+    expect(system).not.toContain("Keep a caveat when it limits an inference");
     expect(system).toContain("Paragraph beginning 'The wall'");
     expect(system).toContain("Add no new claim, episode or source during this edit.");
     expect(system).toContain("negation, scope, uncertainty");
     expect(system).not.toContain("outrank every keep-rule");
+  });
+
+  it("tells a fiction editor the caveat rule after its pacing sentence, as the blind panel read it", async () => {
+    const novelInput: CreateProjectInput = { ...input, prompt: "A fantasy novel about a dragon rider and a forged oath.", category: "STORY" };
+    const plan = makeFallbackPlan(novelInput);
+    const chapter = plan.chapters[0]!;
+    const composition = fallbackChapterComposition({ chapter, startPage: 1, endPage: chapter.targetPages }, formPaletteFor("narrative"), 0);
+    const fake = new FakeTextModelAdapter(novelInput);
+    let system = "";
+    const recording = { ...fake, generateText: (options: GenerateTextOptions) => {
+      system = options.messages[0]!.content;
+      return fake.generateText(options);
+    } } as unknown as FakeTextModelAdapter;
+    await editChapter({ input: novelInput, plan, stance: await generateAuthorStance({ input: novelInput, plan, textModel: fake }), chapter, composition,
+      chapterPageStart: 1, chapterPageEnd: chapter.targetPages, earlierChapters: [], continuityNotes: [], researchNotes: [],
+      markdown: "A draft.", textModel: recording });
+    expect(system).toContain(`keep reflection when it changes what the reader understands. ${CAVEAT_ONCE_EDITOR_RULE}`);
+  });
+
+  it("accepts a cut that lands under the minimum but on the length floor, and refuses one that goes past it", async () => {
+    const { plan, chapter, composition } = setup();
+    const fake = new FakeTextModelAdapter(input);
+    const stance = await generateAuthorStance({ input, plan, textModel: fake });
+    const pages = 4;
+    const min = chapterWordBudget(input, pages).min;
+    const paragraphs = (words: number) => Array.from({ length: Math.ceil(words / 20) }, (_, index) =>
+      `Paragraph ${index} names the ${index}th ledger, the road from the quay and the clerk who signed for the bales today.`).join("\n\n");
+    const editTo = async (words: number) => editChapter({ input, plan, stance, chapter, composition, chapterPageStart: 1, chapterPageEnd: pages,
+      earlierChapters: [], continuityNotes: [], researchNotes: [], markdown: paragraphs(min + 40), semanticAcceptance: false,
+      textModel: { ...fake, generateText: async () => ({ text: paragraphs(words), model: "fake", provider: "fake" }) } as unknown as FakeTextModelAdapter });
+    // A caveat-once edit cut r1-bal-history chapter 6 to 0.885 of its minimum, and the guard discarded it.
+    expect((await editTo(Math.round(min * 0.89))).changed).toBe(true);
+    expect((await editTo(Math.round(min * 0.8))).changed).toBe(false);
   });
 });
 

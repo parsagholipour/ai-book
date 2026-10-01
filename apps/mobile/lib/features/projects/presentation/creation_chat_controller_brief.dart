@@ -159,4 +159,23 @@ mixin CreationChatBriefSetters on Notifier<CreationChatState> {
   void setSourceNotes(String value) {
     state = state.copyWith(sourceNotes: value);
   }
+
+  /// Sets a fresh chat up from a shared book's format ("Make a book like
+  /// this"). Every field counts as the reader's own choice, so the first
+  /// message carries the format and later replies cannot drift it; any of it
+  /// can still be changed in Advanced settings like a choice made there.
+  void applyRemix(BookRemix remix) {
+    state = state.copyWith(
+      presets: remix.chatPresets,
+      userChoices: {
+        ...state.userChoices,
+        CreationChoice.bookType,
+        CreationChoice.length,
+        CreationChoice.finish,
+        CreationChoice.cover,
+        CreationChoice.illustrations,
+      },
+      remixSlug: remix.slug,
+    );
+  }
 }

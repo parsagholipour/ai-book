@@ -1,11 +1,9 @@
 import { config } from "../runtime/config.js";
 import {
-  PREVIOUS_CHAPTER_TAIL_WORDS,
   chapterDigest,
   chapterEdges,
-  chapterTail,
   chapterWordBudget,
-  composeChapter,
+  composeChapter as composeChapterText,
   describeChapterPages,
   editChapter,
   formatStoryStateLines,
@@ -17,21 +15,22 @@ import {
   paragraphShapeNotes,
   paragraphShapeReport,
   planAuthorStance,
-  planChapterForms,
   range,
   readManuscript,
   sampleSentenceLeaks,
   figureStandInMarkdown,
   plannedFigures,
+  printedWordCount,
   proseWordCount,
   reinsertFigureFences,
   stripFigureFences,
-  usesFigures,
   type BookGenerationStrategy,
+  type BookEpisodes,
+  type InstructionalSetting,
   type BookPlan,
   type ChapterComposition,
+  type ChapterFormsResult,
   type CreateProjectInput,
-  type EarlierChapterDigest,
   type ProviderSet,
   type TextModelAdapter,
   type EditedChapterText,
@@ -57,17 +56,20 @@ import {
   stripMisattributedQuotes,
   type ChapterMaterial,
   type ComposedScene,
-  chapterCaseEvidence, shouldGenerateCharacterReferences, supportsBookDevelopment
+  chapterCaseEvidence, shouldGenerateCharacterReferences, sourceResearchFits, supportsBookDevelopment
 } from "@book-maker/core";
 import { persistBookArc, persistGeneratedAuthorStance, prepareComposedDevelopment } from "./composedPreparation.js";
 import { prepareBookMaterial, persistDossierSupplement, recordDossierSources } from "./composedChaptersMaterial.js";
 import { finalizePendingPages } from "./composedChaptersFinalize.js";
+import { briefRequirementsForForms, storeBriefInventory, takeBriefInventory } from "./composedBriefInventory.js";
+import { planComposedForms } from "./composedFormPlan.js";
 import { runComposedDevelopmentalEdit } from "./composedDevelopmentalEdit.js";
 import { validateComposedChapterFigures } from "./composedFigures.js";
 import { repairComposedClaims } from "./composedClaimReview.js";
 import { mergeSourceDossiers } from "./sourceDossier.js";
-import { repairChapterArithmetic } from "./composedArithmeticRepair.js";
+import { proseArithmeticChecker, repairChapterArithmetic } from "./composedArithmeticRepair.js";
 import { measureComposedChapterLength } from "./composedChapterLength.js";
+import { chapterFactLedger, earlierChapterContext } from "./composedChapterMemory.js";
 import type { RunLogger } from "../providers/runLogging.js";
 import { prisma } from "@book-maker/db";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
@@ -95,6 +97,11 @@ import {
 } from "./composedChaptersState.js";
 export { composedResumeState, derivedChapterBrief } from "./composedChaptersState.js";
 
+/** Chapters finishing beside the one being composed: three model calls in flight at most. */
+const FINISHES_IN_FLIGHT = 2;
+/** A draft's surplus over its minimum, counted toward the book's lead after the line edit's cuts. */
+const SLACK_KEPT_AFTER_EDIT = 0.7;
+
 /**
  * The composed-chapters pass: author stance → chapter form plan → for each
  * chapter, compose as one piece of prose, line-edit, paginate, describe the
@@ -102,10 +109,10 @@ export { composedResumeState, derivedChapterBrief } from "./composedChaptersStat
  * with a bounded second edit → finalize every PENDING page through the same
  * staged publication the other passes use.
  *
- * Two model calls are in flight at most: chapter N is composed while chapter
- * N-1 is edited, paginated, described and checkpointed. Chapter N reads the
- * *draft* tail of N-1 (the edit keeps its opening and closing substance), so
- * the pipeline never waits on an edit.
+ * Three model calls are in flight at most: chapter N is composed while
+ * chapters N-1 and N-2 are edited, paginated, described and checkpointed.
+ * Chapter N reads the *draft* tail of N-1 (the edit keeps its opening and
+ * closing substance), so the pipeline never waits on an edit.
  *
  * A chapter's pages are written in one transaction, so a worker restart finds
  * whole chapters or none of a chapter, and resumes at the first chapter with no
@@ -126,6 +133,13 @@ export async function generateBookComposedChapters(options: {
   judgeTextModel?: TextModelAdapter | undefined;
   /** The job's run log, for the events a rerun is measured from; the provider calls log through their own decorators. */
   runLog?: Pick<RunLogger, "append">;
+  /**
+   * The strategy's research expansion: started once the stance has said the
+   * book is written from sources, run beside the material and the form plan
+   * (its notes are read only when a chapter is composed), and waited for
+   * before the first chapter.
+   */
+  research?: { start: () => void; ready: () => Promise<void> } | undefined;
 }): Promise<void> {
   const { projectId, planId, input, providers, strategy, generationJobId, judgeTextModel, runLog } = options;
   let plan = options.plan;
@@ -134,13 +148,21 @@ export async function generateBookComposedChapters(options: {
   const quality = await loadQualityContext(input);
   await advanceJobStep(generationJobId, "briefs", 12, "Deciding the author's stance", { phase: "stance" });
   const originalState = await loadComposedBookState(projectId);
+  // It reads only the brief, so it runs beside the stance (`composedBriefInventory.ts`) — unless every page is already written.
+  const briefInventory = originalState.pages.length > 0 && originalState.pages.every((page) => page.status !== "PENDING") ? Promise.resolve(undefined) : takeBriefInventory({ input, plan, textModel });
   // A method-shaped stance is refused only on a fresh run: a resumed one
   // composes from the stance its finished chapters were written to.
   let stance = planAuthorStance(plan);
   if (!stance) {
     stance = await generateAuthorStance({ input, plan, textModel });
     await persistGeneratedAuthorStance(planId, stance);
+    // Every later mode read in this pass sees the stance's research answer (`inferWritingMode`).
+    plan = { ...plan, authorStance: stance };
   }
+  // Sources only for a book its author says is made from them (`STANCE_RESEARCH_RULE`): none for a novel.
+  const sourced = sourceResearchFits(input, plan, stance);
+  if (sourced) options.research?.start();
+  await runLog?.append("generation.composed_chapters.source_research", { projectId, sourced, decidedBy: stance.research ? "stance" : "writing-mode" });
   plan = await prepareComposedDevelopment({ projectId, planId, input, plan, stance, textModel, quality, hasPages: originalState.pages.length > 0, generationJobId, searchSources, ...(runLog ? { runLog } : {}) });
   stance = planAuthorStance(plan) ?? stance;
   if (plan.bookDevelopment || plan.dossier?.evidencePackets?.length) await runLog?.append("generation.composed_chapters.development_prepared", { projectId, chapters: plan.chapters.length, casePackets: plan.dossier?.evidencePackets?.length ?? 0, excludedCases: plan.dossier?.excludedCases?.length ?? 0, replanned: Boolean(plan.bookDevelopment), reviewNotes: plan.bookDevelopment?.reviewNotes ?? [] });
@@ -182,10 +204,47 @@ export async function generateBookComposedChapters(options: {
     }
   }
 
+  const setups = chapterSetupsForPlan(plan, input.targetPages);
+  const stored = await loadComposedBookState(projectId);
+  const developmentalEditing = !config.MOCK_AI && supportsBookDevelopment(input, plan) && quality.enabled("developmentalEdit") && stored.pages.every((page) => page.status === "PENDING");
+  const resume = composedResumeState({
+    ranges: setups.map((setup) => ({
+      chapterIndex: setup.chapter.index,
+      title: setup.chapter.title,
+      targetPages: setup.chapter.targetPages,
+      startPage: setup.startPage,
+      endPage: setup.endPage
+    })),
+    storedChapters: stored.chapters,
+    storedPages: stored.pages
+  });
+  if (resume.kind === "already-complete") {
+    await advanceJobStep(generationJobId, "enqueue", 90, "All chapters already written; queueing export");
+    await maybeEnqueueCompile(projectId, planId);
+    return;
+  }
+  const inventoryStored = briefInventory.then((inventory) => storeBriefInventory({ planId, input, plan, inventory }));
+  // The chapters an earlier run finished keep their compositions.
+  const fixed = resume.kind === "fresh" ? [] : stored.chapters
+    .filter((chapter) => resume.doneChapterIndexes.includes(chapter.index) && chapter.composition)
+    .map((chapter) => chapter.composition!);
+  // The form plan reads the episodes, never the dossier: it starts as soon as
+  // they settle and plans while the sources are gathered (2026-09-30).
+  let formsPlanned: Promise<ChapterFormsResult> | undefined;
+  const startForms = (planned: BookEpisodes | undefined, setting?: InstructionalSetting): Promise<ChapterFormsResult> => {
+    if (!formsPlanned) {
+      formsPlanned = briefInventory.then((inventory) => planComposedForms({ projectId, planId, input, plan, stance, arc, setups, fixed, episodes: planned, ...(setting ? { setting } : {}), quality, textModel, requirements: briefRequirementsForForms(inventory) }));
+      // Awaited below; a stop that lands while the sources are still gathering is not an unhandled rejection.
+      formsPlanned.catch(() => undefined);
+    }
+    return formsPlanned;
+  };
+
   // The writer's contract and, material-first, the book's episodes and
   // dossier: planned once per book and stored on the plan like the arc
   // (`composedChaptersMaterial.ts`).
-  const { contract, episodes, dossier } = await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId, searchSources, ...(runLog ? { runLog } : {}) });
+  const { contract, episodes, dossier } = await prepareBookMaterial({ projectId, planId, input, plan, stance, textModel, quality, generationJobId, searchSources,
+    onEpisodes: (planned, setting) => void startForms(planned, setting), ...(runLog ? { runLog } : {}) });
   plan = { ...plan, ...(episodes ? { episodes } : {}), ...(dossier ? { dossier } : {}) };
   const scenes = new Map<number, ComposedScene>();
   // Under the apparatus flag no two consecutive chapters open on a scene:
@@ -218,26 +277,6 @@ export async function generateBookComposedChapters(options: {
       ...(scene ? { scene } : {})
     };
   };
-
-  const setups = chapterSetupsForPlan(plan, input.targetPages);
-  const stored = await loadComposedBookState(projectId);
-  const developmentalEditing = !config.MOCK_AI && supportsBookDevelopment(input, plan) && quality.enabled("developmentalEdit") && stored.pages.every((page) => page.status === "PENDING");
-  const resume = composedResumeState({
-    ranges: setups.map((setup) => ({
-      chapterIndex: setup.chapter.index,
-      title: setup.chapter.title,
-      targetPages: setup.chapter.targetPages,
-      startPage: setup.startPage,
-      endPage: setup.endPage
-    })),
-    storedChapters: stored.chapters,
-    storedPages: stored.pages
-  });
-  if (resume.kind === "already-complete") {
-    await advanceJobStep(generationJobId, "enqueue", 90, "All chapters already written; queueing export");
-    await maybeEnqueueCompile(projectId, planId);
-    return;
-  }
 
   let chapterIds: Map<number, string>;
   const doneChapters = new Set<number>();
@@ -290,76 +329,36 @@ export async function generateBookComposedChapters(options: {
   } else {
     await updateJobProgress(generationJobId, { progress: 16, message: "Planning the shape of every chapter" });
   }
-  const fixed = stored.chapters
-    .filter((chapter) => doneChapters.has(chapter.index) && chapter.composition)
-    .map((chapter) => chapter.composition!);
-  // Figures: eligible books with the gate on. The planner sees the rule and
-  // the key only then, the writer sees the syntax only in a chapter the plan
-  // gave a figure, and every later pass sees prose (`composedFigures.ts`).
-  const figures = usesFigures(input, plan) && quality.enabled("figures");
-  const forms = await planChapterForms({
-    input,
-    plan,
-    // Under an arc the form planner sees the question and never the answer:
-    // its subjects and notes reach the writer.
-    stance: arc ? { ...stance, thesis: arc.question, positions: [] } : stance,
-    ranges: setups.map((setup) => {
-      const arcChapter = arc?.chapters.find((entry) => entry.index === setup.chapter.index);
-      return {
-        chapter: setup.chapter,
-        startPage: setup.startPage,
-        endPage: setup.endPage,
-        // The words the writer will be asked for, so the planner counts
-        // sections the writer can fill rather than essays it delivers half of.
-        words: chapterWordBudget(input, setup.endPage - setup.startPage + 1).target,
-        ...(arcChapter ? { kind: arcChapter.kind } : {}),
-        ...(arcChapter?.job.does ? { job: arcChapter.job.does } : {})
-      };
-    }),
-    fixed,
-    figures,
-    // The cases already selected for every chapter, so the planner builds on them rather than choosing a second set.
-    episodes,
-    textModel
-  });
-  if (forms.issues.length > 0) {
-    console.warn("Chapter form plan kept variety issues", {
-      event: "generation.composed_chapters.form_plan_issues",
-      projectId,
-      source: forms.source,
-      issues: forms.issues
-    });
-  }
+  const forms = await startForms(episodes);
   const compositionFor = (setup: ChapterSetup): ChapterComposition =>
     forms.compositions.find((composition) => composition.chapterIndex === setup.chapter.index)!;
 
-  // Memory of the book so far, in chapter order: final text, digest and the
-  // facts each chapter's pages established. Finished chapters are read back
-  // from their rows; chapters written this run fill in as they finish.
+  // Memory of the book so far, in chapter order: final text, digest, page notes
+  // and the continuity ledger. Finished chapters are read back from their rows;
+  // chapters written this run fill in as they finish. A chapter is told only
+  // about the chapters below it (`composedChapterMemory.ts`).
   const finalText = new Map<number, string>();
   const digests = new Map<number, string>();
   const provisionalDigests = new Map<number, string>();
-  const establishedNotes: string[] = [];
+  const pageNotes = new Map<number, string[]>();
+  const ledger = chapterFactLedger({ enabled: quality.enabled("chapterFactLedger"), projectId, title: plan.title, language: input.language, textModel, lastChapterIndex: setups.at(-1)?.chapter.index, runLog });
   for (const setup of setups) {
     if (!doneChapters.has(setup.chapter.index)) continue;
     const pages = storedPagesInRange(stored.pages, setup);
-    finalText.set(setup.chapter.index, pages.map((page) => page.markdown).join("\n\n"));
+    const text = pages.map((page) => page.markdown).join("\n\n");
+    finalText.set(setup.chapter.index, text);
     digests.set(setup.chapter.index, chapterDigest(pages.map((page) => page.summary)));
     const storedChapter = stored.chapters.find((chapter) => chapter.index === setup.chapter.index);
-    for (const notes of storedChapter?.pageNotes.values() ?? []) establishedNotes.push(...notes);
+    pageNotes.set(setup.chapter.index, [...(storedChapter?.pageNotes.values() ?? [])].flat());
+    if (storedChapter?.facts) ledger.seed(setup.chapter.index, storedChapter.facts);
+    else ledger.record(setup.chapter.index, text);
   }
   // The first and last sentence of every finished chapter, in order: the
   // moves the next chapter may not repeat. Stored chapters contribute theirs
   // from their rows; chapters written this run add theirs as they finish.
   const edges = new Map<number, { opening: string; closing: string }>();
   for (const [index, text] of finalText) edges.set(index, chapterEdges(text));
-  const earlierEdgesFor = (setup: ChapterSetup) => {
-    const earlier = setups.filter((candidate) => candidate.chapter.index < setup.chapter.index);
-    return {
-      earlierOpenings: earlier.map((candidate) => edges.get(candidate.chapter.index)?.opening ?? "").filter(Boolean),
-      earlierClosings: earlier.map((candidate) => edges.get(candidate.chapter.index)?.closing ?? "").filter(Boolean)
-    };
-  };
+  const memory = { setups, finalText, digests, provisionalDigests, edges, notes: pageNotes, compositionFor };
   // Deterministic measurements of a draft with the sentences behind them, plus
   // any sentence of the voice sample that reached the prose verbatim.
   const notesForDraft = (markdown: string): string[] => {
@@ -371,34 +370,15 @@ export async function generateBookComposedChapters(options: {
         : [])
     ];
   };
-  const earlierChaptersFor = (setup: ChapterSetup): EarlierChapterDigest[] =>
-    setups
-      .filter((candidate) => candidate.chapter.index < setup.chapter.index)
-      .map((candidate) => {
-        const digest =
-          digests.get(candidate.chapter.index) ?? provisionalDigests.get(candidate.chapter.index) ?? candidate.chapter.summary;
-        const told = [...new Set(compositionFor(candidate).sections.flatMap((section) => section.owns ?? []))];
-        return {
-          index: candidate.chapter.index,
-          title: candidate.chapter.title,
-          // Sixty words: 11k characters of digests rode in every call before.
-          digest: digest.split(/\s+/).slice(0, 60).join(" "),
-          ...(told.length > 0 ? { told } : {})
-        };
-      });
-  const previousTailFor = (setup: ChapterSetup, drafts: Map<number, string>): string | undefined => {
-    const previous = setups.filter((candidate) => candidate.chapter.index < setup.chapter.index).at(-1);
-    if (!previous) return undefined;
-    const text = drafts.get(previous.chapter.index) ?? finalText.get(previous.chapter.index);
-    return text ? chapterTail(text, PREVIOUS_CHAPTER_TAIL_WORDS) : undefined;
-  };
   const composeOptionsFor = async (setup: ChapterSetup, drafts: Map<number, string>) => {
-    const [storedNotes, researchNotes, storyState] = await Promise.all([
-      loadContinuityNotes(projectId, { beforePageIndex: null }),
+    const [storedNotes, researchNotes, storyState, establishedFacts] = await Promise.all([
+      loadContinuityNotes(projectId, { beforePageIndex: setup.startPage }),
       loadResearchNotesForGeneration(projectId, strategy, setup.chapter),
-      loadProjectStoryState(projectId, plan.promises ?? [])
+      loadProjectStoryState(projectId, plan.promises ?? []),
+      // Chapter N waits here for chapter N-1's facts, read off its draft the moment it was validated.
+      ledger.before(setup.chapter.index)
     ]);
-    const previousChapterTail = previousTailFor(setup, drafts);
+    const { earlierNotes, ...earlier } = earlierChapterContext(setup, memory, drafts);
     return {
       input,
       plan,
@@ -408,15 +388,17 @@ export async function generateBookComposedChapters(options: {
       composition: compositionFor(setup),
       chapterPageStart: setup.startPage,
       chapterPageEnd: setup.endPage,
-      ...(previousChapterTail ? { previousChapterTail } : {}),
-      earlierChapters: earlierChaptersFor(setup),
-      ...earlierEdgesFor(setup),
-      continuityNotes: [...storedNotes, ...establishedNotes],
+      ...earlier,
+      continuityNotes: [...storedNotes, ...earlierNotes],
       researchNotes,
       storyStateLines: formatStoryStateLines(storyState),
+      establishedFacts,
       textModel,
       semanticAcceptance: quality.enabled("chapterEditAcceptance"),
       contract,
+      sourced,
+      ...(forms.cast ? { exampleCast: forms.cast } : {}),
+      ...(forms.toolkit ? { toolkit: forms.toolkit } : {}),
       ...(materialFor(setup.chapter.index) ? { material: materialFor(setup.chapter.index) } : {})
     };
   };
@@ -444,6 +426,7 @@ export async function generateBookComposedChapters(options: {
     };
   };
 
+  const proseArithmetic = proseArithmeticChecker({ input, plan, textModel, enabled: quality.enabled("proseArithmeticCheck") });
   const finishChapter = async (setup: ChapterSetup, draftMarkdown: string, position: string): Promise<void> => {
     const chapterId = chapterIds.get(setup.chapter.index);
     if (!chapterId) {
@@ -494,7 +477,8 @@ export async function generateBookComposedChapters(options: {
     const arithmetic = await repairChapterArithmetic({
       markdown,
       edit: async (text, correction) => (await editChapter({ ...(await composeOptionsFor(setup, drafts)), markdown: text, allowExtension: false, degeneracyMaxWords: arithmeticMaxWords, readerNotes: correction.instructions, factualCorrection: { ...correction, evidence: [] } })).markdown,
-      degenerate: (text) => chapterDegeneracy(text, { maxWords: arithmeticMaxWords, language: input.language }).degenerate
+      degenerate: (text) => chapterDegeneracy(text, { maxWords: arithmeticMaxWords, language: input.language }).degenerate,
+      ...(proseArithmetic ? { proseFindings: proseArithmetic } : {})
     });
     if (arithmetic) {
       markdown = arithmetic.markdown;
@@ -533,6 +517,7 @@ export async function generateBookComposedChapters(options: {
     const pages = await describePages(setup, markdown);
     const bestOf = bestOfVerdicts.get(setup.chapter.index);
     const scene = scenes.get(setup.chapter.index);
+    const facts = await ledger.of(setup.chapter.index);
     const report: ComposedChapterReport = {
       ...reportFor(setup, proseWordCount(draftMarkdown), proseWordCount(markdown), editorChanged, markdown),
       paragraphCv: paragraphShapeReport(markdown).cv,
@@ -552,7 +537,8 @@ export async function generateBookComposedChapters(options: {
       ...(epigraph ? { epigraph } : {}),
       ...(evidence ? { evidence } : {}),
       ...(verified.sourceClaims ? { sourceClaims: verified.sourceClaims } : {}),
-      ...(arithmetic ? { arithmetic: { findings: arithmetic.findings, repairs: arithmetic.repairs, unresolved: arithmetic.unresolved } } : {})
+      ...(arithmetic ? { arithmetic: { findings: arithmetic.findings, repairs: arithmetic.repairs, unresolved: arithmetic.unresolved } } : {}),
+      ...(facts ? { facts } : {})
     };
     reports.set(setup.chapter.index, report);
     await stageComposedChapter({ projectId, chapterId, setup, composition: compositionFor(setup), pages, report, replace: false });
@@ -560,7 +546,7 @@ export async function generateBookComposedChapters(options: {
     finalText.set(setup.chapter.index, markdown);
     edges.set(setup.chapter.index, chapterEdges(markdown));
     digests.set(setup.chapter.index, chapterDigest(pages.map((page) => page.summary)));
-    for (const page of pages) establishedNotes.push(...page.continuityNotes);
+    pageNotes.set(setup.chapter.index, pages.flatMap((page) => page.continuityNotes));
   };
 
   const describePages = async (setup: ChapterSetup, markdown: string): Promise<ComposedPageRow[]> => {
@@ -580,8 +566,12 @@ export async function generateBookComposedChapters(options: {
     return described.map((page, offset) => ({ ...page, markdown: pagesForDescription[offset]!.markdown }));
   };
 
+  await options.research?.ready();
   await reportChapter(22, "Writing chapters", "compose", todo[0]?.chapter.index);
-  let pendingFinish: Promise<void> | undefined;
+  // A finish (edit, review, descriptions: 30–40 s) outlasted the next compose (20–28 s) and paced the
+  // loop; the next compose reads only this chapter's draft tail and digest, so two finish at once.
+  const finishing: Promise<void>[] = [];
+  let bookSlack = 0;
   for (const [offset, setup] of todo.entries()) {
     const position = `${setup.chapter.index}/${setups.length}`;
     const progress = 22 + Math.round((offset / Math.max(todo.length, 1)) * 46);
@@ -608,12 +598,19 @@ export async function generateBookComposedChapters(options: {
       if (scene) scenes.set(setup.chapter.index, scene);
     }
     await reportChapter(progress, `Writing chapter ${position}`, "compose", setup.chapter.index);
-    const composeOptions = await composeOptionsFor(setup, drafts);
+    const composeOptions = { ...(await composeOptionsFor(setup, drafts)), lengthSlack: Math.max(0, bookSlack) };
     const withScene = (draft: { markdown: string; words: number; attempts: number }) => {
       const scene = scenes.get(setup.chapter.index);
       if (!scene) return draft;
       const markdown = `${scene.text}\n\n${draft.markdown}`;
-      return { ...draft, markdown, words: proseWordCount(markdown) };
+      return { ...draft, markdown, words: printedWordCount(markdown) };
+    };
+    // A length retry that failed kept the earlier draft (core `composeChapter`); the run log says so.
+    const composeChapter = async (options: Parameters<typeof composeChapterText>[0]) => {
+      const composed = await composeChapterText(options);
+      if (composed.lengthRetryError) await runLog?.append("generation.composed_chapters.length_retry_failed", {
+        projectId, chapterIndex: setup.chapter.index, keptWords: composed.words, error: composed.lengthRetryError });
+      return composed;
     };
     const candidates = judgeTextModel && COMPOSE_CANDIDATES > 1
       ? await Promise.all([
@@ -685,22 +682,22 @@ export async function generateBookComposedChapters(options: {
       draft = { ...draft, markdown: validated[0]! };
     }
     drafts.set(setup.chapter.index, draft.markdown);
+    ledger.record(setup.chapter.index, draft.markdown);
+    // What this draft adds to the book's lead over its floor, with the surplus discounted for the editor's cuts.
+    const over = draft.words - budgetForGuard.min;
+    bookSlack += over > 0 ? over * SLACK_KEPT_AFTER_EDIT : over;
     // Subjects only: the through-line reached the next chapter's writer through
     // this digest and was quoted there.
     provisionalDigests.set(setup.chapter.index, chapterDigest(composition.sections.map((section) => section.subject)));
-    if (pendingFinish) {
-      await pendingFinish;
-    }
+    if (finishing.length >= FINISHES_IN_FLIGHT) await finishing.shift();
     const finish = finishChapter(setup, draft.markdown, position);
-    // Awaited on the next iteration or below; the branch only keeps a rejection
-    // that lands while the next chapter is being composed from surfacing as
-    // unhandled before it is awaited.
+    // Awaited above or below; the branch only keeps a rejection that lands
+    // while later chapters are composed from surfacing as unhandled first.
     finish.catch(() => undefined);
-    pendingFinish = finish;
+    finishing.push(finish);
   }
-  if (pendingFinish) {
-    await pendingFinish;
-  }
+  const failed = (await Promise.allSettled(finishing)).find((result) => result.status === "rejected");
+  if (failed) throw failed.reason;
 
   if (developmentalEditing) {
     await reportChapter(69, "Editing the manuscript's progression and overlapping sections", "read");
@@ -886,6 +883,7 @@ export async function generateBookComposedChapters(options: {
   }
 
   await finalizePendingPages({ projectId, planId, input, plan, providers, strategy, generationJobId, ...(runLog ? { runLog } : {}) });
+  await inventoryStored;
   await advanceJobStep(generationJobId, "enqueue", 90, "Queueing export");
   await maybeEnqueueCompile(projectId, planId);
 }

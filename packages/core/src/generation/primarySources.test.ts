@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanOcrText, configurePrimarySourceThrottle, textLooksLikeLanguage, fetchPrimaryText, searchArchive, searchGutenberg, searchPrimarySources, searchWikisource, stripGutenbergBoilerplate, stripWikisourceHeader, throttledFetch } from "./primarySources.js";
+import { cleanOcrText, configurePrimarySourceThrottle, normalizePrimaryText, textLooksLikeLanguage, fetchPrimaryDocument, fetchPrimaryText, isSiteNameTitle, withoutSiteSuffix, searchArchive, searchGutenberg, searchPrimarySources, searchWikisource, stripGutenbergBoilerplate, stripWikisourceHeader, throttledFetch } from "./primarySources.js";
 
 configurePrimarySourceThrottle({ intervalMs: 0, backoffMs: 50, retries: 1 });
 
@@ -73,6 +73,39 @@ describe("primarySources", () => {
     responses.delete("page=T%2FChapter%201");
     responses.set("page=T&prop=text", { parse: { title: "T", text: { "*": "<p>Then Tem&#252;jin said:</p><p>Let us go.</p>" }, links: [] } });
     expect(await fetchPrimaryText({ host: "wikisource", title: "T", url: "u", textUrl: "https://en.wikisource.org/w/api.php?action=parse&page=T&prop=text%7Clinks&format=json", author: "", year: "" }, fakeFetch)).toBe("Then Temüjin said:\n\nLet us go.");
+  });
+
+  it("drops a PDF's bullet glyph glued to the next word and keeps real list bullets", () => {
+    // A CFPB worksheet extracted as "cell •phone •payments"; the writer quoted it and apologised for the punctuation.
+    expect(normalizePrimaryText("Include cell •phone •payments and rent.\n• Groceries\n•Transit")).toBe("Include cell phone payments and rent.\n• Groceries\n•Transit");
+  });
+
+  it("titles a web page by its own title when the search named only its site", async () => {
+    // Gemini grounding reports a result's domain as its title; the provenance
+    // reviewer then rejected verbatim IRS, SBA and Acas passages because
+    // "irs.gov" is not the document's title (2026-09-30 Quick Draft runs).
+    const page = `<html><head><title>Discipline and grievances at work: the Acas guide &amp; code</title><meta content="Acas guide" property="og:title"></head><body><p>${"Word ".repeat(90)}</p></body></html>`;
+    const fetchPage = async () => ({ status: 200, text: page, contentType: "text/html" });
+    const web = { host: "web" as const, title: "acas.org.uk", url: "https://www.acas.org.uk/guide", textUrl: "https://www.acas.org.uk/guide", author: "", year: "" };
+    expect((await fetchPrimaryDocument(web, fetchPage)).title).toBe("Acas guide");
+    expect((await fetchPrimaryDocument({ ...web, title: "The search's own title" }, fetchPage)).title).toBe("The search's own title");
+    const pdf = await fetchPrimaryDocument({ ...web, title: "irs.gov", url: "https://www.irs.gov/f1040es.pdf", textUrl: "https://www.irs.gov/f1040es.pdf" }, async () => ({ status: 200, text: "Form 1040-ES Estimated Tax", contentType: "application/pdf" }));
+    expect(pdf).toEqual({ text: "Form 1040-ES Estimated Tax", title: "irs.gov" });
+    expect(isSiteNameTitle("irs.gov", "https://www.irs.gov/f1040es.pdf")).toBe(true);
+    expect(isSiteNameTitle("IRS.gov", "https://apps.irs.gov/app")).toBe(true);
+    expect(isSiteNameTitle("Form 1040-ES", "https://www.irs.gov/f1040es.pdf")).toBe(false);
+  });
+
+  it("cites a web page by its title, without the site name after the bar", async () => {
+    // Printed as "The Truck Driver Who Reinvented Shipping | Working Knowledge reports…" (2026-09-30).
+    expect(withoutSiteSuffix("The Truck Driver Who Reinvented Shipping | Working Knowledge")).toBe("The Truck Driver Who Reinvented Shipping");
+    expect(withoutSiteSuffix("How to Run a One-on-One | Guides | Example Co")).toBe("How to Run a One-on-One");
+    // A short lead is as likely the site as the title; hyphens and colons belong to titles.
+    expect(withoutSiteSuffix("Acas | Discipline and grievances at work")).toBe("Acas | Discipline and grievances at work");
+    expect(withoutSiteSuffix("Difficult Conversations: How To Discuss What Matters Most - A Summary")).toBe("Difficult Conversations: How To Discuss What Matters Most - A Summary");
+    const web = { host: "web" as const, title: "The Truck Driver Who Reinvented Shipping | Working Knowledge", url: "https://example.org/a", textUrl: "https://example.org/a", author: "", year: "" };
+    const fetched = await fetchPrimaryDocument(web, async () => ({ status: 200, text: `<html><body><p>${"Word ".repeat(90)}</p></body></html>`, contentType: "text/html" }));
+    expect(fetched.title).toBe("The Truck Driver Who Reinvented Shipping");
   });
 
   it("strips the Wikisource header whether it comes as short blocks or fused onto the first paragraph", () => {

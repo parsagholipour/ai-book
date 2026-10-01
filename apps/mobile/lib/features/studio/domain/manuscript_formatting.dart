@@ -9,16 +9,19 @@ library;
 
 import 'package:flutter/services.dart';
 
+import 'manuscript_emphasis.dart';
+import 'manuscript_inline.dart' show EmphasisKind;
+
 /// Bold: wraps the selection (or the word under the cursor) in `**`, or
-/// removes the `**` already around it.
+/// removes the `**` already around it. See [toggleEmphasis].
 TextEditingValue toggleBold(TextEditingValue value) =>
-    _toggleEmphasis(value, _Emphasis.bold);
+    toggleEmphasis(value, EmphasisKind.bold);
 
 /// Italic: wraps the selection (or the word under the cursor) in `*`, or
 /// removes the `*` already around it. Leaves bold alone: `**word**` becomes
 /// `***word***`, and `***word***` goes back to `**word**`.
 TextEditingValue toggleItalic(TextEditingValue value) =>
-    _toggleEmphasis(value, _Emphasis.italic);
+    toggleEmphasis(value, EmphasisKind.italic);
 
 /// Cycles the current line's heading: none → `## ` → `### ` → none. A `# `
 /// line moves on to `## ` like a plain one.
@@ -73,107 +76,6 @@ TextEditingValue insertSceneBreak(TextEditingValue value) {
   return TextEditingValue(
     text: '$head$after',
     selection: TextSelection.collapsed(offset: cursor),
-  );
-}
-
-enum _Emphasis {
-  bold('**'),
-  italic('*');
-
-  const _Emphasis(this.marker);
-
-  final String marker;
-
-  /// Whether a run of [stars] asterisks around a span already applies this.
-  bool appliedBy(int stars) => switch (this) {
-    bold => stars >= 2,
-    italic => stars == 1 || stars >= 3,
-  };
-}
-
-TextEditingValue _toggleEmphasis(TextEditingValue value, _Emphasis emphasis) {
-  final text = value.text;
-  final selection = _validSelection(value);
-  var start = selection.start;
-  var end = selection.end;
-  final collapsed = start == end;
-  final cursor = selection.extentOffset;
-
-  if (collapsed) {
-    // An empty pair the author just made and changed their mind about.
-    final pair = emphasis.marker * 2;
-    final m = emphasis.marker.length;
-    if (start >= m &&
-        start + m <= text.length &&
-        text.substring(start - m, start + m) == pair &&
-        _starsBefore(text, start - m) == 0 &&
-        _starsAfter(text, start + m) == 0) {
-      return TextEditingValue(
-        text: text.replaceRange(start - m, start + m, ''),
-        selection: TextSelection.collapsed(offset: start - m),
-      );
-    }
-    final word = _wordAround(text, start);
-    if (word == null) {
-      return TextEditingValue(
-        text: text.replaceRange(start, start, pair),
-        selection: TextSelection.collapsed(offset: start + m),
-      );
-    }
-    start = word.start;
-    end = word.end;
-  } else {
-    // "**word **" is not bold in markdown; wrap what is inside the spaces.
-    while (start < end && _isSpace(text.codeUnitAt(start))) {
-      start++;
-    }
-    while (end > start && _isSpace(text.codeUnitAt(end - 1))) {
-      end--;
-    }
-    if (start == end) return value;
-    // A selection that already includes its own markers: unwrap it.
-    final inner = _innerStars(text, start, end);
-    if (inner > 0 && emphasis.appliedBy(inner)) {
-      start += inner;
-      end -= inner;
-    }
-  }
-
-  final before = _starsBefore(text, start);
-  final after = _starsAfter(text, end);
-  final stars = before < after ? before : after;
-  final m = emphasis.marker.length;
-
-  int shift(int offset, {required bool adding}) {
-    if (offset <= start) return offset;
-    final delta = adding ? m : -m;
-    if (offset >= end) return offset + 2 * delta;
-    return offset + delta;
-  }
-
-  if (emphasis.appliedBy(stars)) {
-    final removed = text
-        .replaceRange(end, end + m, '')
-        .replaceRange(start - m, start, '');
-    final newStart = start - m;
-    final newEnd = end - m;
-    return TextEditingValue(
-      text: removed,
-      selection: collapsed
-          ? TextSelection.collapsed(
-              offset: (cursor - m).clamp(newStart, newEnd),
-            )
-          : TextSelection(baseOffset: newStart, extentOffset: newEnd),
-    );
-  }
-  final wrapped = text
-      .replaceRange(end, end, emphasis.marker)
-      .replaceRange(start, start, emphasis.marker);
-  return TextEditingValue(
-    text: wrapped,
-    selection: collapsed
-        ? TextSelection.collapsed(offset: shift(cursor, adding: true))
-        : TextSelection(baseOffset: start + m, extentOffset: end + m),
   );
 }
 
@@ -306,58 +208,6 @@ int _lineStart(String text, int offset) {
 int _lineEnd(String text, int lineStart) {
   final next = text.indexOf('\n', lineStart);
   return next < 0 ? text.length : next;
-}
-
-int _starsBefore(String text, int offset) {
-  var count = 0;
-  while (offset - count - 1 >= 0 &&
-      text.codeUnitAt(offset - count - 1) == 0x2a) {
-    count++;
-  }
-  return count;
-}
-
-int _starsAfter(String text, int offset) {
-  var count = 0;
-  while (offset + count < text.length &&
-      text.codeUnitAt(offset + count) == 0x2a) {
-    count++;
-  }
-  return count;
-}
-
-/// Stars a selection carries on both of its own edges ("**word**" selected).
-int _innerStars(String text, int start, int end) {
-  var count = 0;
-  while (start + count < end - count - 1 &&
-      text.codeUnitAt(start + count) == 0x2a &&
-      text.codeUnitAt(end - count - 1) == 0x2a) {
-    count++;
-  }
-  return count;
-}
-
-bool _isSpace(int unit) =>
-    unit == 0x20 || unit == 0x09 || unit == 0x0a || unit == 0xa0;
-
-final _wordChar = RegExp(r"[\p{L}\p{N}\p{M}'’]", unicode: true);
-
-/// The word the cursor is in or touching, or null between words.
-({int start, int end})? _wordAround(String text, int offset) {
-  bool isWord(int index) =>
-      index >= 0 &&
-      index < text.length &&
-      _wordChar.hasMatch(String.fromCharCode(text.codeUnitAt(index)));
-  var start = offset;
-  var end = offset;
-  while (isWord(start - 1)) {
-    start--;
-  }
-  while (isWord(end)) {
-    end++;
-  }
-  if (start == end) return null;
-  return (start: start, end: end);
 }
 
 /// What pressing Enter means in a book.

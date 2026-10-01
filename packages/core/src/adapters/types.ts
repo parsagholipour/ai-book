@@ -222,11 +222,26 @@ export type ResearchQuery = {
   purpose?: string | undefined;
 };
 
+/** What a grounded search reported about its own grounding — Google bills it apart from tokens. */
+export type SearchGroundingUsage = {
+  /** `groundingMetadata.webSearchQueries`: the searches the model chose to run. */
+  searchQueries: number;
+  /** Web sources the answer cited, counted before their redirects are resolved. */
+  webSources: number;
+};
+
 export type ResearchResult = {
   /** Optional for unmetered/custom providers; absent usage must never be priced as zero. */
   provider?: string | undefined;
   model?: string | undefined;
   usage?: Usage | undefined;
+  /**
+   * Priced on top of `usage` by `calculateSearchGroundingFee` (`costs.ts`).
+   * Absent from a provider that does not ground, which then pays no fee.
+   */
+  grounding?: SearchGroundingUsage | undefined;
+  /** The answer hit its output cap: `summary` is empty and only the grounded sources were kept. */
+  truncated?: boolean | undefined;
   /** Monotonic elapsed milliseconds for this successful adapter attempt, excluding caller retries/backoff. */
   timings?: {
     /** Provider SDK request, including provider-managed search and any SDK retries. */

@@ -26,6 +26,18 @@ the signal as the SDK's per-request option via `openAiRequestOptions`; Gemini pa
 `abortSignal` in the request config. Every request path on those adapters must preserve it,
 including streamed JSON and tool calls; adapters with no HTTP client ignore it.
 
+- **A streamed OpenAI reply that runs into blank lines has ended, and is returned as it stood.**
+  A Quick Draft length-retry compose at effort none (2026-09-30) wrote its chapter and then streamed
+  `" \n"` to its 10,608-token fuse — 63 s, a 28,942-character reply whose tail was nothing else —
+  and the incomplete response failed the book. The fuse was sane (`composeMaxTokens`, three times
+  the longest chapter allowed, and the effort floors in `chapterOutputBudget` only add reasoning
+  room), and `JsonOutputRepetitionGuard` reads repeated JSON keys, not prose. `WhitespaceRunawayGuard`
+  (`whitespaceRunaway.ts`) ends the stream at `WHITESPACE_RUNAWAY_NEWLINES` newlines in one run of
+  whitespace, which no prose, Markdown or JSON reply holds: leaving the loop closes the SDK iterator
+  (aborting the request), the text so far is the answer, and a `text.whitespace_runaway` warning
+  names the purpose. A reply cut short of its content still meets the caller's own checks; and a
+  compose length retry that fails any other way keeps the earlier draft (`composeChapter`).
+
 - **A cancellation raised inside a tool escapes the tool loop; only a tool *failure* becomes a tool
   result.** `runToolLoop`'s whole point is that a tool blowing up is recoverable — the throw comes
   back as `{error: "The <tool> tool failed: …"}` and the model works around it. A stop is the one
@@ -123,6 +135,13 @@ including streamed JSON and tool calls; adapters with no HTTP client ignore it.
   judges (`chapterJudge.ts`, `bestOf.ts`) take a decision route too and were not exercised by these
   runs; they replace a text call rather than adding to one, so they are unmeasured, not unuseful.
   The test for any new screen is the same: show the paid call it skipped.
+
+  **One Jev path is not a screen, and the yardstick above does not apply to it.** The API's
+  share-note gate (`apps/api/src/userTextModeration.ts`) replaces no text call — it *is* the
+  moderation decision, and a no-verdict holds the note for an operator rather than falling
+  through to a paid call — so it is kept on its measured verdicts, not on calls avoided (39/39 on a
+  labelled caption set, `.scratch/book-sharing/jev-measurement.md`). Details and the rule for
+  re-measuring it are under "Book sharing" in `apps/api/src/mobile/CLAUDE.md`.
 
 - **A picture that never arrived is not a picture that was refused, and only the second is
   permanent.** `ImageContentRefusedError` is the one failure nothing retries: it skips
@@ -601,6 +620,93 @@ to run.
   lives in `packages/db` because **two** processes compile a book: the API renders inline when a
   compiled file is missing, and its own copy of the citation map skipped the unwrap entirely, so
   the same book's Sources list named Google or the publisher depending on which side rendered it.
+
+- **A grounded search carries its own deadline, and the deadline firing is a 504, never a
+  cancellation.** `GeminiResearchAdapter.search` used to wait for Google as long as the connection
+  stayed open: three of 124 searches in the 2026-09-30 Quick Draft runs took 243–250 s against a
+  median of 10.5 s (p90 19 s), each holding a chapter's claim retrieval past its own deadline. The
+  request now carries an `abortSignal` fired at `RESEARCH_REQUEST_TIMEOUT_MS` (45 s), and the abort
+  is rethrown as `ProviderHttpError { status: 504 }` — the Jev deadline's rule above, for the same
+  reason: an `AbortError` reads as the reader stopping the book to `isStopOrAbortError`, which the
+  dossier rethrows, while a 504 is retried by `withRecoverableNetworkRetry` and every caller already
+  degrades on a failed search.
+
+- **A grounded search is priced at its tokens plus the grounding fee Google actually bills —
+  nothing inside its pool's free allowance, list price past it — and on 2.5 Flash it runs with
+  thinking off.** Google bills Grounding with Google Search apart from tokens
+  (ai.google.dev/gemini-api/docs/pricing, read 2026-09-30): Gemini 2.5 at $35 per 1,000 *grounded
+  prompts* — one charge however many searches the prompt ran, and only for a prompt that returned
+  a web source — and Gemini 3.x at $14 per 1,000 *search queries*, each after a free allowance per
+  Google project: 1,500 prompts a Pacific-time day for 2.5 Flash and Flash-Lite together, 1,500 for
+  2.5 Pro, 5,000 queries a Pacific-time month across 3.x. `GeminiResearchAdapter.search` reports
+  `grounding: { searchQueries, webSources }` — counted before redirects resolve, since a cited
+  source is billed whether or not its link unwraps — and `searchGroundingCost.ts` prices it.
+  `costs.ts` used to have no line for it at all; the first fix priced every grounded prompt at list
+  ($0.035, about nine-tenths of a Flash search's cost), and that overstated the other way: the dev
+  stack's 2026-09-30 logged 789 grounded prompts against 1,500 free and recorded $12.78 of fees
+  Google never charged.
+
+  **So each grounded prompt is priced by its ordinal in its pool-period, and the ordinal is claimed
+  in the transaction that writes its row.** `SearchGroundingAllowanceCounter` holds one row per
+  `(pool, period)`; `claimSearchGroundingUnits` (`@book-maker/db/searchGroundingAllowance`) adds a
+  call's units with `INSERT … ON CONFLICT DO UPDATE … RETURNING`, which Postgres makes atomic across
+  every worker and the API — concurrent claims queue on the key's row lock, the very first insert
+  included — and `writeWithSearchGroundingClaim` runs it in the same transaction as the
+  `ProviderCallLog` create, so a row that fails to write takes its claim back and an ordinal is
+  never repeated or skipped. `applySearchGroundingAllowance` then prices the units at or below the
+  allowance at nothing and the rest at list, and the row records `groundingPeriod`,
+  `groundingOrdinal`, `groundingAllowance`, `groundingFreeUnits`, `groundingAllowanceCovered`,
+  `groundingFeeUsd` (billed) and `groundingListFeeUsd`. A count read with `COUNT(*)` and then
+  written is the race this replaces. Both recorders take the same calls — the worker's
+  `LoggingResearchAdapter` through `recordProviderUsage`, the creation chat's `web_search` through
+  `withInlineResearchUsage` — so the API's searches and the workers' share one count. The rows
+  written at list before this were re-priced by the same rule, in `createdAt` order, by
+  `scripts/reprice-search-grounding.ts` ($12.775 → $0 on dev), which also seeded the counters; it
+  counts each older research row that recorded no grounding as one grounded prompt of its pool,
+  unchanged, because it drew on Google's allowance all the same.
+
+  **The allowance is a setting, because our counter is not Google's.** The counter sees only the
+  calls this system logs, and Google's pool is per Google project: another environment on the same
+  key, an ad-hoc script, a replay run from a laptop all draw on it unseen (the 98-call replay below
+  did, on 2026-09-30). `SEARCH_GROUNDING_FREE_GEMINI_25_FLASH_PER_DAY`, `…_GEMINI_25_PRO_PER_DAY`
+  and `…_GEMINI_3_PER_MONTH` default to Google's numbers; production sharing a key with anything
+  should set them lower, and 0 prices every grounded prompt at list. Each row records the allowance
+  it was priced under, so a changed setting re-prices nothing behind it. **Grounding on a model no
+  rate card knows is `usd: null`, and the row's `costHint` with it** — priced on its tokens alone
+  it would be a settled call understating its own spend, which is the one error the admin tab
+  cannot see (`apps/api/src/admin/CLAUDE.md`); unpriced, it lands in `unratedCalls` and claims
+  nothing. A search that ran nothing and cited nothing costs and claims nothing on any model.
+  `calculateTextGenerationCost` replays the billed fee from `metadata.groundingFeeUsd`, so a
+  project summary and the Costs tab agree.
+
+  Thinking off is `researchThinkingConfig`, and it is scoped to the models it was measured on.
+  A throwaway replay of 20 logged queries from the three sourced books of that run — 98 grounded
+  calls, with a second run of each variant on eight queries to measure the noise — showed the
+  default request thinking ~700 tokens a search for nothing the dossier reads: with `thinkingBudget: 0` the model ran the same 4.0 searches, cited 11.8 sources against
+  10.0, put 2.45 primary documents among the three `discoverSourceDocuments` fetches against 2.50,
+  and overlapped the default's URLs by 56% where the default overlaps *itself* by 51% run to run —
+  at 45% less token spend, 6.2 s median against 8.2 s and 8.1 s p90 against 13.0 s. A 512 budget
+  saved nothing. 2.5 Pro rejects a zero budget and 3.x takes a thinking level, so both keep the
+  request they had. **The answer's length is not the lever, because the answer is where the
+  sources come from**: in all 98 responses `groundingChunks` were exactly the chunks
+  `groundingSupports` cited, so a prompt asking for a bare list of documents (2.6 s, 86% cheaper)
+  cited 6.2 sources, left 2 of 22 searches under the three URLs the dossier fetches, and dropped
+  PDFs among them from 1.50 to 1.23. That was rejected, and the `case-source-search` summary stays
+  paid for and unread. For `chapter-research` and `plan-research` it is read — it becomes the
+  "Research brief" the writer is given — and the six measured briefs read the same with thinking
+  off. What would move real money past the allowance is fewer grounded prompts, not fewer tokens;
+  and moving research to 3.x would *raise* the fee, at the measured 4.0 queries a prompt ×
+  $0.014 = $0.056 against $0.035.
+
+  The answer is capped at `RESEARCH_MAX_OUTPUT_TOKENS` (8,192) for the one failure length does
+  cause: a runaway. Five `case-source-search` calls in the week to 2026-10-01 wrote 64–73k tokens
+  each (~250 s, $0.16–0.19), while every other one of 1,060 stayed under 10k and 99% under 4.8k.
+  The deadline bounds the wait, not the tokens billed before it fires, and its 504 is retried into
+  the same loop; the cap lands in about 30 s and ends the call as an answer. **A cut answer keeps
+  its grounding** — measured with a 120-token cap, both purposes still returned their searches and
+  sources — so the adapter keeps the sources, drops the text (for `chapter-research` that text
+  would be the writer's brief, and a text that hit the cap is almost certainly a loop), returns no
+  stand-in source, and marks the result `truncated` for the run log.
 
 ## Speech, retries and quotas
 

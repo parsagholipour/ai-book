@@ -5,6 +5,7 @@ import { authorStanceSchema, type AuthorStance, type BookPlan, type CreateProjec
 import { isRecord } from "../schemas/jsonCoercion.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { inferWritingMode, type WritingMode } from "./styleContract.js";
+import { TOOLKIT_EXEMPLAR } from "./instructionalBook.js";
 
 /**
  * The author the composed-chapters strategy writes as.
@@ -28,10 +29,23 @@ export function isNarrativeWritingMode(mode: WritingMode): boolean {
   return NARRATIVE_MODES.has(mode);
 }
 
+/**
+ * The author's own answer to "is this book written from sources?", asked of
+ * the book as described rather than read off its category. The category and
+ * a cue-word guess had a fantasy novel about "the last era of a dynasty"
+ * researched as a history and a true story filed under Story researched not
+ * at all; every composed book also paid a web search per chapter, novels
+ * included. Skipping sources a book needs lost 12 of 12 blind readings
+ * (2026-09-30), so the doubtful case answers "sources".
+ */
+export const STANCE_RESEARCH_RULE =
+  'research: "sources" or "none" — whether this book should be written from gathered sources. "sources" when its substance is the real world: real events, people, places, institutions, studies, data, laws, products, or established methods and practices a reader could look up, as in a history, a biography, a true story, a guide, a workbook, a textbook or reported nonfiction. "none" when published sources have nothing to give it: a novel, short stories, a fable, a fairy tale, poetry, a script, an imagined world, or a private story from the requester\'s own life — even when it is set in a real place or period, or filed under a nonfiction category. Decide from what the book is, never from its category label; when in doubt, "sources".';
+
 /** What the planner is asked to put in `authorStance`, mode-agnostic. */
 export const PLANNER_AUTHOR_STANCE_GUIDANCE = [
   "Also return authorStance, the author this book is written by: thesis (one sentence the whole book argues about its subject, stated as a fact about the world and never as a rule about how to read evidence, weigh sources or make comparisons — a method is not a thesis, and a writer given one performs it in every paragraph; or for fiction what the story is about underneath its events), positions (three to five plain assertions the author holds about the subject, each a string stating a fact the author is prepared to defend, none of them about method or evidence, with no rejected alternative named), refusals (two to four habits the author refuses, such as ending a section by balancing both sides, listing more than three examples in one sentence, or restating a point already made), and voiceSample (180 to 260 words written as this author on a subject adjacent to the book but not in it).",
-  "In the voiceSample every sentence names a particular — a place, a person, a year, an object, a document — and no sentence states a general truth, opens on a common noun with a claim about it, or is built as a negation followed by its correction; paragraphs and sentences are of visibly different lengths. It demonstrates diction and stance for the writer, never text for the book."
+  "In the voiceSample every sentence names a particular — a place, a person, a year, an object, a document — and no sentence states a general truth, opens on a common noun with a claim about it, or is built as a negation followed by its correction; paragraphs and sentences are of visibly different lengths. It demonstrates diction and stance for the writer, never text for the book.",
+  `authorStance also carries ${STANCE_RESEARCH_RULE}`
 ];
 
 /** The sample the writer is shown has to be prose about particulars, or its aphorisms become the book's. */
@@ -76,9 +90,10 @@ export async function generateAuthorStance(options: {
         role: "system",
         content: [
           "You are the author of the book described in the payload, deciding before you write what you believe and how you sound.",
-          "Return one JSON object with thesis, positions, refusals, and voiceSample.",
+          "Return one JSON object with thesis, positions, refusals, voiceSample, and research.",
           ...stanceShapeLines(mode),
           ...VOICE_SAMPLE_RULES,
+          STANCE_RESEARCH_RULE,
           "The sample demonstrates diction and stance for a writer; it must not be a passage of the book, an introduction, or a description of the book.",
           "positions is required and holds at least three entries; a stance with no positions is unusable.",
           "Do not mention AI, prompts, plans, JSON, schemas, or generation.",
@@ -108,7 +123,8 @@ export async function generateAuthorStance(options: {
               thesis: "One sentence.",
               positions: ["Three to five plain assertions the author holds, each one string, no rejected alternative."],
               refusals: ["Two to four habits refused."],
-              voiceSample: "180 to 260 words as the author, on an adjacent subject."
+              voiceSample: "180 to 260 words as the author, on an adjacent subject.",
+              research: "sources or none"
             }
           },
           null,
@@ -155,14 +171,23 @@ export function chapterPosition(stance: AuthorStance, chapterIndex: number): str
 export function authorStancePromptLines(
   stance: AuthorStance,
   mode: WritingMode,
-  options: { chapterIndex?: number | undefined; exemplarOnly?: boolean | undefined } = {}
+  options: {
+    chapterIndex?: number | undefined;
+    exemplarOnly?: boolean | undefined;
+    /** A toolkit book (`instructionalBook.ts`): the how-to passage in place of the pump, which taught a guide to narrate. */
+    practical?: boolean | undefined;
+  } = {}
 ): string[] {
   const kind = isNarrativeWritingMode(mode) ? "story" : "book";
+  const exemplar = options.practical
+    ? `A passage unrelated to this book, showing how a practical book can move — an instruction with its reason, a spoken exchange with the pushback it meets, a rule with a number, a short list, a two-sentence paragraph. Take its movement, never its subject or its sentences: "${TOOLKIT_EXEMPLAR}"`
+    : undefined;
   const position = options.chapterIndex === undefined ? undefined : chapterPosition(stance, options.chapterIndex);
   if (options.exemplarOnly) {
     // Under a book arc the middle chapters never see the thesis or the positions.
     return [
-      `A passage unrelated to this ${kind}, showing how paragraphs and sentences can move — a long narrated stretch, a two-sentence paragraph, a plain assertion, particulars throughout. Take its movement, never its subject or its sentences: "${RHYTHM_EXEMPLAR}"`
+      exemplar ??
+        `A passage unrelated to this ${kind}, showing how paragraphs and sentences can move — a long narrated stretch, a two-sentence paragraph, a plain assertion, particulars throughout. Take its movement, never its subject or its sentences: "${RHYTHM_EXEMPLAR}"`
     ];
   }
   return [
@@ -172,7 +197,8 @@ export function authorStancePromptLines(
       : stance.positions.length > 0
         ? [`What you hold to be true, and write from: ${stance.positions.join(" | ")}`]
         : []),
-    `A passage unrelated to this book, showing how paragraphs and sentences can move — a long narrated stretch, a two-sentence paragraph, a plain assertion, particulars throughout. Take its movement, never its subject or its sentences: "${RHYTHM_EXEMPLAR}"`
+    exemplar ??
+      `A passage unrelated to this book, showing how paragraphs and sentences can move — a long narrated stretch, a two-sentence paragraph, a plain assertion, particulars throughout. Take its movement, never its subject or its sentences: "${RHYTHM_EXEMPLAR}"`
   ];
 }
 

@@ -24,9 +24,13 @@ may have been edited in the meantime.
   `requiredContinuity` is how a finalize after a restart still publishes each page's continuity
   notes. `composedResumeState` is pure: whole chapters count as done, a partial chapter's rows are
   deleted and the chapter redone, all pages present with some PENDING means finalize, none PENDING
-  means queue the compile. Two model calls are in flight at most: chapter N is composed while N-1 is
-  edited and checkpointed, and N reads N-1's *draft* tail, so a rejection from the checkpoint is
-  caught on the next iteration's await and the run fails there, resumable.
+  means queue the compile. Three model calls are in flight at most: chapter N is composed while
+  N-1 and N-2 are edited and checkpointed (`FINISHES_IN_FLIGHT`), and N reads N-1's *draft* tail, so
+  a rejection from a checkpoint is caught when that finish is next awaited and the run fails there,
+  resumable — `composedResumeState` takes done chapters as a set, so one checkpointed ahead of its
+  neighbour resumes cleanly. It was two until 2026-09-30: a chapter's finish (edit, acceptance
+  review, descriptions: 30–40 s) outlasted composing the next (20–28 s), so one finish at a time
+  paced the whole loop.
 - **Finalize goes through the same staged publication as every other pass, with local checks
   only.** `reviewWholeBookDraftPages` (deterministic rules; one revise on a prompt leak or
   placeholder), then `stageGeneratedPageAndBrief` flips PENDING to COMPLETED — or GENERATING plus
@@ -88,6 +92,147 @@ may have been edited in the meantime.
   statements on the card and a page edited past the statement clears itself. A chapter whose
   arithmetic holds spends no edit at all.
 
+- **No claim or source is verified on any tier; the review is dormant behind one switch, and
+  finalize and compile read the same switch.** Parsa, 2026-09-30: "we want best looking results,
+  we shouldn't waste tokens for this". `SOURCE_CLAIM_REVIEW` (`sourceClaimState.ts`) is false, so
+  `sourceClaimReviewApplies` answers false and `repairComposedClaims` returns before a call: no
+  claim inventory, verification batches, claim searches or factual-repair edits at compose, and
+  finalize does not re-run the review for a chapter it finds unreviewed — which it would otherwise
+  do for every chapter. `unsupportedCaseClaimIssues` skips `sourceClaimVerificationIssues` on the
+  same switch, because an older book's stored ledger would flag every later edit
+  SOURCE_VERIFICATION_INCOMPLETE with nothing left to re-verify it. Core's
+  `DOSSIER_PROVENANCE_REVIEW` is off with it (the writer reads excerpts as extracted, and without
+  `provenanceVerified` no epigraph prints), and the per-page `claimVerifier`, `claimRetrieve` and
+  `changedCandidateGrounding` gates default to no tier. Measured on the Quick Draft runs that
+  day, the review was 100–300 s of every chapter, 50–70 claims a history chapter with 0–26
+  supported, one repair that cut a chapter by 40% and dropped the brief's own subject, and a
+  "Review required" verdict on every book, mostly over definitions, caveats and document titles.
+  The modules and their tests stay (the tests switch the review on with a module mock), like the
+  shelved arc. Case-evidence packets (`caseEvidence`, off) still take their own review. The writer's
+  contract follows the same switch: research-led nonfiction was forced onto the grounded contract
+  because the review checked it, so with the review off the `creativeContract` gate decides for every
+  book (`prepareBookMaterial`), and a nonfiction writer under it gets `CREATIVE_CONTRACT_RULES` and
+  the creative dossier line instead of "omit the unsupported specific" — hedging about what the
+  sources "do not establish" was the blind readers' first complaint on every grounded book. The forced
+  dossier is not the review's, though, and stays on every tier for a book written from sources (the
+  entry after next says which that is): making it the switch's too (so Quick
+  Draft skipped `plan-episodes` and the dossier, two to three minutes a book) lost 6 of 6 blind
+  readings the same day, the readers naming exactly what the passages had carried — the IRS
+  thresholds, McLean's own words, the studies a guide cited — and the no-passage instruction turned
+  every opening abstract.
+- **The composed pass's preparation overlaps: the research expansion runs beside the episodes and
+  the form plan, the form plan beside the dossier, and a chapter's story-state calls beside each
+  other.** All three ran one after another on 2026-09-30's Quick Draft books, which took 11–15
+  minutes. The research expansion (`maybeExpandStrategyResearch`) is handed to the pass by
+  `generateBook` as `research: { start, ready }`: the pass starts it once the stance has said the
+  book is written from sources (the entry below), without its step (it would move the bar back
+  under the episodes'), and awaits `ready` before its first chapter; a `finally` in `generateBook`
+  waits for it too, so a failed pass never leaves it writing rows behind the job.
+  Nothing before that await may read the book's `ResearchSource` rows — `loadResearchNotesForGeneration`
+  runs only in `composeOptionsFor`. The expansion's existing-rows guard reads before the dossier
+  could have written its `primary-source:` rows, which is why it still expands on a fresh run. The
+  form plan (`planComposedForms`, `composedFormPlan.ts`) reads the episodes and never the dossier,
+  so `prepareBookMaterial` hands it the settled episodes through `onEpisodes` before gathering any
+  source; a planner that ever needs the dossier has to start after `prepareBookMaterial` instead.
+  Its promise carries a no-op `catch` because a stop can reject it before the pass awaits it, and
+  its step is still announced where it is awaited, so the bar reads "gathering sources" while both
+  run. The dossier gathers three chapters at a time (`DOSSIER_CHAPTER_CONCURRENCY`) and six under
+  `wideSourceGathering` (Quick Draft): six started the first chapter 20–60 s sooner, but Wikisource
+  stopped answering in every round after it was tried, at six and back at three, so what it costs
+  the catalogue hosts was never measured. At finalize, `persistChapterStoryDeltas` extracts a chapter's approved pages at once against
+  the state the chapter started from — or, under `storyNotesTogether` (Quick Draft), every page of
+  the book at once against its opening state — and applies them in page order: a page no longer sees what an
+  earlier page of its own chapter added, so a repeat is merged where the state keys it (promises,
+  entities) and appended where it does not (facts). Every chapter is written by then, so nothing
+  waits on the state being built page by page.
+- **The length floor that blocks is the book's, at the share of it that still prints the paid
+  pages; a chapter under its own minimum in a book over that floor is a warning, and a stub still
+  blocks.** `composedChapterLengthIssues` used to raise an
+  error for any chapter 3% or more under its minimum, whatever the rest of the book did. But what
+  the reader paid for is the book's pages, the writer's one length retry is against the chapter's
+  minimum and keeps the longer draft, and asking for more moves nothing
+  (→ packages/core/src/generation/CLAUDE.md), so single chapters land 5–10% under while their
+  siblings run over: on 2026-09-30 a history at 108% of its floor and a narrative at 105% both
+  went to "Review required" over one chapter 8–9% short. Now a shortfall is an error only when the
+  book as a whole is under `LENGTH_FLOOR_SHARE` (0.85, core `printedLength.ts`) of the sum of its
+  chapters' minimums, or the chapter is under `STUB_SHARE` (three quarters) of its own; otherwise it
+  is a warning that also states the book's total.
+  Replayed over the 40 composed books stored since the 2026-09-20 budget fix, the old rule blocked
+  ten and this one two — the eight released are 3–17% over their floor as books, the two kept have
+  a chapter at 65–69% of its minimum. The near-miss rule (under 3%) is unchanged. The compose
+  call's length retry follows the same rule: the pass hands `composeChapter` a `lengthSlack` — what
+  earlier drafts ran over their minimums, surpluses counted at `SLACK_KEPT_AFTER_EDIT` for the
+  editor's cuts — and a shortfall the slack covers is not retried unless the draft is under three
+  quarters of its minimum. Quick Draft books had paid one to three serial retries of 20–30 s.
+  **The floor is what prints, and every check that reads a minimum reads it the same way.** On
+  2026-10-01 the full sum blocked five books (and two more that night) at 0.94–0.995 of it, and
+  every one printed exactly its paid pages: the history books had lost their narration padding,
+  the fact ledger stopped restatement, and the guides and workbooks print worksheets — so tight the
+  fitter had to *tighten* five of the seven. Cutting the densest stored book (a prose-only history)
+  paragraph by paragraph through `fitBookPdfPageCount`, it printed all 28 pages down to 0.80 of its
+  floor and lost one at 0.74, and at 0.85 the page reads as the house page, a little airier. Replayed
+  over the 75 composed books stored since 2026-09-20 the full sum blocked 9 and the share blocks the
+  2 with a stub chapter (65–69%), both of which printed full; whether a stub chapter is a defect a
+  reader sees has not been measured. The measure counts a table row at its own words plus
+  `TABLE_ROW_ROOM_WORDS` (cells were always readable words; a blank worksheet row prints a full row,
+  and sixteen rendered guides and workbooks printed 13–38 words of room a row against 4–20 counted),
+  which takes 11 of 13 stored workbook chapters off "under minimum". The compose retry fires under
+  the share (unless the slack covers it), the line edit may cut to the share and never under it nor
+  under a draft already below it (core `editShortensPastFloor`), and a length retry whose call fails
+  — truncated, refused or unreachable — keeps the earlier draft and writes
+  `generation.composed_chapters.length_retry_failed`, since the chapter exists and only its second
+  try failed. A Quick Draft guide failed whole on exactly that in both its attempts (a whitespace
+  runaway, then five connection errors), and 32 of the 44 stored retries had asked again for a
+  draft at 0.85–0.99.
+- **The compile's brief inventory is taken while the chapters are written, and only an available
+  one is stored.** It is also what gives each of the brief's asks a section in the form plan
+  (→ packages/core/src/generation/CLAUDE.md), so `takeBriefInventory` starts at the top of the pass,
+  beside the stance, the form plan waits for it (it is ready long before on a sourced book), and
+  `storeBriefInventory` writes it later; a book whose every page is written takes none. The
+  compile checks the finished book against the request in two calls, one
+  after the other: `inventory-brief-requirements`, which reads only the brief, and the coverage
+  read, which needs the manuscript — 28 s and 40 s of a 55–90 s compile on the Quick Draft books.
+  `manuscriptCoverageForCompile` already reuses an inventory the plan carries
+  (`matchingRequirementInventory`: `version: 1`, the same brief — what `requireScope: true`
+  produces, and how the picture-book path has always worked), so `takeBriefInventory`
+  (`composedBriefInventory.ts`) takes it in the background and writes it to
+  `planningPackage.requirementInventory` through `persistPlanField`. It starts after the stance and
+  the development step, because `persistPreparedComposedPlan` refuses a plan row that changed
+  under it and `persistGeneratedAuthorStance` is a read-modify-write that would lose the field. It
+  never rejects, and an `unavailable` attempt is not stored: the compile reuses even a failed
+  inventory it finds, so storing one would turn a provider blip into "coverage unverified".
+  **Quick Draft skips the coverage read itself** (`briefCoverageReview`, off on fast; Parsa,
+  2026-10-01): it was 26–67 s after the last chapter, and on the 2026-09-30 Quick Draft books it
+  marked every requirement fulfilled, gaps the blind readers named included. The skip lives in
+  `compileExport.ts` and covers a composed book only (the short picture book's finalization
+  coverage and the per-page path keep theirs). It files **nothing** in the read's place: no
+  `briefCoverage`, no `BRIEF_COVERAGE_UNVERIFIED`, and not the `unpaidPromiseQualityIssues`
+  fallback either, which would otherwise turn every open continuity promise into a warning on the
+  reader's card. The inventory is still taken, because the form plan is its other reader.
+- **Whether a book is written from sources is the stance's answer about the book as described;
+  the writing mode answers only for a stance that did not say.** Parsa, 2026-09-30: "only if the
+  description of the book fits it, not for an imaginary novel". Three things gather sources in the
+  composed pass — the per-chapter web research (`maybeExpandStrategyResearch`), the episodes and
+  the dossier — and what decided them was the category plus a cue-word guess
+  (`supportsBookDevelopment`), or nothing at all: the web research ran for every composed book, and
+  `materialFirst` (balanced and up on the live revision) planned "documented episodes" and a
+  dossier for novels too. A fantasy novel about "the last era of a dying dynasty" read as an
+  analytical history and was researched like one; a true story filed under Story was researched
+  not at all. The stance now carries `research: "sources" | "none"` (`STANCE_RESEARCH_RULE`, asked
+  by `generateAuthorStance` and, in the same words, of the planner), and `sourceResearchFits`
+  (core, `bookDevelopment.ts`) reads it: the pass starts the web research only on `sources`,
+  `prepareBookMaterial` plans episodes and gathers only on `sources` — under `materialFirst` as
+  well — and hands `composeChapter` `sourced: false` otherwise, because that function rewrites a
+  nonfiction chapter with no passages ("No actual source passages have been supplied…", scenes
+  turned into arguments) and a book that gathered nothing on purpose is not a book whose passages
+  went missing. The doubtful case answers `sources`, since skipping them where they were needed
+  lost 12 of 12 blind readings the same day; an unreadable answer costs the decision, never the
+  stance (`.catch(undefined)`); episodes an earlier run stored stay in use when a regenerated
+  stance changes its mind, without gathering anything new; and the run log says which way it went
+  and who decided (`generation.composed_chapters.source_research`). The first live run: an Apollo
+  13 narrative under Story gathered, and a novel, a fable and that fantasy novel searched nothing.
+  The writing mode follows the same answer now (`inferWritingMode`, → packages/core/src/generation/CLAUDE.md);
+  the per-page strategies, which have no stance, still expand research for every book.
 - **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.**
   `toPriorPageContext` (`bookHelpers.ts`) is where a stored page becomes a prompt's prior-page
   context, so the block becomes `[Figure: title]` there and the summary is run through
@@ -126,6 +271,84 @@ may have been edited in the meantime.
   that gate reads the strategy off the *current* input, so a continuation that moves `targetPages` or
   a routing change sends the same stored pages through it. Parse-time `figureFreeDraft` on a replan
   generate or adherence revise would otherwise publish the rebuilt page without its chart.
+- **A composed chapter is written against the facts every chapter before it fixed, never one after
+  it, and chapter N waits for chapter N-1's.** Every chapter used to be composed blind to the facts
+  of the chapters just before it. The story state is built at finalize, after the last chapter.
+  Chapter N-1's page notes were still being described while N was composed, so N saw notes from
+  N-2 at best, chapter 2 saw none at all, and `continuityNotesForPrompt` then cut the oldest ones
+  away. The 2026-09-30 Quick Draft novel dated its founding battle "Fourth of Ashfall" in chapter 1
+  and "Frostwane ninth" in 2 and 5. It made Maelin Avar's mother, then his sister, turned its clerk
+  into a rider, and changed the aerie's mark between chapters 3 and 4. The workbook gave Mara $2,000
+  of monthly essentials and then $2,400. `extract-chapter-facts` (core `chapterFacts.ts`, gate
+  `chapterFactLedger`, every tier) reads each composed *draft* the moment it is validated. It gets
+  the ledger so far as `knownFacts` and returns at most 14 new `{subject, attribute, value}` facts:
+  people's roles, relations, ages and pronouns; dates; places; who holds a story document and what
+  it establishes; identifying marks; and a named example person's situation and figures.
+  `composedChapterMemory.ts` chains those reads. `composeOptionsFor`
+  awaits `ledger.before(N)`, so the compose, the line edit, the repair edits and
+  `acceptsChapterEdit` all see the same `establishedFacts`. The wait is the ledger's whole cost on
+  the critical path. Replayed over the q2 drafts it was 2.5–4.7 s a chapter (mean per book), about
+  $0.0005 a call. Composing N from chapters up to N-2 would have cost nothing and missed three of
+  those seven contradictions (the date, the Regent's pronoun, the mark), each between neighbours.
+  Asking the extractor to flag contradictions instead found one of about four with no reasoning,
+  and took 10–41 s with medium reasoning. That is also why the stage takes Quick Draft's
+  `describe-pages` route on every tier (`generationStageRoute`): Balanced's own, luna at low
+  effort, answered in 6–10 s. The same replay found 5 of the 7 facts in the ledger reliably, the
+  mark in one run of two, and never the Regent's pronoun.
+  **The ledger is keyed by chapter index, and so is everything else a chapter is told.** A resumed
+  run takes done chapters as a set, so it can hold a chapter checkpointed ahead of the failed one it
+  redoes. `before(N)` returns only lower chapters, whatever was seeded. Each chapter's facts ride its
+  report (`report.facts`) so a resume seeds them rather than paying again, and a done chapter without
+  them is re-read from its stored text. `establishedNotes`, the page notes the pass hands forward,
+  used to be one list every finished chapter pushed onto, so that redo was handed the later
+  chapter's notes. They are per chapter now and read below N (`earlierChapterContext`), and the
+  stored notes are bounded at the chapter's first page. A failed read is a chapter the ledger knows
+  nothing about (`facts_failed` in the run log); a stop travels.
+  **A fact is an attribute and a short value, never text the writer can copy.** The first ledger
+  stored free clauses, and a clause about a document is its wording. In the q3 novel (2026-10-01),
+  chapter 2's facts carried three quoted margin notes, a dated agreement and a seal's description.
+  Chapter 3 was handed them through `establishedFacts` alone, reprinted all five word for word and
+  announced the find again, and chapter 5 quoted three once more. That was 33 and 13 six-word runs
+  of prose whose only source was the ledger, where every other chapter of four books had 0–3. The
+  facts are keyed by attribute now, and code refuses three shapes of value (`newFacts`): any
+  quotation mark, more than 16 words, and a nine-word run shared with the chapter. A six-word copy
+  check was tried against the stored ledgers and refused mark descriptions and example people's
+  roles, which are the facts the ledger exists for. The writer is told a listed document, mark or
+  find "is referred to in a clause by what it is — never quoted, read out, described or discovered
+  again"; the editor is never to quote one. Re-extracted from q3's stored chapters and recomposed
+  from their logged inputs (two runs each), chapter 3's ledger-only six-grams fell from 33 to 1 and
+  0 and chapter 5's from 13 to 5 and 0. The prose's six-grams shared with earlier chapters fell from
+  32 to 16 and 5 in chapter 3, and from 23 to 12 and 10 in chapter 5.
+  **A cited source is named and filed apart, and the latest value of an attribute wins.** Told only
+  to skip publications, the extractor spent 17 of the q3 guide's 31 facts on real books, studies and
+  agencies. Asked to record them as `kind: "source"` with no facts, it did, and code drops them: 20
+  in the guide and 21 in the workbook, leaving two facts about a cited author out of the guide's 14.
+  One line per subject shows each attribute once, with its latest value. A line past 1,000
+  characters keeps its first attribute (usually who the subject is) and then the most recently set
+  ones. The old 800-character clip cut the newest instead, so the workbook's Maya lost every figure
+  from chapter 4 on; her line now tops out at 489 characters with all of them. Latest-wins can
+  canonise a contradiction the extractor let through, so it is told to give a known attribute again
+  only for a change the chapter narrates ("knownFacts stands").
+  **The prompts say "consistent with", never "restate".** A prompt field present in every chapter
+  gets performed (→ packages/core/src/generation/CLAUDE.md), and restatement is the readers' first
+  complaint. So the writer is told the ledger "is for consistency, not material" and that "a person
+  returns without being introduced again". The editor may change a contradicting detail as "the one
+  change of fact this edit makes". Chapter 1 and every book with the gate off get byte-identical
+  prompts. The last chapter is never read, because nothing reads its facts. Reports written before
+  attributes existed still parse (`storedChapterFact`). The finalize story state is unchanged and is
+  still the durable record.
+- **A practical guide's or a workbook's whole-book decisions are planned once, stored like the
+  cast, and reach every chapter through the compose options.** (→ packages/core/src/generation/CLAUDE.md
+  for why the path exists and who takes it.) `planEpisodes` routes a toolkit book to research leads
+  on its own, and `prepareBookMaterial` hands their `setting` to the form plan through `onEpisodes`
+  beside the episodes; `planComposedForms` calls `planInstructionalForms` instead of
+  `planChapterForms` when `usesToolkit` says so, hands back a stored `plan.toolkit` on every later
+  run (fresh or resumed, like `plan.exampleCast`), persists a new one through
+  `persistPlanField("toolkit")`, and logs `generation.composed_chapters.toolkit_coverage` when a
+  requirement was homed by code or is still uncovered. `composeOptionsFor` passes `forms.toolkit`,
+  and core's `activeToolkit` decides whether any prompt acts on it. A book already in flight when
+  this shipped re-plans its remaining chapters' forms as a toolkit book if the reader chose a guide
+  or a workbook, and keeps the documents its stored episodes name.
 
 ## Illustrated page publication
 

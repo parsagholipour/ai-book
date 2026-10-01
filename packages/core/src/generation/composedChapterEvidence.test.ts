@@ -29,10 +29,34 @@ describe("nonfiction composition without source passages", () => {
     const system = String(messages[0]!.content);
     const payload = JSON.parse(String(messages[1]!.content));
     expect(system).not.toContain("reconstructed from what the record makes likely");
-    expect(system).not.toContain("draw on your own knowledge for the people");
+    // Since 2026-09-30 a creative nonfiction writer may use what it knows (12/12 blind wins on Quick
+    // Draft books, with claim review off); a real event still gets no invented scene-level detail.
+    if (contract === "creative") {
+      expect(system).toContain("draw on your own knowledge for the people");
+      // A science book is analytical-history, which says it as HISTORY_RECONSTRUCTION_RULE (historySources.ts).
+      expect(system).toContain("dialogue, thoughts, remembered objects, gestures and sensory detail appear only where a passage gives them");
+    } else {
+      expect(system).not.toContain("draw on your own knowledge for the people");
+    }
     expect(system).toContain("No actual source passages");
     expect(payload.episodes).toEqual([]);
     expect(payload.composition.sections[0]).toMatchObject({ form: "argument", subject: "The RSA discovery" });
     expect(JSON.stringify(payload)).not.toContain("Reconstruct the room.");
+  });
+  it("leaves the forms alone in a book that gathered no sources on purpose", async () => {
+    // A fable filed under Business: its scenes are not evidence that went missing.
+    const input = createProjectSchema.parse({ prompt: "A fable about a fox who learns to delegate.", category: "BUSINESS", targetPages: 20, complexity: 5, language: "en" });
+    const plan = makeFallbackPlan(input);
+    const chapter = plan.chapters[0]!;
+    const textModel = new FakeTextModelAdapter(input);
+    const calls = vi.spyOn(textModel, "generateText");
+    await composeChapter({ input, plan, chapter, sourced: false,
+      stance: { thesis: "Trust is given before it is earned.", positions: [], refusals: [], voiceSample: "Clear prose." },
+      composition: { chapterIndex: chapter.index, throughLine: "The fox", sections: [{ form: "scene", subject: "The fox hands over the henhouse keys", share: 1, owns: [] }], landing: "The fox", avoid: [] },
+      chapterPageStart: 1, chapterPageEnd: 4, earlierChapters: [], continuityNotes: [], researchNotes: [], contract: "creative", textModel
+    });
+    const messages = calls.mock.calls[0]![0].messages;
+    expect(String(messages[0]!.content)).not.toContain("No actual source passages");
+    expect(JSON.parse(String(messages[1]!.content)).composition.sections[0]).toMatchObject({ form: "scene" });
   });
 });

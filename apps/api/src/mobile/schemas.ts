@@ -363,7 +363,10 @@ export const mobileCreationSessionStartBodySchema = z
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
     // Library characters @-mentioned in the opening message.
     mentionedCharacterIds: z.array(z.string().trim().min(1).max(64)).max(10).optional(),
-    requestId: requestIdSchema.optional()
+    requestId: requestIdSchema.optional(),
+    // The share whose "Make a book like this" opened this chat. Recorded as the
+    // draft's origin for the share funnel; an unknown or stopped share is ignored.
+    remixSlug: z.string().trim().min(1).max(64).optional()
   })
   .strict()
   .default({});

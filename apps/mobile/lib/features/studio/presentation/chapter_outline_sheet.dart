@@ -72,7 +72,6 @@ class ChapterOutline extends StatefulWidget {
 class _ChapterOutlineState extends State<ChapterOutline> {
   ({String message, String? actionLabel, VoidCallback? onAction})? _inline;
   Timer? _inlineTimer;
-  bool _adding = false;
 
   StudioSession get _session => widget.session;
 
@@ -108,11 +107,12 @@ class _ChapterOutlineState extends State<ChapterOutline> {
     widget.onChapterOpened?.call();
   }
 
-  Future<void> _add() async {
-    setState(() => _adding = true);
-    await _session.addChapter();
+  /// At the end of the book from the button under the list; after [after]
+  /// from a chapter's menu. Either way the sheet closes on the new chapter,
+  /// or on the message saying why there is none.
+  Future<void> _add({String? after}) async {
+    await _session.addChapter(afterChapterId: after);
     if (!mounted) return;
-    setState(() => _adding = false);
     widget.onChapterOpened?.call();
   }
 
@@ -135,6 +135,12 @@ class _ChapterOutlineState extends State<ChapterOutline> {
               title: const Text('Status'),
               trailing: Text(chapter.status.label),
               onTap: () => Navigator.of(sheetContext).pop('status'),
+            ),
+            ListTile(
+              key: const ValueKey('outline-add-after'),
+              leading: const Icon(Icons.playlist_add_rounded),
+              title: Text('Add a ${_session.chapterNoun} after this one'),
+              onTap: () => Navigator.of(sheetContext).pop('addAfter'),
             ),
             ListTile(
               leading: Icon(Icons.delete_outline, color: colors.error),
@@ -168,6 +174,8 @@ class _ChapterOutlineState extends State<ChapterOutline> {
         if (status != null) {
           await _session.setChapterStatus(chapter.id, status);
         }
+      case 'addAfter':
+        await _add(after: chapter.id);
       case 'delete':
         final refusal = await _session.deleteChapter(chapter.id);
         if (!mounted) return;
@@ -249,10 +257,8 @@ class _ChapterOutlineState extends State<ChapterOutline> {
               ),
               child: AppButton.tonal(
                 key: const ValueKey('outline-new-chapter'),
-                label: _session.manuscript?.isPictureBook ?? false
-                    ? 'New part'
-                    : 'New chapter',
-                loading: _adding,
+                label: _session.addChapterLabel,
+                loading: _session.addingChapter,
                 expanded: true,
                 leading: const Icon(Icons.add_rounded),
                 onPressed: _add,

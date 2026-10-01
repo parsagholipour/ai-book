@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { acceptsChapterEdit, type ChapterEditAcceptanceOptions } from "./chapterEditAcceptance.js";
 import { chapterResearchNotesForPrompt, CHAPTER_RESEARCH_CONTEXT_RULE } from "./chapterResearchContext.js";
 import { chapterDegeneracy } from "./chapterIntegrity.js";
@@ -6,11 +5,12 @@ import { chapterCutConstraints } from "./chapterCutContext.js";
 import { deletionOnlyResult } from "./composedChapterCuts.js";
 export { cutChapterTail, CUT_TAIL_WORDS, deletionOnlyResult } from "./composedChapterCuts.js";
 import type { TextModelAdapter } from "../adapters/types.js";
+import { isStopOrAbortError } from "../adapters/retry.js";
+import { editShortensPastFloor, LENGTH_FLOOR_SHARE, printedWordCount } from "./printedLength.js";
 import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import { kidsReadingGuidanceForInput, kidsReadingGuidanceLines } from "../prompting/readingLevel.js";
 import type { AuthorStance, BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
-import { isRecord } from "../schemas/jsonCoercion.js";
 import { authorStancePromptLines, isNarrativeWritingMode } from "./authorStance.js";
 import type { BookArc } from "./bookArc.js";
 import { chapterDevelopmentLines } from "./bookDevelopment.js";
@@ -27,18 +27,24 @@ import {
   type ComposedChapterText
 } from "./composedChapterMaterial.js";
 export { CREATIVE_CONTRACT_RULES, type ChapterMaterial, type ComposeContract, type ComposedChapterText } from "./composedChapterMaterial.js";
+import { afterOpeningScene } from "./composedSceneTold.js";
+import { HISTORY_QUESTION_RULE, HISTORY_RECONSTRUCTION_RULE, historyWriterPalette, withoutUnfetchedReadings, writesHistorySources } from "./historySources.js";
 import { stanceLinesFor } from "./composedChapterStance.js";
 import {  compositionWriterLines, formPaletteFor, type ChapterComposition } from "./chapterForms.js";
 import { normalizeChapterMarkdown } from "./chapterPagination.js";
-import { FIGURE_WORD_EQUIVALENT, figureFreeProse, figureStandInMarkdown, proseWordCount } from "./figures/figureBlocks.js";
+import { FIGURE_WORD_EQUIVALENT, proseWordCount } from "./figures/figureBlocks.js";
 import { codeBlockRules } from "./codeBlockRules.js";
+import { exampleCastLines, exampleCastLinesForChapter, type ExampleCastMember } from "./exampleCast.js";
+import { TOOLKIT_FORMS } from "./chapterFormPalette.js";
+import { EXAMPLE_PEOPLE_RULE, TOOLKIT_LAST_CHAPTER_LINE, TOOLKIT_LAYOUT_RULE, TOOLKIT_QUOTATION_RULE, TOOLKIT_SHAPE_RULES, activeToolkit, toolkitPayload, toolkitWriterLines, type InstructionalToolkit } from "./instructionalBook.js";
+import { chapterFactLines, ESTABLISHED_FACTS_EDITOR_RULE, ESTABLISHED_FACTS_MAX_CHARACTERS, ESTABLISHED_FACTS_WRITER_RULE, type ChapterFact } from "./chapterFacts.js";
 import { figureComposeRules, figureEditRules, plannedFigures } from "./figures/figurePrompt.js";
-import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { chapterStyleNotes } from "./planContract.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
-import { GROUNDED_FACTUALITY_RULE, IMAGE_PROMPT_CHARACTER_RULE, citationContractFields } from "./pagesShared.js";
+import { GROUNDED_FACTUALITY_RULE, citationContractFields } from "./pagesShared.js";
 import { countReadableWords } from "./proseShape.js";
 import { inferWritingMode } from "./styleContract.js";
+import type { WritingMode } from "../schemas/styleContract.js";
 export {
   MANUSCRIPT_READ_MAX_WORDS,
   READ_MANUSCRIPT_PURPOSE,
@@ -60,7 +66,7 @@ export {
 
 export const COMPOSE_CHAPTER_PURPOSE = "compose-chapter";
 export const EDIT_CHAPTER_PURPOSE = "edit-chapter";
-export const DESCRIBE_PAGES_PURPOSE = "describe-pages";
+export { DESCRIBE_PAGES_PURPOSE, describeChapterPages, fallbackPageDescription, type ChapterPageForDescription, type DescribedPage } from "./composedChapterPages.js";
 
 /** Beyond this the read is skipped rather than truncated: a read that saw half a book would flag the half it saw. */
 /** 1,200 words was a third of the previous chapter, sent to both the compose and the edit call; 300 is its landing. */
@@ -164,6 +170,8 @@ export type ComposeChapterOptions = {
   continuityNotes: string[];
   researchNotes: string[];
   storyStateLines?: string[] | undefined;
+  /** The continuity ledger (`chapterFacts.ts`): what the chapters before this one fixed, and never a later one's. */
+  establishedFacts?: readonly ChapterFact[] | undefined;
   textModel: TextModelAdapter;
   /** A second candidate samples hotter than the book's own temperature; the judge decides. */
   temperature?: number | undefined;
@@ -180,7 +188,39 @@ export type ComposeChapterOptions = {
   contract?: ComposeContract | undefined;
   /** Material-first: the chapter's episodes, its dossier of verbatim primary text, and a scene already written for its opening. */
   material?: ChapterMaterial | undefined;
+  /** `sourceResearchFits`: false for a book no source was gathered for on purpose, which is not a book whose passages are missing. */
+  sourced?: boolean | undefined;
+  /** The book's recurring example people (`exampleCast.ts`), each in the one role they keep. */
+  exampleCast?: readonly ExampleCastMember[] | undefined;
+  /**
+   * A practical guide's or a workbook's whole-book decisions
+   * (`instructionalBook.ts`); only a book on that path acts on it
+   * (`activeToolkit`), and a book planned before it existed has none.
+   */
+  toolkit?: InstructionalToolkit | undefined;
+  /**
+   * Words the book's earlier chapters are over their minimums. The length
+   * floor that blocks is the book's (the worker's `composedChapterLengthIssues`),
+   * so a shortfall the book already covers is not worth a second compose call —
+   * 20–30 s on the critical path, once to three times a Quick Draft book — down
+   * to three quarters of this chapter's minimum, where a chapter is a stub.
+   */
+  lengthSlack?: number | undefined;
 };
+
+/** Below this share of its minimum a chapter is retried whatever the book's slack. */
+const RETRY_STUB_SHARE = 0.75;
+
+/**
+ * Repetition was padding against the word minimum (2026-10-01): told "never
+ * repeat" outright the chapters came back shorter and duller and lost 4 of 12
+ * blind pairs, while this line, replacing "Keep a caveat when it limits an
+ * inference; cut it only when the same limitation is already stated with the
+ * same scope and context", won 12 of 12 — 8 non-fiction, 4 fiction, where it
+ * follows the pacing sentence. The acceptance reviewer is told the same.
+ */
+export const CAVEAT_ONCE_EDITOR_RULE = "State a caveat or limitation once, where it first matters in the chapter; cut each later restatement of it, however it is worded, unless it adds a new condition.";
+export const CAVEAT_ONCE_ACCEPTANCE_RULE = "The editor was told to state each caveat or limitation once, where it first matters in the chapter: removing a later restatement of a caveat or limitation the candidate still states earlier in the chapter preserves meaning and is the intended edit, however differently the removed one was worded. A removed qualification that added a condition the retained one lacks is still a regression.";
 
 /** The pivots the blind readers quoted from the first composed book. */
 const STOCK_PIVOT_BAN =
@@ -221,14 +261,35 @@ export function landingFormFor(chapterIndex: number): string {
   return LANDING_FORMS[(Math.max(1, chapterIndex) - 1) % LANDING_FORMS.length]!;
 }
 
-function shapeRules(narrative: boolean): string[] {
+/**
+ * How the chapter may be set on the page. A how-to reader acts on steps,
+ * checklists and worksheets, so those three sections may be set as a list or
+ * a table there; everywhere else, and in every other kind of book, the ladder's
+ * paragraphs-only rule stands. Under it a workbook's worksheets came out as
+ * run-on sentences ("months reviewed: ____; income received: ____; …") and a
+ * one-on-one guide's promised checklist as prose (Quick Draft, 2026-09-30).
+ */
+function layoutRule(mode: WritingMode, toolkit?: InstructionalToolkit | undefined): string {
+  if (toolkit) return TOOLKIT_LAYOUT_RULE;
+  const bans = "no headings, no title line, no section labels, no page numbers or page breaks, no summary, no epigraph, no notes. Move between sections with a paragraph break and a change of register.";
+  return mode === "instructional"
+    ? `Write in paragraphs, with ${bans} The one exception is what the reader will act on: a procedure section may set its steps as a numbered list, an exercise may set its worksheet as a short Markdown table with blank cells or as fill-in lines, and a checklist may be a bulleted list. Introduce each list or table in a sentence, keep it under a dozen lines, and never use one for explanation or argument.`
+    : `Paragraphs only: ${bans}`;
+}
+
+function shapeRules(narrative: boolean, mode?: WritingMode, toolkit?: InstructionalToolkit | undefined): string[] {
+  if (toolkit) return [...TOOLKIT_SHAPE_RULES, STOCK_PIVOT_BAN];
   return [
     narrative
       ? "Every scene and every paragraph inside it ends on action, speech, or an image, never on a sentence that explains what the scene meant or what a character has learned."
       : "The sections are movements of one argument, not separate essays: let each grow out of the one before, point back to an earlier case in a clause when it bears on the current one, and let the chapter's claim accumulate. Do not open every section on a place-and-date stamp, and do not close sections on a placed object for effect: a reed marker, a file on a table, dust on a path. Once a chapter is a texture; every section is a tic.",
     "The book's plan is not visible to the reader: never refer to a chapter by number, never say what another chapter showed or will show, and never mention the sections, forms, handoffs or notes you were given. A case the book treated earlier is pointed to in half a sentence, never re-narrated.",
-    "The chapter ends where its last section ends. A catalogue is written in sentences, never as labelled entries.",
-    "State what a source shows and use it. Do not follow each affirmation with what the source cannot show: the sentence pair that asserts and then withdraws — \"It can show X. It cannot show Y.\", \"The record shows X. It does not show Y.\" — may appear at most three times in the chapter. Rhetorical questions: at most one per section, never a run of them.",
+    mode === "instructional"
+      ? "The chapter ends where its last section ends. A catalogue is written in sentences unless it is a checklist the reader will use."
+      : "The chapter ends where its last section ends. A catalogue is written in sentences, never as labelled entries.",
+    mode && writesHistorySources(mode)
+      ? HISTORY_QUESTION_RULE
+      : "State what a source shows and use it. Do not follow each affirmation with what the source cannot show: the sentence pair that asserts and then withdraws — \"It can show X. It cannot show Y.\", \"The record shows X. It does not show Y.\" — may appear at most three times in the chapter. Rhetorical questions: at most one per section, never a run of them.",
     "Every section names at least three particulars — a person, a place, a date, a document, an object, a number — and where researchNotes holds a source for the matter, paraphrases or quotes it.",
     "Paragraphs are shaped by what they carry, not cut to a size: a scene or a sustained explanation runs on for two hundred words or more, a turn stands alone as one or two sentences, and most sections hold at least one of each. Never a run of paragraphs of the same length. Let some sentences run past forty words with a subordinate clause before the main clause, and let some be four words. Do not open consecutive sentences or consecutive paragraphs with the same word or the same construction, and do not write three sentences in a row on the same frame.",
     "Prefer one example developed at length to several named in passing. A sentence lists at most three items unless the section's form is a catalogue or a procedure.",
@@ -243,6 +304,7 @@ function positionLines(options: {
   chapter: ChapterPlan;
   input: CreateProjectInput;
   narrative: boolean;
+  toolkit?: InstructionalToolkit | undefined;
 }): string[] {
   const chapters = options.plan.chapters;
   const isFirst = options.chapter.index === chapters[0]?.index;
@@ -257,7 +319,9 @@ function positionLines(options: {
           : "This is the book's opening chapter. Open with a striking specific: a scene, a fact, a grounded question. Never a generalisation such as \"Throughout history\" or \"Since the dawn of time\", and never a description of what the book will do."
     );
   }
-  if (isLast) {
+  if (isLast && options.toolkit) {
+    lines.push(`${TOOLKIT_LAST_CHAPTER_LINE}${options.plan.promises.length > 0 ? ` The promises still owed to the reader: ${options.plan.promises.join("; ")}` : ""}`);
+  } else if (isLast) {
     lines.push(
       `This is the final chapter. Its last section carries the book's resolution through one new case, and the chapter ends where that section ends; do not re-list the earlier chapters.${
         options.plan.promises.length > 0 ? ` The promises still owed to the reader: ${options.plan.promises.join("; ")}` : ""
@@ -273,7 +337,7 @@ function positionLines(options: {
  * the thesis, and the promises say where the book lands, so the stance lines
  * withholding the answer were being handed it back one key over.
  */
-function bookPayload(plan: BookPlan, input: CreateProjectInput, withheld: BookArc | undefined) {
+function bookPayload(plan: BookPlan, input: CreateProjectInput, withheld: BookArc | undefined, toolkit?: InstructionalToolkit | undefined) {
   return {
     title: plan.title,
     premise: withheld ? withheld.question : plan.premise,
@@ -286,7 +350,10 @@ function bookPayload(plan: BookPlan, input: CreateProjectInput, withheld: BookAr
     // either way. They stay. Only the method rules are withheld, because a rule
     // about handling evidence shown in every call is performed in every paragraph.
     styleNotes: chapterStyleNotes(plan.voiceGuide),
-    continuityRules: plan.continuityRules,
+    // A how-to's continuityRules were its caveats in every chapter ("keep tax guidance
+    // general", "label sample figures as illustrative"); its toolkit keeps the facts here
+    // and gives each caveat one chapter (`instructionalBook.ts`).
+    ...(toolkit ? (toolkit.rules.length > 0 ? { bookRules: toolkit.rules } : {}) : { continuityRules: plan.continuityRules }),
     ...(withheld ? {} : { promises: plan.promises })
   };
 }
@@ -303,6 +370,23 @@ function chapterSummaryFor(options: ComposeChapterOptions): string {
   const arc = withheldArc(options);
   const job = arc?.chapters.find((entry) => entry.index === options.chapter.index)?.job.does;
   return job || options.chapter.summary;
+}
+
+/**
+ * The ledger as this chapter's prompt shows it: over the budget, the subjects
+ * its plan, the previous chapter's tail and (for an edit) its own text name
+ * go first. Empty for the first chapter, so its prompt is the one it always was.
+ */
+export function establishedFactLinesFor(options: ComposeChapterOptions, text?: string): string[] {
+  if (!options.establishedFacts?.length) return [];
+  const mentionText = [
+    options.chapter.title,
+    options.chapter.summary,
+    ...options.composition.sections.flatMap((section) => [section.subject, ...(section.owns ?? []), section.note ?? ""]),
+    options.previousChapterTail ?? "",
+    text ?? ""
+  ].join("\n");
+  return chapterFactLines(options.establishedFacts, { mentionText, maxCharacters: ESTABLISHED_FACTS_MAX_CHARACTERS });
 }
 
 function characterPayload(plan: BookPlan) {
@@ -342,7 +426,9 @@ function composeMaxTokens(budget: ChapterWordBudget): number {
 export async function composeChapter(options: ComposeChapterOptions): Promise<ComposedChapterText> {
   const mode = inferWritingMode(options.input, options.plan);
   const narrative = isNarrativeWritingMode(mode);
-  const noSourcePassages = !narrative &&
+  const history = writesHistorySources(mode);
+  const toolkit = activeToolkit(options.input, options.plan, options.toolkit);
+  const noSourcePassages = !toolkit && !narrative && options.sourced !== false &&
     !options.material?.excerpts.length && !options.material?.evidencePackets?.length;
   if (noSourcePassages) {
     // Episode plans are research proposals. Without passages, assigning a
@@ -357,10 +443,13 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     };
   }
   const focused = !narrative && Boolean(options.material?.focus);
-  const palette = formPaletteFor(mode);
+  const palette = toolkit ? TOOLKIT_FORMS : formPaletteFor(mode);
+  if (history && options.material) options = { ...options, composition: withoutUnfetchedReadings(options.composition, options.material.episodes, options.material.excerpts) };
+  options = { ...options, ...afterOpeningScene(options, palette) };
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
   const citation = citationContractFields(chapterResearchNotesForPrompt(options.researchNotes));
+  const establishedFacts = establishedFactLinesFor(options);
   // The opening scene, when one was composed first, is printed ahead of what
   // this call writes, so the ask shrinks by its length.
   const remaining = remainingBudget(budget, options.material?.scene?.words ?? 0);
@@ -374,21 +463,23 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
   const systemLines = [
     `You are writing the book "${options.plan.title}" as its author, one chapter at a time, each as one continuous piece of finished Markdown prose.`,
     ...stanceLinesFor(options),
-    "Paragraphs only: no headings, no title line, no section labels, no page numbers or page breaks, no summary, no epigraph, no notes. Move between sections with a paragraph break and a change of register.",
+    layoutRule(mode, toolkit),
     ...(minimal
       ? []
       : focused
         ? focusedProgressionLines()
-        : shapeRules(narrative).filter(
+        : shapeRules(narrative, mode, toolkit).filter(
             // Under an arc only a method chapter keeps the evidence-limit rule; the others' job is not to bound sources.
             (rule) => !(options.arc && arcKindFor(options) !== "method" && rule.startsWith("State what a source shows"))
           )),
     ...(minimal ? [] : ["Do not open the chapter with a general claim about a common noun (\"A cannon was never only a cannon\")."]),
-    ...(minimal || options.material?.evidencePackets?.length ? [] : options.contract === "creative" ? (narrative ? [] : [FOCUSED_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
+    ...(minimal || options.material?.evidencePackets?.length ? [] : toolkit ? [EXAMPLE_PEOPLE_RULE] : options.contract === "creative" ? (narrative ? [] : [history ? HISTORY_RECONSTRUCTION_RULE : FOCUSED_RECONSTRUCTION_RULE]) : reconstructionRule(narrative)),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
-    ...materialLines({ ...options, nonfiction: !narrative }),
+    ...materialLines({ ...options, nonfiction: !narrative, history, practical: Boolean(toolkit) }),
+    ...(toolkit ? exampleCastLinesForChapter(options.exampleCast, options.chapter.index) : exampleCastLines(options.exampleCast)),
+    ...toolkitWriterLines(toolkit, options.chapter.index),
     ...chapterDevelopmentLines(options.plan, options.chapter.index),
-    ...(focused ? [] : compositionWriterLines(options.composition, palette, budget.target)),
+    ...(focused ? [] : compositionWriterLines(options.composition, history ? historyWriterPalette(palette) : palette, budget.target)),
     ...figureComposeRules(options.composition),
     ...codeBlockRules(options.input, options.plan),
     ...(options.variant === "second"
@@ -396,12 +487,13 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
           "This is the second of two drafts of this chapter, to be judged against the first. Enter the first section by a different door than the obvious one, put the chapter's one sustained stretch in a different section than a first draft would, and let a different section carry the short paragraphs."
         ]
       : []),
-    ...positionLines({ plan: options.plan, chapter: options.chapter, input: options.input, narrative }),
+    ...positionLines({ plan: options.plan, chapter: options.chapter, input: options.input, narrative, toolkit }),
     // Composed-8's chapter 8 opened by paraphrasing chapter 7's tail as a coda,
     // and the cut then removed chapter 7's own closing, so three blind readers
     // found the previous chapter's conclusion stranded under the next heading.
     "previousChapterTail is where the previous chapter stopped, already printed: this chapter opens on its own first section's material and neither resumes, summarises nor answers that paragraph. earlierChapters are digests of what the reader already knows, each with told: the cases, sources, scenes and people that chapter carried; anything in told may be named in passing and is never re-told, and its dates and figures are not repeated.",
-    ...(options.contract === "creative" && narrative ? CREATIVE_CONTRACT_RULES : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE]),
+    ...(establishedFacts.length > 0 ? [ESTABLISHED_FACTS_WRITER_RULE] : []),
+    ...(options.contract === "creative" ? (toolkit ? [CREATIVE_CONTRACT_RULES[0]!, TOOLKIT_QUOTATION_RULE] : CREATIVE_CONTRACT_RULES) : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE]),
     // Research notes arrive as "title: summary" and a search hit's title is
     // often its bare domain, so a writer told to name only sources in the
     // notes wrote "the explanatory pages at psychstory.co.uk" (composed-17).
@@ -419,7 +511,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     userPrompt: options.input.prompt,
     // A focused middle chapter is not handed the thesis back as the premise, nor where the book lands as promises.
     book: {
-      ...bookPayload(options.plan, options.input, withheldArc(options)),
+      ...bookPayload(options.plan, options.input, withheldArc(options), toolkit),
       ...(options.material?.focus && !isFirstOrLastChapter(options) ? { premise: options.material.focus.question, promises: [] } : {})
     },
     chapter: {
@@ -431,6 +523,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     ...(focused ? {} : {
       composition: {
         sections: options.composition.sections.map((section) => ({
+          ...(toolkit && section.heading ? { heading: section.heading } : {}),
           form: section.form,
           subject: section.subject,
           owns: section.owns,
@@ -443,9 +536,11 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     earlierChapters: options.earlierChapters,
     continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
     ...(options.storyStateLines && options.storyStateLines.length > 0 ? { storyState: options.storyStateLines } : {}),
+    ...(establishedFacts.length > 0 ? { establishedFacts } : {}),
     characters: characterPayload(options.plan),
     ...citation.payload,
-    ...materialPayload(options),
+    ...materialPayload({ ...options, history, practical: Boolean(toolkit) }),
+    ...toolkitPayload(toolkit, options.chapter.index),
     wordBudget: budget
   };
 
@@ -454,22 +549,33 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
   let shortfall: string | undefined;
   while (attempts < 2) {
     attempts += 1;
-    const result = await options.textModel.generateText({
+    const request = {
       purpose: COMPOSE_CHAPTER_PURPOSE,
       temperature: options.temperature ?? options.input.temperature,
       maxTokens: composeMaxTokens(budget),
       messages: [
-        { role: "system", content: [...systemLines, ...(shortfall ? [shortfall] : [])].join(" ") },
-        { role: "user", content: JSON.stringify(userPayload, null, 2) }
+        { role: "system" as const, content: [...systemLines, ...(shortfall ? [shortfall] : [])].join(" ") },
+        { role: "user" as const, content: JSON.stringify(userPayload, null, 2) }
       ]
-    });
-    const markdown = normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title });
-    const words = proseWordCount(markdown);
+    };
+    let result;
+    try {
+      result = await options.textModel.generateText(request);
+    } catch (error) {
+      // The length retry is a second try at a chapter that already exists: a truncated,
+      // refused or unreachable reply keeps the longer earlier draft rather than failing
+      // the book (a Quick Draft guide failed whole on a retry's runaway, 2026-09-30).
+      if (!best?.markdown || isStopOrAbortError(error)) throw error;
+      return { ...best, attempts, lengthRetryError: error instanceof Error ? error.message : String(error) };
+    }
+    const markdown = normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title, ...(toolkit ? { keepSubheadings: true } : {}) });
+    // As it prints: a worksheet row fills a printed row whatever its cells hold.
+    const words = printedWordCount(markdown);
     const candidate = { markdown, words, attempts };
     if (!best || words > best.words) {
       best = candidate;
     }
-    if (words >= remaining.min) {
+    if (words >= remaining.min * LENGTH_FLOOR_SHARE || (remaining.min - words <= (options.lengthSlack ?? 0) && words >= remaining.min * RETRY_STUB_SHARE)) {
       break;
     }
     shortfall = `Your previous answer was ${words} words; the chapter needs at least ${remaining.min}. Write the complete chapter. Develop the assigned sections that were only sketched: carry through a worked example, explain its intermediate steps and consequences, or examine the supplied source passage more closely. Preserve the chapter's scope and source constraints. Do not add recap, repeated caveats, invented evidence or filler to reach the budget. If the available material cannot support the minimum, return the strongest supported chapter.`;
@@ -576,8 +682,12 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
   options.signal?.throwIfAborted();
   const mode = inferWritingMode(options.input, options.plan);
   const narrative = isNarrativeWritingMode(mode);
+  const history = writesHistorySources(mode);
+  const toolkit = activeToolkit(options.input, options.plan, options.toolkit);
   const focused = !narrative && Boolean(options.material?.focus);
-  const palette = formPaletteFor(mode);
+  const palette = toolkit ? TOOLKIT_FORMS : formPaletteFor(mode);
+  if (history && options.material) options = { ...options, composition: withoutUnfetchedReadings(options.composition, options.material.episodes, options.material.excerpts) };
+  options = { ...options, ...afterOpeningScene(options, palette) };
   const pages = options.chapterPageEnd - options.chapterPageStart + 1;
   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
   const draftWords = proseWordCount(options.markdown);
@@ -585,18 +695,20 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
   // made a 200-word source repair regenerate a 2,000-word discovery narrative.
   const editBudget = options.factualCorrection ? { ...budget, min: Math.floor(draftWords * 0.62), target: draftWords, max: Math.ceil(draftWords * 1.1) } : budget;
   const citation = citationContractFields(chapterResearchNotesForPrompt(options.researchNotes));
+  const establishedFacts = establishedFactLinesFor(options, options.markdown);
   const systemLines = [
     `You are the line editor for "${options.plan.title}", revising each chapter into its finished form in the author's own voice.`,
     ...stanceLinesFor(options),
     "Preserve the chapter's claims, causal relationships, negation, scope, uncertainty, names, dates, quantities and exact quotations. Keep the section order and the material of the opening. A qualification may be essential even when its names and numbers occur elsewhere.",
     "Edit where the surrounding passage gives a concrete reason: clarify a confusing sentence or remove a repetition that adds no fact, distinction, context or narrative purpose. Sentence shape alone is not a defect. Intentional repetition, dialogue and quotations may recur. Make the smallest change that resolves the issue. Preserve unaffected paragraphs verbatim, and keep a passage unchanged when an improvement would lose meaning or require guessing.",
     narrative
-      ? "Judge pacing through the scene's actions and consequences; keep reflection when it changes what the reader understands."
-      : "Judge pacing through the chapter's evidence and explanation. Keep a caveat when it limits an inference; cut it only when the same limitation is already stated with the same scope and context.",
+      ? `Judge pacing through the scene's actions and consequences; keep reflection when it changes what the reader understands. ${CAVEAT_ONCE_EDITOR_RULE}`
+      : `Judge pacing through the chapter's evidence and explanation. ${CAVEAT_ONCE_EDITOR_RULE}`,
     "Use the book's spelling convention. Add no new claim, episode or source during this edit.",
+    ...(establishedFacts.length > 0 ? [ESTABLISHED_FACTS_EDITOR_RULE] : []),
     ...(focused ? focusedProgressionLines() : []),
     `Now chapter ${options.chapter.index}, "${options.chapter.title}".`,
-    ...(focused || options.factualCorrection ? [] : compositionWriterLines(options.composition, palette, budget.target)),
+    ...(focused || options.factualCorrection ? [] : compositionWriterLines(options.composition, history ? historyWriterPalette(palette) : palette, budget.target)),
     ...figureEditRules(options.composition),
     ...(/```/.test(options.markdown) ? ["Every fenced code block in the draft is returned byte for byte, its language tag included."] : []),
     ...(!focused && options.measurementNotes && options.measurementNotes.length > 0
@@ -610,11 +722,15 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
       : draftWords < budget.target * EDITOR_EXTEND_BELOW_SHARE
       ? `The draft is ${draftWords} words and the chapter needs about ${budget.target} (never under ${budget.min}, never over ${budget.max}): develop the existing sections with more particular detail — the named person, the document, the place, the next thing that happened — rather than adding sections, generalising, or restating.`
       : `Return between ${budget.min} and ${budget.max} words; the draft is ${draftWords} words. Over ${budget.max}, cut.`,
-    ...(options.contract === "creative" && narrative ? [CREATIVE_CONTRACT_RULES[1]!] : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE, FOCUSED_RECONSTRUCTION_RULE]),
-    ...materialEditLines({ ...options, nonfiction: !narrative }),
+    ...(toolkit
+      ? [...(options.contract === "creative" ? [TOOLKIT_QUOTATION_RULE] : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE]), EXAMPLE_PEOPLE_RULE]
+      : options.contract === "creative" ? [CREATIVE_CONTRACT_RULES[1]!, ...(narrative ? [] : [history ? HISTORY_RECONSTRUCTION_RULE : FOCUSED_RECONSTRUCTION_RULE])] : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE, history ? HISTORY_RECONSTRUCTION_RULE : FOCUSED_RECONSTRUCTION_RULE]),
+    ...materialEditLines({ ...options, nonfiction: !narrative, history, practical: Boolean(toolkit) }),
+    ...(toolkit ? exampleCastLinesForChapter(options.exampleCast, options.chapter.index) : exampleCastLines(options.exampleCast)),
+    ...toolkitWriterLines(toolkit, options.chapter.index),
     ...(options.factualCorrection ? ["factualCorrection authorizes a targeted factual repair: correct, narrow or delete only the named unsupported claims against its evidence. The preservation rule applies to unrelated meaning; do not preserve the erroneous claim. Follow the correction instructions and evidence over the original claim."] : []),
     ...(options.material?.scene
-      ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument.`]
+      ? [`The chapter opens with a scene of about ${options.material.scene.words} words that was written on purpose in a narrating register; keep it a scene — tighten it if you must, never turn it into summary or argument. A later passage that tells that scene's events, figures or quotations again is a restatement: cut it down to what it adds.`]
       : []),
     // Research notes arrive as "title: summary" and a search hit's title is
     // often its bare domain, so a writer told to name only sources in the
@@ -624,7 +740,11 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
     PROMPT_LEAK_BAN,
     ...targetLanguageGenerationGuidance(options.input.language),
     ...kidsReadingGuidanceLines(options.input),
-    "Return only the revised chapter as Markdown prose: paragraphs only, no headings, no notes, no preface, no summary of your changes."
+    toolkit
+      ? "Return only the revised chapter as Markdown: keep every ### section heading exactly as the draft has it, and every list, table, script or worksheet; no other headings, no notes, no preface, no summary of your changes."
+      : mode === "instructional"
+      ? "Return only the revised chapter as Markdown: no headings, no notes, no preface, no summary of your changes; keep every list or table the draft uses for steps, a checklist or a worksheet."
+      : "Return only the revised chapter as Markdown prose: paragraphs only, no headings, no notes, no preface, no summary of your changes."
   ];
   const result = await options.textModel.generateText({
     purpose: EDIT_CHAPTER_PURPOSE,
@@ -643,10 +763,12 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
             ...(options.factualCorrection ? { factualCorrection: options.factualCorrection } : {}),
             ...(options.previousChapterTail ? { previousChapterTail: options.previousChapterTail } : {}),
             earlierChapters: options.earlierChapters,
+            ...(establishedFacts.length > 0 ? { establishedFacts } : {}),
             ...(!focused && options.measurementNotes && options.measurementNotes.length > 0 ? { measurementNotes: options.measurementNotes } : {}),
             ...(options.readerNotes && options.readerNotes.length > 0 ? { readerNotes: options.readerNotes } : {}),
             ...citation.payload,
-            ...materialPayload(options),
+            ...materialPayload({ ...options, history, practical: Boolean(toolkit) }),
+            ...toolkitPayload(toolkit, options.chapter.index),
             wordBudget: editBudget
           },
           null,
@@ -655,15 +777,17 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
       }
     ]
   });
-  const markdown = normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title });
+  const markdown = normalizeChapterMarkdown(unfence(result.text), { chapterTitle: options.chapter.title, ...(toolkit ? { keepSubheadings: true } : {}) });
   const words = proseWordCount(markdown);
   // An edit that lost more than a third of the chapter is a refusal or a
   // truncation, not an edit; the draft stands.
   options.signal?.throwIfAborted();
-  // Composition's editor cannot create or deepen a page-budget shortfall.
-  // Explicit final edits after structural reallocation and factual repairs
-  // may shorten the text; final manuscript QA reports any remaining deficit.
-  const lengthRegressed = !options.factualCorrection && options.allowExtension !== false && words < Math.min(draftWords, budget.min);
+  // Composition's editor cannot create or deepen a page-budget shortfall: it may cut
+  // to the floor the book is judged at, as it prints, never under it or a draft
+  // already under it (`editShortensPastFloor`). Explicit final edits after structural
+  // reallocation and factual repairs may shorten the text; final manuscript QA
+  // reports any remaining deficit.
+  const lengthRegressed = !options.factualCorrection && options.allowExtension !== false && editShortensPastFloor(options.markdown, markdown, budget.min);
   if (!markdown || lengthRegressed || words < draftWords * 0.62 || chapterDegeneracy(markdown, {
     maxWords: options.degeneracyMaxWords ?? (options.factualCorrection ? editBudget.max : chapterWordBudget(options.input, pages).max), language: options.input.language
   }).degenerate) {
@@ -720,148 +844,6 @@ export async function detemplateChapter(
     return { markdown: options.markdown, words: draftWords, attempts: 1, changed: false };
   }
   return { markdown, words, attempts: 1, changed: markdown !== options.markdown };
-}
-
-export type ChapterPageForDescription = { index: number; markdown: string };
-
-export type DescribedPage = {
-  index: number;
-  title: string;
-  summary: string;
-  continuityNotes: string[];
-  imagePrompt?: string;
-};
-
-const describedPageSchema = z.object({
-  index: z.number().int().positive(),
-  title: z.string().default(""),
-  summary: z.string().default(""),
-  continuityNotes: z.array(z.string()).default([]),
-  imagePrompt: z.string().optional()
-});
-
-const describedPagesResponseSchema = z.preprocess(
-  (value) => (Array.isArray(value) ? { pages: value } : isRecord(value) && Array.isArray(value.pages) ? value : value),
-  z.object({ pages: z.array(z.unknown()) })
-);
-
-function firstSentence(markdown: string): string {
-  const plain = markdown.replace(/[#*_>`]/g, " ").replace(/\s+/g, " ").trim();
-  const match = plain.match(/^(.{20,240}?[.!?…؟。])(\s|$)/u);
-  return (match?.[1] ?? plain.slice(0, 240)).trim();
-}
-
-/** What a page is called and remembered as when the model could not say. */
-export function fallbackPageDescription(page: ChapterPageForDescription, illustrated: boolean): DescribedPage {
-  const sentence = firstSentence(figureFreeProse(page.markdown));
-  const title = sentence.split(/\s+/).slice(0, 7).join(" ").replace(/[,;:.!?…]+$/u, "") || `Page ${page.index}`;
-  return {
-    index: page.index,
-    title,
-    summary: sentence || `Page ${page.index}.`,
-    continuityNotes: [],
-    ...(illustrated && sentence ? { imagePrompt: `An illustration of this moment: ${sentence}` } : {})
-  };
-}
-
-export async function describeChapterPages(options: {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  chapter: ChapterPlan;
-  pages: ChapterPageForDescription[];
-  illustratedIndexes: readonly number[];
-  textModel: TextModelAdapter;
-}): Promise<DescribedPage[]> {
-  const illustrated = new Set(options.illustratedIndexes);
-  const fallback = () => options.pages.map((page) => fallbackPageDescription(page, illustrated.has(page.index)));
-  if (options.pages.length === 0) {
-    return [];
-  }
-  let raw: unknown;
-  try {
-    raw = (
-      await generateJsonWithRetry(options.textModel, {
-        purpose: DESCRIBE_PAGES_PURPOSE,
-        temperature: 0.2,
-        maxTokens: Math.min(16_000, 800 + options.pages.length * 260),
-        schema: z.unknown(),
-        messages: [
-          {
-            role: "system",
-            content: [
-              "Describe each page of this chapter for the book's index and its continuity memory. Return one JSON object with a pages array in the same order as the input, one object per page: index, title, summary, continuityNotes, and imagePrompt only where asked.",
-              "title: concise and specific to what happens on that page; never the chapter title, never a Page N label, never the same as a neighbouring page's title.",
-              "summary: one or two sentences recording what the page covers — the facts, events or decisions — and any unresolved handoff into the next page.",
-              "continuityNotes: zero to three short facts later chapters must keep consistent (names, dates, places, states, decisions). Omit trivia.",
-              "imagePrompt: only for pages whose index is in illustratedPageIndexes. A self-contained visual description of one moment on that page in the book's illustration style, naming recurring characters exactly as in characters, with no text or lettering in the image. Omit the key on every other page.",
-              IMAGE_PROMPT_CHARACTER_RULE,
-              ...targetLanguageGenerationGuidance(options.input.language)
-            ].join(" ")
-          },
-          {
-            role: "user",
-            content: JSON.stringify(
-              {
-                language: targetLanguagePayload(options.input.language),
-                book: { title: options.plan.title, audience: options.plan.audience },
-                chapter: { index: options.chapter.index, title: options.chapter.title },
-                illustrationPlan: options.plan.illustrationPlan,
-                characters: options.plan.characters,
-                illustratedPageIndexes: options.illustratedIndexes,
-                // The describer reads prose and a stand-in, never a figure's JSON.
-                pages: options.pages.map((page) => ({ index: page.index, markdown: figureStandInMarkdown(page.markdown) })),
-                outputContract: {
-                  pages: [
-                    {
-                      index: options.pages[0]!.index,
-                      title: "Specific page title",
-                      summary: "One or two sentences.",
-                      continuityNotes: ["A fact later chapters keep consistent."],
-                      imagePrompt: "Only for illustrated pages."
-                    }
-                  ]
-                }
-              },
-              null,
-              2
-            )
-          }
-        ]
-      })
-    ).data;
-  } catch (error) {
-    if (error instanceof Error && /stop/i.test(error.name)) {
-      throw error;
-    }
-    return fallback();
-  }
-  const parsed = describedPagesResponseSchema.safeParse(raw);
-  const byIndex = new Map<number, DescribedPage>();
-  if (parsed.success) {
-    for (const candidate of parsed.data.pages) {
-      const page = describedPageSchema.safeParse(candidate);
-      if (page.success && !byIndex.has(page.data.index)) {
-        const { imagePrompt, ...rest } = page.data;
-        byIndex.set(page.data.index, { ...rest, ...(imagePrompt !== undefined ? { imagePrompt } : {}) });
-      }
-    }
-  }
-  return options.pages.map((page) => {
-    const described = byIndex.get(page.index);
-    const stand = fallbackPageDescription(page, illustrated.has(page.index));
-    if (!described) {
-      return stand;
-    }
-    const wantsImage = illustrated.has(page.index);
-    const imagePrompt = wantsImage ? described.imagePrompt?.trim() || stand.imagePrompt : undefined;
-    return {
-      index: page.index,
-      title: described.title.trim() || stand.title,
-      summary: described.summary.trim() || stand.summary,
-      continuityNotes: described.continuityNotes.map((note) => note.trim()).filter(Boolean).slice(0, 3),
-      ...(imagePrompt ? { imagePrompt } : {})
-    };
-  });
 }
 
 /** A chapter's digest for later chapters: its page summaries, clipped. */

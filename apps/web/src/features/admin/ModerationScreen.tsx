@@ -3,8 +3,10 @@ import { Loader2 } from "lucide-react";
 import { Button } from "../shared/Button.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { dateTime, relative, titleCase } from "./format.js";
+import { readShareSnapshot, type ShareSnapshot } from "./shareModeration.js";
+import { ShareReview, type ShareActionHandler } from "./ShareReview.js";
 import { useModerationReports } from "./useAdminData.js";
-import type { ModerationReport } from "./types.js";
+import type { ModerationReport, ShareModerationAction } from "./types.js";
 
 const FILTERS = ["pending", "reviewed", "actioned", "dismissed", "all"] as const;
 const DECISIONS = [
@@ -18,6 +20,10 @@ const DECISIONS = [
  *
  * `GET`/`PATCH /api/admin/moderation/reports` have existed since the safety work
  * landed but had no interface, so reports could only be actioned with curl.
+ *
+ * Shared books land here two ways: a reader's report from the public page, and
+ * the caption gate filing its own review when it had no verdict on an author's
+ * note. Both carry the live share, which `ShareReview` acts on.
  */
 export function ModerationScreen() {
   const reports = useModerationReports();
@@ -59,7 +65,9 @@ export function ModerationScreen() {
               report={report}
               busy={reports.saving?.id === report.id}
               busyDecision={reports.saving?.id === report.id ? reports.saving.status : null}
+              busyShareAction={reports.sharing?.id === report.id ? reports.sharing.action : null}
               onReview={(status, notes) => void reports.review(report.id, status, notes)}
+              onShareAction={(shareId, action, reason) => reports.moderateShare(report.id, shareId, action, reason)}
             />
           ))}
         </div>
@@ -72,29 +80,32 @@ function ReportCard(props: {
   report: ModerationReport;
   busy: boolean;
   busyDecision: string | null;
+  busyShareAction: ShareModerationAction | null;
   onReview: (status: string, notes: string) => void;
+  onShareAction: ShareActionHandler;
 }) {
   const [notes, setNotes] = useState(props.report.reviewNotes ?? "");
   const { report } = props;
   const settled = report.status !== "pending";
+  const isShare = report.targetType === "book_share";
+  const snapshot = isShare ? readShareSnapshot(report.targetSnapshot) : null;
+  const saving = props.busy || props.busyShareAction !== null;
 
   return (
     <section className={`work-section report-card${settled ? " is-settled" : ""}`}>
       <div className="section-title">
-        <h3>{titleCase(report.reason)}</h3>
+        <h3>{snapshot?.kind === "caption_review" ? "Note held for review" : titleCase(report.reason)}</h3>
         <span className={`report-pill is-${report.status}`}>{report.status}</span>
       </div>
 
       <ul className="fact-list">
         <li>
           <span>Target</span>
-          <span>
-            {report.targetType === "project" ? report.projectTitle ?? "Untitled book" : `Image · ${report.imageAssetId ?? "unknown"}`}
-          </span>
+          <span>{targetLabel(report, snapshot)}</span>
         </li>
         <li>
           <span>Reported by</span>
-          <span>{report.reporterEmail ?? "anonymous"}</span>
+          <span>{reporterLabel(report, snapshot)}</span>
         </li>
         <li>
           <span>Received</span>
@@ -109,6 +120,15 @@ function ReportCard(props: {
       </ul>
 
       {report.comment ? <p className="report-comment">“{report.comment}”</p> : null}
+
+      {isShare ? (
+        <ShareReview
+          report={report}
+          busyAction={props.busyShareAction}
+          locked={props.busy}
+          onAction={props.onShareAction}
+        />
+      ) : null}
 
       <label>
         Review notes
@@ -127,7 +147,7 @@ function ReportCard(props: {
               key={decision.value}
               variant={decision.value === "actioned" ? "danger" : "secondary"}
               size="sm"
-              disabled={props.busy}
+              disabled={saving}
               loading={loading}
               loadingLabel={`${decision.label}…`}
               onClick={() => props.onReview(decision.value, notes)}
@@ -139,4 +159,17 @@ function ReportCard(props: {
       </div>
     </section>
   );
+}
+
+function targetLabel(report: ModerationReport, snapshot: ShareSnapshot | null): string {
+  if (snapshot) return `Shared book · ${report.projectTitle ?? snapshot.title ?? "Untitled book"}`;
+  if (report.targetType === "project") return report.projectTitle ?? "Untitled book";
+  return `Image · ${report.imageAssetId ?? "unknown"}`;
+}
+
+function reporterLabel(report: ModerationReport, snapshot: ShareSnapshot | null): string {
+  if (report.reporterEmail) return report.reporterEmail;
+  if (snapshot?.kind === "caption_review") return "Caption gate (no verdict)";
+  if (snapshot?.kind === "public_report") return "Anonymous reader, public page";
+  return "anonymous";
 }

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   expandChapterResearch: vi.fn(),
   embedResearchSourcesForProject: vi.fn(),
   updateJobProgress: vi.fn(),
+  composed: vi.fn(),
   text: { generateJson: vi.fn() }
 }));
 
@@ -46,6 +47,7 @@ vi.mock("../generation/bookPasses.js", () => ({
   generateBookDraftThenPolish: vi.fn(),
   generateBookWholePass: vi.fn()
 }));
+vi.mock("../generation/composedChaptersPass.js", () => ({ generateBookComposedChapters: mocks.composed }));
 vi.mock("../generation/bookState.js", () => ({ prepareChapterSetups: vi.fn() }));
 vi.mock("../generation/characterReferences.js", () => ({ ensureCharacterReferenceAssets: vi.fn() }));
 vi.mock("../generation/researchMemory.js", () => ({
@@ -74,6 +76,7 @@ import {
 } from "./generateBook.js";
 import { generateBookWholePass } from "../generation/bookPasses.js";
 import { prepareChapterSetups } from "../generation/bookState.js";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { seedStoryStateFromPromises, createProjectSchema, makeFallbackPlan, type GenerateJsonOptions } from "@book-maker/core";
 
 const plan = {
@@ -129,6 +132,75 @@ it("saves the brief contract before dispatching generation and reuses it on resu
   await generateBook(job);
   expect(sequence).toEqual(["inventory", "persist", "write", "write"]);
   vi.mocked(generateBookWholePass).mockReset();
+});
+
+describe("the composed pass's research expansion", () => {
+  function composedBook() {
+    const input = createProjectSchema.parse({ prompt: "A guide to one-on-one meetings for new managers.", category: "BUSINESS", targetPages: 24 });
+    mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1" });
+    mocks.inputForPlanVersion.mockReturnValue(input);
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({ planningPackage: { ...makeFallbackPlan(input), researchNotes: [] }, inputSnapshot: input });
+    mocks.strategyForInput.mockReturnValue({ executionMode: "composed-chapters", researchDepth: 3 });
+    return { name: "generate-book", data: { projectId: "project-1", planId: "plan-2", generationJobId: "job-generate" } } as never;
+  }
+
+  type Research = { research: { start: () => void; ready: () => Promise<void> } };
+
+  it("starts when the pass asks, without a step of its own, and the pass waits for it before its first chapter", async () => {
+    const sequence: string[] = [];
+    let release!: () => void;
+    mocks.expandChapterResearch.mockImplementation(() => new Promise((resolve) => {
+      sequence.push("research started");
+      release = () => {
+        sequence.push("research finished");
+        resolve([{ query: "q", title: "T", url: "https://example.org", summary: "S" }]);
+      };
+    }));
+    mocks.composed.mockImplementation(async ({ research }: Research) => {
+      sequence.push("stance decided");
+      research.start();
+      research.start();
+      const ready = research.ready().then(() => sequence.push("first chapter"));
+      while (!release) await new Promise((resolve) => setTimeout(resolve, 1));
+      release();
+      await ready;
+    });
+    await generateBook(composedBook());
+    expect(sequence).toEqual(["stance decided", "research started", "research finished", "first chapter"]);
+    expect(mocks.expandChapterResearch).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.researchSource.createMany).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(advanceJobStep)).not.toHaveBeenCalledWith(expect.anything(), "briefs", 15, "Expanding chapter research", expect.anything());
+  });
+
+  it("searches nothing for a book whose pass never starts it", async () => {
+    // A novel: the stance says the book is not written from sources.
+    mocks.composed.mockImplementation(async ({ research }: Research) => research.ready());
+    await generateBook(composedBook());
+    expect(mocks.expandChapterResearch).not.toHaveBeenCalled();
+    expect(mocks.prisma.researchSource.findMany).not.toHaveBeenCalled();
+  });
+
+  it("fails the pass with the expansion's error, and a pass that fails first still waits for the expansion", async () => {
+    mocks.expandChapterResearch.mockRejectedValue(new Error("research provider down"));
+    mocks.composed.mockImplementation(async ({ research }: Research) => {
+      research.start();
+      await research.ready();
+    });
+    await expect(generateBook(composedBook())).rejects.toThrow("research provider down");
+
+    let finished = false;
+    mocks.expandChapterResearch.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      finished = true;
+      return [];
+    });
+    mocks.composed.mockImplementation(async ({ research }: Research) => {
+      research.start();
+      throw new Error("stance failed");
+    });
+    await expect(generateBook(composedBook())).rejects.toThrow("stance failed");
+    expect(finished).toBe(true);
+  });
 });
 
 describe("generateBook replan recovery payload", () => {

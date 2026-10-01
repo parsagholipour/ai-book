@@ -40,6 +40,8 @@ abstract interface class CreationRepository {
     String draftId,
   );
 
+  /// Starts a chat session. [remixSlug] names the shared book a "Make a book
+  /// like this" chat started from, so the server records the draft's origin.
   Future<MobileCreationConversationResponse> startConversation({
     String? message,
     MobileCreationPresets? presets,
@@ -47,6 +49,7 @@ abstract interface class CreationRepository {
     MobileCreationOptionalDetails? optionalDetails,
     List<String>? mentionedCharacterIds,
     String? requestId,
+    String? remixSlug,
   });
 
   Future<MobileCreationConversationResponse> sendConversationMessage({
@@ -249,6 +252,7 @@ class MobileCreationRepository implements CreationRepository {
     MobileCreationOptionalDetails? optionalDetails,
     List<String>? mentionedCharacterIds,
     String? requestId,
+    String? remixSlug,
   }) async {
     final data = await apiClient.postMap(
       '/api/mobile/creation-sessions',
@@ -260,6 +264,7 @@ class MobileCreationRepository implements CreationRepository {
         if (mentionedCharacterIds != null && mentionedCharacterIds.isNotEmpty)
           'mentionedCharacterIds': mentionedCharacterIds,
         'requestId': ?requestId,
+        'remixSlug': ?remixSlug,
       },
       receiveTimeout: llmReceiveTimeout,
     );

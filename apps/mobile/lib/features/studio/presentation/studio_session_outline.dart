@@ -6,21 +6,60 @@ part of 'studio_session.dart';
 /// current. The open chapter's text, its saves and its conflicts are the
 /// other half, in `studio_session.dart`.
 extension StudioSessionOutline on StudioSession {
-  /// Adds a chapter after the open one and opens it.
-  Future<void> addChapter() async {
-    await flush();
+  /// Adds an empty chapter after [afterChapterId] — at the end of the book
+  /// when that is null — and opens it with its title selected, so the first
+  /// thing typed names it. Answers whether it was added; a second tap while
+  /// one is on its way adds nothing.
+  Future<bool> addChapter({String? afterChapterId}) async {
+    if (_addingChapter) return false;
+    _addingChapter = true;
+    _notify();
     try {
+      await flush();
+      final chapters = _manuscript?.chapters ?? const [];
       final added = await _repository.addChapter(
         projectId: projectId,
         requestId: newStudioRequestId('studio-chapter'),
-        afterChapterId: chapterId,
+        // Always an id: the API reads a null as "before the first chapter".
+        afterChapterId:
+            afterChapterId ?? (chapters.isEmpty ? chapterId : chapters.last.id),
       );
-      if (_disposed) return;
+      if (_disposed) return false;
       _manuscript = added.manuscript;
       _install(added.chapter);
+      _nameAfterFrame(_document!);
+      return true;
     } catch (error) {
       delegate?.showStudioMessage(userFacingError(error));
+      return false;
+    } finally {
+      _addingChapter = false;
+      _notify();
     }
+  }
+
+  /// A picture book's chapters are its parts.
+  String get chapterNoun =>
+      (_manuscript?.isPictureBook ?? false) ? 'part' : 'chapter';
+
+  /// "Add chapter 4": says which chapter an add at the end makes, so the
+  /// button never leaves the author guessing where it went.
+  String get addChapterLabel => 'Add $chapterNoun ${chapterCount + 1}';
+
+  /// Puts the cursor in a new chapter's title with its "Chapter 4" selected,
+  /// once the editor has built the field.
+  void _nameAfterFrame(StudioDocument document) {
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (_disposed || _document != document) return;
+        final title = document.title;
+        title.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: title.text.length,
+        );
+        document.titleFocus.requestFocus();
+      })
+      ..scheduleFrame();
   }
 
   /// Deletes a chapter; the server keeps it for [restoreChapter]. Answers

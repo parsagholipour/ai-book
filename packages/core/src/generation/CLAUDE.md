@@ -95,11 +95,17 @@ holds the event loop open and vitest will never exit.
   `compositionVarietyIssues` is the contract: no form over half a chapter or 40% of the book, no
   form following itself, no two chapters with the same sequence, no two consecutive chapters
   opening alike. It gets one repair call, then `rotateFormsForVariety`, and never blocks; a provider
-  failure drafts from the rotated fallback. A resumed run re-plans the remaining chapters against
+  failure drafts from the rotated fallback. The repair call is the `formPlanRepair` gate's, off for
+  Quick Draft only: it is 30–60 s of a book's preparation, the rotation settles forms but never
+  landings, and three Quick Draft books planned without it (2026-09-30) kept landings that
+  restated the thesis or one another. The one blind comparison went 4–2 to the round that had it,
+  inside run-to-run noise; Quick Draft takes the time and the other tiers the call. A resumed run re-plans the remaining chapters against
   the `fixed` compositions the finished chapters stored. This is where a deterministic check on
   shape belongs — on the plan, where it is cheap and exact — not on the prose, where the 2026-09-02
   replay showed such rules fire on approved pages. `share` accepts any positive number and is
-  renormalised, because models answer in percentages.
+  renormalised, because models answer in percentages; a zero, negative or non-finite share is *no*
+  share (the chapter is split evenly, as for a missing one), because refused it failed its section
+  and so its whole chapter, which drafted from the keyBeat fallback (`chapterFormsShare.test.ts`).
 - **A chapter's length is a property of its plan — its budget, its sections and its page count —
   never of the number the writer is asked for.** The 2026-09-19 evaluation
   (`docs/jev-balanced-100-evaluation-2026-09-19.md`): the Balanced writer's first drafts came in at
@@ -126,9 +132,11 @@ holds the event loop open and vitest will never exit.
   longest chapter in two only when the chapters cannot hold the book under the ceiling. The
   planner passes it for every book whose chapter is the unit of composition (`composesByChapter`,
   the same predicate the strategy router chooses by, in `compositionUnit.ts` so the router stays
-  light); per-page books' chapters are storage and keep their plan. The retry floor (0.7 ×
-  min, `min` on the developed path) and the editor's extension are unchanged; they are the
-  recovery, not the lever.
+  light); per-page books' chapters are storage and keep their plan. The retry floor and the
+  editor's extension are the recovery, not the lever — and since 2026-10-01 the retry, the line
+  edit's length guard and the compile's length gate all read a minimum at `LENGTH_FLOOR_SHARE` of
+  it, measured as it prints (`printedLength.ts`; the calibration is in
+  `apps/worker/src/generation/CLAUDE.md`).
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind
   panel names the performance; content assignments are the only lever that moved.** Twenty-one
   composed runs on 2026-09-02 (`.scratch/composed-chapters/spec.md`) hold the evidence. Three
@@ -154,6 +162,118 @@ holds the event loop open and vitest will never exit.
   `scripts/dev-stop-project.ts` to stop a book.
 - **The earlier plan contract is historical.** It reacted to the fresh-plan books' repeated "what the source can and cannot establish" assignments by re-asking on regex hits and pruning episodes with shared names. It measured 7.00, then later audit fixtures showed legitimate distinct events and cautious claims being removed. Those interventions are retired. Read the [fresh-plan report](../../../../docs/composed-chapters/experiments/2026-09-06-fresh-plan/report.md) for the measured configurations; the diagnostic helpers in `planContract.ts` have no authority to change a plan.
 
+- **The brief's explicit asks and a guide's example people are content assignments of the form
+  plan, made in its one call.** Blind readers kept finding a promised item missing — no question
+  bank, no meeting cadence, a tracker or worksheet referred to and never printed — and example
+  people who changed jobs between chapters ("Lena is an illustrator in chapter 1 and a translator
+  in chapter 6"), in most of the 2026-09-30 Quick Draft books. Nothing assigned either: the
+  coverage review found the missing item only after the book was written, and each chapter
+  invented its own people. `planChapterForms` now takes `requirements` — the content, table and
+  structure asks of the brief's inventory (`briefRequirementsForForms`, worker), each to be named
+  by the one section that delivers it — and `exampleCast`: `"plan"` for an instructional or
+  reference book asks for two to four people with one fixed role each (`EXAMPLE_CAST_RULE`,
+  `exampleCastFrom`), a stored cast (`plan.exampleCast`, written by the worker) is handed back
+  unchanged on a resume. The cast rides every return of the planner, the rotated and fallback
+  ones included, and `exampleCastLines` gives it to the writer and the editor. Only surface
+  consistency is asked for — a name keeps its job — which is all a reader notices.
+- **A practical guide or a workbook is planned from what the reader walks away with, and only the
+  reader's chosen book type takes that path.** Four editor reviews and sixteen blind trials of the
+  2026-09-30/10-01 guides and workbooks scored them 4–5/10, and the prompts showed why: the history
+  machinery ran on how-to books. `plan-episodes` returned *documents* ("GitLab Handbook, 1:1s"),
+  the form plan's sections owned source titles, the writer was told a chapter "is built from the
+  episodes … a person, a place, a date and a document", "do not invent dialogue" turned every
+  script into a description of one, the reconstruction rule's "never present an invented person as
+  a real one" printed "This is an illustrative scene, not a report of an actual meeting", and the
+  plan's `continuityRules` ("label sample figures as illustrative", "keep tax guidance general",
+  "do not imply one-on-ones replace formal reporting") rode into every chapter, so every chapter
+  said them — the rule that a field present in every chapter is a template, again. The toolkit path
+  (`instructionalBook.ts`, `instructionalPlanning.ts`) replaces the assignments, not the pipeline:
+  `planResearchLeads` answers under `plan-episodes` with facts a sentence will use (kind `figure`
+  or `document` only — an unknown kind parses as `scene`, and a scene opens its chapter through
+  `composeScene`) and the one `setting` (country, currency, year) the rules belong to;
+  `planInstructionalForms` answers under `plan-chapter-forms` with deliverable sections from
+  `TOOLKIT_FORMS` — situation, script, tool, worksheet, decision-rule — each with a `###` `heading`
+  and the requirement ids it `covers`, plus a cast introduced in one chapter each, `caveats` each
+  homed in one chapter, a few fixed-fact `rules`, and for a workbook one `runningCase` of input
+  figures with their year. Coverage of the brief is checked in code before any prose
+  (`requirementCoverageIssues`; without a repair call `homeUncoveredRequirements` places what is
+  left), `deliverableCarriesLength` moves a chapter's long share off a situation (asked in words, the
+  planner still gave one 43% of its chapter), the deliverable forms are never rotated
+  (`PINNED_FORMS`) and the toolkit plan is not rotated at all (an objection rotated into an exercise
+  left its subject behind). The writer gets `bookRules` and its own chapter's `cautions` in place of
+  `continuityRules`, research as `facts` rather than `episodes` with no `reservedCases`, the
+  `TOOLKIT_LAYOUT_RULE` (headings, dialogue lines, tables of at most five columns printed once filled
+  and once blank), `EXAMPLE_PEOPLE_RULE` in place of the reconstruction rule, a quotation rule that
+  lets a script be the book's own words, and `TOOLKIT_EXEMPLAR` in place of the pump; the first
+  blind panel on the prototype went 8/8 overall and 3/8 on pacing, so each figure, calculation and
+  agreed outcome is *owned* by one section and a worksheet is printed exactly twice. Replayed three
+  times on the same slots (one draw each, so read the range), a figure's restatements in the
+  workbook's prose went from the prototype's 30 to 5, 0 and 15 in the pricing chapter and from 14 to
+  11, 3 and 24 in the tax chapter; the guide chapters state almost no figures either way. The path
+  is `usesToolkit`: the reader's `bookTypeChoice` is `practical_guide` or `workbook` (or `auto`
+  resolved to one of those lanes) **and** the writing mode is instructional — never the category,
+  which makes every Business book instructional, a history of Nokia included. `activeToolkit` is the
+  only door to the compose and edit prompts, so a book planned before the toolkit existed composes
+  exactly as it did, and `instructionalScope.test.ts` holds the prompts of history, fiction,
+  children's and off-type Business books byte-identical with a toolkit handed in and without. At
+  implementation the compose, edit, episode and form-plan prompts of seven such fixtures (reference
+  and science included) were also built by the current tree and by the same tree with this change's
+  hunks reversed, and matched byte for byte; a guide planned before the toolkit matched in its
+  compose and edit prompts and differs, by design, in its episode planning. Tables and headings print taller than prose: a 13-column tracker put a 3-page workbook
+  chapter at six sheets, which is why the column cap is in the palette. With it, every replayed
+  chapter printed within its paid pages under `fitBookPdfPageCount`, the workbook's at the fitter's
+  full compaction and the guide's where the old chapters sat; the whole-book fit is the full run's
+  to measure. The length checks used to read a table as its cells' words alone, so a table-heavy
+  chapter read as short while filling its pages; `printedWordCount` adds `TABLE_ROW_ROOM_WORDS` a
+  row, the conservative fit to sixteen guides and workbooks rendered with and without their tables.
+  `check-chapter-arithmetic` runs on these chapters and missed "$53,400 × 92.35% = $49,329.90" in
+  three of three replays: the model never proposed it, so code never saw it.
+- **A chapter's prose arithmetic is proposed by a model and decided by code.** `arithmeticFindings`
+  reads only delimited math, so "from $800, after $1,200 rent and $110 electricity, only $290
+  remains", "$5.86 against 16 cents, a 39-fold saving" and a quarterly bill divided by four went
+  to print and to the blind panel. `proseArithmeticFindings` (`proseArithmetic.ts`, purpose
+  `check-chapter-arithmetic`, gate `proseArithmeticCheck`) asks for plainly wrong results with the
+  computation from the chapter's own numbers, and `verifiedFinding` keeps one only when its quote
+  is in the chapter, carries the stated number, and `evaluateExpression` (`+ - * /`, parentheses,
+  decimals, nothing else) disagrees beyond rounding — two percent where the quote says "about" — and
+  a second short call, shown the quote's paragraph and the two before it, agrees the number is
+  *meant* as that computation. Code checks the arithmetic, never the pairing: replayed over 32
+  stored chapters, one proposal paired "$300 left" with the wrong subtraction, and a result spelled
+  in words used to read as 0. That confirmation is told to ignore whether the arithmetic is right,
+  because asked about both it reasoned "−510 is not 290, so the sentence cannot mean that" and
+  turned down every real error. The replay then kept two findings, both real ("$2,400 above the
+  floor" of a $2,300 floor; "39-fold" for 36.6), and missed others a first pass had caught, so it
+  can miss an error and should not talk the editor into "correcting" a right number. The worker's
+  `repairChapterArithmetic` takes it as `proseFindings`, in the chapter's finish, which runs beside
+  the next compose. A chapter with fewer than four numbers is not asked about.
+- **A book written from no source is a story, whatever its category and cue words said.**
+  `inferWritingMode` reads `plan.authorStance.research` (`STANCE_RESEARCH_RULE`): `"none"` makes
+  every mode but a children's book `narrative`. The category-and-cue-word guess had a fantasy novel
+  about "the last era of a dying dynasty" (Custom) composed with the analytical palette — scene,
+  argument, counterargument — after its stance had already said it was invented. The composed
+  pass puts a stance it generates onto its in-memory plan so every later mode read sees it.
+- **An opening scene's episode is taken back from the section and the material that also held
+  it, or the chapter tells it twice.** `composeScene` tells one of a history chapter's episodes
+  ahead of the chapter and the pass prints it first. The chapter was still assigned that episode
+  three times: in `episodes` ("give each episode a real stretch"), in the form-plan section that
+  owns it, and in that section's material — and the sentence telling the writer not to repeat the
+  scene lost to all three, the way shape rules always lose to content assignments here. Blind
+  readers named it in every round of 2026-09-30 ("the Ideal X voyage is told three times", "each
+  scene opening is restated later in its chapter"), and measured on the stored books half to all
+  of a scene's numbers came back later in the same chapter. The scene does not even sit over the
+  first section: one plan put the voyage third, so the chapter opened on it, went back twenty
+  years and told it again. `afterOpeningScene` (`composedSceneTold.ts`, applied in `composeChapter`
+  and `editChapter`) finds the section that treats the told episode — 60% of the title's words in
+  its subject and material — makes a `scene` or `portrait` there an `aftermath`, drops the
+  material entries that name the episode, replaces the note with `sceneToldNote`, and removes the
+  episode from `episodes`; the dossier stays whole, since a chapter whose passages all belong to
+  that episode would otherwise compose under the no-passage rule. Replayed through old and new
+  code over the eleven stored scene chapters, on identical inputs: the scene's numbers repeated
+  in the body 51% → 17%, its names 62% → 38%, its five-word runs 4.1% → 1.1%, and the chapters
+  ran 1,674 → 1,733 words. Only where the palette has an `aftermath` form, which is the
+  analytical one: a narrative book's scenes are its sections (the Apollo 13 book's ran 480–580
+  words and repeated a quarter of their numbers), so they are left as planned. The editor is told
+  the same thing in one clause, as the second line of defence.
 - **A nonfiction scene needs a passage of the record, and a fresh plan rarely has one; telling it anyway was
   measured and reverted.** `composeScene` returns before any call when the chapter's dossier holds no excerpt for
   the episode, so `readers-prescription-8` asked for scene episodes in eleven chapters, made two calls (both on an
@@ -177,6 +297,62 @@ holds the event loop open and vitest will never exit.
   and latency. Web discovery is a model call with its own budget and is waited for whole. The
   bound covers a throttled host's queue wait, which is at most two other chapters' requests: three
   dossiers build at once, two seconds apart.
+- **A dossier anchor is matched on the fold's word parts, and a search result titled by its domain
+  has no title.** Two defects together refused most of every dossier in the 2026-09-30 Quick Draft
+  runs. `tokenize` (`dossier.ts`) folded each whitespace word whole, and `foldQuoteText` turns
+  punctuation inside a word into a space, so "Check-in" was one token `"check in"` while the
+  model's anchor split into `check`, `in`: every anchor crossing a hyphen or an apostrophe
+  ("that’s", "mission-oriented") was unmatchable, and the same miss hit window scoring. Each
+  folded part is now its own token carrying the source word's span; replayed over the three books'
+  115 returned anchors, 79 matched before and 112 after. Separately, Gemini grounding reports a
+  result's domain ("irs.gov", "adobe.com") where a title belongs, and the provenance reviewer
+  refused 25 of 76 verbatim official passages because that "title" did not match the page.
+  `fetchPrimaryDocument` takes the page's own `og:title`/`<title>` when the search named only the
+  site (`isSiteNameTitle`), and `reviewDossierProvenance` shows a domain-only title (a PDF, say) as
+  no title rather than a claim to check. The writer, the epigraph and the Sources list read the
+  same field, which is why a web title also loses the site name a page appends after a bar
+  (`withoutSiteSuffix`): the creative contract tells the writer to name the document it quotes,
+  and two books printed "The Truck Driver Who Reinvented Shipping | Working Knowledge reports…". The episode searches of one call run together (the throttle still spaces each
+  catalogue) and the provenance reviews three at a time, because both used to run one after
+  another in the dossier and again in every chapter's claim retrieval. The same day the provenance
+  review itself was switched off (`DOSSIER_PROVENANCE_REVIEW`, with the worker's claim review —
+  see `apps/worker/src/generation/CLAUDE.md`); the title and parallelism fixes stand for when it
+  is switched back on.
+- **A history writer is told who said a passage, never what it is called or where it lives, and
+  states the rest as fact.** The 2026-09-30 history books narrated their sources instead of their
+  subject — "The account at usda.gov says…", "according to *Port Newark: How Malcom McLean Changed
+  the World*" twice in two paragraphs, "Mayo and Nohria report that…", "The voyage's recorded
+  account ends with the ship's departure" — 23 "account"s in one 13k-word book. Hand-labelled over
+  both books (`historySources.ts` has the counts), the causes were prompt and payload, never the
+  research notes: the dossier entry carried `document` (a page title, or a PDF's bare domain) and
+  `url`, the creative contract said "name the document", the scene call had the `document` but no
+  `speaker` — every domain printed in four history books came from a scene — and the scene, the
+  reconstruction rule and the shape rule all spoke of "the record" and "a short account", which came
+  back verbatim. For `analytical-history` only (`writesHistorySources`; that is also SCIENCE,
+  SOCIETY and BIOGRAPHY), `historySources.ts` swaps those lines and sends each passage as
+  `{ id, source, text }` — `passageSource` is the speaker or author, a catalogue work's title, a
+  four-digit year, and never a web page's title, a URL or a domain. The quote rule names who is
+  worth quoting (a participant, an official, a witness, a newspaper of the day) because the first
+  wording, "quote only a voice no paraphrase could match", stopped all quoting. The scene wording
+  that also told the writer to stop "where the passages stop" returned empty scenes, so the one
+  that shipped keeps the old sentence's shape. And `withoutUnfetchedReadings` turns a scene,
+  portrait or close reading of an episode no passage came from into a `mechanism` without its
+  document line: the form plan is made before the dossier, and the writer "read" the LDDC's annual
+  reports it was assigned and never given. Every string is replayed as shipped; guides, workbooks,
+  reference books and fiction are pinned unchanged by `historySources.test.ts`. What it costs is
+  length — drafts lose their narration padding and take the length retry more often — and a
+  two-passage scene that falls under the 80-word floor.
+- **Only a history book is owed scenes, and the planner is never offered the shelved arc.** The
+  episode planner's "at least half the chapters carry one scene" was measured on history books
+  (rung 3, candidate 8) and applied to every non-narrative book on the unfocused path, so a
+  freelancer's budgeting workbook got scenes starring a strike leader, a mayor and a governor,
+  each then flagged as an unsupported claim; `planEpisodes` gives the quota to
+  `analytical-history` alone and tells every other mode a scene is optional. And the initial
+  planner's schema (`bookPlanModelOutputSchemaWithFallback`) offered `bookArc` as an optional
+  field: the model filled it in on about 40% of plans, so those books alone ran the arc prompts
+  `BOOK_ARC` keeps off — a one-on-one meetings guide was told "do not state the book's answer"
+  and "a method chapter shows how a trace becomes a claim". It is omitted beside its stored
+  siblings; revisions keep the full schema so a stored arc survives the merge.
 - **Names and numbers do not prove that an edit preserves meaning.** Candidate 9's coupled rewrite garbled a clean sentence while preserving its anchors. The later audit also demonstrated polarity reversal. The rewrite and acceptance rules were removed; historical results remain in the experiment reports.
 
 - **The chapter-edit gate is the contextual reviewer alone; the decision model that ran ahead of
@@ -206,6 +382,22 @@ holds the event loop open and vitest will never exit.
   that cite nothing recognisable keep every chapter in view. A factual correction reaches the
   reviewer with its evidence — a source passage, or an exact computation it is told it may redo —
   and only a repair caller may supply one; a deletion-only cut carries none.
+- **A caveat is stated once, where it first matters, and the acceptance reviewer is told the rule
+  the editor was.** Blind readers named hedging in 43 of 46 books and repetition in 41
+  (2026-10-01), and the repetition was padding against the word minimum: "never state the same
+  point twice" in the writer and the editor came back shorter and duller and lost 4 of 12 blind
+  pairs, while `CAVEAT_ONCE_EDITOR_RULE` in place of "keep a caveat when it limits an inference; cut
+  it only when the same limitation is already stated with the same scope and context" won 12 of 12
+  — 8 non-fiction, and 4 fiction, where it follows the pacing sentence and barely moved the length.
+  An editor rule that licenses a removal the reviewer's rubric would call lost meaning goes to the
+  reviewer too, on exactly the calls the editor got it (`chapterEditAcceptanceSystem`: every line
+  edit, never a deletion-only cut), the fact ledger's pattern; it keeps the exception, so a removed
+  qualification that added a condition is still a regression. Replayed on the six blind-tested
+  chapters with the shipped prompt, length guard and reviewer, the history edit the old guard
+  discarded (0.885 of its minimum) now reaches print; judged three times per edit, the reviewer
+  accepted 6 of 15 Balanced judgments on the new prompt and 5 of 15 on the old, none of its
+  rejections was about a repeated caveat, and each of the five edits it judged drew both verdicts
+  across the six sittings — what it still costs these edits is the reviewer's noise.
 
 - **A chapter's arithmetic is redone before it is judged, and a wrong number is a factual correction
   whose evidence is the computation.** `arithmeticFindings` (`arithmeticCheck.ts`) parses every
@@ -1017,16 +1209,28 @@ holds the event loop open and vitest will never exit.
   on physical numbering, matching the files they describe. Nothing about a model page says where
   it lands: pages normally join on a single newline, so adjacent pages routinely share one
   paragraph. `joinMarkdownPageBlocks` restores a blank line when a page-ending table is followed
-  by prose without a cell separator; otherwise GFM consumes that prose as an extra table row.
+  by prose without a cell separator; otherwise GFM consumes that prose as an extra table row. It
+  does the same when the next page *starts a table* — a header row and its delimiter, as GFM
+  reads them — because on one newline those two lines become rows of the table above: the header
+  as data, then a row of `---`. The toolkit prints each worksheet filled and then blank, back to
+  back, so a page cut between them did exactly that (r1-bal-guide, r2-bal-workbook, 2026-10-01).
+  Replayed over every stored book, it changed those two boundaries of 15,159 and nothing else, and
+  130 finished books compile to byte-identical `book.md`.
   Continued table rows keep their single newline, and offsets come from the assembled markdown
   so the extra separator cannot shift a page anchor. `compileBookMarkdownWithPageAnchors`
   therefore returns, beside the byte-identical `book.md`, one destination name per model page — the
   existing `chapter-N` for a chapter opener, `bp-N` plus a markdown offset otherwise — and the PDF
   render injects markers into **its own copy only** (`pdfPageAnchors.ts`): an empty inline
   `<span id>` glued to plain content, an HTML comment line before block syntax, a span *inside* a
-  quote or list line when one container straddles the boundary — and no marker at all inside a
-  straddling table, where a comment ejects the following rows as pipe text and a span shifts the
-  cells, so that page stays unanchored and the whole map fails soft instead. Each shape is measured
+  quote or list line when one container straddles the boundary, and a span inside the first cell
+  of a pipe-led row when a table straddles it — a comment line there ejects the following rows as
+  pipe text and a span *before* the leading pipe becomes a cell of its own and shifts the rest, but
+  after the pipe it is inline cell content. While that row took no marker, the page cut between a
+  worksheet printed filled and its blank copy — joined then on one newline, so it opened inside the
+  first table — was the one unmarked page of r1-bal-guide and r2-bal-workbook (2026-10-01), both
+  of which shipped the stub; that boundary now joins on a blank line (above), and body rows
+  continuing across a cut are what still reach the in-cell marker. A delimiter row, or a row with
+  no leading pipe, still takes no marker and the map fails soft. Each shape is measured
   against marked@4.3.0 to leave the rendered blocks identical, and manuscript-authored `bp-*` ids
   are renamed at equal byte length so user text cannot point a destination somewhere else.
   **`chapter-*` needs the same guard and cannot take the same shortcut, because the compiler writes
@@ -1058,7 +1262,12 @@ holds the event loop open and vitest will never exit.
   the rendered bytes through the classic xref, and `buildBookPdfPageMap` turns starts into
   inclusive ranges, deciding shared boundary pages by the anchor's y against the top-margin band.
   **Failure anywhere returns `undefined`, and no compile may fail, publish differently, or retry
-  over the map** — chat without a translatable map keeps the old model-index behaviour. New PDFs
+  over the map** — chat without a translatable map keeps the old model-index behaviour. **But it
+  is never silent**: a stub looks like a measured book everywhere but chat, so the render hands back
+  `pageMapFailure` (`explainBookPdfPageMapFailure`: the pages with no destination, or out of order),
+  the worker appends `export.pdf_page_map_fallback` to the compile's run log for every fallback and
+  warns when a render with anchors lost pages (`pdfPageMapAfterCompileRender`), and the API's inline
+  rebuild warns. Diagnostics only — nothing branches on them. New PDFs
   still skip the cover in CSS, so a failed measurement still records cover-skip numbering
   (`bookPdfCoverNumbering`) for chrome. **That stub says what it is** — `kind: "cover-numbering"` —
   and the marker, not its empty `pages`, is what `parseStoredBookPdfPageMap` refuses it by, because

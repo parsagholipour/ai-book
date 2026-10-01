@@ -11,16 +11,38 @@ import {
  * mobileCreation.ts, which is its only consumer.
  */
 
-export function audienceFor(rawIdea: string, lane: MobileCreationLane): string {
+/**
+ * Words that make a phrase after "for" a reader rather than a purpose ("for
+ * supply chains today") or the rest of the sentence.
+ */
+const AUDIENCE_NOUN =
+  /\b(?:readers?|people|anyone|everyone|those|beginners?|newcomers?|kids?|children|toddlers?|teens?|teenagers?|adults?|seniors?|students?|learners?|parents?|mothers?|fathers?|mums?|moms?|dads?|families|couples?|teachers?|educators?|coaches|managers?|leaders?|founders?|owners?|entrepreneurs?|executives?|professionals?|freelancers?|consultants?|clients?|customers?|employees?|teams?|developers?|engineers?|designers?|writers?|authors?|artists?|marketers?|nurses?|doctors?|women|men|girls?|boys?|daughters?|sons?|friends?|fans?|lovers?|enthusiasts?|travell?ers?|investors?|homeowners?|volunteers?)\b/i;
+/** Where the reader ends and the rest of the idea begins. */
+const AUDIENCE_END = /[,.!?;:\u2014\u2013(]|\s+(?:on|about|who|that|which|to|so|how|where|when|because|and)\s/i;
+const AUDIENCE_MAX_WORDS = 8;
+/** "looking for her mother" names what a character wants, not who reads the book. */
+const PHRASAL_FOR = /\b(?:look(?:s|ing|ed)?|search(?:es|ing|ed)?|wait(?:s|ing|ed)?|ask(?:s|ing|ed)?|hop(?:es?|ing|ed)|long(?:s|ing|ed)?|car(?:es?|ing|ed)|fight(?:s|ing)?|hunt(?:s|ing|ed)?)\s+$/i;
+
+/**
+ * The reader the idea itself names, or nothing. Only a fallback for a draft
+ * whose brief the model did not fill in, so it answers when it is sure: the
+ * old capture ran from "for" to the next comma and printed "new first-time
+ * managers on running genuinely useful one-on-one meetings with their direct
+ * reports: how to structure them" as the book's audience (2026-09-30).
+ */
+export function audienceFor(rawIdea: string): string {
   const age = rawIdea.match(/\b([2-9]|10|11|12)\s*(-| )?(year|yr)s?\s*olds?\b/i)?.[0];
   if (age) {
     return age.replace(/\s+/g, " ");
   }
-  const forMatch = rawIdea.match(/\bfor\s+([^,.!?;]+)/i)?.[1]?.trim();
-  if (forMatch) {
-    return forMatch;
+  for (const match of rawIdea.matchAll(/\bfor\s+/gi)) {
+    if (PHRASAL_FOR.test(rawIdea.slice(0, match.index))) continue;
+    const named = rawIdea.slice(match.index + match[0].length).split(AUDIENCE_END)[0]!.trim();
+    if (named && named.split(/\s+/).length <= AUDIENCE_MAX_WORDS && AUDIENCE_NOUN.test(named)) {
+      return named;
+    }
   }
-  return audienceFallback(lane);
+  return "";
 }
 
 export function audienceFallback(lane: MobileCreationLane): string {
@@ -62,13 +84,18 @@ export function toneFallback(lane: MobileCreationLane): string {
   }[lane];
 }
 
-export function promiseFallback(rawIdea: string, lane: MobileCreationLane): string {
-  if (lane === "auto") return `become the best-fitting book for ${cleanTitlePart(rawIdea).toLowerCase() || "the idea"}`;
+/**
+ * What the lane promises when the model named no outcome. Never a span of
+ * the idea: splicing a "cleaned" title in printed "get a useful first step
+ * for i want a practical , what" into a book's brief (2026-09-30).
+ */
+export function promiseFallback(lane: MobileCreationLane): string {
+  if (lane === "auto") return "the book that best fits the idea described in the chat";
   if (lane === "children_story") return "a gentle story children can follow and enjoy";
   if (lane === "adult_story") return "a compact story with a clear emotional turn";
   if (lane === "workbook" || lane === "client_tool") return "complete useful practice and leave with a next step";
   if (lane === "offer_guide") return "understand the offer and decide what to do next";
-  return `get a useful first step for ${cleanTitlePart(rawIdea).toLowerCase() || "the topic"}`;
+  return "leave with a clear, practical first step on the topic";
 }
 
 export function mainCharacterFor(rawIdea: string, lane: MobileCreationLane): string {
@@ -175,21 +202,4 @@ export function wordCount(value: string): number {
 
 export function looksFactualOrCurrent(value: string): boolean {
   return /\b(research|study|studies|statistics|current|recent|latest|medical|legal|financial|law|health|science|evidence)\b/i.test(value);
-}
-
-export function cleanTitlePart(value: string): string {
-  const cleaned = value
-    .replace(/^create\s+(an?|the)?\s*/i, "")
-    .replace(/\b(book|ebook|guide|workbook|story|lead magnet|bedtime)\b/gi, "")
-    .replace(/\bfor\s+([2-9]|10|11|12)\s*(-| )?(year|yr)s?\s*olds?\b/gi, "")
-    .replace(/\bfor\s+[^,.!?;]+/i, "")
-    .trim();
-  if (!cleaned) {
-    return "";
-  }
-  return cleaned
-    .split(/\s+/)
-    .slice(0, 6)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 }

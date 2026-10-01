@@ -36,6 +36,7 @@
 
 import { prisma } from "@book-maker/db";
 import type { AdminWindow } from "./metrics.js";
+import { loadSearchGroundingSummary, type SearchGroundingSummary } from "./searchGrounding.js";
 
 /** Which unit "how much we used" is measured in for a given call. */
 export type CostKind = "text" | "image" | "audio";
@@ -93,6 +94,8 @@ export type AdminCostBreakdown = {
   byKind: KindCost[];
   operations: OperationCost[];
   models: ModelCost[];
+  /** The grounding fee inside `totals`, broken out, with Google's free allowance beside it (`searchGrounding.ts`). */
+  searchGrounding: SearchGroundingSummary;
 };
 
 /** One `(kind, purpose, provider, model)` group, straight off the query below. */
@@ -118,10 +121,11 @@ export type ProviderCostRow = {
 };
 
 export async function loadAdminCostBreakdown(window: AdminWindow): Promise<AdminCostBreakdown> {
-  const rows = await loadProviderCostRows(window);
+  const [rows, searchGrounding] = await Promise.all([loadProviderCostRows(window), loadSearchGroundingSummary(window)]);
   return {
     window: { days: window.days, since: window.since.toISOString(), until: window.until.toISOString() },
-    ...costBreakdownFromRows(rows)
+    ...costBreakdownFromRows(rows),
+    searchGrounding
   };
 }
 
@@ -183,7 +187,7 @@ type OperationAccumulator = CostUsage & {
   models: Map<string, ModelCost>;
 };
 
-export function costBreakdownFromRows(rows: ProviderCostRow[]): Omit<AdminCostBreakdown, "window"> {
+export function costBreakdownFromRows(rows: ProviderCostRow[]): Omit<AdminCostBreakdown, "window" | "searchGrounding"> {
   const totals = emptyUsage();
   const byKind = new Map<CostKind, KindCost>();
   const byOperation = new Map<string, OperationAccumulator>();

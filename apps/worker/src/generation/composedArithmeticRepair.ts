@@ -1,5 +1,9 @@
-import { arithmeticFindings, type ArithmeticFinding } from "@book-maker/core";
+import {
+  arithmeticFindings, inferWritingMode, isNarrativeWritingMode, proseArithmeticFindings,
+  type ArithmeticFinding, type BookPlan, type CreateProjectInput, type TextModelAdapter
+} from "@book-maker/core";
 import { repairChapterEvidence, type ChapterEvidenceRepair } from "./composedEvidenceRepair.js";
+import { isStopRequestedError } from "../runtime/jobTypes.js";
 
 /**
  * The arithmetic a chapter prints is checked without a model (`arithmeticFindings`) and repaired
@@ -22,13 +26,42 @@ export async function repairChapterArithmetic(options: {
   markdown: string;
   edit: (markdown: string, correction: ArithmeticCorrection) => Promise<string>;
   degenerate: (markdown: string) => boolean;
+  /** The prose's arithmetic (`proseArithmeticFindings`): a failure there is no findings, never a failed chapter. */
+  proseFindings?: ((markdown: string) => Promise<ArithmeticFinding[]>) | undefined;
 }): Promise<ChapterEvidenceRepair | undefined> {
-  if (arithmeticFindings(options.markdown).length === 0) return undefined;
+  const findingsOf = async (markdown: string): Promise<ArithmeticFinding[]> => {
+    let prose: ArithmeticFinding[] = [];
+    try {
+      prose = (await options.proseFindings?.(markdown)) ?? [];
+    } catch (error) {
+      if (isStopRequestedError(error)) throw error;
+    }
+    return [...arithmeticFindings(markdown), ...prose];
+  };
+  const first = await findingsOf(options.markdown);
+  if (first.length === 0) return undefined;
+  // The first review is the check just made; every later one reads the edited text.
+  let latest = first;
+  let reviewed: string | undefined = options.markdown;
   return repairChapterEvidence({
     markdown: options.markdown,
-    review: async (markdown) => ({ issues: arithmeticFindings(markdown).map(arithmeticIssue), dropped: [] }),
-    edit: (markdown, notes) => options.edit(markdown, { instructions: notes, computations: arithmeticFindings(markdown).map((finding) => finding.reason) }),
+    review: async (markdown) => {
+      latest = markdown === reviewed ? latest : await findingsOf(markdown);
+      reviewed = undefined;
+      return { issues: latest.map(arithmeticIssue), dropped: [] };
+    },
+    edit: (markdown, notes) => options.edit(markdown, { instructions: notes, computations: latest.map((finding) => finding.reason) }),
     degenerate: options.degenerate,
     notes: arithmeticRepairNotes
   });
+}
+
+/**
+ * The prose's own arithmetic for a book that argues or instructs, proposed by
+ * a model and kept only where code agrees (`proseArithmeticFindings`); none
+ * for a story, and none with the `proseArithmeticCheck` gate off.
+ */
+export function proseArithmeticChecker(options: { input: CreateProjectInput; plan: BookPlan; textModel: TextModelAdapter; enabled: boolean }) {
+  if (!options.enabled || isNarrativeWritingMode(inferWritingMode(options.input, options.plan))) return undefined;
+  return (markdown: string) => proseArithmeticFindings({ markdown, textModel: options.textModel, language: options.input.language });
 }

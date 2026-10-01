@@ -43,15 +43,27 @@ function paragraphSeparator(before: string, after: string): string {
 function pageSeparator(before: string, after: string): string {
   // Ordinary prose, lists and quotes can continue across model pages. Tables
   // can too, but GFM also consumes a following pipe-free paragraph as another
-  // row unless the page boundary restores its missing blank line.
+  // row unless the page boundary restores its missing blank line — and a
+  // following *table* too: its header and delimiter become two more rows, the
+  // second a row of `---`. A worksheet printed filled and then blank is two
+  // such tables back to back, and a page cut between them printed one.
   if (before.endsWith("\n") || after.startsWith("\n")) return "\n";
   const lastLine = before.slice(before.lastIndexOf("\n") + 1);
   const firstLine = after.split("\n", 1)[0] ?? "";
-  if (!hasCellSeparator(lastLine) || hasCellSeparator(firstLine)) return "\n";
+  if (!hasCellSeparator(lastLine) || (hasCellSeparator(firstLine) && !startsTable(after))) return "\n";
   // Inspect the accumulated document so a table spanning several page blocks
   // is still recognized; pipe-shaped examples inside code are not tables.
   const lastBlock = Lexer.lex(before).filter((token) => token.type !== "space").at(-1);
   return lastBlock?.type === "table" ? "\n\n" : "\n";
+}
+
+/**
+ * A block that opens on a header row and its delimiter row, as GFM reads them
+ * (cell counts included). Body rows continuing a table across the cut do not.
+ */
+function startsTable(block: string): boolean {
+  const [header = "", delimiter = ""] = block.split("\n", 2);
+  return Lexer.lex(`${header}\n${delimiter}`).find((token) => token.type !== "space")?.type === "table";
 }
 
 function hasCellSeparator(line: string): boolean {

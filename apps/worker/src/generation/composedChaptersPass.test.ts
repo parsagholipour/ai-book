@@ -109,7 +109,7 @@ const mocks = vi.hoisted(() => {
       return { id: page.id, revision: options.revision, updatedAt: new Date(1) };
     }),
     publishStagedGeneratedPage: vi.fn(async () => "completed"),
-    persistKeeperStoryDelta: vi.fn(async () => null),
+    keeperStoryExtractForSave: vi.fn(async () => null),
     developmentEnabled: false,
     qualityEnabled: vi.fn((_feature: string): boolean => true)
   };
@@ -128,6 +128,8 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJo
 vi.mock("./bookState.js", () => ({ resetBookForDirectGeneration: mocks.resetBookForDirectGeneration }));
 vi.mock("./characterReferences.js", () => ({ ensureCharacterReferenceAssets: mocks.ensureCharacterReferenceAssets }));
 vi.mock("./sourceDossier.js", async (original) => ({ ...await original<object>(), retrieveChapterSources: vi.fn(async () => ({ documents: [], excerpts: [] })) }));
+// The claim review is off in production (`SOURCE_CLAIM_REVIEW`); these tests keep its dormant path working.
+vi.mock("./sourceClaimState.js", async (original) => ({ ...await original<object>(), SOURCE_CLAIM_REVIEW: true }));
 vi.mock("./bookHelpers.js", async () => {
   const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
@@ -155,7 +157,7 @@ vi.mock("./pagePublication.js", () => ({
   stageGeneratedPageAndBrief: mocks.stageGeneratedPageAndBrief,
   publishStagedGeneratedPage: mocks.publishStagedGeneratedPage
 }));
-vi.mock("./qualityEnrichment.js", () => ({ persistKeeperStoryDelta: mocks.persistKeeperStoryDelta }));
+vi.mock("./qualityEnrichment.js", () => ({ keeperStoryExtractForSave: mocks.keeperStoryExtractForSave, persistStoryExtract: async () => null }));
 vi.mock("./qualitySettings.js", () => ({
   loadQualityContext: async () => ({ tier: "balanced", enabled: (feature: string) => ["bookDevelopment", "caseEvidence", "developmentalEdit"].includes(feature) ? mocks.developmentEnabled : mocks.qualityEnabled(feature), settings: {}, pageReviewPromptMode: "normal" })
 }));
@@ -348,6 +350,19 @@ describe("generateBookComposedChapters", () => {
     await finalizePendingPages(args);
     expect(review).toHaveBeenCalledOnce();
   });
+  it("keeps a chapter's draft when its length retry fails, finishes the book, and logs it", async () => {
+    // r2-fast-guide (2026-09-30): the length retry ran away to its output cap and the book FAILED.
+    const [plan, { fake }] = [makeFallbackPlan(input), recordingFake()];
+    const compose = fake.generateText;
+    fake.generateText = async (options) => options.purpose !== "compose-chapter" ? compose(options)
+      : options.messages[0]!.content.includes("Your previous answer was") ? Promise.reject(new Error("OpenAI response was incomplete: max_output_tokens."))
+      : compose(options).then((full) => ({ ...full, text: full.text.split(/(?<=\.)\s+/).filter((_, i, all) => i < all.length / 3).join(" ") }));
+    const append = vi.fn(async (_event: string, _data: Record<string, unknown>) => "");
+    await generateBookComposedChapters({ projectId: "project-1", planId: "plan-1", input, plan, providers: providersWith(fake), strategy: composedChaptersStrategy, generationJobId: "job-1", runLog: { append } });
+    expect(append.mock.calls.filter(([event]) => event === "generation.composed_chapters.length_retry_failed").map(([, data]) => data)).toEqual(plan.chapters.map((chapter) => expect.objectContaining({ chapterIndex: chapter.index, error: "OpenAI response was incomplete: max_output_tokens." })));
+    expect(store.pages.length > 0 && store.pages.every((page) => page.markdown.trim().length > 0)).toBe(true);
+  });
+
   it("writes every chapter whole, checkpoints its pages, reads the book once, and finalizes", async () => {
     const plan = makeFallbackPlan(input);
     const { fake, purposes } = recordingFake();
@@ -531,6 +546,43 @@ describe("generateBookComposedChapters", () => {
       expect(chapter.sectionCount).toEqual(assignedSectionCount(chapter.chapterIndex, planned.targetPages, chapter.words));
       expect(chapter.sustainedShare).toBe(sustainedSectionShare(chapter.words));
     }
+  });
+
+  it.each([["none", 0], ["sources", 1]] as const)("starts the research of a book whose stance says research: %s exactly %i time", async (research, times) => {
+    // A novel searches nothing and plans no episodes, even with materialFirst on (2026-09-30).
+    const stance = { thesis: "Loneliness is a skill.", positions: ["Detail over summary", "The keeper never explains himself"], refusals: [], voiceSample: "The keeper at Ardnamurchan wrote the wind in the log. ".repeat(12), research };
+    const plan = { ...makeFallbackPlan(input), authorStance: stance };
+    const { fake, purposes } = recordingFake();
+    const start = vi.fn();
+    const ready = vi.fn(async () => {});
+    await generateBookComposedChapters({ projectId: "project-1", planId: "plan-1", input, plan, providers: providersWith(fake), strategy: composedChaptersStrategy, research: { start, ready } });
+    expect(start).toHaveBeenCalledTimes(times);
+    expect(ready).toHaveBeenCalledOnce();
+    expect(purposes.includes("plan-episodes")).toBe(times === 1);
+    expect(purposes).not.toContain("author-stance");
+    expect(store.pages).toHaveLength(input.targetPages);
+  });
+
+  it("lets two chapters finish beside the one being composed, and never more", async () => {
+    // Finishing a chapter (edit, review, descriptions) outlasted composing the next and paced the loop (2026-09-30).
+    const long = { ...input, targetPages: 30 };
+    const plan = makeFallbackPlan(long);
+    const { fake } = recordingFake();
+    const originalText = fake.generateText.bind(fake);
+    let editing = 0;
+    let peak = 0;
+    fake.generateText = async (options) => {
+      if (options.purpose !== "edit-chapter") return originalText(options);
+      editing += 1;
+      peak = Math.max(peak, editing);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      editing -= 1;
+      return originalText(options);
+    };
+    await generateBookComposedChapters({ projectId: "project-1", planId: "plan-1", input: long, plan, providers: providersWith(fake), strategy: composedChaptersStrategy });
+    expect(plan.chapters.length).toBeGreaterThanOrEqual(3);
+    expect(peak).toBe(2);
+    expect(store.pages).toHaveLength(long.targetPages);
   });
 
   it("skips the editor and the read when their gates are off", async () => {

@@ -73,6 +73,7 @@ class MentionRecordingRepository extends ScriptedCreationRepository {
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
     List<String>? mentionedCharacterIds,
+    String? remixSlug,
   }) {
     startedMentions.add(mentionedCharacterIds ?? const <String>[]);
     return super.startConversation(
@@ -82,6 +83,7 @@ class MentionRecordingRepository extends ScriptedCreationRepository {
       optionalDetails: optionalDetails,
       requestId: requestId,
       mentionedCharacterIds: mentionedCharacterIds,
+      remixSlug: remixSlug,
     );
   }
 

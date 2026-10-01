@@ -16,10 +16,11 @@ describe("qualityFeatureEnabled", () => {
       expect(qualityFeatureEnabled(undefined, "planCritic", tier)).toBe(true);
     }
   });
-  it("enables chapter semantic acceptance by default and supports per-tier opt-out and opt-in", () => {
+  it("enables chapter semantic acceptance by default above Quick Draft and supports per-tier opt-out and opt-in", () => {
     for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
-      expect(qualityFeatureEnabled(undefined, "chapterEditAcceptance", tier)).toBe(true);
-      expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: [] }), "chapterEditAcceptance", tier)).toBe(true);
+      // Quick Draft trades the review for speed (2026-09-30).
+      expect(qualityFeatureEnabled(undefined, "chapterEditAcceptance", tier)).toBe(tier !== "fast");
+      expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: [] }), "chapterEditAcceptance", tier)).toBe(tier !== "fast");
       expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditAcceptance: [] }), "chapterEditAcceptance", tier)).toBe(false);
       expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditAcceptance: ["balanced"] }), "chapterEditAcceptance", tier)).toBe(tier === "balanced");
     }
@@ -53,7 +54,8 @@ describe("qualityFeatureEnabled", () => {
     expect(qualityFeatureEnabled(undefined, "pageMapCritic", "balanced")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "pageMapCritic", "premium")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "planThinkingBoost", "premium")).toBe(false);
-    expect(qualityFeatureEnabled(undefined, "claimRetrieve", "ultra")).toBe(true);
+    expect(qualityFeatureEnabled(undefined, "claimRetrieve", "ultra")).toBe(false);
+    expect(qualityFeatureEnabled(undefined, "claimVerifier", "premium")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "fast")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "balanced")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "premium")).toBe(false);
@@ -211,11 +213,26 @@ describe("qualityFeatureEnabled", () => {
 
 
 it("switches changed-candidate grounding independently of initial claim verification", () => {
-  expect(qualityFeatureEnabled(undefined, "changedCandidateGrounding", "balanced")).toBe(true);
+  expect(qualityFeatureEnabled(undefined, "changedCandidateGrounding", "balanced")).toBe(false);
   const off = parseQualityFeatureSettings({ changedCandidateGrounding: [], claimVerifier: ["balanced"] });
   expect(qualityFeatureEnabled(off, "changedCandidateGrounding", "balanced")).toBe(false);
   expect(qualityFeatureEnabled(off, "claimVerifier", "balanced")).toBe(true);
   const on = parseQualityFeatureSettings({ changedCandidateGrounding: ["balanced"], claimVerifier: [] });
   expect(qualityFeatureEnabled(on, "changedCandidateGrounding", "balanced")).toBe(true);
   expect(qualityFeatureEnabled(on, "claimVerifier", "balanced")).toBe(false);
+});
+
+it("gives Quick Draft its speed defaults: no edit review, no manuscript read, no form repair, no brief-coverage read; notes and sources together", () => {
+  const quick = (feature: Parameters<typeof qualityFeatureEnabled>[1]) => qualityFeatureEnabled(undefined, feature, "fast");
+  const balanced = (feature: Parameters<typeof qualityFeatureEnabled>[1]) => qualityFeatureEnabled(undefined, feature, "balanced");
+  for (const feature of ["chapterEditAcceptance", "manuscriptReadPass", "formPlanRepair", "briefCoverageReview"] as const) {
+    expect([quick(feature), balanced(feature)]).toEqual([false, true]);
+  }
+  for (const feature of ["storyNotesTogether", "wideSourceGathering"] as const) {
+    expect([quick(feature), balanced(feature)]).toEqual([true, false]);
+    expect(QUALITY_FEATURES.find((entry) => entry.id === feature)).toMatchObject({ pipelines: ["composed"] });
+  }
+  // A saved revision that never named the new gates takes their defaults.
+  expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: ["fast"] }), "storyNotesTogether", "fast")).toBe(true);
+  expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: ["fast"] }), "briefCoverageReview", "fast")).toBe(false);
 });

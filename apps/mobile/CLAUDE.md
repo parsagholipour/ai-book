@@ -30,6 +30,7 @@ viewer through `readerViewerBuilderProvider` — so tests can stub it.
 - `lib/features/reader/CLAUDE.md` — the PDF reader, page location, and what the client may do with
   an export's provenance.
 - `lib/features/audiobook/CLAUDE.md` — playback, the listening position, and what `playing` means.
+- `lib/features/studio/CLAUDE.md` — the Writing Studio editor: hidden bold/italic marks and the caret.
 
 ## What the app mirrors from the server
 

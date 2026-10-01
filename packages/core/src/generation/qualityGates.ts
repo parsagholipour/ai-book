@@ -76,7 +76,13 @@ export const QUALITY_FEATURE_IDS = [
   "chapterApparatus",
   "figures",
   "chapterFocus",
-  "manuscriptReadCuts"
+  "manuscriptReadCuts",
+  "formPlanRepair",
+  "storyNotesTogether",
+  "wideSourceGathering",
+  "proseArithmeticCheck",
+  "chapterFactLedger",
+  "briefCoverageReview"
 ] as const;
 
 export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
@@ -146,8 +152,11 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   finalBookQa: ["ultra", "premium", "balanced", "fast"],
   storyExtractAudit: ["ultra", "premium", "balanced", "fast"],
   planCritic: ["ultra", "premium", "balanced"],
-  claimVerifier: ["ultra", "premium", "balanced", "fast"],
-  changedCandidateGrounding: ["ultra", "premium", "balanced", "fast"],
+  // Claim and source verification is off by default on every tier (2026-09-30:
+  // best-looking books over token-spending checks; see SOURCE_CLAIM_REVIEW in
+  // apps/worker/src/generation/sourceClaimState.ts). The checkboxes remain.
+  claimVerifier: [],
+  changedCandidateGrounding: [],
   compactPageDraftContext: ["balanced", "fast"],
   styleExcerpts: ["ultra", "premium", "balanced", "fast"],
   styleAuditor: ["ultra", "premium", "balanced"],
@@ -159,12 +168,15 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   writerTools: ["ultra"],
   bestOfPolish: ["ultra"],
   planThinkingBoost: [],
-  claimRetrieve: ["ultra"],
+  claimRetrieve: [],
   // Composed-chapters strategy only. One prose call per chapter each; the
   // read is one call per book. Both replace the per-page review loop.
   chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
-  chapterEditAcceptance: ["ultra", "premium", "balanced", "fast"],
-  manuscriptReadPass: ["ultra", "premium", "balanced", "fast"],
+  // Quick Draft trades both for speed (Parsa, 2026-09-30): the acceptance
+  // review is 7–30 s of every chapter's finish and paced the chapter loop;
+  // the read is 30–45 s after the last chapter.
+  chapterEditAcceptance: ["ultra", "premium", "balanced"],
+  manuscriptReadPass: ["ultra", "premium", "balanced"],
   // The September 5 live experiment regressed quality and runtime. These
   // stages require an explicit opt-in; older settings must not enable them.
   bookDevelopment: [],
@@ -172,7 +184,10 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   developmentalEdit: [],
   // The 2026-09-03 quality ladder (opinion-fable-5). Off everywhere until a
   // rung is measured; each is a content or contract change, not a gate.
-  creativeContract: [],
+  // creativeContract is measured: with claim review off it reaches nonfiction
+  // too, and on Quick Draft books it won 12 of 12 blind pairwise readings
+  // against the grounded contract and the pre-audit pipeline (2026-09-30).
+  creativeContract: ["ultra", "premium", "balanced", "fast"],
   materialFirst: [],
   coupletRewrite: [],
   chapterApparatus: [],
@@ -184,7 +199,29 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   // read's cut is affordable only where the book has room over its floor.
   // Off everywhere; the live revision opts in.
   chapterFocus: [],
-  manuscriptReadCuts: []
+  manuscriptReadCuts: [],
+  // The form plan's second call, 30–60 s of a book's preparation. Without it
+  // the rotation settles forms but never landings; the one blind comparison
+  // (2026-09-30, three Quick Draft books each way) went 4–2 to the round that
+  // had it, inside run-to-run noise. Quick Draft skips it for speed.
+  formPlanRepair: ["ultra", "premium", "balanced"],
+  // Scheduling only, no prose changes: every page's story notes at once
+  // against the book's opening state instead of a chapter at a time (about
+  // 45 s → 10 s at finalize), and six chapters' sources gathered at once
+  // instead of three.
+  storyNotesTogether: ["fast"],
+  wideSourceGathering: ["fast"],
+  // One call per chapter that has numbers, in the chapter's finish, which no
+  // longer paces the loop; an error it proposes is kept only when code agrees.
+  proseArithmeticCheck: ["ultra", "premium", "balanced", "fast"],
+  // One short call per chapter; the next chapter's compose waits for it (2.5–4.7 s measured). Every
+  // Quick Draft book of 2026-09-30 contradicted an earlier chapter's names, dates or figures.
+  chapterFactLedger: ["ultra", "premium", "balanced", "fast"],
+  // The compile's read of the finished book against the brief: 26–67 s after
+  // the last chapter, on the critical path. On the 2026-09-30 Quick Draft
+  // books it marked every requirement fulfilled, gaps the blind readers named
+  // included. Quick Draft skips it for speed (Parsa, 2026-10-01).
+  briefCoverageReview: ["ultra", "premium", "balanced"]
 };
 
 export type QualityFeatureDescription = {
@@ -412,6 +449,48 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     summary: "Flagged chapters get one deletion-only cut call. Every kept sentence must be verbatim, at most 25% may be removed, and the chapter must stay above its page floor. The chapter semantic acceptance gate checks meaning and cut intent when enabled. Needs the manuscript read.",
     pipelines: ["composed"],
     stage: "Manuscript read"
+  },
+  {
+    id: "formPlanRepair",
+    label: "Form plan repair call (composed chapters)",
+    summary: "When the chapter form plan breaks a variety or shape rule, one more planner call to repair it before the deterministic rotation. Off, the rotation alone settles variety and shape issues are left standing.",
+    pipelines: ["composed"],
+    stage: "Chapter form plan"
+  },
+  {
+    id: "storyNotesTogether",
+    label: "Story notes for the whole book at once (composed chapters)",
+    summary: "At finalize, every page's story-state extraction runs at once against the book's opening state. Off, a chapter's pages run together against the state that chapter started from. Same calls either way; no effect on the prose.",
+    pipelines: ["composed"],
+    stage: "Finalize pages"
+  },
+  {
+    id: "wideSourceGathering",
+    label: "Gather six chapters' sources at once (composed chapters)",
+    summary: "The dossier searches, fetches and extracts six chapters at a time instead of three, so the first chapter starts sooner. More load on the catalogue hosts at once; same calls.",
+    pipelines: ["composed"],
+    stage: "Compose chapter"
+  },
+  {
+    id: "proseArithmeticCheck",
+    label: "Arithmetic in the prose (composed chapters)",
+    summary: "One call per chapter with numbers proposes wrong totals, balances, rates and ratios in the prose; code keeps only those its own computation confirms, and the chapter's arithmetic repair corrects them. Runs beside the next chapter's drafting.",
+    pipelines: ["composed"],
+    stage: "Chapter edit"
+  },
+  {
+    id: "chapterFactLedger",
+    label: "Continuity ledger (composed chapters)",
+    summary: "One short call reads each composed chapter for the people, relations, pronouns, dates, documents, marks and example figures it fixes; every later chapter's writer and editor keep to them. The next chapter waits for it, about 3 s.",
+    pipelines: ["composed"],
+    stage: "Compose chapter"
+  },
+  {
+    id: "briefCoverageReview",
+    label: "Final check against the brief (composed chapters)",
+    summary: "At compile, one model read of the finished book checks each explicit ask in the brief and each plan promise, and reports what it finds missing. 26–67 s on the critical path. Off, the compile records no coverage verdict and no warning; the brief's asks still reach the form plan while the chapters are written.",
+    pipelines: ["composed"],
+    stage: "Compile"
   }
 ];
 

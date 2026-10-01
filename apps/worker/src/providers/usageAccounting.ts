@@ -5,12 +5,19 @@ import type {
   ProductionMapRepairProviderCallMetadata,
   ProviderCallMetadata,
   ScriptTokenWeights,
+  SearchGroundingAllowanceConfig,
+  SearchGroundingUsage,
   Usage
 } from "@book-maker/core";
 import {
   GENERATION_TEXT_MODEL_TIERS,
   PAGE_QA_TRIGGER_REASONS,
+  applySearchGroundingAllowance,
+  calculateSearchGroundingFee,
   calculateTextGenerationCost,
+  searchCallCostHint,
+  searchGroundingClaim,
+  searchGroundingMetadata,
   estimateTokensByScript,
   isChapterBriefProviderCallMetadata,
   isPageQaProviderCallMetadata,
@@ -20,6 +27,7 @@ import {
   pageMapResponseViolationCodesFromError
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
+import { writeWithSearchGroundingClaim } from "@book-maker/db/searchGroundingAllowance";
 import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/serialization.js";
 
 /**
@@ -56,6 +64,14 @@ export async function recordProviderUsage(options: {
   providerCallMetadata?: ProviderCallMetadata | undefined;
   /** Present only when this row settles a provider failure rather than a result. */
   providerCallError?: unknown;
+  /**
+   * A grounded search's own report. Its fee joins `costHint` — nothing for a
+   * unit inside its pool's free allowance, list price past it — after the row
+   * claims its place in that allowance (searchGroundingCost.ts).
+   */
+  searchGrounding?: SearchGroundingUsage | undefined;
+  /** The deployment's allowance settings; Google's published numbers where absent. */
+  searchGroundingAllowances?: SearchGroundingAllowanceConfig | undefined;
 }) {
   const exactPromptTokens = finiteTokenCount(options.usage?.promptTokens);
   const exactOutputTokens = finiteTokenCount(options.usage?.outputTokens);
@@ -85,7 +101,7 @@ export async function recordProviderUsage(options: {
   const outputTokensEstimated = exactOutputTokens === null && outputTokens !== null;
   const provisional = promptTokensEstimated || outputTokensEstimated || Boolean(options.decisionMetadata && exactPromptTokens === null);
   // reasoningTokens are already inside outputTokens for billing — do not add them again.
-  const costHint = provisional
+  const tokenCost = provisional
     ? null
     : calculateTextGenerationCost({
         provider: options.provider,
@@ -95,6 +111,12 @@ export async function recordProviderUsage(options: {
         cacheHitTokens,
         cacheWriteTokens
       });
+  const groundingFee = options.searchGrounding
+    ? calculateSearchGroundingFee({ provider: options.provider, model: options.model, grounding: options.searchGrounding })
+    : undefined;
+  const groundingClaim = groundingFee
+    ? searchGroundingClaim(groundingFee, { at: new Date(), allowances: options.searchGroundingAllowances })
+    : null;
   const metadata = {
     operation: options.operation,
     callId: options.callId,
@@ -109,6 +131,16 @@ export async function recordProviderUsage(options: {
     ),
     ...(reasoningTokens !== null ? { reasoningTokens } : {})
   } satisfies Prisma.InputJsonValue;
+  /** The row's price once its allowance claim (if any) has come back with the pool-period's count. */
+  const settled = (countAfter: number | null) => {
+    const fee = groundingFee && groundingClaim && countAfter !== null
+      ? applySearchGroundingAllowance(groundingFee, groundingClaim, countAfter)
+      : groundingFee;
+    return {
+      costHint: fee ? searchCallCostHint(tokenCost, fee) : tokenCost,
+      metadata: options.searchGrounding && fee ? { ...metadata, ...searchGroundingMetadata(options.searchGrounding, fee) } : metadata
+    };
+  };
 
   try {
     const data = {
@@ -121,17 +153,17 @@ export async function recordProviderUsage(options: {
       outputTokens,
       cacheHitTokens,
       cacheWriteTokens,
-      costHint,
-      durationMs: options.durationMs,
-      metadata
+      durationMs: options.durationMs
     };
     if (options.liveUsageId) {
       await prisma.providerCallLog.update({
         where: { id: options.liveUsageId },
-        data
+        data: { ...data, ...settled(null) }
       });
     } else {
-      await prisma.providerCallLog.create({ data });
+      await writeWithSearchGroundingClaim(prisma, groundingClaim, (client, countAfter) =>
+        client.providerCallLog.create({ data: { ...data, ...settled(countAfter) } })
+      );
     }
   } catch (error) {
     console.error("Failed to record provider token usage", error);

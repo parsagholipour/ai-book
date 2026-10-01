@@ -228,7 +228,8 @@ describe("focused chapters follow their investigation, not the form quotas", () 
       expect(payload.episodes).toHaveLength(1);
       expect(payload.focus).toEqual(focus);
       expect(payload.wordBudget).toEqual(chapterWordBudget(input, 10));
-      expect(payload.dossier).toEqual([{ id: excerpt.id, document: excerpt.documentTitle, url: excerpt.documentUrl, year: excerpt.year, text: excerpt.text }]);
+      // A history book's writer is told who a passage is from, never its title or address (historySources.ts).
+      expect(payload.dossier).toEqual([{ id: excerpt.id, source: `${excerpt.documentTitle}, ${excerpt.year}`, text: excerpt.text }]);
       expect(Object.keys(payload)).not.toContain("measurementNotes");
     }
     const composeSystem = model.textCalls[0]!.messages[0]!.content;

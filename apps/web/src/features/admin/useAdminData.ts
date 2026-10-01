@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet, apiPatch } from "../../api.js";
+import { apiGet, apiPatch, apiPost } from "../../api.js";
 import { readError } from "../shared/formatters.js";
+import { shareModerationBody } from "./shareModeration.js";
 import type {
   AdminCostBreakdown,
   AdminGeneratedBookDetail,
@@ -12,8 +13,10 @@ import type {
   AdminProjectDetail,
   AdminUserDetail,
   AdminUserList,
+  AdminShare,
   AdminUserSort,
-  ModerationReport
+  ModerationReport,
+  ShareModerationAction
 } from "./types.js";
 
 /**
@@ -189,6 +192,7 @@ export function useAdminProjectDetail(projectId: string | null) {
 export function useModerationReports() {
   const resource = useResource<{ reports: ModerationReport[] }>("/api/admin/moderation/reports");
   const [saving, setSaving] = useState<{ id: string; status: string } | null>(null);
+  const [sharing, setSharing] = useState<{ id: string; action: ShareModerationAction } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function review(id: string, status: string, reviewNotes: string) {
@@ -207,7 +211,45 @@ export function useModerationReports() {
     }
   }
 
-  return { ...resource, error: error ?? resource.error, saving, review };
+  /**
+   * One of the three share actions, taken from the card of `reportId`. The
+   * server settles that report and the pending ones the same decision answers,
+   * so the whole list is reloaded rather than patched in place.
+   */
+  async function moderateShare(
+    reportId: string,
+    shareId: string,
+    action: ShareModerationAction,
+    reason?: string
+  ): Promise<boolean> {
+    setSharing({ id: reportId, action });
+    try {
+      await postShareModeration(shareId, action, reason, reportId);
+      setError(null);
+      await resource.reload();
+      return true;
+    } catch (actionError) {
+      setError(readError(actionError));
+      return false;
+    } finally {
+      setSharing(null);
+    }
+  }
+
+  return { ...resource, error: error ?? resource.error, saving, review, sharing, moderateShare };
+}
+
+export async function postShareModeration(
+  shareId: string,
+  action: ShareModerationAction,
+  reason: string | undefined,
+  reportId: string | undefined
+): Promise<AdminShare> {
+  const result = await apiPost<{ share: AdminShare }>(
+    `/api/admin/shares/${encodeURIComponent(shareId)}/moderation`,
+    shareModerationBody(action, reason, reportId)
+  );
+  return result.share;
 }
 
 /** Debounce so a search box does not fire a query per keystroke. */

@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+// The claim review is off in production (`SOURCE_CLAIM_REVIEW`); these tests keep its dormant path working.
+vi.mock("./sourceClaimState.js", async (original) => ({ ...await original<object>(), SOURCE_CLAIM_REVIEW: true }));
 import { arithmeticErrorIssues, storedEvidenceResiduals, unsupportedCaseClaimIssues } from "./composedEvidenceResiduals.js";
 import { sourceClaimDigest } from "./sourceClaimState.js";
 

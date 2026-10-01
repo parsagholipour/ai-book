@@ -243,6 +243,23 @@ String bookTypeLabel(String value) {
   };
 }
 
+/// The composer's opening line for "Make a book like this": the shared book's
+/// type and title, left for the reader to finish — `A short story like “The
+/// Lighthouse Cat”, about `. It ends in a space rather than an ellipsis, so
+/// whatever the reader types continues the sentence instead of following a
+/// "…" that would then be sent as part of it.
+String remixComposerPrefill({
+  required String bookTypeChoice,
+  required String title,
+}) {
+  final type = bookTypeLabel(bookTypeChoice).toLowerCase();
+  final article = 'aeiou'.contains(type[0]) ? 'An' : 'A';
+  final name = title.trim();
+  return name.isEmpty
+      ? '$article $type about '
+      : '$article $type like “$name”, about ';
+}
+
 String productBookTypeForChoice(String value, {String? detectedLane}) {
   final lane = value == 'auto' ? detectedLane : value;
   return switch (lane) {

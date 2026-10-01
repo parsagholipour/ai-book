@@ -1,6 +1,7 @@
 import {
   bookDossierSchema,
   bookEpisodesSchema,
+  sourceResearchFits,
   supportsBookDevelopment,
   chapterEpisodeSchema,
   episodesForChapter,
@@ -14,6 +15,7 @@ import {
   type BookEpisodes,
   type BookPlan,
   type ComposeContract,
+  type InstructionalSetting,
   type CreateProjectInput,
   type TextModelAdapter,
   type PrimarySourceSearch
@@ -25,6 +27,7 @@ import type { loadQualityContext } from "./qualitySettings.js";
 import { config } from "../runtime/config.js";
 import type { RunLogger } from "../providers/runLogging.js";
 import { mergeSourceDossiers, retrieveChapterSources } from "./sourceDossier.js";
+import { SOURCE_CLAIM_REVIEW } from "./sourceClaimState.js";
 
 /**
  * Material-first, the worker's half: the writer's contract and the book's
@@ -52,15 +55,32 @@ export async function prepareBookMaterial(options: {
   /** A new development run gathers material even when the legacy experiment flag is off. */
   evidenceRequired?: boolean | undefined;
   persist?: boolean | undefined;
+  /**
+   * Called once the episodes are settled and before any source is gathered: what the form plan waits for.
+   * A practical guide's or a workbook's research leads come with the country its rules belong to.
+   */
+  onEpisodes?: ((episodes: BookEpisodes | undefined, setting?: InstructionalSetting | undefined) => void) | undefined;
   runLog?: Pick<RunLogger, "append"> | undefined;
 }): Promise<BookMaterial> {
   const { projectId, planId, input, plan, stance, textModel, quality, generationJobId } = options;
-  const sourceResearch = !config.MOCK_AI && supportsBookDevelopment(input, plan);
-  const contract: ComposeContract = sourceResearch ? "grounded" : quality.enabled("creativeContract") ? "creative" : "grounded";
-  let episodes: BookEpisodes | undefined;
+  // A book written from sources gathers an evidence dossier on every tier,
+  // the claim review or not: Quick Draft without one lost 12 of 12 blind
+  // readings (2026-09-30), its readers missing exactly the figures,
+  // quotations and named studies the passages had carried. Which book that
+  // is, the stance says (`sourceResearchFits`): a novel gathers nothing, on
+  // any tier and under materialFirst too, and a true story filed under Story
+  // gathers like a history. It was held to the grounded contract only because
+  // the review checked its prose; with the review off (SOURCE_CLAIM_REVIEW)
+  // the creativeContract gate decides for every book.
+  const fits = sourceResearchFits(input, plan, stance);
+  const sourceResearch = !config.MOCK_AI && fits;
+  const contract: ComposeContract = sourceResearch && SOURCE_CLAIM_REVIEW && supportsBookDevelopment(input, plan) ? "grounded" : quality.enabled("creativeContract") ? "creative" : "grounded";
+  // Episodes an earlier run stored stay in use, whatever a regenerated stance says on resume.
+  let episodes: BookEpisodes | undefined = planEpisodesFromPlan(plan);
+  let setting: InstructionalSetting | undefined;
   let dossier: BookDossier | undefined;
-  if (quality.enabled("materialFirst") || options.evidenceRequired || sourceResearch) {
-    episodes = planEpisodesFromPlan(plan);
+  const gather = (quality.enabled("materialFirst") && fits) || Boolean(options.evidenceRequired) || sourceResearch;
+  if (episodes || gather) {
     if (!episodes) {
       await advanceJobStep(generationJobId, "briefs", 14, "Planning the book's episodes", { phase: "episodes" });
       // The chapter focus is the `chapterFocus` gate's: off, the episodes
@@ -75,6 +95,7 @@ export async function prepareBookMaterial(options: {
       }
       if (planned.episodes) {
         episodes = planned.episodes;
+        setting = planned.setting;
         if (options.persist !== false) await persistPlanField(planId, "episodes", episodes, (value) => bookEpisodesSchema.safeParse(value).success);
       } else {
         console.warn("Episodes not produced; composing without material", {
@@ -94,9 +115,10 @@ export async function prepareBookMaterial(options: {
         })] };
       }) };
     }
+    options.onEpisodes?.(episodes, setting);
     if (episodes) {
       dossier = planDossierFromPlan(plan);
-      const missing = plan.chapters.filter((chapter) => !dossier || (sourceResearch &&
+      const missing = !gather ? [] : plan.chapters.filter((chapter) => !dossier || (sourceResearch &&
         !dossier.excerpts.some((excerpt) => excerpt.chapterIndex === chapter.index && excerpt.provenanceVerified) &&
         !dossier.researchedChapters?.includes(chapter.index)));
       if (missing.length) {
@@ -108,7 +130,7 @@ export async function prepareBookMaterial(options: {
         // The whole book's dossier gets a fixed budget; a slow repository
         // shortens the dossier, never the book's schedule.
         const dossierDeadline = Date.now() + DOSSIER_TIME_BUDGET_MS;
-        const chapterDossiers = await mapWithConcurrency(missing, 3, async (chapter) => {
+        const chapterDossiers = await mapWithConcurrency(missing, quality.enabled("wideSourceGathering") ? WIDE_DOSSIER_CHAPTER_CONCURRENCY : DOSSIER_CHAPTER_CONCURRENCY, async (chapter) => {
           await advanceJobStep(generationJobId, "briefs", 15, "Gathering primary sources for every chapter", {
             phase: "sources",
             chapterIndex: chapter.index,
@@ -147,9 +169,10 @@ export async function prepareBookMaterial(options: {
 /**
  * A plan field written once: the stored value stands when it parses, so a
  * retry reuses it rather than re-planning; a value that does not parse is
- * replaced. The same shape as `persistBookArc`, for the episodes and the dossier.
+ * replaced. The same shape as `persistBookArc`, for the episodes, the dossier
+ * and the brief's requirement inventory (`composedBriefInventory.ts`).
  */
-async function persistPlanField(planId: string, field: "episodes" | "dossier", value: unknown, parses: (stored: unknown) => boolean): Promise<void> {
+export async function persistPlanField(planId: string, field: "episodes" | "dossier" | "requirementInventory" | "exampleCast" | "toolkit", value: unknown, parses: (stored: unknown) => boolean): Promise<void> {
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
@@ -191,6 +214,16 @@ export async function recordDossierSources(projectId: string, dossier: BookDossi
 
 /** Ten minutes for a whole book's dossier: past it, chapters still waiting get what was found and no more. */
 const DOSSIER_TIME_BUDGET_MS = 10 * 60 * 1000;
+
+/**
+ * Chapters gathered at once. Six was tried (2026-09-30) and started the first
+ * chapter 20–60 s sooner, but Wikisource stopped answering in every round
+ * after it, at six and back at three, so its cost to the catalogue hosts was
+ * never measured. Three is the value the good dossiers were gathered at.
+ */
+const DOSSIER_CHAPTER_CONCURRENCY = 3;
+/** The `wideSourceGathering` gate (Quick Draft): six at once, 20–60 s sooner to the first chapter. */
+const WIDE_DOSSIER_CHAPTER_CONCURRENCY = 6;
 
 /** Append newly retrieved support without replacing plan edits or existing case packets. */
 export async function persistDossierSupplement(planId: string, supplement: BookDossier): Promise<void> {

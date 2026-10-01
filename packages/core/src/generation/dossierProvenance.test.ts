@@ -25,6 +25,15 @@ describe("dossier provenance before composition and epigraphs", () => {
     expect(test.generate.mock.calls[0]![0].purpose).toBe("review-dossier-provenance");
     expect(JSON.parse(test.generate.mock.calls[0]![0].messages[1]!.content).passageWindows).toEqual([wrapped]);
   });
+  it("does not hand the reviewer a site's domain as the document's title", async () => {
+    const test = fixture();
+    const siteTitled = { ...excerpt, documentTitle: "irs.gov", documentUrl: "https://www.irs.gov/pub/irs-pdf/f1040es.pdf" };
+    await reviewDossierProvenance({ ...test.options, excerpts: [siteTitled], documents: [{ ...test.options.documents[0]!, title: "irs.gov", url: siteTitled.documentUrl }] });
+    const context = JSON.parse(test.generate.mock.calls[0]![0].messages[1]!.content);
+    expect(context.document.title).toBe("");
+    expect(context.excerpt.documentTitle).toBe("");
+    expect(test.generate.mock.calls[0]![0].messages[0]!.content).toContain("Missing title, author or year fields are allowed");
+  });
   it("drops an exact quotation when contextual review finds the edition or transcription wrong", async () => {
     const test = fixture();
     const kept = await reviewDossierProvenance(test.options);
@@ -54,6 +63,24 @@ describe("dossier provenance before composition and epigraphs", () => {
     else test.generate.mockResolvedValue({ data: kind === "malformed" ? {} : { verdict: "insufficient_context", reason: "Edition not established" }, text: "", provider: "fake", model: "fake" });
     expect(await reviewDossierProvenance({ ...test.options, windows: kind === "missing passage" ? [] : test.options.windows })).toEqual([]);
     if (kind === "missing passage") expect(test.generate).not.toHaveBeenCalled();
+  });
+
+  it("reviews excerpts side by side and keeps the accepted ones in their order", async () => {
+    const test = fixture();
+    const excerpts = [1, 2, 3, 4].map((n) => ({ ...excerpt, id: `x${n}` }));
+    let inFlight = 0;
+    let peak = 0;
+    test.generate.mockImplementation(async (request) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      const id = JSON.parse(request.messages[1]!.content).excerpt.id as string;
+      return { data: { verdict: id === "x2" ? "defect" : "supported", reason: "Checked." }, text: "", provider: "fake", model: "fake" };
+    });
+    const kept = await reviewDossierProvenance({ ...test.options, excerpts });
+    expect(peak).toBeGreaterThan(1);
+    expect(kept.map((entry) => entry.id)).toEqual(["x1", "x3", "x4"]);
   });
 
   it("propagates cancellation from the diagnostic", async () => {

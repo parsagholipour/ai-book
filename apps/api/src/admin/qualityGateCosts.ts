@@ -36,6 +36,7 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
     "repair-page-brief"
   ]),
   storyExtractAudit: new Set(["extract-story-state"]),
+  chapterFactLedger: new Set(["extract-chapter-facts"]),
   planCritic: new Set(["critique-plan"]),
   claimVerifier: new Set(["verify-page-claims"]),
   styleAuditor: new Set(["audit-page-style"]),

@@ -232,6 +232,9 @@ enum BookEditOperationStatus {
 enum ModerationReportTargetType {
   PROJECT
   IMAGE_ASSET
+  /// A public share link (`BookShare`): an anonymous report from the share
+  /// page, or a system review of a caption the moderation gate could not decide.
+  BOOK_SHARE
 }
 
 enum ModerationReportReason {
@@ -311,6 +314,7 @@ model User {
   libraryCharacters       LibraryCharacter[]
   messageUsageReservations MessageUsageReservation[]
   welcomeCreditGrant       WelcomeCreditGrant?
+  bookShares               BookShare[]
 }
 
 /// Append-only proof that a user affirmatively accepted a specific pair of
@@ -714,6 +718,7 @@ model Project {
   manuscript         Manuscript?
   assists            ManuscriptAssist[]
   notes              BookNote[]
+  share              BookShare?
   audiobook          Audiobook?
   generationAttempts GenerationAttempt[]
 
@@ -885,6 +890,11 @@ model MobileCreationDraft {
   createdProjectId String?
   status           String   @default("ACTIVE")
   archived         Boolean  @default(false)
+  /// The share whose "Make a book like this" button started this chat
+  /// (`origin: { shareId }`). A column rather than a payload key because every
+  /// chat turn rebuilds the payload from scratch, and it is what the admin
+  /// funnel counts. Not a foreign key: attribution must outlive the share.
+  originShareId    String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -895,6 +905,7 @@ model MobileCreationDraft {
   @@index([userId, status, updatedAt])
   @@index([userId, archived, updatedAt])
   @@index([createdProjectId])
+  @@index([originShareId])
 }
 
 model MobileCreationOutput {
@@ -1465,6 +1476,7 @@ model ModerationReport {
   reporterUserId String?
   projectId      String?
   imageAssetId   String?
+  bookShareId    String?
   targetType     ModerationReportTargetType
   reason         ModerationReportReason
   comment        String?
@@ -1480,11 +1492,81 @@ model ModerationReport {
   reviewer   User?       @relation("ModerationReportReviewer", fields: [reviewerUserId], references: [id], onDelete: SetNull)
   project    Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
   imageAsset ImageAsset? @relation(fields: [imageAssetId], references: [id], onDelete: SetNull)
+  bookShare  BookShare?  @relation(fields: [bookShareId], references: [id], onDelete: SetNull)
 
   @@index([reporterUserId, createdAt])
   @@index([projectId, createdAt])
   @@index([imageAssetId, createdAt])
+  @@index([bookShareId, createdAt])
   @@index([status, createdAt])
+}
+
+enum BookShareMode {
+  PREVIEW
+  FULL
+}
+
+/// What the public page may show of the author's note. REMOVED is an operator
+/// decision and sticks to that exact text: resubmitting it unchanged is not
+/// re-moderated, so it stays removed until the author writes something else.
+enum BookShareCaptionStatus {
+  NONE
+  ALLOWED
+  PENDING_REVIEW
+  REMOVED
+}
+
+enum BookShareStatus {
+  ACTIVE
+  REVOKED
+  TAKEN_DOWN
+}
+
+/// A finished book published to an unlisted public link (`/s/<slug>`).
+/// One per book, updated in place; it serves the book's *current* published
+/// compile, never a snapshot. See `apps/api/src/mobile/shares/`.
+model BookShare {
+  id                  String                 @id @default(cuid())
+  projectId           String                 @unique
+  userId              String
+  /// Random base62, never derived from the title or an id. Every slug ever
+  /// issued is also in `ShareSlug`, which is what keeps one from being reissued.
+  slug                String                 @unique
+  mode                BookShareMode
+  /// Reading pages visible in PREVIEW mode, before the half-book cap applied
+  /// at serve time. Null in FULL mode.
+  previewPages        Int?
+  caption             String?
+  captionStatus       BookShareCaptionStatus @default(NONE)
+  /// The moderation gate's record for the current caption: verdict, attempts
+  /// and their probabilities. Null when there is no caption.
+  captionVerdict      Json?
+  showAuthorName      Boolean                @default(false)
+  rightsConfirmedAt   DateTime
+  likenessConfirmedAt DateTime?
+  status              BookShareStatus        @default(ACTIVE)
+  /// Shown to the author in the app when an operator takes the share down.
+  takedownReason      String?
+  /// PDF fetches (the HTML is not counted: link-preview crawlers fetch only it).
+  viewCount           Int                    @default(0)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moderationReports ModerationReport[]
+
+  @@index([userId])
+  @@index([status, createdAt])
+}
+
+/// Every share slug ever issued. Rows are never deleted — not by a revoke, a
+/// re-share or a project delete — so the primary key is what guarantees a slug
+/// is never handed to a second book, and a slug found here but not on a live
+/// `BookShare` is answered "no longer shared" (410) rather than "not found".
+model ShareSlug {
+  slug      String   @id
+  createdAt DateTime @default(now())
 }
 
 model AccountDeletionRequest {
@@ -1608,6 +1690,23 @@ model ProviderCallLog {
 
   @@index([generationJobId])
   @@index([provider, model, purpose, createdAt])
+}
+
+/// How many grounded-search units (Gemini 2.5 prompts, 3.x queries) one free
+/// allowance pool has used in one Pacific-time day or month. Claimed by an
+/// upsert-increment in the transaction that writes each grounded search's
+/// ProviderCallLog row, so every unit gets one ordinal and the price follows
+/// it: free inside Google's allowance, list past it.
+/// See packages/db/src/searchGroundingAllowance.ts.
+model SearchGroundingAllowanceCounter {
+  pool      String
+  /// `2026-09-30` for a daily pool, `2026-09` for a monthly one.
+  period    String
+  units     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([pool, period])
 }
 
 /// One metered realtime call between a user and a book character.

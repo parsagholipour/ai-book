@@ -14,6 +14,8 @@ import {
   type OperatorAuthContext
 } from "./requestAuth.js";
 import { deleteProjectStorage } from "./projectStorage.js";
+import { bookShareSelect, type BookShareRecord } from "./mobile/shares/shareRecords.js";
+import { serializeAdminShare } from "./routes/adminShares.js";
 import { sendProjectNotFound } from "./mobile/httpErrors.js";
 import {
   InMemoryRateLimiter,
@@ -82,6 +84,7 @@ type ModerationReportRecord = {
   reporterUserId: string | null;
   projectId: string | null;
   imageAssetId: string | null;
+  bookShareId: string | null;
   targetType: string;
   reason: string;
   comment: string | null;
@@ -95,6 +98,7 @@ type ModerationReportRecord = {
   reporter?: { email: string; displayName: string | null } | null;
   project?: { title: string } | null;
   imageAsset?: { type: string } | null;
+  bookShare?: BookShareRecord | null;
 };
 
 type AccountDeletionRequestRecord = {
@@ -379,10 +383,16 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
         ...moderationReportSelect,
         reporter: { select: { email: true, displayName: true } },
         project: { select: { title: true } },
-        imageAsset: { select: { type: true } }
+        imageAsset: { select: { type: true } },
+        bookShare: { select: bookShareSelect }
       }
     })) as ModerationReportRecord[];
-    return { reports: reports.map(serializeModerationReport) };
+    return {
+      reports: reports.map((report) => ({
+        ...serializeModerationReport(report),
+        share: report.bookShare ? serializeAdminShare(report.bookShare, appConfig.PUBLIC_API_URL) : null
+      }))
+    };
   });
 
   fastify.patch("/api/admin/moderation/reports/:id", async (request, reply) => {
@@ -416,6 +426,7 @@ const moderationReportSelect = {
   reporterUserId: true,
   projectId: true,
   imageAssetId: true,
+  bookShareId: true,
   targetType: true,
   reason: true,
   comment: true,
@@ -485,6 +496,7 @@ function serializeModerationReport(report: ModerationReportRecord) {
     projectId: report.projectId,
     projectTitle: report.project?.title ?? stringFromRecord(report.targetSnapshot, "title") ?? stringFromRecord(report.targetSnapshot, "projectTitle"),
     imageAssetId: report.imageAssetId,
+    bookShareId: report.bookShareId,
     targetType: report.targetType.toLowerCase(),
     reason: report.reason.toLowerCase(),
     comment: report.comment,

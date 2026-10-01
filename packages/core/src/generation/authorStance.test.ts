@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import { bookPlanSchema, type CreateProjectInput } from "../schemas/book.js";
-import { authorStancePromptLines, planAuthorStance } from "./authorStance.js";
+import { authorStancePromptLines, generateAuthorStance, planAuthorStance, PLANNER_AUTHOR_STANCE_GUIDANCE, STANCE_RESEARCH_RULE } from "./authorStance.js";
+import { sourceResearchFits, supportsBookDevelopment } from "./bookDevelopment.js";
+import { FakeTextModelAdapter } from "../adapters/fake.js";
+import type { GenerateJsonOptions } from "../adapters/types.js";
 
 const input: CreateProjectInput = {
   prompt: "A novel about a lighthouse keeper.",
@@ -146,5 +149,53 @@ describe("chapterPosition", () => {
     expect(lines).toContain("Second lens.");
     expect(lines).not.toContain("First lens.");
     expect(authorStancePromptLines(stance, "analytical-history").join(" ")).toContain("First lens. | Second lens. | Third lens.");
+  });
+});
+
+describe("whether a book is written from sources", () => {
+  const stanceFor = (research: unknown) => ({ thesis: "Loneliness is a skill.", positions: ["Detail over summary", "The keeper never explains himself"], refusals: [], voiceSample: SAMPLE, research });
+  const planWith = (from: CreateProjectInput, research: unknown) => bookPlanSchema.parse({ ...makeFallbackPlan(from), authorStance: stanceFor(research) });
+
+  it("keeps the stance's answer, under its aliases, and reads an unusable one as no answer", () => {
+    expect(planWith(input, "none").authorStance?.research).toBe("none");
+    expect(planWith(input, " Sources ").authorStance?.research).toBe("sources");
+    expect(bookPlanSchema.parse({ ...makeFallbackPlan(input), authorStance: { ...stanceFor(undefined), source_research: "none" } }).authorStance?.research).toBe("none");
+    // An answer nobody can use costs the book its research decision, never its stance.
+    for (const junk of ["maybe", 3, ["sources"], null]) {
+      const plan = planWith(input, junk);
+      expect(plan.authorStance?.thesis).toBe("Loneliness is a skill.");
+      expect(plan.authorStance?.research).toBeUndefined();
+    }
+  });
+
+  it("follows the stance over the category, and the writing mode when the stance did not say", () => {
+    // A fantasy novel the cue words read as a history (2026-09-30): "era" and "dynasty".
+    const fantasy: CreateProjectInput = { ...input, category: "CUSTOM", prompt: "A fantasy novel about the last era of a dying dynasty of dragon riders." };
+    expect(supportsBookDevelopment(fantasy, makeFallbackPlan(fantasy))).toBe(true);
+    expect(sourceResearchFits(fantasy, planWith(fantasy, "none"))).toBe(false);
+    // A fable filed under a nonfiction category.
+    const fable: CreateProjectInput = { ...input, category: "BUSINESS", prompt: "A fable about a fox who learns to delegate." };
+    expect(sourceResearchFits(fable, planWith(fable, "none"))).toBe(false);
+    // A true story filed under Story.
+    const trueStory: CreateProjectInput = { ...input, prompt: "The true story of the Apollo 13 rescue." };
+    expect(sourceResearchFits(trueStory, planWith(trueStory, "sources"))).toBe(true);
+    // No answer: a plan from before the stance was asked.
+    expect(sourceResearchFits(input, planWith(input, undefined))).toBe(false);
+    expect(sourceResearchFits(fable, planWith(fable, undefined))).toBe(true);
+    expect(sourceResearchFits(fable, makeFallbackPlan(fable), { ...stanceFor(undefined), research: "none" })).toBe(false);
+    // A picture book is never researched, whatever a stance says.
+    const kids: CreateProjectInput = { ...input, category: "KIDS" };
+    expect(sourceResearchFits(kids, planWith(kids, "sources"))).toBe(false);
+  });
+
+  it("asks the stance call and the planner the same question, doubtful cases answering sources", async () => {
+    expect(STANCE_RESEARCH_RULE).toContain('when in doubt, "sources"');
+    expect(PLANNER_AUTHOR_STANCE_GUIDANCE.join(" ")).toContain(STANCE_RESEARCH_RULE);
+    const seen: GenerateJsonOptions<unknown>[] = [];
+    const fake = new FakeTextModelAdapter(input);
+    const recording = { ...fake, generateJson: (options: GenerateJsonOptions<unknown>) => { seen.push(options); return fake.generateJson(options); } } as unknown as FakeTextModelAdapter;
+    await generateAuthorStance({ input, plan: makeFallbackPlan(input), textModel: recording });
+    expect(seen[0]!.messages[0]!.content).toContain(STANCE_RESEARCH_RULE);
+    expect(JSON.parse(seen[0]!.messages[1]!.content).outputContract.research).toBe("sources or none");
   });
 });

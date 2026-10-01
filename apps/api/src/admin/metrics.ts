@@ -26,6 +26,7 @@
 
 import { CREDIT_USD_VALUE } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
+import { loadShareFunnel, type ShareFunnel } from "./shareFunnel.js";
 
 export type AdminWindow = { days: number; since: Date; until: Date };
 
@@ -97,6 +98,8 @@ export type AdminOverview = {
     voiceMinutes: number;
     pendingModerationReports: number;
   };
+  /** The book-sharing funnel for shares created in the window (`shareFunnel.ts`). */
+  sharing: ShareFunnel;
   series: MoneySeriesPoint[];
   creditsByOperation: NamedTotal[];
   spendByProvider: NamedTotal[];
@@ -114,11 +117,12 @@ export function resolveWindow(days: number): AdminWindow {
 export async function loadAdminOverview(window: AdminWindow): Promise<AdminOverview> {
   const inWindow = { gte: window.since, lte: window.until };
 
-  const [money, people, work, series, creditsByOperation, spendByProvider, projectsByStatus, jobsByType] =
+  const [money, people, work, sharing, series, creditsByOperation, spendByProvider, projectsByStatus, jobsByType] =
     await Promise.all([
       loadMoney(window),
       loadPeople(window),
       loadWork(window),
+      loadShareFunnel(window),
       loadSeries(window),
       loadCreditsByOperation(inWindow),
       loadSpendByProvider(inWindow),
@@ -132,6 +136,7 @@ export async function loadAdminOverview(window: AdminWindow): Promise<AdminOverv
     money,
     people,
     work,
+    sharing,
     series,
     creditsByOperation,
     spendByProvider,

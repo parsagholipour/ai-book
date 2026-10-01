@@ -19,7 +19,7 @@ import '../data/studio_repository.dart';
 import '../domain/assist_models.dart';
 import '../domain/assist_text.dart';
 import '../domain/manuscript_blocks.dart';
-import '../domain/manuscript_formatting.dart';
+import '../domain/manuscript_inline.dart' show EmphasisKind;
 import 'chapter_conflict_card.dart';
 import 'chapter_outline_sheet.dart';
 import 'manuscript_settings_sheet.dart';
@@ -418,6 +418,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
     switch (action) {
       case StudioMenuAction.chapters:
         await _openOutline();
+      case StudioMenuAction.addChapter:
+        await _session.addChapter();
       case StudioMenuAction.bookNotes:
         _openNotes();
       case StudioMenuAction.versions:
@@ -468,11 +470,8 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
   // ---------------------------------------------------------------------------
   // Keyboard shortcuts
 
-  void _format(TextEditingValue Function(TextEditingValue) edit) {
-    final entry = _session.focusedText.value;
-    if (entry == null) return;
-    entry.controller.value = edit(entry.controller.value);
-  }
+  void _toggleStyle(EmphasisKind kind) =>
+      _session.focusedText.value?.controller.toggleStyle(kind);
 
   Map<ShortcutActivator, VoidCallback> get _shortcuts => {
     for (final meta in const [false, true]) ...{
@@ -481,13 +480,13 @@ class _StudioScreenState extends ConsumerState<StudioScreen>
         control: !meta,
         meta: meta,
       ): () =>
-          _format(toggleBold),
+          _toggleStyle(EmphasisKind.bold),
       SingleActivator(
         LogicalKeyboardKey.keyI,
         control: !meta,
         meta: meta,
       ): () =>
-          _format(toggleItalic),
+          _toggleStyle(EmphasisKind.italic),
       SingleActivator(
         LogicalKeyboardKey.keyS,
         control: !meta,

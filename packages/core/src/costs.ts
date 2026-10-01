@@ -111,6 +111,12 @@ export function calculateTextGenerationCost(log: ProviderCostLog): number | null
   if (metadataString(log.metadata, "operation") === "decision.choose" &&
       metadataString(log.metadata, "liveStatus") !== null) return null;
 
+  // A grounded search's billed fee rides its metadata (searchGroundingCost.ts);
+  // replaying its tokens alone would drop it, and one no rate card priced stays
+  // unpriced here too.
+  const groundingFeeUsd = recordedSearchGroundingFee(log.metadata);
+  if (groundingFeeUsd === null) return null;
+
   const provider = normalizeProvider(log.provider);
   const model = normalizeModel(log.model);
   const rate = resolveTextRate(provider, model, finiteTokenCount(log.promptTokens), resolveBilledAt(log));
@@ -132,7 +138,7 @@ export function calculateTextGenerationCost(log: ProviderCostLog): number | null
     (cacheWriteTokens / TOKENS_PER_MILLION) * (rate.cacheWritePerMillion ?? rate.inputPerMillion) +
     (outputTokens / TOKENS_PER_MILLION) * rate.outputPerMillion;
 
-  return roundCost(cost);
+  return roundCost(cost + (groundingFeeUsd ?? 0));
 }
 
 /**
@@ -169,6 +175,14 @@ export function textGenerationCostRates(input: {
     ];
   }
   return [{ ...rateCard }];
+}
+
+/** `undefined` on a row that is not a grounded search, `null` on one no rate card priced. */
+function recordedSearchGroundingFee(metadata: unknown): number | null | undefined {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || !("groundingFeeUsd" in metadata)) {
+    return undefined;
+  }
+  return finiteCost((metadata as Record<string, unknown>).groundingFeeUsd);
 }
 
 export function calculateImageGenerationCost(input: {

@@ -58,6 +58,7 @@ import { arithmeticErrorIssues, unsupportedCaseClaimIssues } from "../generation
 import { composedChapterLengthIssues } from "../generation/composedChapterLength.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import { companionFormatsToRender, renderCompanionExports } from "./compileExportCompanions.js";
+import { pdfPageMapAfterCompileRender } from "./compilePdfPageMap.js";
 import { reviewManuscriptStructure } from "./compileExportStructuralReview.js";
 import {
   assertBookLikeMarkdown,
@@ -70,7 +71,6 @@ import {
   includeSourcesPreference,
   isAuthorManuscript,
   markdownOpensOnCoverSheet,
-  persistablePdfPageMapAfterRender,
   publicAssetUrl,
   strategyComposesChapters,
   resolvePublicImageUrl,
@@ -569,7 +569,12 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     affectedPageIndexes: pages.filter((page) => interruptedRepairIds.includes(page.id)).map((page) => page.index)
   });
   await finalization?.phase("coverage", pendingFinalizationImages);
-  await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
+  // A composed book on a tier without `briefCoverageReview` (Quick Draft) skips the brief-coverage
+  // read on every compile: no verdict, no BRIEF_COVERAGE_UNVERIFIED, and no continuity fallback
+  // standing in for it. The brief's asks already reached the form plan while the chapters were written.
+  const coverageSkipped = !authorManuscript && !overlapCoverage && strategyComposesChapters(strategy) &&
+    !quality.enabled("briefCoverageReview");
+  if (!coverageSkipped) await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
   const inventory = await inventoryWork;
   if (inventory?.status === "rejected") throw inventory.reason;
   const requirementTargets = !authorManuscript && usesShortPictureBookReview({ input, plan, strategy, pages })
@@ -583,7 +588,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // early empty stand-down would discard findings about pages the edit left alone.
   const supersededForCoverage = supersededBeforeCoverage || Boolean(overlapCoverage &&
     await exportPublicationSuperseded(projectId, queuedContentRevision));
-  const coverage = authorManuscript ? null : overlapCoverage
+  const coverage = authorManuscript || coverageSkipped ? null : overlapCoverage
     ? supersededForCoverage ? null : await finalizationCoverageForCompile({ ...coverageOptions, operation: finalization! })
     : await manuscriptCoverageForCompile({ ...coverageOptions, projectId, allowModelReview: ownsOutcome && !skipFinalReview });
   if (pendingFinalizationImages.length > 0 && !supersededForCoverage) {
@@ -615,7 +620,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       : []),
     // Imports have no generation brief to enforce. Any remaining continuity
     // entries are unverified candidates, never proof that a passage is absent.
-    ...(coverage ? [] : unpaidPromiseQualityIssues({ quality, targetPages: input.targetPages, storyState: () => storyState }))
+    ...(coverage || coverageSkipped ? [] : unpaidPromiseQualityIssues({ quality, targetPages: input.targetPages, storyState: () => storyState }))
   ];
   // Integrity is not optional polish: an outcome compile that still owns the
   // book adjudicates deterministic structural clusters even when final-book QA
@@ -765,8 +770,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         // A complete measurement wins. Every failed or plan-less measurement
         // replaces stored ranges with cover numbering for these newly rendered
         // bytes: matching manuscript text does not prove matching pagination.
-        pdfPageMapUpdate = persistablePdfPageMapAfterRender({
-          pageMap: pdfResult.pageMap,
+        pdfPageMapUpdate = await pdfPageMapAfterCompileRender(job, pdfResult, {
+          planned: compiled !== undefined,
           hasCoverPage: compiled?.hasCoverPage ?? markdownOpensOnCoverSheet(markdown)
         });
       }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { isStopOrAbortError } from "../adapters/retry.js";
+import { mapWithConcurrency } from "../concurrency.js";
 import type { DossierExcerpt } from "../schemas/episodes.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { inventorySourceClaims, SOURCE_CLAIM_INVENTORY_VERSION, type SourceClaimInventory } from "./sourceClaimInventory.js";
@@ -28,6 +29,7 @@ export type SourceClaimCoverage = {
 };
 export type SourceClaimReview = { issues: string[]; dropped: string[]; claims: SourceClaim[]; coverage: SourceClaimCoverage };
 export const SOURCE_CLAIM_BATCH_SIZE = 15;
+const SOURCE_CLAIM_BATCH_CONCURRENCY = 3;
 const VERIFIER_VERSION = 3;
 type ReviewInput = { markdown: string; excerpts: readonly DossierExcerpt[] };
 type Trace = (event: string, detail: Record<string, unknown>) => void | Promise<unknown>;
@@ -76,9 +78,17 @@ export function createSourceClaimReviewer(textModel: TextModelAdapter, onEvent?:
     const externalClaims = inventory.claims.filter((claim) => !isDerivedArithmeticClaim(claim.quote, options.markdown));
     await trace("claim_arithmetic_exclusions", { inventoryKey, excluded: inventory.claims.length - externalClaims.length, remaining: externalClaims.length });
     const batchCount = Math.ceil(externalClaims.length / SOURCE_CLAIM_BATCH_SIZE);
-    for (let offset = 0; offset < externalClaims.length; offset += SOURCE_CLAIM_BATCH_SIZE) {
+    const offsets = Array.from({ length: batchCount }, (_, index) => index * SOURCE_CLAIM_BATCH_SIZE);
+    // Batches are independent calls with their own cache keys. A history chapter
+    // inventories 50–70 claims, and one batch after another its four or five
+    // verifications were a minute or more of every review (Quick Draft,
+    // 2026-09-30). Results are folded in batch order below; a stop still ends
+    // the review, and no batch starts after one is seen.
+    const verified = await mapWithConcurrency(offsets, SOURCE_CLAIM_BATCH_CONCURRENCY, async (offset) => {
       const claims = externalClaims.slice(offset, offset + SOURCE_CLAIM_BATCH_SIZE);
       const batchIndex = offset / SOURCE_CLAIM_BATCH_SIZE + 1;
+      const batchChecked: SourceClaim[] = [];
+      const batchDropped: string[] = [];
       const key = digest([VERIFIER_VERSION, inventoryKey, evidenceKey, claims]);
       let result = batches.get(key);
       const cacheHit = Boolean(result);
@@ -107,7 +117,7 @@ export function createSourceClaimReviewer(textModel: TextModelAdapter, onEvent?:
           }
         } catch (error) {
           if (isStopOrAbortError(error)) throw error;
-          dropped.push(`Verification batch ${batchIndex}: ${error instanceof Error ? error.message : String(error)}`);
+          batchDropped.push(`Verification batch ${batchIndex}: ${error instanceof Error ? error.message : String(error)}`);
           batchComplete = false;
         }
       }
@@ -120,13 +130,18 @@ export function createSourceClaimReviewer(textModel: TextModelAdapter, onEvent?:
         const support = rawSupport.filter((entry) => entry.quote.trim().length >= 12 && byId.get(entry.excerptId)?.text.includes(entry.quote));
         const valid = verdict && (verdict.status === "insufficient_evidence" || (support.length > 0 && support.length === rawSupport.length));
         if (verdict && !valid) batchComplete = false;
-        checked.push({ ...claim, status: valid ? verdict.status : "insufficient_evidence", support,
+        batchChecked.push({ ...claim, status: valid ? verdict.status : "insufficient_evidence", support,
           reason: valid ? verdict.reason : "No valid supporting passage was supplied for this assertion." });
       }
-      complete &&= batchComplete;
       if (result && batchComplete && !cacheHit) remember(batches, key, result, 64);
       await trace("claim_verification_batch", { batchIndex, batchCount, claims: claims.length, excerpts: excerpts.length,
         cacheHit, complete: batchComplete, evidenceDigest: evidenceKey, inventoryKey });
+      return { checked: batchChecked, dropped: batchDropped, complete: batchComplete };
+    });
+    for (const batch of verified) {
+      checked.push(...batch.checked);
+      dropped.push(...batch.dropped);
+      complete &&= batch.complete;
     }
     const coverage: SourceClaimCoverage = { status: complete ? "reviewed" : "incomplete", checked: checked.length,
       supported: checked.filter((claim) => claim.status === "supported").length,

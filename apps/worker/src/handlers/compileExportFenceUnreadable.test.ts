@@ -277,13 +277,15 @@ describe("compileExport when its repair fence cannot be read", () => {
   };
 
   /** The last line of this compile's own run log, which is the file its provider calls are in. */
-  const lastRunLogEntry = async (): Promise<Record<string, unknown>> => {
+  /** The latest entry for `event`: the render after the pass appends its own events. */
+  const lastRunLogEntry = async (event: string): Promise<Record<string, unknown>> => {
     const lines = await readRunLog("books/project-1/runs/gj-1-compile-export.jsonl");
-    const last = lines.trim().split("\n").at(-1);
+    const entries = lines.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+    const last = entries.filter((entry) => entry.event === event).at(-1);
     if (!last) {
-      throw new Error("The compile wrote no run log");
+      throw new Error(`The compile wrote no ${event} run-log entry`);
     }
-    return JSON.parse(last) as Record<string, unknown>;
+    return last;
   };
 
   beforeEach(() => {
@@ -526,7 +528,7 @@ describe("compileExport when its repair fence cannot be read", () => {
     // And the same facts land in the run log, which is where somebody already
     // holding one book and asking "why is this one unrepaired" looks — in
     // sequence with the provider calls of the very pass that stopped.
-    const entry = await lastRunLogEntry();
+    const entry = await lastRunLogEntry("export.repair.fence_unreadable");
     expect(entry).toMatchObject({
       event: "export.repair.fence_unreadable",
       pagesRepaired: 1,

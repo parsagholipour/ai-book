@@ -437,6 +437,20 @@ export const mockPrisma = ({
     updateMany: vi.fn(rowsAffected(0)),
     deleteMany: vi.fn(rowsAffected(0))
   },
+  // Book sharing. No share by default; `shareRoutes.test.ts` and
+  // `publicShareRoutes.test.ts` back these with an in-memory store.
+  bookShare: {
+    findUnique: vi.fn(noRow),
+    findFirst: vi.fn(noRow),
+    findMany: vi.fn(noRows),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(rowsAffected(0)),
+    groupBy: vi.fn(noRows),
+    aggregate: vi.fn()
+  },
+  shareSlug: { create: vi.fn(), findUnique: vi.fn(noRow) },
+  moderationReport: { create: vi.fn(), updateMany: vi.fn(rowsAffected(0)), findMany: vi.fn(noRows) },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: {
     count: vi.fn(async (..._args: any[]) => 0),

@@ -78,6 +78,15 @@ const envSchema = z.object({
     .optional()
     .transform((value) => booleanEnv("AUDIOBOOK_OPENAI_FALLBACK_ENABLED")(value) ?? true),
   GEMINI_TTS_SAFE_RPD_BUDGET: z.coerce.number().int().min(0).default(90),
+  /**
+   * Google's free grounded-search allowance, per Google project, that grounded
+   * prompts are priced against (searchGroundingCost.ts). Our counter sees only
+   * the calls this system logs, so lower these when anything else shares the
+   * key; 0 prices every grounded prompt at list.
+   */
+  SEARCH_GROUNDING_FREE_GEMINI_25_FLASH_PER_DAY: z.coerce.number().int().min(0).default(1_500),
+  SEARCH_GROUNDING_FREE_GEMINI_25_PRO_PER_DAY: z.coerce.number().int().min(0).default(1_500),
+  SEARCH_GROUNDING_FREE_GEMINI_3_PER_MONTH: z.coerce.number().int().min(0).default(5_000),
   VOICE_CHAT_PROVIDER: z.enum(["openai_realtime", "gemini_live"]).default("gemini_live"),
   OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2"),
   OPENAI_REALTIME_VOICE: z.string().default("alloy"),

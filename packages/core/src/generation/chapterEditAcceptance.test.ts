@@ -4,7 +4,8 @@ import { makeFallbackPlan } from "../prompting/templates.js";
 import { chapterEpisodeSchema, dossierExcerptSchema } from "../schemas/episodes.js";
 import type { CreateProjectInput } from "../schemas/book.js";
 import { fallbackChapterComposition, formPaletteFor } from "./chapterForms.js";
-import { cutChapter, cutChapterTail, deletionOnlyResult, editChapter, type EditChapterOptions } from "./composedChapter.js";
+import { CAVEAT_ONCE_ACCEPTANCE_RULE, cutChapter, cutChapterTail, deletionOnlyResult, editChapter, type EditChapterOptions } from "./composedChapter.js";
+import { chapterEditAcceptanceSystem } from "./chapterEditAcceptance.js";
 
 const input: CreateProjectInput = {
   prompt: "A history of the river survey.", category: "HISTORY", targetPages: 12,
@@ -206,6 +207,19 @@ describe("deletion-only semantic acceptance", () => {
     expect(context.removedSpans).toEqual([expect.objectContaining({ removed: `${qualification}\n\nThe first recap repeats that limitation.`, before: body, after: "The report ends with the measurements." })]);
     expect(test.reviewSystem()).toContain("feasible subset");
     expect(test.reviewSystem()).toContain("every removed span");
+    // A deletion-only cut is never given the caveat rule, so its reviewer is not told it either.
+    expect(test.reviewSystem()).not.toContain(CAVEAT_ONCE_ACCEPTANCE_RULE);
+  });
+
+  it("tells the line edit's reviewer that a later restatement of a stated caveat may go", async () => {
+    // 2026-10-01: the caveat-once editor rule won 12 of 12 blind pairs; the reviewer has to read
+    // its removals the way the editor was told to make them, the fact ledger's pattern.
+    const restated = `${original} As noted, the report covered only the northern district.`;
+    const test = fixture(original);
+    expect(await editChapter({ ...test.options, markdown: restated })).toMatchObject({ markdown: original, changed: true });
+    expect(test.reviewSystem()).toContain(CAVEAT_ONCE_ACCEPTANCE_RULE);
+    expect(test.reviewSystem()).toBe(chapterEditAcceptanceSystem({ cut: false, establishedFacts: false }));
+    expect(CAVEAT_ONCE_ACCEPTANCE_RULE).toContain("still a regression");
   });
   it("rejects deletion of an essential qualification after extractiveness and word budgets pass", async () => {
     expect(deletionOnlyResult(fullDraft, cutCandidate)).toBe(cutCandidate);

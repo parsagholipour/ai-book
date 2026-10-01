@@ -145,6 +145,7 @@ class CreationChatState {
     this.attachmentUrls = const <String, String>{},
     this.switchingBranchMessageId,
     this.replyTarget,
+    this.remixSlug,
   });
 
   final bool initializing;
@@ -201,6 +202,11 @@ class CreationChatState {
   /// message and replying to one are mutually exclusive; the screen clears
   /// whichever is set when the other starts.
   final ChatReplyTarget? replyTarget;
+
+  /// The share a "Make a book like this" chat was started from. Sent with the
+  /// request that starts the session — whichever one that turns out to be —
+  /// so the draft records its origin; meaningless once there is a session.
+  final String? remixSlug;
 
   bool get hasSession => draftId != null;
 
@@ -263,6 +269,7 @@ class CreationChatState {
     Map<String, String>? attachmentUrls,
     Object? switchingBranchMessageId = _sentinel,
     Object? replyTarget = _sentinel,
+    String? remixSlug,
   }) {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
@@ -310,6 +317,7 @@ class CreationChatState {
       replyTarget: replyTarget == _sentinel
           ? this.replyTarget
           : replyTarget as ChatReplyTarget?,
+      remixSlug: remixSlug ?? this.remixSlug,
     );
   }
 

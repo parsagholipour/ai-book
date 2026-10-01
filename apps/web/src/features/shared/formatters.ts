@@ -107,6 +107,11 @@ export function readError(error: unknown): string {
     if (typeof parsed.error === "string" && parsed.error.trim()) {
       return parsed.error;
     }
+    // The admin and mobile routes answer `{ error: { code, message } }`.
+    const nested = parsed.error && typeof parsed.error === "object" ? (parsed.error as { message?: unknown }).message : null;
+    if (typeof nested === "string" && nested.trim()) {
+      return nested;
+    }
   } catch {
     /* plain text error */
   }

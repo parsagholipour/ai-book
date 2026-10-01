@@ -15,6 +15,7 @@ Database records still establish ownership and entitlement. Existing authenticat
 | `books/<projectId>/` | Manuscript, PDF/EPUB/DOCX, provenance, reader chapter cache |
 | `books/.export-backups/<projectId>/` | Export predecessors awaiting cleanup |
 | `books/<projectId>/runs/` | Provider calls and other durable generation diagnostics |
+| `books/<projectId>/share-previews/` | Preview slices a public share serves, keyed by the compile's digest; superseded slices are removed when a new one is stored, and revoke/take-down clear the prefix |
 | `images/<projectId>/` | Covers, page illustrations, reference sheets |
 | `images/characters/<userId>/` | Retained character photos and portraits |
 | `voice/<projectId>/` | Generated operator voice replies |

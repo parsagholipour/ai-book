@@ -212,11 +212,11 @@ export function completeRecipe(payload: MobileCreationDraftPayload, lane: Mobile
   const details = payload.optionalDetails;
   // Every other source here is already capped at the recipe's own limits by the
   // draft or brief schema, but rawIdea holds up to 2000 characters — it joins
-  // the user's chat turns — and audienceFor/promiseFallback echo spans of it
-  // back. Clamping is what keeps an overflow from throwing a ZodError out of
+  // the user's chat turns — and audienceFor echoes a span of it back.
+  // Clamping is what keeps an overflow from throwing a ZodError out of
   // adviseMobileBook and reaching the app as a 500.
   const audience = clampBriefText(
-    existing?.audience || audienceFor(rawIdea, lane) || payload.brief?.audience || audienceFallback(lane),
+    existing?.audience || audienceFor(rawIdea) || payload.brief?.audience || audienceFallback(lane),
     280
   );
   // A recipe title means "the title the user stated" — via update_settings,
@@ -228,7 +228,7 @@ export function completeRecipe(payload: MobileCreationDraftPayload, lane: Mobile
   // through optionalDetails or the brief.
   const title = clampBriefText(details.title || payload.brief?.title || "", 160);
   const tone = details.tone || existing?.tone || payload.brief?.tone || toneFallback(lane);
-  const promise = clampBriefText(existing?.promise || payload.brief?.desiredOutcome || promiseFallback(rawIdea, lane), 500);
+  const promise = clampBriefText(existing?.promise || payload.brief?.desiredOutcome || promiseFallback(lane), 500);
   return mobileBookRecipeSchema.parse({
     lane,
     title,
