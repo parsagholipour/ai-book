@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { hashToken } from "../../mobileAuth.js";
 import { enqueueOrRequeueGenerationJob } from "../../queue.js";
 import {
   type MobileVoiceCallMeterDto,
@@ -30,7 +32,6 @@ import {
   type VoiceCallee,
   endVoiceCall,
   heartbeatVoiceCall,
-  startVoiceCall,
   voiceCallEntryCredits,
   voiceCalleeColumns
 } from "../voiceCalls.js";
@@ -52,7 +53,10 @@ import { sendCharacterNotFound } from "../characterWriteConflicts.js";
 import { loadVoiceBookCast } from "../../voiceBookContext.js";
 import { VOICE_CALL_POLICY, creditPricing, normalizeVoiceProfile, type VoiceProfile } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import { InsufficientCreditsError, getCreditBalance, type CreditBalance } from "@book-maker/db/billing";
+import {
+  InsufficientCreditsError, getCreditBalance, type CreditBalance,
+  startVoiceRelayCall, saveVoiceRelaySession, requestVoiceRelayEnd, VoiceRelayError
+} from "@book-maker/db/billing";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { MobileAuthContext } from "../../requestAuth.js";
 import type { MobileRouteContext } from "../routeContext.js";
@@ -61,10 +65,8 @@ import type { MobileRouteContext } from "../routeContext.js";
  * Live voice calls with the characters of a finished book, and with the
  * reader's own saved characters.
  *
- * The app talks to Gemini directly — this API only mints the short-lived,
- * single-use token that lets it, and meters the credits while the call is up.
- * Audio never passes through the server, which is what keeps a call from
- * costing us a second hop of bandwidth and latency on every syllable.
+ * Provider credentials stay on the server. The app receives a single-use
+ * relay ticket; the relay owns provider access and authorizes funded time.
  *
  * Two casts, one call. `/projects/:id/voice/*` is the book's cast and
  * `/voice/characters` is the library; each has its own read and its own
@@ -153,6 +155,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "That call request was not understood.");
       }
+      if (parsed.data.transport !== "relay-v1") return sendRelayRequired(reply);
 
       const character = await prisma.voiceCharacter.findFirst({
         where: { id: characterId, projectId: id, project: { userId: auth.user.id } },
@@ -233,6 +236,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "That call request was not understood.");
       }
+      if (parsed.data.transport !== "relay-v1") return sendRelayRequired(reply);
 
       const character = await loadLibraryVoiceCharacter(characterId, auth.user.id);
       if (!character) {
@@ -379,14 +383,18 @@ async function connectVoiceCall(
     return;
   }
   const instructions = await connection.instructions();
+  const ticket = randomBytes(32).toString("base64url");
 
   let call;
   try {
-    call = await startVoiceCall({ userId: auth.user.id, callee: connection.callee });
+    call = await startVoiceRelayCall({
+      userId: auth.user.id, callee: voiceCalleeColumns(connection.callee), tokenHash: hashToken(ticket)
+    });
   } catch (error) {
     if (error instanceof InsufficientCreditsError) {
       return sendInsufficientCredits(reply, error);
     }
+    if (error instanceof VoiceRelayError) return sendMobileError(reply, 409, error.code, error.message);
     throw error;
   }
 
@@ -396,27 +404,34 @@ async function connectVoiceCall(
       instructions,
       voiceProfile: connection.voiceProfile
     });
+    await saveVoiceRelaySession(call.id, auth.user.id, {
+      token: session.token, model: session.model, expiresAt: session.expiresAt
+    });
+    const socketUrl = new URL(`/api/mobile/voice/calls/${encodeURIComponent(call.id)}/socket`, context.appConfig.PUBLIC_API_URL);
+    socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
     return {
       session: {
-        callId: call.callId,
+        callId: call.id,
         characterId: connection.characterId,
         characterName: connection.characterName,
-        token: session.token,
+        token: ticket,
+        transport: "relay-v1",
+        socketUrl: socketUrl.toString(),
         model: session.model,
         expiresAt: session.expiresAt,
         inputSampleRate: GEMINI_INPUT_SAMPLE_RATE,
         outputSampleRate: GEMINI_OUTPUT_SAMPLE_RATE,
-        secondsRemaining: call.secondsRemaining,
-        creditsPerMinute: call.creditsPerMinute,
-        heartbeatSeconds: call.heartbeatSeconds,
-        maxCallSeconds: call.maxCallSeconds
+        secondsRemaining: call.relayReservedMinutes * 60,
+        creditsPerMinute: call.voiceCreditsPerMinute!,
+        heartbeatSeconds: VOICE_CALL_POLICY.heartbeatSeconds,
+        maxCallSeconds: VOICE_CALL_POLICY.maxCallMinutes * 60
       } satisfies MobileVoiceCallSessionDto
     };
   } catch (error) {
     // The hold was taken a moment ago for a call that never connected.
     // Releasing it here rather than leaving it to the sweep keeps a failed
     // provider call from looking like a charge.
-    await endVoiceCall({ callId: call.callId, userId: auth.user.id, elapsedSeconds: 0, reason: "connect_failed" }).catch(
+    await requestVoiceRelayEnd(call.id, auth.user.id, "connect_failed").catch(
       () => undefined
     );
     request.log.warn({ err: error, ...voiceCalleeColumns(connection.callee) }, "Mobile voice call could not be started");
@@ -436,6 +451,10 @@ function castDto(characters: MobileVoiceCharacterDto[], balance: CreditBalance):
 
 function sendVoiceUnavailable(reply: FastifyReply): FastifyReply {
   return sendMobileError(reply, 503, "VOICE_UNAVAILABLE", "Voice calls are unavailable right now.");
+}
+
+function sendRelayRequired(reply: FastifyReply): FastifyReply {
+  return sendMobileError(reply, 426, "VOICE_RELAY_REQUIRED", "Update the app to make voice calls.");
 }
 
 /**

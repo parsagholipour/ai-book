@@ -7,7 +7,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import {
   InsufficientCreditsError,
-  releaseReservationsByKeyPrefix,
+  startVoiceRelayCall, saveVoiceRelaySession, requestVoiceRelayEnd,
   reserveCredits,
   spendCredits
 } from "@book-maker/db/billing";
@@ -100,6 +100,20 @@ describe("mobile voice calls", () => {
   });
 
   describe("starting a call", () => {
+    it("refuses old clients before minting provider credentials", async () => {
+      const voiceSession = vi.fn();
+      const app = await buildVoiceApp({ voiceSession });
+      const response = await app.inject({ method: "POST",
+        url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
+        headers: bearer("token-a"), payload: {}
+      });
+      expect(response.statusCode).toBe(426);
+      expect(response.json().error.code).toBe("VOICE_RELAY_REQUIRED");
+      expect(voiceSession).not.toHaveBeenCalled();
+      expect(startVoiceRelayCall).not.toHaveBeenCalled();
+      await app.close();
+    });
+
     it("holds credits and hands back connection details for the app's own socket", async () => {
       mockPrisma.voiceCharacter.findFirst.mockResolvedValue(characterRecord());
       const app = await buildVoiceApp();
@@ -108,7 +122,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(200);
@@ -116,15 +130,19 @@ describe("mobile voice calls", () => {
       expect(session).toMatchObject({
         callId: "call-1",
         characterName: "Marlow",
-        token: "auth_tokens/abc",
+        token: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+        transport: "relay-v1",
+        socketUrl: expect.stringContaining("/api/mobile/voice/calls/call-1/socket"),
         inputSampleRate: 16000,
         outputSampleRate: 24000,
         creditsPerMinute: perMinute
       });
       expect(session.secondsRemaining).toBe(VOICE_CALL_POLICY.reserveBlockMinutes * 60);
-      expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: "VOICE_CALL_MINUTE", amountCredits: openingHold })
-      );
+      expect(startVoiceRelayCall).toHaveBeenCalledWith(expect.objectContaining({
+        userId: "user-a", callee: { projectId: "project-1", characterId: "character-1" }
+      }));
+      expect(saveVoiceRelaySession).toHaveBeenCalledWith("call-1", "user-a", expect.objectContaining({ token: "auth_tokens/abc" }));
+      expect(response.payload).not.toContain("auth_tokens/");
       // Nothing is spent up front: a call that never happens must not cost.
       expect(vi.mocked(spendCredits)).not.toHaveBeenCalled();
       await app.close();
@@ -153,7 +171,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: { pageIndex: 12 }
+        payload: { transport: "relay-v1", pageIndex: 12 }
       });
 
       const instructions = voiceSession.mock.calls[0]?.[0].instructions as string;
@@ -199,7 +217,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(200);
@@ -219,7 +237,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(409);
@@ -248,7 +266,7 @@ describe("mobile voice calls", () => {
           method: "POST",
           url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
           headers: bearer("token-a"),
-          payload: {}
+          payload: { transport: "relay-v1" }
         });
         expect(response.statusCode).toBe(409);
         expect(response.json().error.code).toBe("CHARACTER_PREPARING");
@@ -260,7 +278,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
       expect(ready.statusCode).toBe(200);
       await app.close();
@@ -277,7 +295,7 @@ describe("mobile voice calls", () => {
           method: "POST",
           url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
           headers: bearer("token-a"),
-          payload: {}
+          payload: { transport: "relay-v1" }
         });
         expect(response.statusCode).toBe(200);
       }
@@ -292,13 +310,13 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
       const second = await app.inject({
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(first.statusCode).toBe(200);
@@ -316,7 +334,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(409);
@@ -326,7 +344,7 @@ describe("mobile voice calls", () => {
 
     it("sends a user who cannot cover a call to the paywall", async () => {
       mockPrisma.voiceCharacter.findFirst.mockResolvedValue(characterRecord());
-      vi.mocked(reserveCredits).mockRejectedValue(
+      vi.mocked(startVoiceRelayCall).mockRejectedValue(
         new InsufficientCreditsError({ requiredCredits: openingHold, availableCredits: 10, reservedCredits: 0 })
       );
       mockPrisma.voiceCall.delete.mockResolvedValue({});
@@ -336,7 +354,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(402);
@@ -357,16 +375,11 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(503);
-      // Released by key prefix, which also frees a hold whose pointer write
-      // never landed — the row cannot name what a crash orphaned.
-      expect(vi.mocked(releaseReservationsByKeyPrefix)).toHaveBeenCalledWith(
-        "mobile:voice-call:call-1:hold:",
-        expect.any(String)
-      );
+      expect(requestVoiceRelayEnd).toHaveBeenCalledWith("call-1", "user-a", "connect_failed");
       // A call that never connected is free.
       expect(vi.mocked(spendCredits)).not.toHaveBeenCalled();
       await app.close();
@@ -380,7 +393,7 @@ describe("mobile voice calls", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(404);

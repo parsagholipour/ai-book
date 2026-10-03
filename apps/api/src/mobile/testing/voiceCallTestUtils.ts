@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { getCreditBalance, reserveCredits } from "@book-maker/db/billing";
+import { getCreditBalance, reserveCredits, startVoiceRelayCall } from "@book-maker/db/billing";
 import { VOICE_CALL_POLICY, creditPricing } from "@book-maker/core";
 import {
   buildMobileApp,
@@ -91,6 +91,9 @@ export function resetVoiceCallTestState() {
   mockPrisma.voiceCall.findMany.mockResolvedValue([]);
   mockPrisma.voiceCall.create.mockResolvedValue({ id: "call-1" });
   mockPrisma.voiceCall.update.mockResolvedValue({});
+  vi.mocked(startVoiceRelayCall).mockResolvedValue({
+    id: "call-1", voiceCreditsPerMinute: perMinute, relayReservedMinutes: 3
+  } as never);
   mockPrisma.imageAsset.findMany.mockResolvedValue([]);
   allowReservations();
 }

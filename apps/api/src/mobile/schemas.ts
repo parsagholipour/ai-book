@@ -593,6 +593,7 @@ export const libraryVoiceCharacterParamsSchema = z.object({ characterId: z.strin
  */
 export const mobileVoiceCallStartBodySchema = z
   .object({
+    transport: z.literal("relay-v1").optional(),
     pageIndex: z.number().int().min(0).max(5000).optional()
   })
   .strict();
@@ -625,11 +626,11 @@ export const mobileVoiceCallProgressBodySchema = z
 
 /**
  * A library call has no page to be scoped to — the character is not in a book
- * — so the body carries nothing. (Strict, like its book twin; note Fastify's
+ * — so the body carries only the relay capability. (Strict, like its book twin; note Fastify's
  * AJV strips unknown keys before the handler sees them, so a stray `pageIndex`
  * is dropped rather than refused.)
  */
-export const mobileLibraryVoiceCallStartBodySchema = z.object({}).strict();
+export const mobileLibraryVoiceCallStartBodySchema = z.object({ transport: z.literal("relay-v1").optional() }).strict();
 
 export const mobileVoiceCallStartOpenApiBody = toOpenApiRequestBody(mobileVoiceCallStartBodySchema);
 export const mobileLibraryVoiceCallStartOpenApiBody = toOpenApiRequestBody(mobileLibraryVoiceCallStartBodySchema);

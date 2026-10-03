@@ -22,7 +22,8 @@ void main() {
       'callId': 'call-1',
       'characterId': 'lib-1',
       'characterName': 'Mina',
-      'token': 'auth_tokens/abc',
+      'token': 'relay-ticket',
+      'socketUrl': 'wss://api.test/api/mobile/voice/calls/call-1/socket',
       'model': 'gemini-live',
       'inputSampleRate': 16000,
       'outputSampleRate': 24000,
@@ -46,24 +47,20 @@ void main() {
     ]);
   });
 
-  test('places a book call with the page, and a library call with nothing', () async {
+  test('requests the relay for both book and library calls', () async {
     final client = _FakeApiClient()..nextData = sessionJson();
     final repository = HttpVoiceRepository(client);
 
-    await repository.startCall(
-      projectId: 'project-1',
-      characterId: 'character-1',
-      pageIndex: 4,
-    );
+    await repository.startCall(projectId: 'project-1', characterId: 'character-1', pageIndex: 4);
     await repository.startCall(projectId: null, characterId: 'lib-1', pageIndex: 4);
 
     expect(client.paths, [
       '/api/mobile/projects/project-1/voice/characters/character-1/calls',
       '/api/mobile/voice/characters/lib-1/calls',
     ]);
-    expect(client.bodies.first, {'pageIndex': 4});
+    expect(client.bodies.first, {'transport': 'relay-v1', 'pageIndex': 4});
     // No book, no page: a library call is never scoped, whatever it is handed.
-    expect(client.bodies.last, isEmpty);
+    expect(client.bodies.last, {'transport': 'relay-v1'});
   });
 }
 

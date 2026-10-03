@@ -433,7 +433,7 @@ code in that area, however obvious the rule looks.
 
 ### Audiobook and voice
 
-- **A voice call's audio never reaches the server.** → apps/api/src/mobile/CLAUDE.md
+- **Voice provider access is controlled by a funded server relay.** → apps/api/src/mobile/CLAUDE.md
 - **A call names one callee, and a library character is the callee with no book.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/characters/CLAUDE.md
 - **An audiobook is made *from* a finished book, so failing one must not touch the book.** → apps/worker/src/handlers/CLAUDE.md
 - **Narration is chaptered deterministically, never by the model.** → apps/worker/src/handlers/CLAUDE.md

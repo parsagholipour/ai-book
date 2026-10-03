@@ -6,9 +6,8 @@ import '../domain/voice_models.dart';
 
 /// HTTP side of character voice calls.
 ///
-/// The audio itself never comes through here — the app opens its own socket to
-/// Gemini with the token this hands back. What stays server-side is who may
-/// call, and what the call costs.
+/// Audio uses a separate server relay. The server owns provider access and
+/// billing; HTTP heartbeats fetch the meter and deliver transcript history.
 ///
 /// Two casts, one call. A `projectId` names a finished book's cast; null names
 /// the reader's own character library, which the server serves in the same
@@ -77,13 +76,12 @@ class HttpVoiceRepository implements VoiceRepository {
     int? pageIndex,
   }) async {
     try {
-      // A library call carries no page: there is no book for one to be in,
-      // and the server's body schema for it is empty.
+      // The transport capability prevents old clients receiving unusable tickets.
       final data = await _client.postMap(
         projectId == null
             ? '/api/mobile/voice/characters/$characterId/calls'
             : '/api/mobile/projects/$projectId/voice/characters/$characterId/calls',
-        data: {if (projectId != null) 'pageIndex': ?pageIndex},
+        data: {'transport': 'relay-v1', if (projectId != null) 'pageIndex': ?pageIndex},
       );
       return VoiceCallSession.fromJson(data['session'] as Map<String, dynamic>);
     } on ApiException catch (error) {
@@ -116,11 +114,7 @@ class HttpVoiceRepository implements VoiceRepository {
   }) async {
     final data = await _client.postMap(
       '/api/mobile/voice/calls/$callId/end',
-      data: {
-        'elapsedSeconds': elapsedSeconds,
-        'reason': reason,
-        ..._transcript(messages),
-      },
+      data: {'elapsedSeconds': elapsedSeconds, 'reason': reason, ..._transcript(messages)},
     );
     return VoiceCallMeter.fromJson(data['meter'] as Map<String, dynamic>);
   }
@@ -129,9 +123,7 @@ class HttpVoiceRepository implements VoiceRepository {
   /// silent call has nothing to say.
   Map<String, dynamic> _transcript(List<VoiceCallCaption> messages) {
     if (messages.isEmpty) return const {};
-    return {
-      'messages': messages.map((line) => line.toJson()).toList(growable: false),
-    };
+    return {'messages': messages.map((line) => line.toJson()).toList(growable: false)};
   }
 }
 

@@ -5,9 +5,9 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { releaseReservationsByKeyPrefix } from "@book-maker/db/billing";
+import { releaseReservationsByKeyPrefix, spendCredits } from "@book-maker/db/billing";
 import { mockPrisma, teardownMobileHarness } from "./testing/mobileApiHarness.js";
-import { resetVoiceCallTestState } from "./testing/voiceCallTestUtils.js";
+import { callRecord, resetVoiceCallTestState } from "./testing/voiceCallTestUtils.js";
 import { sweepStaleVoiceCalls } from "./voiceCalls.js";
 
 describe("voice call hold sweep", () => {
@@ -42,5 +42,22 @@ describe("voice call hold sweep", () => {
   it("touches nothing when no hold is open", async () => {
     await expect(sweepStaleVoiceCalls(new Date("2026-10-01T04:00:00Z"))).resolves.toBe(0);
     expect(releaseReservationsByKeyPrefix).not.toHaveBeenCalled();
+  });
+
+  it("uses server elapsed time to settle legacy calls without client heartbeats", async () => {
+    const now = new Date();
+    const startedAt = new Date(now.getTime() - 10 * 60_000);
+    mockPrisma.voiceCall.findMany.mockResolvedValueOnce([
+      callRecord({ startedAt, lastHeartbeatAt: startedAt, elapsedSeconds: 0 })
+    ]);
+    vi.mocked(spendCredits).mockResolvedValue({ id: "charged" } as never);
+
+    await sweepStaleVoiceCalls(now);
+
+    expect(spendCredits).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "VOICE_CALL_MINUTE",
+      amountCredits: expect.any(Number)
+    }));
+    expect(vi.mocked(spendCredits).mock.calls[0]?.[0].amountCredits).toBeGreaterThan(0);
   });
 });

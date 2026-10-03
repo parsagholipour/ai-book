@@ -7,31 +7,8 @@ import 'package:tomeza/features/voice/data/gemini_live_socket.dart';
 /// the part hardest to notice breaking: a renamed field does not throw, it just
 /// makes the character silent. These lock the shapes the client depends on.
 void main() {
-  group('geminiLiveUri', () {
-    const token = 'auth_tokens/84d0788b0885';
-
-    test('uses the wss scheme', () {
-      // Dart's WebSocket.connect rejects any other scheme outright, so an
-      // https URI here fails every attempt before a packet leaves the phone.
-      expect(GeminiLiveSocket.geminiLiveUri(token).scheme, 'wss');
-    });
-
-    test('sends the token without escaping its slash', () {
-      // `queryParameters` would percent-encode the `/` in `auth_tokens/…`. A
-      // slash is legal unencoded in a query, and raw is what the official SDK
-      // sends.
-      final uri = GeminiLiveSocket.geminiLiveUri(token);
-      expect(uri.query, 'access_token=$token');
-      expect(uri.toString(), contains('access_token=auth_tokens/'));
-      expect(uri.toString(), isNot(contains('%2F')));
-    });
-
-    test('points at the constrained endpoint ephemeral tokens require', () {
-      expect(
-        GeminiLiveSocket.geminiLiveUri(token).path,
-        endsWith('GenerativeService.BidiGenerateContentConstrained'),
-      );
-    });
+  test('relay termination is final', () {
+    expect(isRetryableGeminiDisconnect('Call ended: connection_expired'), isFalse);
   });
 
   group('parseGeminiLiveMessage', () {
@@ -61,7 +38,10 @@ void main() {
           'modelTurn': {
             'parts': [
               {
-                'inlineData': {'mimeType': 'image/png', 'data': base64Encode([9])},
+                'inlineData': {
+                  'mimeType': 'image/png',
+                  'data': base64Encode([9]),
+                },
               },
               {'text': 'hello'},
             ],
@@ -114,7 +94,9 @@ void main() {
     });
 
     test('surfaces goAway as its own event rather than as a failure', () {
-      final events = parseGeminiLiveMessage({'goAway': {'timeLeft': '10s'}});
+      final events = parseGeminiLiveMessage({
+        'goAway': {'timeLeft': '10s'},
+      });
 
       expect(events.whereType<GeminiLiveGoAway>(), hasLength(1));
       expect(events.whereType<GeminiLiveError>(), isEmpty);

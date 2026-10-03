@@ -109,3 +109,10 @@ export {
   settleMessageUsage,
   resetMessageAllowance
 } from "./messageUsage.ts";
+
+export {
+  VOICE_RELAY_LEASE_MS, VOICE_RELAY_RECOVERY_GRACE_MS, VoiceRelayError,
+  startVoiceRelayCall, saveVoiceRelaySession, claimVoiceRelayCall, authorizeVoiceRelay,
+  readVoiceRelayMeter, requestVoiceRelayEnd, finishVoiceRelay, recoverVoiceRelayCalls,
+  type VoiceRelaySession, type VoiceRelayLease, type VoiceRelayMeter
+} from "./voiceRelayBilling.ts";

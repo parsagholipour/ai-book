@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { InsufficientCreditsError, reserveCredits, spendCredits } from "@book-maker/db/billing";
+import { InsufficientCreditsError, startVoiceRelayCall, spendCredits } from "@book-maker/db/billing";
 import { bearer, mockPrisma, teardownMobileHarness } from "./testing/mobileApiHarness.js";
 import { buildVoiceApp, callRecord, openingHold, perMinute, resetVoiceCallTestState } from "./testing/voiceCallTestUtils.js";
 
@@ -84,7 +84,7 @@ async function startLibraryCall(app: Awaited<ReturnType<typeof buildVoiceApp>>, 
     method: "POST",
     url: "/api/mobile/voice/characters/lib-1/calls",
     headers: bearer("token-a"),
-    payload
+    payload: { transport: "relay-v1", ...payload }
   });
 }
 
@@ -198,22 +198,16 @@ describe("library voice calls", () => {
         callId: "call-1",
         characterId: "lib-1",
         characterName: "Mina Park",
-        token: "auth_tokens/abc",
+        token: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+        transport: "relay-v1",
         inputSampleRate: 16000,
         outputSampleRate: 24000,
         creditsPerMinute: perMinute
       });
-      // The row names the library callee and nothing of a book.
-      expect(mockPrisma.voiceCall.create.mock.calls[0]?.[0].data).toMatchObject({
-        userId: "user-a",
-        libraryCharacterId: "lib-1",
-        status: "ACTIVE"
-      });
-      expect(mockPrisma.voiceCall.create.mock.calls[0]?.[0].data).not.toHaveProperty("projectId");
-      expect(mockPrisma.voiceCall.create.mock.calls[0]?.[0].data).not.toHaveProperty("characterId");
-      expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: "VOICE_CALL_MINUTE", amountCredits: openingHold, projectId: null })
-      );
+      expect(startVoiceRelayCall).toHaveBeenCalledWith(expect.objectContaining({
+        userId: "user-a", callee: { libraryCharacterId: "lib-1" }
+      }));
+      expect(response.payload).not.toContain("auth_tokens/");
       expect(vi.mocked(spendCredits)).not.toHaveBeenCalled();
       await app.close();
     });
@@ -338,7 +332,7 @@ describe("library voice calls", () => {
     });
 
     it("sends a user who cannot cover a call to the paywall", async () => {
-      vi.mocked(reserveCredits).mockRejectedValue(
+      vi.mocked(startVoiceRelayCall).mockRejectedValue(
         new InsufficientCreditsError({ requiredCredits: openingHold, availableCredits: 10, reservedCredits: 0 })
       );
       mockPrisma.voiceCall.delete.mockResolvedValue({});

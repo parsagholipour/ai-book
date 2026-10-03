@@ -49,6 +49,7 @@ const app = Fastify({
     redact: [
       "req.headers.authorization",
       "req.headers.cookie",
+      "req.headers.sec-websocket-protocol",
       "res.headers.set-cookie",
       "body.password",
       "body.newPassword",

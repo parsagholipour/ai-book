@@ -1404,14 +1404,22 @@ the write binds has to be one all three of them can still find.
 
 ## Voice and audiobook routes
 
-- **A voice call's audio never reaches the server.** The app opens its own socket to Gemini with
-  an ephemeral token the API mints, so the only transcript we have is the one the app uploads —
-  in batches, on the heartbeat it is already sending, because the captions on screen are a capped
-  display buffer and a call that dies with the app never sends an end. It lands in
-  `VoiceCall.transcript`, and `apps/api/src/mobile/voiceCallHistory.ts` reads the last calls back
-  into the next one's system instructions. That is *memory, not resumption*: every call is a fresh
-  session, and the prompt says so in as many words. Uploads are at-least-once, so the append drops
-  the overlap when a retried batch arrives twice.
+- **Voice provider access is controlled by a funded server relay.** `routes/voice.ts` requires
+  `transport: "relay-v1"` and returns a single-use relay ticket; Gemini credentials and session
+  handles stay server-side. `voiceRelayConnection.ts` accepts only rate-limited PCM audio, renews
+  its durable lease independently of client heartbeats, and closes upstream before settlement.
+  `packages/db/src/voiceRelayBilling.ts` atomically reserves/commits minute holds at the start's
+  price, permits one ACTIVE/ENDING call per user, and refunds unused minutes after closure.
+  A connected call costs at least one minute; a call that never connects is refunded entirely.
+  HTTP heartbeats only read billing state and upload captions. An end on another API instance
+  marks ENDING and retains the hold until the owner stops or its lease expires. Recovery waits
+  past the lease deadline; every forwarded frame checks that deadline too. The legacy sweep
+  must exclude relay rows and preserve holds belonging to ENDING calls.
+  The app still uploads transcript batches into `VoiceCall.transcript`; `voiceCallHistory.ts`
+  reads them into the next call as memory. Overlap is dropped on a retried batch.
+  Deploy migration `000092_voice_relay`, API/proxy WebSocket support and the matching mobile app.
+  Already-issued direct Gemini tokens remain usable for up to 30 minutes after issuance; stop
+  old API instances and allow that window to drain before treating the rollout as fully protected.
 - **A call names one callee, and a library character is the callee with no book.** `VoiceCall`
   carries either `projectId` + `characterId` (a book's cast row, cascading with it as before) or
   `libraryCharacterId` alone (one of the reader's saved characters, `SetNull` on delete so the
@@ -1423,7 +1431,7 @@ the write binds has to be one all three of them can still find.
   limit onwards — the hold, the token, the connect-failed release, every heartbeat and hang-up — a
   library call *is* a book call. What differs is what a library callee lacks. There is no project,
   so the ledger entries carry `projectId: null` exactly as a portrait charge does. There is no page,
-  so the body is empty and no spoiler guard is written. There is no persona job — the persona is
+  so the body carries only the relay capability and no spoiler guard is written. There is no persona job — the persona is
   the reader's own notes composed at call time by `buildLibraryCharacterInstructions`
   (`packages/core/src/generation/libraryVoiceCharacters.ts`), so a saved character is never
   `preparing` — and the description reaches the prompt through `generationDescription`, `@`

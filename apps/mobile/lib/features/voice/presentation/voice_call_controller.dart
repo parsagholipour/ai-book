@@ -18,11 +18,13 @@ import '../domain/voice_transcript_queue.dart';
 /// How the controller opens its socket to Gemini. Injectable for the same
 /// reason [VoiceCallAudio] and [VoiceCallRecorder] are handed to [VoiceCallController.dial]:
 /// tests drive the protocol without a network.
-typedef GeminiLiveSocketConnector = Future<GeminiLiveSocket> Function({
-  required String token,
-  required String model,
-  String? sessionHandle,
-});
+typedef GeminiLiveSocketConnector =
+    Future<GeminiLiveSocket> Function({
+      required String token,
+      required String socketUrl,
+      required String model,
+      String? sessionHandle,
+    });
 
 /// Drives one call from "tap a name" to "hung up".
 ///
@@ -109,7 +111,9 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     // A controller that has already carried a call can carry another: the
     // provider is auto-disposed, but not the instant the screen pops, so a
     // second call placed straight after the first must not be swallowed.
-    if (state.isLive || state.phase == VoiceCallPhase.ringing || state.phase == VoiceCallPhase.preparing) {
+    if (state.isLive ||
+        state.phase == VoiceCallPhase.ringing ||
+        state.phase == VoiceCallPhase.preparing) {
       return;
     }
     _resetForNewCall();
@@ -139,7 +143,11 @@ class VoiceCallController extends Notifier<VoiceCallState> {
       );
       await _connectWithRetries(projectId, character, pageIndex);
     } on InsufficientCreditsForCallException catch (error) {
-      state = state.copyWith(phase: VoiceCallPhase.failed, error: error.message, outOfCredits: true);
+      state = state.copyWith(
+        phase: VoiceCallPhase.failed,
+        error: error.message,
+        outOfCredits: true,
+      );
     } catch (error) {
       state = state.copyWith(phase: VoiceCallPhase.failed, error: userFacingError(error));
       await _teardown();
@@ -203,12 +211,14 @@ class VoiceCallController extends Notifier<VoiceCallState> {
             reason: reason,
             messages: _transcriptQueue.drain(),
           )
-          .catchError((_) => VoiceCallMeter(
-                elapsedSeconds: elapsed,
-                secondsRemaining: 0,
-                chargedCredits: charged,
-                endingSoon: true,
-              ));
+          .catchError(
+            (_) => VoiceCallMeter(
+              elapsedSeconds: elapsed,
+              secondsRemaining: 0,
+              chargedCredits: charged,
+              endingSoon: true,
+            ),
+          );
       charged = meter.chargedCredits;
       // The balance moved, and the cast sheet and shelf both show it.
       ref.invalidate(billingProvider);
@@ -323,9 +333,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     state = state.copyWith(exportingRecording: true, error: state.error);
     try {
       final name = VoiceCallRecorder.safeSegment(state.character?.name ?? 'call');
-      return await recorder.export(
-        filename: '$name-call-${_recordingStamp(DateTime.now())}.m4a',
-      );
+      return await recorder.export(filename: '$name-call-${_recordingStamp(DateTime.now())}.m4a');
     } finally {
       if (!_disposed) {
         state = state.copyWith(exportingRecording: false, error: state.error);
@@ -418,6 +426,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     final connect = _socketConnector ?? GeminiLiveSocket.connect;
     final socket = await connect(
       token: session.token,
+      socketUrl: session.socketUrl,
       model: session.model,
       sessionHandle: _sessionHandle.isEmpty ? null : _sessionHandle,
     );
@@ -493,16 +502,16 @@ class VoiceCallController extends Notifier<VoiceCallState> {
 
   Future<void> _handleDisconnect(String reason) async {
     if (_disposed || state.phase == VoiceCallPhase.ended) return;
-    if (isRetryableGeminiDisconnect(reason)) {
-      await _reconnect(reason);
-      return;
-    }
+    // The relay resumes provider connections itself. A lost device connection
+    // ends this single-use call; redialling the ticket cannot resume billing.
     state = state.copyWith(phase: VoiceCallPhase.failed, error: 'The call was disconnected.');
     await hangUp(reason: 'disconnected');
   }
 
   Future<void> _reconnect(String reason) async {
-    if (_reconnecting || _disposed || state.phase == VoiceCallPhase.ended) return;
+    if (_reconnecting || _disposed || state.phase == VoiceCallPhase.ended) {
+      return;
+    }
     _reconnecting = true;
     // Time already talked is banked, because the wall clock keeps running
     // through a reconnect but the call does not. The recording banks the same
@@ -587,17 +596,16 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   /// Never throws: a missed heartbeat costs a delay, not the call.
   Future<void> _heartbeat() async {
     final callId = _session?.callId;
-    if (callId == null || _disposed || state.phase == VoiceCallPhase.ended) return;
+    if (callId == null || _disposed || state.phase == VoiceCallPhase.ended) {
+      return;
+    }
     final batch = _transcriptQueue.take();
     try {
       final meter = await ref
           .read(voiceRepositoryProvider)
           .heartbeat(callId: callId, elapsedSeconds: _elapsedSeconds(), messages: batch);
       if (_disposed) return;
-      // Named as soon as the server knows, which is a whole reserve block —
-      // minutes — before the clock runs out. Waiting for `secondsRemaining <= 0`
-      // meant the caller learned they were out of credits one second before the
-      // line went.
+      // Display the server's warning while it still has funded time to finish.
       state = state.copyWith(
         secondsRemaining: meter.secondsRemaining,
         chargedCredits: meter.chargedCredits,
@@ -605,10 +613,8 @@ class VoiceCallController extends Notifier<VoiceCallState> {
         outOfCredits: meter.endingReason == VoiceCallEndingReason.credits,
       );
     } catch (_) {
-      // A missed heartbeat is not worth interrupting a call for; the server
-      // settles from the last one it did get if they stop entirely. The lines
-      // it was carrying go back in the queue — the next beat, or the hang-up,
-      // takes them instead.
+      // The relay meters independently of this request. Restore the transcript
+      // batch so the next heartbeat or hang-up can deliver it.
       _transcriptQueue.restore(batch);
     }
   }
@@ -661,9 +667,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     // Queued at the same moment it is shown. A line only counts as said once
     // the speaker has finished it, which is exactly what settles a caption.
     _transcriptQueue.add(line);
-    state = state.copyWith(
-      captions: [...state.captions, line].takeLast(_captionLimit),
-    );
+    state = state.copyWith(captions: [...state.captions, line].takeLast(_captionLimit));
     _publishCaptions();
   }
 
@@ -680,8 +684,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     final character = _pendingCharacterCaption.trim();
     state = state.copyWith(
       liveCaptions: [
-        if (caller.isNotEmpty)
-          VoiceCallCaption(speaker: VoiceCallSpeaker.caller, text: caller),
+        if (caller.isNotEmpty) VoiceCallCaption(speaker: VoiceCallSpeaker.caller, text: caller),
         if (character.isNotEmpty)
           VoiceCallCaption(speaker: VoiceCallSpeaker.character, text: character),
       ],
@@ -758,6 +761,7 @@ class VoiceCallState {
   final VoiceCharacter? character;
   final VoiceCallPhase phase;
   final List<VoiceCallCaption> captions;
+
   /// Lines still being spoken, caller first. Rendered after [captions].
   final List<VoiceCallCaption> liveCaptions;
   final bool muted;
@@ -786,8 +790,7 @@ class VoiceCallState {
 
   final String? error;
 
-  bool get isLive =>
-      phase == VoiceCallPhase.connected || phase == VoiceCallPhase.reconnecting;
+  bool get isLive => phase == VoiceCallPhase.connected || phase == VoiceCallPhase.reconnecting;
 
   /// Warn while the call is live and there is something worth warning about.
   ///
@@ -841,11 +844,8 @@ class VoiceCallState {
 }
 
 extension _TakeLast<T> on List<T> {
-  List<T> takeLast(int count) =>
-      length <= count ? this : sublist(length - count);
+  List<T> takeLast(int count) => length <= count ? this : sublist(length - count);
 }
 
 final voiceCallControllerProvider =
-    NotifierProvider.autoDispose<VoiceCallController, VoiceCallState>(
-      VoiceCallController.new,
-    );
+    NotifierProvider.autoDispose<VoiceCallController, VoiceCallState>(VoiceCallController.new);

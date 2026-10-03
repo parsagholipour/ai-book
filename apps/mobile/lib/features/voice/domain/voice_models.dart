@@ -37,14 +37,12 @@ class VoiceCharacter {
       name: json['name'] as String? ?? 'Character',
       role: json['role'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      traits: (json['traits'] as List<dynamic>? ?? const [])
-          .whereType<String>()
-          .toList(growable: false),
+      traits: (json['traits'] as List<dynamic>? ?? const []).whereType<String>().toList(
+        growable: false,
+      ),
       status: voiceCharacterStatusFrom(json['status'] as String?),
       needsPreparation: json['needsPreparation'] as bool? ?? false,
-      image: image is Map<String, dynamic>
-          ? MobileProjectImage.fromJson(image)
-          : null,
+      image: image is Map<String, dynamic> ? MobileProjectImage.fromJson(image) : null,
       libraryCharacterId: json['libraryCharacterId'] as String?,
       libraryPortraitUrl: json['libraryPortraitUrl'] as String?,
     );
@@ -134,8 +132,7 @@ class VoiceCast {
 
   /// Minutes the current balance pays for, floored — what the cast sheet
   /// promises has to be time the user definitely has.
-  int get affordableMinutes =>
-      creditsPerMinute <= 0 ? 0 : availableCredits ~/ creditsPerMinute;
+  int get affordableMinutes => creditsPerMinute <= 0 ? 0 : availableCredits ~/ creditsPerMinute;
 }
 
 /// Why a call did not start: the hold it needs, named so the toast, the cast
@@ -147,13 +144,14 @@ String creditsNeededToStartCallMessage([int? credits]) {
   return 'You need more credits to start a call.';
 }
 
-/// Everything needed to open a Gemini Live socket for one call.
+/// Everything needed to open a funded voice relay for one call.
 class VoiceCallSession {
   const VoiceCallSession({
     required this.callId,
     required this.characterId,
     required this.characterName,
     required this.token,
+    required this.socketUrl,
     required this.model,
     required this.inputSampleRate,
     required this.outputSampleRate,
@@ -169,6 +167,7 @@ class VoiceCallSession {
       characterId: json['characterId'] as String? ?? '',
       characterName: json['characterName'] as String? ?? 'Character',
       token: json['token'] as String,
+      socketUrl: json['socketUrl'] as String,
       model: json['model'] as String,
       inputSampleRate: json['inputSampleRate'] as int? ?? 16000,
       outputSampleRate: json['outputSampleRate'] as int? ?? 24000,
@@ -183,6 +182,7 @@ class VoiceCallSession {
   final String characterId;
   final String characterName;
   final String token;
+  final String socketUrl;
   final String model;
   final int inputSampleRate;
   final int outputSampleRate;

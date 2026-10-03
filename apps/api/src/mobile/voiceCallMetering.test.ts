@@ -481,7 +481,7 @@ describe("mobile voice call metering", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       const instructions = voiceSession.mock.calls[0]?.[0].instructions as string;
@@ -515,7 +515,7 @@ describe("mobile voice call metering", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       const instructions = voiceSession.mock.calls[0]?.[0].instructions as string;
@@ -533,7 +533,7 @@ describe("mobile voice call metering", () => {
         method: "POST",
         url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
         headers: bearer("token-a"),
-        payload: {}
+        payload: { transport: "relay-v1" }
       });
 
       expect(response.statusCode).toBe(200);

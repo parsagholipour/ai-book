@@ -14,19 +14,16 @@ import {
   InsufficientCreditsError,
   releaseReservationsByKeyPrefix,
   reserveCredits,
-  spendCredits
+  spendCredits,
+  readVoiceRelayMeter, requestVoiceRelayEnd, recoverVoiceRelayCalls
 } from "@book-maker/db/billing";
+import { stopLocalVoiceRelay } from "./voiceRelayConnection.js";
 
 /**
- * The credit lifecycle of a realtime character call.
- *
- * A call holds credits while it runs and spends them exactly once when it ends.
- * Holding rather than spending is what makes a dropped call safe: the app can
- * die mid-sentence and the worst outcome is a hold that the stale-call sweep
- * releases a minute and a half later.
- *
- * `packages/core/src/voiceCallMetering.ts` owns the arithmetic. This file owns
- * the ledger entries and the `VoiceCall` row.
+ * HTTP metering facade and compatibility settlement for legacy direct calls.
+ * New calls use `voiceRelayBilling.ts` in the DB package; their HTTP heartbeat
+ * is only a read, and their end request retains holds until the relay stops.
+ * The older arithmetic below remains for calls issued before the relay rollout.
  */
 
 export type VoiceCallMeter = {
@@ -149,6 +146,8 @@ export async function heartbeatVoiceCall(options: {
   userId: string;
   elapsedSeconds: number;
 }): Promise<VoiceCallMeter> {
+  const relayMeter = await readVoiceRelayMeter(options.callId, options.userId);
+  if (relayMeter) return relayMeter;
   const call = await activeCallOrThrow(options.callId, options.userId);
   // Elapsed time only moves forward, and never below the server's own clock.
   // The audio runs on a socket the server never sees, so `elapsedSeconds` is
@@ -209,6 +208,12 @@ export async function endVoiceCall(options: {
   elapsedSeconds?: number | undefined;
   reason: string;
 }): Promise<VoiceCallMeter> {
+  const relayMeter = await readVoiceRelayMeter(options.callId, options.userId);
+  if (relayMeter) {
+    const ending = await requestVoiceRelayEnd(options.callId, options.userId, options.reason);
+    await stopLocalVoiceRelay(options.callId, options.reason);
+    return await readVoiceRelayMeter(options.callId, options.userId) ?? ending;
+  }
   const call = await prisma.voiceCall.findFirst({
     where: { id: options.callId, userId: options.userId },
     select: voiceCallSelect
@@ -241,28 +246,25 @@ export async function endVoiceCall(options: {
 }
 
 /**
- * Settles calls that stopped reporting in.
- *
- * Charges for the time the call was last known to have reached, which is at
- * most one heartbeat behind. `server.ts` runs this on the retention sweep.
+ * Recovers expired relay leases, legacy calls and orphaned holds.
+ * Relay recovery uses server-owned deadlines, never a client's last heartbeat.
  */
 export async function sweepStaleVoiceCalls(now = new Date()): Promise<number> {
   const cutoff = new Date(now.getTime() - VOICE_CALL_POLICY.heartbeatGraceSeconds * 1000);
   const stale = await prisma.voiceCall.findMany({
-    where: { status: "ACTIVE", lastHeartbeatAt: { lt: cutoff } },
+    where: { status: "ACTIVE", relayTokenHash: null, lastHeartbeatAt: { lt: cutoff } },
     select: voiceCallSelect
   });
   for (const call of stale) {
-    // Floor at the wall clock of the last heartbeat rather than of now: the
-    // call was verifiably alive until then, and charging the grace window a
-    // crashed app could not report would overbill the honest case.
+    // Legacy direct tokens could outlive client heartbeats. Never treat
+    // silence as evidence that the provider connection ended.
     const elapsedSeconds = Math.min(
-      Math.max(call.elapsedSeconds, wallClockElapsedSeconds(call.startedAt, call.lastHeartbeatAt)),
+      Math.max(call.elapsedSeconds, wallClockElapsedSeconds(call.startedAt, now)),
       VOICE_CALL_POLICY.maxCallMinutes * 60
     );
     await settleCall(call, elapsedSeconds, "heartbeat_lost");
   }
-  return stale.length + (await releaseOrphanedVoiceCallHolds(cutoff));
+  return stale.length + (await recoverVoiceRelayCalls(now)) + (await releaseOrphanedVoiceCallHolds(cutoff));
 }
 
 /** A hold's key, `{prefix}{n}`, read back into the call it belongs to. */
@@ -299,7 +301,7 @@ async function releaseOrphanedVoiceCallHolds(cutoff: Date): Promise<number> {
     return 0;
   }
   const running = await prisma.voiceCall.findMany({
-    where: { id: { in: callIds }, status: "ACTIVE" },
+    where: { id: { in: callIds }, status: { in: ["ACTIVE", "ENDING"] } },
     select: { id: true }
   });
   const runningIds = new Set(running.map((call) => call.id));
@@ -493,7 +495,7 @@ async function activeCallOrThrow(callId: string, userId: string): Promise<VoiceC
 
 async function settleOpenCallsForUser(userId: string, reason: string): Promise<void> {
   const open = await prisma.voiceCall.findMany({
-    where: { userId, status: "ACTIVE" },
+    where: { userId, status: "ACTIVE", relayTokenHash: null },
     select: voiceCallSelect
   });
   for (const call of open) {

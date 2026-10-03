@@ -4,38 +4,10 @@ import 'dart:typed_data';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-/// One connection to the Gemini Live API.
-///
-/// The app talks to Gemini directly with a single-use ephemeral token the API
-/// minted. The persona, voice, transcription and session-resumption settings are
-/// locked into that token server-side, so nothing here can widen what the call
-/// is allowed to do — the only thing this sends is the model and the audio.
-///
-/// This is the mobile counterpart of `apps/web/src/features/voice/
-/// BrowserVoiceCallClient.ts`, which uses the JS SDK for the same protocol.
+/// Audio connection through the server's funded voice relay.
+/// Provider tokens and resumption handles stay on the server.
 class GeminiLiveSocket {
   GeminiLiveSocket._(this._channel, this._events);
-
-  static const _host = 'generativelanguage.googleapis.com';
-  static const _path =
-      '/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained';
-
-  /// The socket address for an ephemeral-token call.
-  ///
-  /// Two details here are not incidental. The scheme must be `wss`: Dart's
-  /// `WebSocket.connect` rejects anything else outright, so building this with
-  /// `Uri.https` fails every attempt before a packet is sent. And the token is
-  /// placed in the query string raw rather than through `queryParameters`,
-  /// which would percent-encode the `/` in `auth_tokens/…`. A slash is legal
-  /// unencoded in a query, and sending it raw is what the official SDK does.
-  static Uri geminiLiveUri(String token) {
-    return Uri(
-      scheme: 'wss',
-      host: _host,
-      path: _path,
-      query: 'access_token=$token',
-    );
-  }
 
   final WebSocketChannel _channel;
   final Stream<GeminiLiveEvent> _events;
@@ -52,12 +24,19 @@ class GeminiLiveSocket {
   /// the protocol without a network.
   static Future<GeminiLiveSocket> connect({
     required String token,
+    required String socketUrl,
     required String model,
     String? sessionHandle,
-    WebSocketChannel Function(Uri uri)? channelFactory,
+    WebSocketChannel Function(Uri uri, {Iterable<String>? protocols})? channelFactory,
   }) async {
-    final uri = geminiLiveUri(token);
-    final channel = (channelFactory ?? WebSocketChannel.connect)(uri);
+    final uri = Uri.parse(socketUrl);
+    if ((uri.scheme != 'wss' && uri.scheme != 'ws') || uri.hasQuery || uri.userInfo.isNotEmpty) {
+      throw const FormatException('Invalid voice connection address.');
+    }
+    final channel = (channelFactory ?? WebSocketChannel.connect)(
+      uri,
+      protocols: ['voice.v1', 'ticket.$token'],
+    );
     await channel.ready;
 
     final controller = StreamController<GeminiLiveEvent>.broadcast();
@@ -79,16 +58,7 @@ class GeminiLiveSocket {
     );
 
     final socket = GeminiLiveSocket._(channel, controller.stream);
-    socket._send({
-      'setup': {
-        'model': model.startsWith('models/') ? model : 'models/$model',
-        'generationConfig': {
-          'responseModalities': ['AUDIO'],
-        },
-        if (sessionHandle != null && sessionHandle.isNotEmpty)
-          'sessionResumption': {'handle': sessionHandle},
-      },
-    });
+    socket._send({'setup': <String, Object?>{}});
     return socket;
   }
 
@@ -96,10 +66,7 @@ class GeminiLiveSocket {
   void sendAudio(Uint8List pcm16, int sampleRate) {
     _send({
       'realtimeInput': {
-        'audio': {
-          'data': base64Encode(pcm16),
-          'mimeType': 'audio/pcm;rate=$sampleRate',
-        },
+        'audio': {'data': base64Encode(pcm16), 'mimeType': 'audio/pcm;rate=$sampleRate'},
       },
     });
   }
@@ -170,11 +137,15 @@ List<GeminiLiveEvent> parseGeminiLiveMessage(Map<String, dynamic> message) {
 
     final input = _transcript(serverContent['inputTranscription']);
     if (input != null) {
-      events.add(GeminiLiveTranscript(speaker: GeminiSpeaker.user, text: input.$1, finished: input.$2));
+      events.add(
+        GeminiLiveTranscript(speaker: GeminiSpeaker.user, text: input.$1, finished: input.$2),
+      );
     }
     final output = _transcript(serverContent['outputTranscription']);
     if (output != null) {
-      events.add(GeminiLiveTranscript(speaker: GeminiSpeaker.model, text: output.$1, finished: output.$2));
+      events.add(
+        GeminiLiveTranscript(speaker: GeminiSpeaker.model, text: output.$1, finished: output.$2),
+      );
     }
 
     final parts = _mapOf(serverContent['modelTurn'])?['parts'];
@@ -183,7 +154,10 @@ List<GeminiLiveEvent> parseGeminiLiveMessage(Map<String, dynamic> message) {
         final inlineData = _mapOf(_mapOf(part)?['inlineData']);
         final data = inlineData?['data'];
         final mimeType = inlineData?['mimeType'];
-        if (data is String && data.isNotEmpty && mimeType is String && mimeType.startsWith('audio/')) {
+        if (data is String &&
+            data.isNotEmpty &&
+            mimeType is String &&
+            mimeType.startsWith('audio/')) {
           events.add(GeminiLiveAudio(base64Decode(data)));
         }
       }
@@ -237,11 +211,7 @@ class GeminiLiveAudio extends GeminiLiveEvent {
 enum GeminiSpeaker { user, model }
 
 class GeminiLiveTranscript extends GeminiLiveEvent {
-  const GeminiLiveTranscript({
-    required this.speaker,
-    required this.text,
-    required this.finished,
-  });
+  const GeminiLiveTranscript({required this.speaker, required this.text, required this.finished});
 
   final GeminiSpeaker speaker;
   final String text;
@@ -293,6 +263,7 @@ bool isRetryableGeminiDisconnect(String reason) {
     return true;
   }
   const fatal = [
+    'call ended',
     'prepayment credits',
     'billing',
     'quota',

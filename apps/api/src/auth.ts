@@ -71,6 +71,9 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
   });
 
   app.addHook("onRequest", async (request, reply) => {
+    // This one socket route authenticates a call-scoped ticket in its own
+    // preValidation hook. The flag is server-owned route metadata, not input.
+    if (request.routeOptions.config.voiceRelay === true && request.method === "GET" && request.headers.upgrade?.toLowerCase() === "websocket") return;
     const path = pathFromRequestUrl(request.url);
     if (!shouldProtectPath(path)) {
       return;

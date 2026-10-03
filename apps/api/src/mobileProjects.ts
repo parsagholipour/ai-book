@@ -23,6 +23,8 @@ import { registerMobileManuscriptTakeoverRoutes } from "./mobile/routes/manuscri
 import { registerMobileBookNoteRoutes } from "./mobile/routes/notes.js";
 import { registerMobileShareRoutes } from "./mobile/routes/shares.js";
 import { registerMobilePushDeviceRoutes } from "./mobile/routes/pushDevice.js";
+import websocket from "@fastify/websocket";
+import { registerMobileVoiceRelayRoutes } from "./mobile/routes/voiceRelay.js";
 
 /**
  * Composition root for the mobile API.
@@ -37,6 +39,10 @@ import { registerMobilePushDeviceRoutes } from "./mobile/routes/pushDevice.js";
  * import routes, or the test suite.
  */
 export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions> = async (fastify, options) => {
+  await fastify.register(websocket, { options: {
+    maxPayload: 96_000, perMessageDeflate: false,
+    handleProtocols: (protocols) => protocols.has("voice.v1") ? "voice.v1" : false
+  } });
   await ensureSeedTemplates();
   await ensureDefaultProductCatalog();
   const context = createMobileRouteContext(options);
@@ -58,6 +64,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   await registerMobilePlanRoutes(fastify, context);
   await registerMobileExportRoutes(fastify, context);
   await registerMobileVoiceRoutes(fastify, context);
+  await registerMobileVoiceRelayRoutes(fastify);
   await registerMobileAudiobookRoutes(fastify, context);
   await registerMobileCharacterRoutes(fastify, context);
   await registerMobileCharacterImageRoutes(fastify, context);

@@ -835,18 +835,16 @@ export type * from "./manuscript/manuscriptDto.js";
 export type * from "./bookNoteDto.js";
 
 /**
- * Everything the app needs to open its own Gemini Live socket.
- *
- * The token is ephemeral and single-use, and the persona, voice and transcript
- * settings are locked into it server-side — the app cannot widen them. `model`
- * is here because it is a connection parameter the socket handshake requires,
- * not because the app is told which model wrote the book.
+ * A single-use ticket for the server's metered audio relay. Provider tokens
+ * and resumption handles never leave the server.
  */
 export type MobileVoiceCallSessionDto = {
   callId: string;
   characterId: string;
   characterName: string;
   token: string;
+  transport: "relay-v1";
+  socketUrl: string;
   model: string;
   expiresAt: string;
   inputSampleRate: number;

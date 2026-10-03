@@ -16,97 +16,105 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// the one a heartbeat can be holding when the caller hangs up. These pin the
 /// hand-off between the in-flight heartbeat and the end call's final drain.
 void main() {
-  testWidgets(
-    'hanging up waits for the in-flight heartbeat, so a batch it fails to '
-    'deliver still leaves with the end call',
-    (tester) async {
-      final repository = FakeVoiceRepository();
-      final channel = FakeWebSocketChannel();
-      final container = ProviderContainer(
-        overrides: [voiceRepositoryProvider.overrideWithValue(repository)],
-      );
-      addTearDown(container.dispose);
-      final subscription = container.listen(
-        voiceCallControllerProvider,
-        (_, _) {},
-      );
-      addTearDown(subscription.close);
-      final controller = container.read(voiceCallControllerProvider.notifier);
+  test('opens the relay with a private ticket header and no provider setup', () async {
+    final channel = FakeWebSocketChannel();
+    Uri? address;
+    Iterable<String>? sentProtocols;
+    final socket = await GeminiLiveSocket.connect(
+      token: 'relay-ticket',
+      model: 'model',
+      socketUrl: 'wss://api.test/api/mobile/voice/calls/call-1/socket',
+      channelFactory: (uri, {protocols}) {
+        address = uri;
+        sentProtocols = protocols;
+        return channel;
+      },
+    );
+    expect(address!.host, 'api.test');
+    expect(address!.hasQuery, isFalse);
+    expect(sentProtocols, ['voice.v1', 'ticket.relay-ticket']);
+    expect(jsonDecode(channel.sent.single as String), {'setup': <String, dynamic>{}});
+    socket.close();
+    await channel.incoming.close();
+  });
 
-      await controller.dial(
-        projectId: 'project-1',
-        character: keeper,
-        audio: FakeVoiceCallAudio(),
-        recorder: FakeVoiceCallRecorder(),
-        socketConnector: ({required token, required model, sessionHandle}) =>
-            GeminiLiveSocket.connect(
-              token: token,
-              model: model,
-              sessionHandle: sessionHandle,
-              channelFactory: (_) => channel,
-            ),
-      );
+  testWidgets('hanging up waits for the in-flight heartbeat, so a batch it fails to '
+      'deliver still leaves with the end call', (tester) async {
+    final repository = FakeVoiceRepository();
+    final channel = FakeWebSocketChannel();
+    final container = ProviderContainer(
+      overrides: [voiceRepositoryProvider.overrideWithValue(repository)],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(voiceCallControllerProvider, (_, _) {});
+    addTearDown(subscription.close);
+    final controller = container.read(voiceCallControllerProvider.notifier);
+
+    await controller.dial(
+      projectId: 'project-1',
+      character: keeper,
+      audio: FakeVoiceCallAudio(),
+      recorder: FakeVoiceCallRecorder(),
+      socketConnector: ({required token, required model, required socketUrl, sessionHandle}) =>
+          GeminiLiveSocket.connect(
+            token: token,
+            socketUrl: socketUrl,
+            model: model,
+            sessionHandle: sessionHandle,
+            channelFactory: (_, {protocols}) => channel,
+          ),
+    );
+    await tester.pump();
+    expect(container.read(voiceCallControllerProvider).phase, VoiceCallPhase.connected);
+
+    // A finished line settles into the transcript queue.
+    channel.incoming.add(
+      jsonEncode({
+        'serverContent': {
+          'outputTranscription': {'text': 'I keep the light.', 'finished': true},
+        },
+      }),
+    );
+    await tester.pump();
+
+    // The next heartbeat takes that line and stalls on the wire.
+    final gate = repository.heartbeatGate = Completer<void>();
+    repository.failNextHeartbeat = true;
+    await tester.pump(const Duration(seconds: 5));
+    expect(repository.heartbeats, hasLength(1));
+    expect(repository.heartbeats.single, isNotEmpty);
+
+    // hangUp's teardown awaits subscription cancels, whose completion hops
+    // through the real event loop — invisible to tester.pump alone. So the
+    // call is driven by alternating a real yield with a pump; awaiting it
+    // bare would deadlock the fake clock.
+    final hangs = controller.hangUp();
+    var settled = false;
+    unawaited(hangs.whenComplete(() => settled = true));
+    for (var i = 0; i < 10; i += 1) {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pump();
-      expect(
-        container.read(voiceCallControllerProvider).phase,
-        VoiceCallPhase.connected,
-      );
+    }
+    // The heartbeat is still on the wire, so the batch's fate is unknown —
+    // hanging up must not have settled the call yet, let alone drained a
+    // queue whose lines are out with the heartbeat.
+    expect(repository.endedWith, isNull);
+    expect(settled, isFalse);
 
-      // A finished line settles into the transcript queue.
-      channel.incoming.add(
-        jsonEncode({
-          'serverContent': {
-            'outputTranscription': {
-              'text': 'I keep the light.',
-              'finished': true,
-            },
-          },
-        }),
-      );
+    // Now the heartbeat fails: its batch goes back into the queue, and only
+    // then may the final drain run.
+    gate.complete();
+    for (var i = 0; i < 20 && !settled; i += 1) {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await tester.pump();
+    }
+    expect(settled, isTrue);
 
-      // The next heartbeat takes that line and stalls on the wire.
-      final gate = repository.heartbeatGate = Completer<void>();
-      repository.failNextHeartbeat = true;
-      await tester.pump(const Duration(seconds: 5));
-      expect(repository.heartbeats, hasLength(1));
-      expect(repository.heartbeats.single, isNotEmpty);
-
-      // hangUp's teardown awaits subscription cancels, whose completion hops
-      // through the real event loop — invisible to tester.pump alone. So the
-      // call is driven by alternating a real yield with a pump; awaiting it
-      // bare would deadlock the fake clock.
-      final hangs = controller.hangUp();
-      var settled = false;
-      unawaited(hangs.whenComplete(() => settled = true));
-      for (var i = 0; i < 10; i += 1) {
-        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-        await tester.pump();
-      }
-      // The heartbeat is still on the wire, so the batch's fate is unknown —
-      // hanging up must not have settled the call yet, let alone drained a
-      // queue whose lines are out with the heartbeat.
-      expect(repository.endedWith, isNull);
-      expect(settled, isFalse);
-
-      // Now the heartbeat fails: its batch goes back into the queue, and only
-      // then may the final drain run.
-      gate.complete();
-      for (var i = 0; i < 20 && !settled; i += 1) {
-        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-        await tester.pump();
-      }
-      expect(settled, isTrue);
-
-      // The heartbeat failed after taking the batch; the restore has to land
-      // before the drain, or the line is returned to a queue nothing reads.
-      expect(repository.endedWith, isNotNull);
-      expect(
-        repository.endedWith!.map((line) => line.text),
-        contains('I keep the light.'),
-      );
-    },
-  );
+    // The heartbeat failed after taking the batch; the restore has to land
+    // before the drain, or the line is returned to a queue nothing reads.
+    expect(repository.endedWith, isNotNull);
+    expect(repository.endedWith!.map((line) => line.text), contains('I keep the light.'));
+  });
 }
 
 const keeper = VoiceCharacter(
@@ -144,6 +152,7 @@ class FakeVoiceRepository implements VoiceRepository {
     callId: 'call-1',
     characterId: 'character-1',
     characterName: 'The Keeper',
+    socketUrl: 'wss://api.test/api/mobile/voice/calls/call-1/socket',
     token: 'auth_tokens/test',
     model: 'gemini-live-test',
     inputSampleRate: 16000,

@@ -652,6 +652,17 @@ export const mockBilling = (() => {
     getWelcomeCreditsGranted: vi.fn(async () => 1000),
     listActiveUserEntitlements: vi.fn(),
     reserveCredits: vi.fn(),
+    VoiceRelayError: class VoiceRelayError extends Error {
+      constructor(readonly code: string) { super(code); }
+    },
+    startVoiceRelayCall: vi.fn(),
+    saveVoiceRelaySession: vi.fn(),
+    claimVoiceRelayCall: vi.fn(),
+    authorizeVoiceRelay: vi.fn(),
+    finishVoiceRelay: vi.fn(),
+    readVoiceRelayMeter: vi.fn(async () => null),
+    requestVoiceRelayEnd: vi.fn(async () => ({})),
+    recoverVoiceRelayCalls: vi.fn(async () => 0),
     commitReservedCredits: vi.fn(),
     spendCredits: vi.fn(),
     refundCreditLedgerEntry: vi.fn(),

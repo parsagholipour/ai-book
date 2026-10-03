@@ -7,6 +7,8 @@ The short-lived exceptions are deliberate and time-boxed: creation-chat turns an
 call a fast model inline with an explicit timeout (see `mobile/creationBuild.ts` and
 `mobileCreation.ts`), and the share-note moderation gate makes one Jev decision with a 25 s budget
 of its own (`userTextModeration.ts`). Anything that can take more than a few seconds gets a job.
+Mobile voice is a streaming exception: `mobile/voiceRelayConnection.ts` owns a WebSocket pair
+so it can close provider access when its durable billing lease or funded time expires.
 
 ## Route surfaces
 

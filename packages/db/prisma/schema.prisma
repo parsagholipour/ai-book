@@ -1806,9 +1806,10 @@ model SearchGroundingAllowanceCounter {
 ///
 /// Voice is the only operation priced by time, so unlike every other paid
 /// action it needs a durable row: the credit hold has to survive the app being
-/// killed mid-call, and a call nobody settles has to be settleable from the
-/// last heartbeat. `heldCredits` is the sum of the still-RESERVED ledger
-/// entries in `reservationEntryIds`; nothing is spent until the call ends.
+/// killed mid-call. Relay calls commit minute holds before allowing audio,
+/// using a server-owned lease; recovery settles at its last authorized deadline.
+/// `heldCredits` counts still-RESERVED entries; `reservationEntryIds` also keeps
+/// committed minute entries until final settlement refunds unused whole minutes.
 model VoiceCall {
   id                 String    @id @default(cuid())
   userId             String
@@ -1827,9 +1828,19 @@ model VoiceCall {
   chargedCredits     Int       @default(0)
   elapsedSeconds     Int       @default(0)
   endReason          String?
+  /// Mobile calls use an authenticated server relay. Provider credentials
+  /// stay here; the client receives only a random, call-scoped relay ticket.
+  relayTokenHash      String?
+  relaySession        Json?
+  relayLeaseId        String?
+  relayLeaseExpiresAt DateTime?
+  relayConnectedAt   DateTime?
+  relayFundedSeconds Int       @default(0)
+  relayReservedMinutes Int     @default(0)
+  voiceCreditsPerMinute Int?
   /// The tail of what was said, as `[{ speaker, text }]`, uploaded by the app
-  /// while the call runs — audio never reaches us, so neither does a transcript
-  /// unless the client sends one. Opaque JSON: it is read back whole to give
+  /// while the call runs. The relay forwards audio without recording it; the
+  /// client uploads the captions it receives. Opaque JSON: read back whole to give
   /// the character a memory of earlier calls, and never queried into.
   transcript         Json?
   lastHeartbeatAt    DateTime  @default(now())
