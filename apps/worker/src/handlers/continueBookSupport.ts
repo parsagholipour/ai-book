@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { BookPlan, ChapterPlan, PageDraft, PageQualityReport, PriorPageContext } from "@book-maker/core";
+import type { BookPlan, ChapterPlan, EditAdherenceVerdict, PageDraft, PageQualityReport, PriorPageContext } from "@book-maker/core";
 
 /**
  * Pure helpers for the CONTINUE_BOOK job: distributing the priced page budget
@@ -141,6 +141,27 @@ export function continuationPreviousPages(
   return [...byIndex.values()].sort((left, right) => left.index - right.index).slice(-18);
 }
 
+/**
+ * The continuation's own pages after this one. Empty on the first pass, which
+ * drafts front to back; a repair round revises a page whose successors already
+ * exist, and revised blind to them a page re-ended on the very beat the next
+ * one opens with.
+ */
+export function continuationNextPages(
+  candidate: ContinuationContextCandidate,
+  candidates: ReadonlyMap<number, ContinuationContextCandidate>
+): PriorPageContext[] {
+  return [...candidates.values()]
+    .filter((next) => next.pageIndex > candidate.pageIndex)
+    .sort((left, right) => left.pageIndex - right.pageIndex)
+    .map((next) => ({
+      index: next.pageIndex,
+      title: next.draft.title,
+      markdown: next.draft.markdown,
+      summary: next.draft.summary
+    }));
+}
+
 export function continuationContinuityNotes(
   candidate: ContinuationContextCandidate,
   candidates: ReadonlyMap<number, ContinuationContextCandidate>
@@ -171,4 +192,27 @@ export function continuationProseApproved(
   candidates: ReadonlyMap<number, ContinuationContextCandidate>
 ): boolean {
   return [...candidates.values()].every((candidate) => candidate.qualityReport.approved);
+}
+
+/**
+ * A page's title as the adherence reviewer reads it: the chapter it belongs to
+ * first. Shown three bare page titles for "write one new chapter", the reviewer
+ * refused them as "three separately titled units" (2026-10-02), because nothing
+ * said the three were one chapter's pages.
+ */
+export function continuationReviewTitle<T extends ContinuationContextCandidate & { chapter: { index: number; title: string } }>(
+  candidate: T,
+  ordered: readonly T[]
+): string {
+  const siblings = ordered.filter((other) => other.chapter.index === candidate.chapter.index);
+  const position = siblings.indexOf(candidate) + 1;
+  return `Chapter ${candidate.chapter.index} “${candidate.chapter.title}”, page ${position} of ${siblings.length}: ${candidate.draft.title}`;
+}
+
+/** A copy of the candidate set a reviewed, satisfied verdict accepted; null otherwise. */
+export function acceptedContinuationSet<T>(
+  verdict: EditAdherenceVerdict,
+  candidates: Map<number, T>
+): { verdict: EditAdherenceVerdict; candidates: Map<number, T> } | null {
+  return verdict.satisfied && verdict.basis === "reviewed" ? { verdict, candidates: new Map(candidates) } : null;
 }

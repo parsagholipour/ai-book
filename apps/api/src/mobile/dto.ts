@@ -279,6 +279,13 @@ export type MobileCreationBuildPreflightResponseDto = {
   requiresPageCount: boolean;
   detectedPageCount: { targetPages: number; source: MobilePageCountSource } | null;
   recommendations: MobilePageCountRecommendationDto[];
+  /**
+   * The longest book this account may build, or null on a paid plan (held only
+   * to the 600-page schema ceiling). The app reads it to lock the longer
+   * lengths and to offer a plan *before* Build, which would otherwise answer
+   * `PAGE_LIMIT_EXCEEDED` for a chat that asked for a long book.
+   */
+  maxPages: number | null;
 };
 
 export type MobileCreationFinalizeResponseDto = {
@@ -291,7 +298,8 @@ export type MobileCreationFinalizeResponseDto = {
 export type FinalizeOutcome =
   | { ok: true; project: MobileProjectDetailDto; output: MobileCreationOutputDto; operation: MobilePlanOperationDto | null; sessionRevision: number }
   | { ok: false; status: number; code: string; message: string }
-  | { ok: false; insufficient: InsufficientCreditsError };
+  | { ok: false; insufficient: InsufficientCreditsError }
+  | { ok: false; pageLimit: import("./bookPageLimit.js").PageLimitRefusal };
 
 export type MobilePageCountResolution =
   | { resolved: true; targetPages: number; source: MobilePageCountSource; mode: MobilePageCountMode }
@@ -342,6 +350,11 @@ export type MobileProjectImageDto = {
   contentType: string;
   altText: string;
   pageId: string | null;
+  /**
+   * Whether a model drew it. A designed cover and an author's own upload are
+   * not AI content, so the app offers "Report visual" only where this is true.
+   */
+  aiGenerated: boolean;
 };
 
 export type MobilePlanRevisionRequestDto = {
@@ -853,3 +866,6 @@ export type MobileVoiceCallMeterDto = {
   /** "credits" | "limit" | null — what is about to end the call, if anything. */
   endingReason: string | null;
 };
+
+/** `PUT` and `DELETE /api/mobile/push-device`. */
+export type MobilePushDeviceResponseDto = { ok: true };

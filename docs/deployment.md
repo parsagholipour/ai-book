@@ -63,6 +63,9 @@ scratch directories and share files through S3.
 4. Point DNS at the instance and set `PUBLIC_API_URL=https://tomeza.ravanix.app`.
    See [Public hostname and TLS](#public-hostname-and-tls) below for the exact
    Hetzner record, the secret to update, and the post-DNS check.
+5. For book notifications, set up Firebase and add `FCM_SERVICE_ACCOUNT_JSON` to
+   `PRODUCTION_ENV`; see [push-notifications.md](push-notifications.md). Without it
+   everything else works and no pushes are sent.
 
 ## Public hostname and TLS
 
@@ -195,6 +198,25 @@ The workflow does not replace a server to shrink its disk.
 - Successful releases live under `/opt/book-maker/releases/`; `current` points to
   the last successful one. Unused local images older than seven days are pruned.
   ECR images are retained so an earlier image remains available for recovery.
+
+## Releasing an app update
+
+The API and the app ship separately, and installed apps update whenever their owners let Play do
+it, so the API has to keep answering every build still in use.
+
+1. Bump `version:` in `apps/mobile/pubspec.yaml`. The `+N` is the build number (`versionCode`):
+   Play requires it to grow, and it is the number the server compares.
+2. `make mobile-build-release`, upload the AAB, roll out.
+3. Once Play Console shows 100% rollout, wait about a day, then open `/admin/app-updates`, add
+   the release, and choose what it asks of older builds:
+   - **Silent**: nothing shown. Play's auto-update handles it.
+   - **Ask**: a dismissible "update available" on the home screen, once per release.
+   - **Require**: the app shows only "Update Tomeza to keep going", and the API answers 426 to
+     every mobile request from those builds.
+
+   A policy covers every build below its release. Changing one later is a new save, and apps
+   see it within about 30 seconds.
+4. Remove compatibility code for old builds only after you require an update past them.
 
 ## Operations
 

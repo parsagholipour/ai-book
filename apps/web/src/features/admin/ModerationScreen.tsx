@@ -164,6 +164,8 @@ function ReportCard(props: {
 function targetLabel(report: ModerationReport, snapshot: ShareSnapshot | null): string {
   if (snapshot) return `Shared book · ${report.projectTitle ?? snapshot.title ?? "Untitled book"}`;
   if (report.targetType === "project") return report.projectTitle ?? "Untitled book";
+  if (report.targetType === "voice_call") return `Voice call · ${report.projectTitle ?? "saved character"}`;
+  if (report.targetType === "chat_message") return `Chat reply · ${report.projectTitle ?? "Untitled book"}`;
   return `Image · ${report.imageAssetId ?? "unknown"}`;
 }
 

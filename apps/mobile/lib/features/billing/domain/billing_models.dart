@@ -14,6 +14,7 @@ class MobileBilling {
     this.imageQuota,
     this.messageAllowance,
     this.freeTier = const MobileFreeTier(),
+    this.maxBookPages,
   });
 
   final CreditBalance credits;
@@ -35,6 +36,11 @@ class MobileBilling {
   /// Null means this plan has no image limit at all. Only meaningful on free.
   final MobileImageQuota? imageQuota;
   final MessageAllowance? messageAllowance;
+
+  /// The longest book this reader may have written. Null means no free-tier
+  /// cap — any paid plan, held only to the 600-page ceiling — and is also what
+  /// a server that predates the cap sends, so nothing is locked against it.
+  final int? maxBookPages;
 
   factory MobileBilling.fromJson(Map<String, dynamic> json) {
     final entitlements = json['entitlements'] as List<dynamic>;
@@ -75,7 +81,15 @@ class MobileBilling {
       freeTier: freeTier is Map<String, dynamic>
           ? MobileFreeTier.fromJson(freeTier)
           : const MobileFreeTier(),
+      maxBookPages: (json['maxBookPages'] as num?)?.toInt(),
     );
+  }
+
+  /// Whether a book of [pages] is past this reader's length cap — the one
+  /// question every page picker asks before it draws a lock.
+  bool locksBookPages(int pages) {
+    final limit = maxBookPages;
+    return limit != null && pages > limit;
   }
 
   int get activeExportUnlockCount {
@@ -120,17 +134,54 @@ class MobileFreeTier {
     this.monthlyCredits = 1000,
     this.welcomeCredits = 0,
     this.illustratedBooksPerMonth = 3,
+    this.maxBookPages = 30,
   });
 
   final int monthlyCredits;
   final int welcomeCredits;
   final int illustratedBooksPerMonth;
 
+  /// The longest book the free tier writes. Plans go to [maxPlanBookPages].
+  final int maxBookPages;
+
   factory MobileFreeTier.fromJson(Map<String, dynamic> json) {
     return MobileFreeTier(
       monthlyCredits: json['monthlyCredits'] as int? ?? 1000,
       welcomeCredits: json['welcomeCredits'] as int? ?? 0,
       illustratedBooksPerMonth: json['illustratedBooksPerMonth'] as int? ?? 3,
+      maxBookPages: json['maxBookPages'] as int? ?? 30,
+    );
+  }
+}
+
+/// The longest book any plan writes — the server's 600-page request ceiling.
+const maxPlanBookPages = 600;
+
+/// A book the free tier will not write: how long it is allowed to be, and how
+/// long the reader asked for. Read from a `PAGE_LIMIT_EXCEEDED` body or from a
+/// chat reply's `pageLimit` metadata, which carry the same three numbers.
+class BookPageLimit {
+  const BookPageLimit({
+    required this.limit,
+    required this.requestedPages,
+    this.maxPages = maxPlanBookPages,
+  });
+
+  final int limit;
+  final int requestedPages;
+  final int maxPages;
+
+  /// Null unless [json] is a well-formed `pageLimit` object.
+  static BookPageLimit? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final limit = json['limit'];
+    final requested = json['requestedPages'];
+    final max = json['maxPages'];
+    if (limit is! num || requested is! num) return null;
+    return BookPageLimit(
+      limit: limit.toInt(),
+      requestedPages: requested.toInt(),
+      maxPages: max is num ? max.toInt() : maxPlanBookPages,
     );
   }
 }
@@ -318,7 +369,15 @@ class CreditBalance {
 /// What a credit log entry was, in the reader's terms. The server sends the
 /// name; anything it adds later that this list has not caught up with reads as
 /// [CreditLogKind.spend] or [CreditLogKind.bonus] depending on its direction.
-enum CreditLogKind { purchase, subscription, monthly, bonus, spend, refund, expired }
+enum CreditLogKind {
+  purchase,
+  subscription,
+  monthly,
+  bonus,
+  spend,
+  refund,
+  expired,
+}
 
 /// One movement of credits: bought, granted, charged, or given back.
 ///
@@ -478,10 +537,23 @@ class MobileBillingProduct {
 
   String get benefitLabel {
     if (isSubscription) {
-      return '$creditAmount credits each month';
+      return '${formatCredits(creditAmount)} credits each month';
     }
-    return '$creditAmount credits';
+    return '${formatCredits(creditAmount)} credits';
   }
+}
+
+/// A credit amount the way every billing surface prints it: "1,000".
+String formatCredits(int value) {
+  final digits = value.abs().toString();
+  final buffer = StringBuffer(value < 0 ? '-' : '');
+  for (var index = 0; index < digits.length; index += 1) {
+    if (index > 0 && (digits.length - index) % 3 == 0) {
+      buffer.write(',');
+    }
+    buffer.write(digits[index]);
+  }
+  return buffer.toString();
 }
 
 enum StorePurchaseStatus { pending, purchased, restored, error, canceled }

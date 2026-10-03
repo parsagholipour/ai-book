@@ -110,6 +110,9 @@ the server, check here:
   rather than every key, or it invents income from the free tier's *limit* keys.
 - **Exports.** The console downloads via a plain link, so its export routes render inline rather
   than queueing a repair — see `apps/api/src/routes/CLAUDE.md`.
+- **App update releases.** `src/features/admin/appUpdatePolicy.ts` restates the platforms, the
+  policies and how a release list reduces per platform from `apps/api/src/appUpdates.ts`. A new
+  policy or platform lands on both sides.
 
 `src/features/voice/BrowserVoiceRoomClient.ts` and `BrowserVoiceCallClient.ts` are the two largest
 files in the repo and both sit near their grandfathered size ceilings; split rather than grow them.

@@ -34,21 +34,39 @@ export class GeminiSpeechAdapter implements SpeechAdapter {
 
   async synthesize(request: SpeechRequest): Promise<SpeechResult> {
     if (!request.stylePrompt) {
-      return this.speak(request.text, request.voice);
+      return this.speakAgainIfSilent(request.text, request.voice);
     }
     try {
-      return await this.speak(`${request.stylePrompt}\n\n${request.text}`, request.voice);
+      return await this.speakAgainIfSilent(`${request.stylePrompt}\n\n${request.text}`, request.voice);
     } catch (error) {
-      if (!isInvalidArgument(error)) {
+      if (!isInvalidArgument(error) && !(error instanceof SpeechWithoutAudioError)) {
         throw error;
       }
       // The model refuses a small number of otherwise ordinary passages when the
       // performance direction is prefixed to them — a bare `INVALID_ARGUMENT`
       // with no detail, reproducible for that exact pairing and fine for either
-      // half alone. Reading the passage plainly loses the direction for one
-      // chunk; throwing loses the whole audiobook.
-      const result = await this.speak(request.text, request.voice);
+      // half alone — and answers some others with a 200 that holds no audio.
+      // Reading the passage plainly loses the direction for one chunk; throwing
+      // loses the whole audiobook.
+      const result = await this.speakAgainIfSilent(request.text, request.voice);
       return { ...result, stylePromptDropped: true };
+    }
+  }
+
+  /**
+   * A 200 with no audio in it is asked once more before it counts. One such
+   * answer, a chunk of the first chapter of a two-chapter book, failed and
+   * refunded the whole narration (2026-10-02); nothing upstream retries it,
+   * because it is not shaped like a network failure.
+   */
+  private async speakAgainIfSilent(text: string, voice: string): Promise<SpeechResult> {
+    try {
+      return await this.speak(text, voice);
+    } catch (error) {
+      if (!(error instanceof SpeechWithoutAudioError)) {
+        throw error;
+      }
+      return this.speak(text, voice);
     }
   }
 
@@ -101,6 +119,9 @@ export class GeminiSpeechAdapter implements SpeechAdapter {
   }
 }
 
+/** The model answered, but not in speech: a 200 whose parts hold no audio. */
+export class SpeechWithoutAudioError extends Error {}
+
 /** A refusal of this particular text — retrying it unchanged will fail the same way. */
 function isInvalidArgument(error: unknown): boolean {
   return error instanceof ProviderHttpError && error.status === 400;
@@ -140,5 +161,8 @@ function inlineAudioFromResponse(response: unknown, model: string): { data: stri
     return { data, ...(mimeType ? { mimeType } : {}) };
   }
 
-  throw new Error(`Gemini TTS model ${model} did not return audio.`);
+  const finishReason = (response as { candidates?: Array<{ finishReason?: unknown }> } | null)?.candidates?.[0]?.finishReason;
+  throw new SpeechWithoutAudioError(
+    `Gemini TTS model ${model} did not return audio${typeof finishReason === "string" ? ` (finish reason ${finishReason})` : ""}.`
+  );
 }

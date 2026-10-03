@@ -11,6 +11,7 @@ import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
+import 'page_limit_unlock_row.dart';
 import 'project_chat_composer.dart';
 import 'saved_export_card.dart';
 
@@ -268,6 +269,7 @@ class ProjectMessageBubble extends StatelessWidget {
     this.applyingProposal = false,
     this.proposalOutcome,
     this.onReply,
+    this.onReport,
     this.onStartEdit,
     this.onCancelEdit,
     this.onSubmitEdit,
@@ -301,6 +303,9 @@ class ProjectMessageBubble extends StatelessWidget {
   /// Quotes this message in the composer. Null while the message is being
   /// edited, since the two modes are mutually exclusive.
   final VoidCallback? onReply;
+
+  /// Reports this AI reply for review. Null on the reader's own messages.
+  final VoidCallback? onReport;
   final VoidCallback? onStartEdit;
   final VoidCallback? onCancelEdit;
   final VoidCallback? onSubmitEdit;
@@ -340,6 +345,7 @@ class ProjectMessageBubble extends StatelessWidget {
         message: chatBubbleCopyText(message.content, role: message.role),
         onEdit: isUser ? onStartEdit : null,
         onReply: startReply,
+        onReport: isUser || editing ? null : onReport,
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
@@ -416,6 +422,13 @@ class ProjectMessageBubble extends StatelessWidget {
                   _AddCreditsRow(
                     credits: message.insufficientCreditsRequired,
                     onPressed: onOpenPaywall!,
+                  ),
+                ],
+                if (message.isAssistant && message.pageLimit != null) ...[
+                  const SizedBox(height: 10),
+                  PageLimitUnlockRow(
+                    limit: message.pageLimit!,
+                    projectId: message.projectId,
                   ),
                 ],
                 if (onOpenReplanCopy != null) ...[

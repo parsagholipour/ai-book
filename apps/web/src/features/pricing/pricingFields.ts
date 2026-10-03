@@ -3,7 +3,7 @@ import type { CreditPricingKey } from "./types.js";
 export type PricingFieldGroup = {
   title: string;
   blurb: string;
-  fields: Array<{ key: CreditPricingKey; label: string; help: string }>;
+  fields: Array<{ key: CreditPricingKey; label: string; help: string; toggle?: boolean }>;
 };
 
 /**
@@ -19,6 +19,19 @@ export type PricingFieldGroup = {
  * the same thing — abuse, or a margin that moved.
  */
 export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
+  {
+    title: "Welcome credits",
+    blurb: "A one-time gift for new accounts, separate from monthly credits. Set how many accounts from the same IP can receive it within 30 days. Changes affect grants that have not settled yet; existing balances stay the same.",
+    fields: [
+      { key: "welcomeCreditsEnabled", label: "Give welcome credits", toggle: true, help: "Turn the welcome gift on or off for all new accounts." },
+      { key: "welcomeCreditsRegionalEnabled", label: "Use country income groups", toggle: true, help: "Use the signup country's World Bank FY2027 income group. All EU/EEA countries receive the same offer." },
+      { key: "welcomeCredits", label: "Global / fallback credits", help: "Used everywhere when regional amounts are off, or for other and unknown locations when on. 0 means no gift." },
+      { key: "welcomeCreditsHighIncome", label: "High-income countries", help: "US, Canada, EU/EEA, UK, Australia, Japan, South Korea, Singapore, UAE and other high-income economies. 0 means no gift." },
+      { key: "welcomeCreditsLowMiddleIncome", label: "Low- and middle-income countries", help: "India, Pakistan, Bangladesh, Indonesia, China, Brazil, South Africa and other low- or middle-income economies. 0 means no gift." },
+      { key: "welcomeCreditsAccountsPerIpHighIncome", label: "Accounts per IP — High-income countries", help: "Maximum accounts that can receive welcome credits from one IP within 30 days. Applies even when regional credit amounts are off. 0 disables the gift for this group." },
+      { key: "welcomeCreditsAccountsPerIpLowMiddleIncome", label: "Accounts per IP — Low- and middle-income countries", help: "Maximum accounts that can receive welcome credits from one IP within 30 days, including unknown locations. Applies even when regional credit amounts are off. 0 disables the gift for this group." }
+    ]
+  },
   ...(["Free", "Creator", "Pro", "Max"] as const).map((plan): PricingFieldGroup => ({
     title: `Ordinary messages — ${plan}`,
     blurb: "Shared across creation and book chats. The allowance renews at midnight UTC. A reset restores the full allowance until that same midnight.",
@@ -128,16 +141,6 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
         help: "Credits a free reader gets each calendar month. Unused credits do not carry over."
       },
       {
-        key: "welcomeCredits",
-        label: "Welcome credits",
-        help: "Granted once, when a new account first opens the app. Never expires."
-      },
-      {
-        key: "welcomeCreditsEnabled",
-        label: "Give welcome credits",
-        help: "1 grants welcome credits to new accounts; 0 turns them off. A second account from the same IP within 30 days is not credited, silently."
-      },
-      {
         key: "freeIllustratedBooksPerMonth",
         label: "Illustrated books a month",
         help: "After this, a free reader can still write books, but only without visuals."
@@ -146,6 +149,11 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
         key: "freeManuscriptImportsPerMonth",
         label: "Manuscript imports a month",
         help: "Bring-your-own-book uploads on the free plan. Subscribers import without limits."
+      },
+      {
+        key: "freeMaxBookPages",
+        label: "Longest free book (pages)",
+        help: "The longest book a free reader can have written. Longer books, up to 600 pages, need a plan. 0 stops every free book."
       }
     ]
   }

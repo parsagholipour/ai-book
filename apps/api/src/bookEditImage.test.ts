@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clippedImageSubject,
+  describedImageSubject,
   imageLayoutProposalSummary,
   imageLayoutQueuedMessage,
   imageInsertionIntentFromDecision,
@@ -358,6 +359,26 @@ describe("layout copy", () => {
         targets: [{ ...target, pageIndex: 4 }]
       })
     ).toBe("I’ll move that illustration to the bottom of page 4 and refresh the exports.");
+  });
+
+  it("quotes a subject only when it describes the picture, never a locator standing in for one", () => {
+    // Live, 2026-10-02: the picture finder writes "the illustration on page N"
+    // when a row names nothing, and a hero's alt is "Illustration".
+    for (const oldSubject of ["the illustration on page 1", "Illustration", "the picture", "this image on page 3."]) {
+      expect(
+        imageLayoutProposalSummary("move_image", [1], {
+          action: "move",
+          destPlacement: "page",
+          destPageIndex: 1,
+          destPosition: "bottom",
+          targets: [{ ...target, oldSubject }]
+        })
+      ).toBe("Move the illustration to the bottom of page 1");
+      expect(imageLayoutProposalSummary("remove_image", [1], { action: "remove", targets: [{ ...target, oldSubject }] })).toBe(
+        "Remove the illustration on page 1"
+      );
+    }
+    expect(describedImageSubject("a picture of the moon over the sea")).toBe("a picture of the moon over the sea");
   });
 
   it("keeps the single-picture wording it always had", () => {

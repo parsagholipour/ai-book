@@ -22,6 +22,7 @@ import { registerMobileManuscriptCoverRoutes } from "./mobile/routes/manuscriptC
 import { registerMobileManuscriptTakeoverRoutes } from "./mobile/routes/manuscriptTakeover.js";
 import { registerMobileBookNoteRoutes } from "./mobile/routes/notes.js";
 import { registerMobileShareRoutes } from "./mobile/routes/shares.js";
+import { registerMobilePushDeviceRoutes } from "./mobile/routes/pushDevice.js";
 
 /**
  * Composition root for the mobile API.
@@ -66,6 +67,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   await registerMobileManuscriptTakeoverRoutes(fastify, context);
   await registerMobileBookNoteRoutes(fastify, context);
   await registerMobileShareRoutes(fastify, context);
+  await registerMobilePushDeviceRoutes(fastify, context);
 };
 
 export { MOBILE_PRODUCT_PRESETS, mobileAuthError } from "./mobile/schemas.js";

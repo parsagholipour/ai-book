@@ -116,6 +116,8 @@ export type BookPdfDocumentOptions = {
    * resolves each marker onto a real box.
    */
   pageAnchorNav?: string | undefined;
+  /** The document's `<title>`, which Chrome writes as the PDF's Title metadata. */
+  title?: string | undefined;
 };
 
 /**
@@ -135,7 +137,9 @@ export async function buildBookPdfDocument(options: BookPdfDocumentOptions): Pro
       stripEmbeddedDocuments(
         math.restore(getHtml(math.markdown, {
           ...defaultConfig,
-          document_title: "",
+          // md-to-pdf interpolates this into `<title>` unescaped, and a book's
+          // title is reader text.
+          document_title: escapeDocumentTitle(options.title ?? ""),
           body_class: []
         }))
       )
@@ -151,6 +155,16 @@ export async function buildBookPdfDocument(options: BookPdfDocumentOptions): Pro
   // Function replacers throughout: a `$&` or `$'` inside a stylesheet or the
   // book's own prose would otherwise be expanded by `String.replace`.
   return withDocumentLanguage(html, options.profile).replace("</head>", () => `${styles}</head>`);
+}
+
+function escapeDocumentTitle(title: string): string {
+  return title
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**

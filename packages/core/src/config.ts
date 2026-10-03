@@ -142,6 +142,20 @@ const envSchema = z.object({
   GOOGLE_PLAY_ACCESS_TOKEN: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT_FILE: z.string().optional(),
+  /**
+   * Firebase Cloud Messaging, for the app's book-progress and book-ready
+   * notifications: a service-account key of the Firebase project the app's
+   * `google-services.json` belongs to, allowed to send messages. FCM is called
+   * for the key's own `project_id` unless FCM_PROJECT_ID names another. With
+   * neither key set (and MOCK_PUSH off) the API sends no pushes at all.
+   */
+  FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  FCM_SERVICE_ACCOUNT_FILE: z.string().optional(),
+  FCM_PROJECT_ID: z.string().optional(),
+  MOCK_PUSH: z
+    .string()
+    .optional()
+    .transform(booleanEnv("MOCK_PUSH")),
   WEB_PORT: z.coerce.number().int().positive().default(5173),
   WEB_PASSWORD: z
     .string()
@@ -198,10 +212,21 @@ const envSchema = z.object({
   MOCK_GOOGLE_PLAY_BILLING: z
     .string()
     .optional()
-    .transform(booleanEnv("MOCK_GOOGLE_PLAY_BILLING"))
-}).transform(({ NODE_ENV, PORT, RAILWAY_ENVIRONMENT, API_PORT, MOCK_AI, MOCK_GOOGLE_PLAY_BILLING, MOCK_EMAIL, ...env }) => {
+    .transform(booleanEnv("MOCK_GOOGLE_PLAY_BILLING")),
+  /** Set only by `scripts/check-production-docker.sh`, which runs the production images on mock providers. */
+  ALLOW_MOCK_AI_IN_PRODUCTION: z
+    .string()
+    .optional()
+    .transform((value) => booleanEnv("ALLOW_MOCK_AI_IN_PRODUCTION")(value) ?? false)
+}).transform(({ NODE_ENV, PORT, RAILWAY_ENVIRONMENT, API_PORT, MOCK_AI, MOCK_GOOGLE_PLAY_BILLING, MOCK_EMAIL, MOCK_PUSH, ALLOW_MOCK_AI_IN_PRODUCTION, ...env }) => {
   const nodeEnv = NODE_ENV?.trim() || undefined;
   const devMode = nodeEnv === "development" || nodeEnv === "test";
+  // The billing and email mocks are forced off outside dev below; the AI mock
+  // cannot be, because a staging stack runs on it — so production refuses to
+  // start with it on rather than answer paying readers with canned text.
+  if (nodeEnv === "production" && MOCK_AI && !ALLOW_MOCK_AI_IN_PRODUCTION) {
+    throw new Error("MOCK_AI must be off in production: it answers every generation with canned text.");
+  }
   return {
     ...env,
     NODE_ENV: nodeEnv,
@@ -210,6 +235,9 @@ const envSchema = z.object({
     // Same shape as the Play mock: on by default in dev so the reset code lands
     // in the API log instead of requiring an SMTP server, never on in prod.
     MOCK_EMAIL: devMode ? MOCK_EMAIL ?? true : false,
+    // Same again: in dev a push is a log line unless MOCK_PUSH=false asks for
+    // the real FCM call, and production never fakes one.
+    MOCK_PUSH: devMode ? MOCK_PUSH ?? true : false,
     API_PORT: RAILWAY_ENVIRONMENT ? PORT ?? API_PORT ?? 4001 : API_PORT ?? PORT ?? 4001
   };
 });

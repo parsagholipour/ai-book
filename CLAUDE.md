@@ -251,10 +251,14 @@ code in that area, however obvious the rule looks.
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
 - **A plan period cut short is *adopted*, not re-granted.** → packages/db/CLAUDE.md
 - **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat `add_image` Apply.** → apps/api/src/mobile/CLAUDE.md
+- **The free tier's book length is a rule asked at every door that starts generating a book, not a quota.** → apps/api/src/mobile/CLAUDE.md
 - **Reading a book in the app spends nothing; only taking its file out spends the export unlock, and the app asks first.** → apps/api/src/mobile/CLAUDE.md
 - **Chat replies never name a credit price.** → apps/api/src/mobile/CLAUDE.md
+- **A credit-history line names what a charge bought, never the rate it was billed at.** → apps/api/src/mobile/CLAUDE.md
 - **A price key with no tier suffix is the *balanced* rate.** → packages/core/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md
 - **Credit prices are operator-editable, not constants.** → packages/core/CLAUDE.md
+- **A subscription token is granted only for the plan its own line items name, and the server acknowledges what it records.** → apps/api/src/mobile/CLAUDE.md
+- **A deletion request is carried out a day after it is made, and the user row stays as a tombstone that keeps the financial records.** → apps/api/CLAUDE.md
 
 ### Chat, edits and back matter
 
@@ -269,15 +273,19 @@ code in that area, however obvious the rule looks.
 - **A grounded search is priced at its tokens plus the grounding fee Google actually bills — nothing inside its pool's free allowance, list price past it — and on 2.5 Flash it runs with thinking off.** → packages/core/src/adapters/CLAUDE.md + packages/db/CLAUDE.md
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
 - **A picture book's page design is not page text either, and it is changed only where it shows.** → apps/api/src/mobile/CLAUDE.md
+- **A book's title is not page text either, and only an AI cover makes changing it cost anything.** → apps/api/src/mobile/CLAUDE.md
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
 - **A model-backed page edit is patches first and a page second, and only a rewrite answers to page QA.** → apps/worker/src/handlers/CLAUDE.md + packages/core/src/generation/CLAUDE.md
 - **A rewrite that kept the page's prose inherits the page's approval.** → apps/worker/src/generation/CLAUDE.md
 - **A request about one kind of content is an edit of the pages that carry it, and the router is told what each page carries.** → apps/api/src/mobile/CLAUDE.md
 - **Every adherence prompt names its keys and shows the shape, or the guard is inert on a real model.** → packages/core/src/generation/CLAUDE.md
+- **A keep-the-same clause is consistency, never a list of things to show.** → packages/core/src/generation/CLAUDE.md
+- **A page-QA repair round may improve a set the adherence reviewer accepted, never cost it.** → apps/worker/src/handlers/CLAUDE.md
 - **The model-free recogniser fires only when the verb's object *is* the page.** → apps/api/src/mobile/CLAUDE.md
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.** → apps/api/src/mobile/CLAUDE.md
 - **A chat reply is light markdown on both sides of the wire, and neither side may forget the other.** → apps/mobile/lib/features/projects/CLAUDE.md
 - **Changing *which* pages a book has is its own edit, and it used to be a whole new project.** → apps/api/src/mobile/CLAUDE.md
+- **A page change is one action, read by code where the reader spoke only numbers, and words that only locate or excuse a page are not prose to price.** → apps/api/src/mobile/CLAUDE.md
 - **Undoing a structural edit moves the book to a different plan version, and the recompile has to follow it there.** → packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **Undo is offered only for an edit the undo would actually revert, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md
 - **Redo is offered only for an undone edit the redo would actually restore, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md
@@ -296,6 +304,7 @@ code in that area, however obvious the rule looks.
 - **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate beat and never blocks.** → packages/core/src/generation/CLAUDE.md
 - **A brief prompt names its JSON keys and shows the shape; prose alone has the model spelling them from the words.** → packages/core/src/generation/CLAUDE.md
 - **A reply cut off by its output budget is asked for once more at a wider budget, outside the repair count.** → packages/core/src/generation/CLAUDE.md
+- **A page is shown where the page before it ends, and a page drafted for an edit is repaired like a generated one.** → packages/core/src/generation/CLAUDE.md
 - **A figure is a fenced block the compose call alone is shown, every later pass reads around, and the exporters draw.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
 - **Every per-page path reads a stored figure as its stand-in and stores no figure of its own.** → apps/worker/src/generation/CLAUDE.md
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind panel names the performance; content assignments are the only lever that moved.** → packages/core/src/generation/CLAUDE.md
@@ -440,6 +449,8 @@ code in that area, however obvious the rule looks.
 - **The in-app reader renders the compiled `book.pdf` with pdfrx (PDFium).** → apps/mobile/lib/features/reader/CLAUDE.md
 - **The description field refuses rather than truncates, so its bound is a ceiling well above the cap and a mention scan that stops at it.** → apps/mobile/lib/features/characters/CLAUDE.md
 - **The reader places the rendered page before it places the selection.** → apps/mobile/lib/features/reader/CLAUDE.md
+- **An app update is a policy per store release, and only a build that already sends its build number can ever be retired.** → apps/api/CLAUDE.md
+- **A book push is decided by the API's sweep from the status the app already reads, and its ending is sent only by the delete that claims the book's row.** → apps/api/CLAUDE.md + apps/mobile/CLAUDE.md
 
 ### Admin dashboards and cost accounting
 
@@ -457,6 +468,7 @@ code in that area, however obvious the rule looks.
 - **A publish stamps no `publicationRevision`, and its compile and cover are rows in its own commit.** → apps/api/src/mobile/CLAUDE.md
 - **The working copy never overwrites the book blindly: drift is a conflict, not a merge.** → apps/api/src/mobile/CLAUDE.md
 - **An author's book refuses every generation route.** → apps/api/src/mobile/CLAUDE.md
+- **An author's book offers no book report, and a picture offers one only if a model drew it.** → apps/api/src/mobile/CLAUDE.md
 - **An uploaded picture never makes a book "illustrated".** → apps/api/src/mobile/CLAUDE.md
 - **Studio text is screened where it leaves the working copy, in request-sized windows, and never on autosave.** → apps/api/src/mobile/CLAUDE.md
 - **A Studio picture is reclaimed only when no row of its book names it and neither the picture nor the working copy has changed for 30 days.** → apps/api/src/mobile/CLAUDE.md

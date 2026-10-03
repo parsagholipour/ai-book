@@ -238,7 +238,7 @@ export function classifyWithDegradedHeuristics(
     // structural *page* edit now, and routing it here forked a whole new
     // project and regenerated the book to add three pages to it.
     /\b(add|remove|delete|new)\s+(a\s+)?(chapter|section)\b/i.test(message) ||
-    /\b(change|switch|replace|swap|turn|make|move|reorder|restructure)\b.{0,80}\b(audience|premise|book type|length|structure|outline|plan|ending|title|cover|visual identity|illustration style)\b/i.test(
+    /\b(change|switch|replace|swap|turn|make|move|reorder|restructure)\b.{0,80}\b(audience|premise|book type|length|structure|outline|plan|ending|cover|visual identity|illustration style)\b/i.test(
       message
     ) ||
     /\b(change|switch|replace|swap|turn|make)\b.{0,80}\b(main character|character|protagonist|hero|species|animal)\b/i.test(
@@ -478,6 +478,26 @@ export function classifyWithDegradedHeuristics(
       clarification: "none",
       targetLanguage,
       ...(replanSettings ? { replanSettings } : {})
+    };
+  }
+
+  // The book's title is printed from its details, never rebuilt: a title the
+  // reader spelled out was read before the heuristics, and one they did not
+  // ("make the title catchier") is the one question to ask. It used to sit in
+  // the rebuild battery below, quoting a whole book for a new title.
+  if (
+    /\b(?:change|rename|retitle|make|update|improve)\b.{0,40}\b(?:the|my|this|book['’]s)\s+(?:book\s+)?title\b/i.test(message) &&
+    !/\b(?:chapter|page|section)s?\b/i.test(message)
+  ) {
+    return {
+      kind: "clarify",
+      confidence: 0.6,
+      reasoning: "A new book title with no title named.",
+      affectedPageIndexes: [],
+      assistantMessage: "What should the new title be?",
+      scope: "none",
+      impact: "small_text",
+      clarification: "scope"
     };
   }
 

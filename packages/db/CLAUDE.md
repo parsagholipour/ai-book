@@ -684,8 +684,13 @@ diff rather than by silently reordering rows.
 - **Welcome credits are granted lazily, once, not by a cron.** Signup writes a PENDING
   `WelcomeCreditGrant`; `ensureCurrentPlanPeriod` settles it on the first balance read or reserve.
   The operator toggle and amount live on the price list (`welcomeCreditsEnabled`, `welcomeCredits`).
-  Same-IP inside 30 days settles silent RECENT_IP; a missing IP settles silent NO_IP — neither
-  writes a ledger GRANT. A user with no row is never welcomed. Credits land in the purchased pool;
+  `welcomeCreditIpLimit` reads the signup country's cap from
+  `welcomeCreditsAccountsPerIpHighIncome` or `welcomeCreditsAccountsPerIpLowMiddleIncome`
+  (defaults two and one). Unknown countries use the latter; zero settles DISABLED.
+  Caps apply inside 30 days even with regional amounts disabled, and all successful same-IP
+  grants count toward the quota. Further claims settle silent
+  RECENT_IP; a missing IP settles silent NO_IP — neither writes a ledger GRANT.
+  A user with no row is never welcomed. Credits land in the purchased pool;
   the free monthly allowance is a separate expiring grant (see below).
 - **The free month is granted lazily, not by a cron.** `ensureCurrentPlanPeriod` runs at the top of
   `reserveCredits` and before `serializeMobileBilling`, so anyone who can spend or look has already

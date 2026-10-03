@@ -56,9 +56,28 @@ describe("project artifact serializers", () => {
       url: expect.stringMatching(/^\/api\/mobile\/projects\/project-1\/assets\/asset-1\?v=[A-Za-z0-9_-]{12}$/),
       contentType: "image/webp",
       altText: "A useful diagram",
-      pageId: "page-1"
+      pageId: "page-1",
+      aiGenerated: true
     });
     expect(JSON.stringify({ plan, image })).not.toMatch(/provider|model|planningPackage|path/);
+  });
+
+  it("says a model drew a picture only where one did, so only those are offered for reporting", () => {
+    const record = (metadata: unknown): MobileImageRecord => ({
+      id: "cover-1",
+      projectId: "project-1",
+      pageId: null,
+      type: "COVER",
+      path: "/assets/images/project-1/cover.jpg",
+      metadata
+    });
+    const drawn = (metadata: unknown) => serializeImage(record(metadata), "cover", "Cover")!.aiGenerated;
+    expect(drawn({ coverArtSource: "design", coverDesignId: "moonlit-sea" })).toBe(false);
+    expect(drawn({ source: "upload", costUsd: 0 })).toBe(false);
+    expect(drawn({ coverArtSource: "ai" })).toBe(true);
+    // A cover from before the field, and every page illustration, was drawn.
+    expect(drawn({})).toBe(true);
+    expect(drawn(null)).toBe(true);
   });
 
   describe("an image URL carries its version", () => {

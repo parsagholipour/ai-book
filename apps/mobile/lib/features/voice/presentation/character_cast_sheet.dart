@@ -10,6 +10,7 @@ import '../data/voice_repository.dart';
 import '../domain/voice_models.dart';
 import 'voice_call_avatar.dart';
 import 'voice_call_launcher.dart';
+import '../../billing/domain/billing_models.dart';
 
 /// "Who do you want to talk to?"
 ///
@@ -138,7 +139,7 @@ class _CastList extends StatelessWidget {
             AppMetricChip(
               icon: Icons.toll_outlined,
               label: 'Balance',
-              value: '${cast.availableCredits} credits',
+              value: '${formatCredits(cast.availableCredits)} credits',
             ),
             if (cast.maxCallSeconds > 0)
               AppMetricChip(

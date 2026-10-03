@@ -3880,3 +3880,77 @@ figcaption {
 .quality-stage-effort-reason { margin: 6px 0 12px; font-size: 13px; }
 .quality-stage-row .quality-model-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 @media (max-width: 760px) { .quality-stage-row .quality-model-pair { grid-template-columns: 1fr; } }
+
+/* App updates (admin) */
+.app-updates-card {
+  display: grid;
+  gap: 14px;
+}
+
+.app-updates-card p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.app-updates-effects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.app-updates-effects li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid #bfd0c6;
+  border-radius: 10px;
+  background: #f8fbf7;
+}
+
+.app-updates-table select,
+.app-updates-table input {
+  min-width: 180px;
+}
+
+.app-updates-add {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #ece7dc;
+}
+
+.app-updates-add h4 {
+  margin: 0;
+}
+
+.app-updates-add-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.app-updates-add > button {
+  justify-self: start;
+}
+
+.app-updates-problem {
+  color: #8e3c2f;
+}
+
+.app-updates-warning {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid #e0c48a;
+  border-radius: 8px;
+  background: #fdf7ea;
+  color: #6b4e14;
+}
+
+.app-updates-warning svg {
+  flex: none;
+  margin-top: 3px;
+}

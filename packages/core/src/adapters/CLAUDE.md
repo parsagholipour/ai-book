@@ -721,4 +721,8 @@ to run.
   response names, which `withRecoverableNetworkRetry` waits out instead of backing off blindly —
   but only up to `PROVIDER_RETRY_AFTER_CEILING_MS`. A cooldown longer than that is the *daily* cap,
   not the per-minute one, so `isRecoverableNetworkError` calls it unrecoverable and every layer
-  gives up at once rather than spending its whole budget failing the same way.
+  gives up at once rather than spending its whole budget failing the same way. A 200 that holds
+  no audio (`SpeechWithoutAudioError`) is the fourth shape, and nothing upstream retries it because
+  it is not a network failure: one such answer failed and refunded a whole two-chapter narration
+  (2026-10-02). `speakAgainIfSilent` asks once more, and a directed chunk that stays silent is read
+  plainly, the same way guard (1) reads a refused one.

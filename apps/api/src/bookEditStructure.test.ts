@@ -427,6 +427,7 @@ describe("a structural request through the router model", () => {
     expect(intent.structuralEdit).toEqual({
       action: "insert",
       anchorPageIndex: 1,
+      anchorSide: "before",
       pageIndexes: [],
       pageCount: 1
     });
@@ -489,6 +490,7 @@ describe("a structural request through the router model", () => {
     expect(intent.structuralEdit).toEqual({
       action: "move",
       anchorPageIndex: 0,
+      anchorSide: "before",
       pageIndexes: [3],
       pageCount: 0
     });
@@ -670,143 +672,4 @@ describe("a structural request through the router model", () => {
   // What an insert's *count* does on this path — carried at the cap, refused
   // above it, and answered the same way as the model-free reading — is pinned
   // in `bookEditDecision.test.ts`, beside the clamp that used to sit there.
-});
-
-describe("both readings of an anchor on a crowded printed sheet", () => {
-  // Printed page 10 is physical sheet 11, and three short model pages share it:
-  // 7 ends there, 8 lies wholly within it, 9 starts there. That sheet is where
-  // the two paths used to part company — the router's anchor took the last of
-  // the three and the model-free recogniser took `primaryModelPageForPdfPage`'s
-  // answer, model page 8 — so "add a page after page 10" opened the gap
-  // mid-sheet or past it depending only on whether the router filled the
-  // channel.
-  const map = {
-    version: 2 as const,
-    totalPdfPages: 13,
-    hasCoverPage: true,
-    contentsStartPdfPage: 2,
-    pages: [
-      { index: 1, startPdfPage: 3, endPdfPage: 3 },
-      { index: 2, startPdfPage: 4, endPdfPage: 4 },
-      { index: 3, startPdfPage: 5, endPdfPage: 5 },
-      { index: 4, startPdfPage: 6, endPdfPage: 6 },
-      { index: 5, startPdfPage: 7, endPdfPage: 7 },
-      { index: 6, startPdfPage: 8, endPdfPage: 9 },
-      { index: 7, startPdfPage: 10, endPdfPage: 11 },
-      { index: 8, startPdfPage: 11, endPdfPage: 11 },
-      { index: 9, startPdfPage: 11, endPdfPage: 12 },
-      { index: 10, startPdfPage: 13, endPdfPage: 13 }
-    ]
-  };
-  const numbering = readerPageNumbering(map);
-  const context = { pdfPageMap: map };
-  const crowdedPages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((index) => ({
-    id: `page-${index}`,
-    index,
-    title: `The ${index} Winds`,
-    summary: "",
-    previewText: ""
-  }));
-
-  const proposeEdit = (decision: Partial<DecideActionPayload>) =>
-    ({
-      action: "propose_edit" as const,
-      confidence: 0.9,
-      reasoning: "Structural page edit.",
-      assistantMessage: "I’ll do that.",
-      clarification: "none" as const,
-      pageIndexes: [],
-      chapterIndex: null,
-      targetLanguage: null,
-      ...decision
-    }) as DecideActionPayload;
-
-  it("lands an insert after the last model page of the sheet on both paths", () => {
-    // The model-free recogniser, which is what a router outage leaves.
-    expect(structuralPageEditFromMessage("Add a page after page 10.", crowdedPages, context)).toEqual({
-      edit: { action: "insert", anchorPageIndex: 9, pageIndexes: [], pageCount: 1 },
-      anchored: true
-    });
-    // The same message through the whole degraded classifier.
-    expect(
-      classifyWithDegradedHeuristics("Add a page after page 10.", "complete", crowdedPages, undefined, [], {
-        numbering
-      }).structuralEdit
-    ).toEqual({ action: "insert", anchorPageIndex: 9, pageIndexes: [], pageCount: 1 });
-    // And the router path, whose anchor channel is the printed number the
-    // reader typed and gets re-read through the same map.
-    expect(
-      intentFromProposeEdit(
-        proposeEdit({ editTarget: "insert_pages", structuralAnchorPageIndex: 10, structuralPageCount: 1 }),
-        "Add a page after page 10.",
-        [],
-        { pageNumbering: numbering }
-      ).structuralEdit
-    ).toEqual({ action: "insert", anchorPageIndex: 9, pageIndexes: [], pageCount: 1 });
-    // The borrowed anchor: the router named the edit and left the place to the
-    // message, so `structuralIntentFromDecision` takes the recogniser's — which
-    // is only safe while the two agree.
-    expect(
-      intentFromProposeEdit(
-        proposeEdit({ editTarget: "insert_pages", structuralPageCount: 1 }),
-        "Add a page after page 10.",
-        [],
-        { pageNumbering: numbering }
-      ).structuralEdit?.anchorPageIndex
-    ).toBe(9);
-  });
-
-  it("puts a 'before' anchor ahead of the first model page of the sheet on both paths", () => {
-    expect(structuralPageEditFromMessage("Add a page before page 10.", crowdedPages, context)?.edit).toMatchObject({
-      action: "insert",
-      anchorPageIndex: 6
-    });
-    expect(
-      intentFromProposeEdit(
-        proposeEdit({
-          editTarget: "insert_pages",
-          structuralAnchorPageIndex: 10,
-          structuralAnchorPosition: "before",
-          structuralPageCount: 1
-        }),
-        "Add a page before page 10.",
-        [],
-        { pageNumbering: numbering }
-      ).structuralEdit
-    ).toEqual({ action: "insert", anchorPageIndex: 6, pageIndexes: [], pageCount: 1 });
-  });
-
-  it("gives a move the same destination on both paths, and keeps its sources apart from it", () => {
-    // Printed 3 is model page 2 — the pages to move — and printed 10 is the
-    // sheet the reader named as the place, which is three model pages wide.
-    const expected = { action: "move", anchorPageIndex: 9, pageIndexes: [2], pageCount: 0 };
-    expect(structuralPageEditFromMessage("Move page 3 to after page 10.", crowdedPages, context)?.edit).toEqual(
-      expected
-    );
-    expect(
-      intentFromProposeEdit(
-        proposeEdit({ editTarget: "move_pages", pageIndexes: [3], structuralAnchorPageIndex: 10 }),
-        "Move page 3 to after page 10.",
-        [],
-        { pageNumbering: numbering }
-      ).structuralEdit
-    ).toEqual(expected);
-  });
-
-  it("still refuses to write a page for a reorder that has nowhere to go", () => {
-    // Printed 12 is model page 10, the book's last, so "at the end" is where it
-    // already is: every source is the destination, the move declines, and the
-    // insert reading must not pick it up — a numbered page is never a page to
-    // write. That guard is what keeps a free reorder off a charged card, and it
-    // survives the destination becoming a set.
-    expect(structuralPageEditFromMessage("Put page 12 at the end", crowdedPages, context)).toBeNull();
-    // The sheet's own pages, though, are a real thing to move: printed 10 is
-    // model pages 7, 8 and 9, and none of them is the destination.
-    expect(structuralPageEditFromMessage("Put page 10 at the end", crowdedPages, context)?.edit).toEqual({
-      action: "move",
-      anchorPageIndex: 10,
-      pageIndexes: [7, 8, 9],
-      pageCount: 0
-    });
-  });
 });

@@ -228,7 +228,8 @@ class ProjectExportRow extends StatelessWidget {
         if (export.creditsRequired <= 0) {
           return 'Ready to unlock';
         }
-        final cost = 'Unlock for ${export.creditsRequired} credits';
+        final cost =
+            'Unlock for ${formatCredits(export.creditsRequired)} credits';
         return availableCredits != null &&
                 availableCredits < export.creditsRequired
             ? '$cost · you have $availableCredits'

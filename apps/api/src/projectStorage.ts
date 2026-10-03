@@ -1,8 +1,9 @@
-import type { FastifyRequest } from "fastify";
-import type { AppConfig } from "@book-maker/core";
 import { objectKey, objectStore } from "@book-maker/storage";
 
-export async function deleteProjectStorage(_appConfig: AppConfig, projectId: string, request: FastifyRequest) {
+/** Anything with a logger: a Fastify request, or the account-deletion sweep's. */
+type LogSource = { log: { warn: (object: unknown, message: string) => void } };
+
+export async function deleteProjectStorage(projectId: string, request: LogSource) {
   const targets = {
     book: `${objectKey("books", projectId)}/`,
     images: `${objectKey("images", projectId)}/`,

@@ -5,6 +5,7 @@ import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
 import 'plan_build_progress.dart';
 import 'progress_step_row.dart';
+import '../../billing/domain/billing_models.dart';
 
 /// The live "what is happening to my book right now" card on /handoff.
 ///
@@ -165,7 +166,7 @@ class GenerationProgressOverviewCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 AppButton.primary(
                   label: status.recoveryQuote?.requiresConfirmation == false
-                      ? 'Retry plan · ${status.recoveryQuote!.credits} credits'
+                      ? 'Retry plan · ${formatCredits(status.recoveryQuote!.credits)} credits'
                       : 'Retry generation',
                   onPressed: busyAction == 'resume' ? null : () => onResume!(),
                   loading: busyAction == 'resume',

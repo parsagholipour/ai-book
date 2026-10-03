@@ -115,6 +115,7 @@ List<String> freePlanBenefits(MobileFreeTier freeTier) {
     if (freeTier.welcomeCredits > 0)
       '${formatCredits(freeTier.welcomeCredits)} welcome credits',
     '${freeTier.illustratedBooksPerMonth} illustrated books a month',
+    'Books up to ${freeTier.maxBookPages} pages',
     'Books you have already made stay yours',
   ];
 }

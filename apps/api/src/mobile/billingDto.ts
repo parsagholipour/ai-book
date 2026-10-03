@@ -48,7 +48,14 @@ export type MobileBillingDto = {
     monthlyCredits: number;
     welcomeCredits: number;
     illustratedBooksPerMonth: number;
+    /** The longest book the free tier generates; plans go to 600. */
+    maxBookPages: number;
   };
+  /**
+   * The longest book *this* reader may have generated. Null means no free-tier
+   * cap — any paid plan, held only to the 600-page ceiling — never "unknown".
+   */
+  maxBookPages: number | null;
   allowance: {
     /** What this plan grants each period. */
     monthlyCredits: number;

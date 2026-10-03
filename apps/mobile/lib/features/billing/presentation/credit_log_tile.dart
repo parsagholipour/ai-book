@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/billing_models.dart';
-import 'billing_plan_tiles.dart' show formatCredits;
 
 /// The pieces a credit-log row is drawn from: the row itself, the sticky day
 /// heading above a group of them, and the words and icons both are built with.

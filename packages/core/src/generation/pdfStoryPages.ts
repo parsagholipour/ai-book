@@ -73,9 +73,26 @@ export function splitStoryPageMarkdown(markdown: string, plan: StoryPagePlan): {
 }
 
 // Inspect rendered content so reference-style Markdown images and generated
-// figures count too. A cover is not a scene illustration. Rich/illustrated
-// books keep their existing layout, including their unillustrated scenes.
+// figures count too. A cover is not a scene illustration. A book whose scenes
+// carry figures, tables or code keeps the house layout throughout.
 const TEXT_STORY = "body:has(.pdf-story-scene):not(:has(.pdf-story-scene :is(img, svg, figure, table, pre)))";
+/**
+ * A picture book: some scenes carry an illustration and none anything richer.
+ * It used to keep the house layout too, so its text-only sheets printed two
+ * lines of 11pt at the top of a blank page and the words under each picture
+ * were set for an adult reader, in a 4-year-old's bedtime book (2026-10-02).
+ * Its text-only scenes are now sized and centred like a text-only book's, and
+ * a picture scene sets its words under a capped picture at the size the space
+ * left allows. The designs stay a text-only book's: a coloured card on two
+ * sheets of six beside full-colour pictures reads as a mistake.
+ */
+const PICTURE_STORY =
+  "body:has(.pdf-story-scene img):not(:has(.pdf-story-scene :is(svg, figure, table, pre)))";
+/** The tallest a scene's picture prints, and the gap under it. */
+const PICTURE_MAX_MM = 125;
+const PICTURE_GAP_MM = 6;
+/** A scene's own picture in its Markdown: inline image syntax or an `<img>`. */
+const SCENE_PICTURE = /!\[[^\]]*\][([]|<img\b/i;
 
 type StorySceneTier = { name: StorySceneLength; fontPt: number; lineHeight: number; measureMm: number };
 export type StorySceneLength = "brief" | "short" | "medium" | "long" | "full";
@@ -144,11 +161,18 @@ function blocksHeightPt(blocks: readonly string[], fontPt: number, lineHeight: n
  * sheets. Headings, anchors and markup are read the way they print — the
  * heading on lines of its own, the rest not at all.
  */
-export function storySceneLength(markdown: string, designId?: StoryPageDesignId): StorySceneLength {
+export function storySceneLength(
+  markdown: string,
+  designId?: StoryPageDesignId,
+  options: { picture?: boolean } = {}
+): StorySceneLength {
   const design = designId ? storyPageDesign(designId) : undefined;
   const face = FACE_WIDTH[design?.face ?? "serif"];
   const headingFace = design?.displayHeadings ? DISPLAY_HEADING_WIDTH : face;
-  const writingHeightPt = SHEET_WRITING_HEIGHT_PT - 2 * cardBlockMm(design) * PT_PER_MM;
+  const writingHeightPt =
+    SHEET_WRITING_HEIGHT_PT -
+    2 * cardBlockMm(design) * PT_PER_MM -
+    (options.picture ? (PICTURE_MAX_MM + PICTURE_GAP_MM) * PT_PER_MM : 0);
   const blocks = markdown
     .split(/\n\s*\n/)
     .map((block) => block.replace(/<[^>]+>/g, " ").replace(/!\[[^\]]*]\([^)]*\)/g, " ").trim())
@@ -241,17 +265,37 @@ ${allStoryPageDesigns().map(designCss).join("\n")}
 export const STORY_PAGE_PDF_CSS = `
   .pdf-story-page { display: flow-root; break-before: page; page-break-before: always; }
   .pdf-story-page > :first-child { margin-top: 0; }
-  ${TEXT_STORY} .pdf-story-scene {
+  ${TEXT_STORY} .pdf-story-scene, ${PICTURE_STORY} .pdf-story-scene {
     display: flex;
     flex-direction: column;
     min-block-size: 238mm;
     max-inline-size: var(--story-measure);
     margin-inline: auto;
   }
-  ${TEXT_STORY} .pdf-story-scene::before {
+  ${TEXT_STORY} .pdf-story-scene::before, ${PICTURE_STORY} .pdf-story-scene::before {
     content: "";
     margin-block-start: auto;
   }
+  ${PICTURE_STORY} .pdf-story-scene:has(img) { max-inline-size: none; }
+  ${PICTURE_STORY} .pdf-story-scene:has(img) > :not(:has(img)) {
+    inline-size: 100%;
+    max-inline-size: var(--story-measure);
+    margin-inline: auto;
+  }
+  ${PICTURE_STORY} .pdf-story-scene p:has(> img) { margin: 0 0 ${PICTURE_GAP_MM}mm; }
+  ${PICTURE_STORY} .pdf-story-scene img {
+    inline-size: auto;
+    block-size: auto;
+    max-inline-size: 100%;
+    max-block-size: ${PICTURE_MAX_MM}mm;
+    margin: 0 auto;
+    object-fit: contain;
+  }
+  ${PICTURE_STORY} .pdf-story-scene:has(img)::after {
+    content: "";
+    margin-block-end: auto;
+  }
+  ${PICTURE_STORY} .pdf-story-scene:not(:has(img))::after,
   ${TEXT_STORY} .pdf-story-scene::after {
     content: "";
     flex: none;
@@ -261,14 +305,17 @@ export const STORY_PAGE_PDF_CSS = `
     margin-block-end: auto;
     background: linear-gradient(90deg, transparent, #c9b79f 18%, #8b6f4e 50%, #c9b79f 82%, transparent);
   }
-  ${STORY_SCENE_TIER_CSS.map((rule) => `${TEXT_STORY} ${rule}`).join("\n  ")}
-  ${TEXT_STORY} .pdf-story-scene h2 {
+  ${STORY_SCENE_TIER_CSS.map((rule) => rule.replace(/^([^{]+)\{/, (_, selector: string) => `${TEXT_STORY} ${selector.trim()}, ${PICTURE_STORY} ${selector.trim()} {`)).join("\n  ")}
+  ${TEXT_STORY} .pdf-story-scene h2, ${PICTURE_STORY} .pdf-story-scene h2 {
     font-size: max(1em, 15pt);
     line-height: 1.3;
     margin: 0 0 ${HEADING_GAP_EM}em;
   }
+  /* A picture scene's text column is centred by its side margins, which the two rules above reset. */
+  ${PICTURE_STORY} .pdf-story-scene:has(img) > :is(h2, p):not(:has(img)) { margin-inline: auto; }
   ${TEXT_STORY} .pdf-story-scene p { margin: 0 0 ${PARAGRAPH_GAP_EM}em; }
-  ${TEXT_STORY} .pdf-story-scene > p:last-of-type { margin-block-end: 0; }
+  ${PICTURE_STORY} .pdf-story-scene p:not(:has(> img)) { margin-block: 0 ${PARAGRAPH_GAP_EM}em; }
+  ${TEXT_STORY} .pdf-story-scene > p:last-of-type, ${PICTURE_STORY} .pdf-story-scene > p:last-of-type { margin-block-end: 0; }
   ${TEXT_STORY} .book-contents { padding: 16mm 8mm 14mm; }
   ${TEXT_STORY} .book-contents__item { margin-bottom: 5mm; }
   ${TEXT_STORY} .book-contents__link {
@@ -300,13 +347,17 @@ export function separateStoryPagesForPdf<T extends StoryPagePlan>(markdown: stri
   if (!source) return { markdown, plan };
   let result = source.frontmatter;
   const anchors: PageAnchorPlan[] = [];
+  // A design's card and face print only in a book with no pictures (`TEXT_STORY`),
+  // so a picture book's scenes are measured on plain sheets.
+  const pictureBook = source.scenes.some((entry) => SCENE_PICTURE.test(entry.markdown));
   for (const [position, { anchor, markdown: scene }] of source.scenes.entries()) {
     const designId = plan.storyPageDesign;
     const design = designId ? storyPageDesign(designId) : undefined;
+    const length = storySceneLength(scene, pictureBook ? undefined : designId, { picture: SCENE_PICTURE.test(scene) });
     const classes = [
       "pdf-story-page",
       "pdf-story-scene",
-      `pdf-story-scene--${storySceneLength(scene, designId)}`,
+      `pdf-story-scene--${length}`,
       ...(design
         ? [
             `pdf-story-scene--design-${design.id}`,

@@ -1,4 +1,5 @@
 import type { FastifyCorsOptions } from "@fastify/cors";
+import type { AppConfig } from "@book-maker/core";
 
 /**
  * The operator console at :5173 talks to the API at :4001, so every cookieed
@@ -14,3 +15,15 @@ export const CORS_OPTIONS = {
   credentials: true,
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"]
 } satisfies FastifyCorsOptions;
+
+/**
+ * In production the console is served from the API's own origin through the
+ * edge, and the app is not a browser, so no other origin needs credentialed
+ * access. `origin: true` reflected any origin with the operator cookie allowed.
+ */
+export function corsOptionsFor(config: Pick<AppConfig, "NODE_ENV" | "PUBLIC_API_URL">): FastifyCorsOptions {
+  if (config.NODE_ENV !== "production") {
+    return CORS_OPTIONS;
+  }
+  return { ...CORS_OPTIONS, origin: [new URL(config.PUBLIC_API_URL).origin] };
+}

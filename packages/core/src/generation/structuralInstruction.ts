@@ -71,7 +71,10 @@ const PAGE_SEQUENCE = `${PAGE_NUMBER}(?:\\s*${PAGE_JOINER}\\s*(?:pages?\\s+)?${P
  * pattern exported below therefore ends at a word boundary, so no consumer has
  * to remember to add one.
  */
-const PAGE_SELECTION = `(?:the\\s+)?(?:pages?\\s+${PAGE_SEQUENCE}|${PRENOMINAL_PAGE_REFERENCE}\\s+pages?\\b)`;
+// "printed" is how the router restates a number it was told is a printed one
+// ("Delete printed page 5", "after printed page 11"); left out, the restatement
+// survived the strip as a content requirement on the reader's card.
+const PAGE_SELECTION = `(?:the\\s+)?(?:printed\\s+)?(?:pages?\\s+${PAGE_SEQUENCE}|${PRENOMINAL_PAGE_REFERENCE}\\s+pages?\\b)`;
 
 /**
  * How a request names *which* pages, in the one place both readers of it take
@@ -88,6 +91,10 @@ const PAGE_SELECTION = `(?:the\\s+)?(?:pages?\\s+${PAGE_SEQUENCE}|${PRENOMINAL_P
  * prices a whole book for.
  */
 export const STRUCTURAL_PAGE_SELECTION_PATTERN = PAGE_SELECTION;
+
+/** "Immediately after page 11" names the same place "after page 11" does. */
+const PLACEMENT_ADVERB = "(?:immediately|directly|right|just)";
+export const STRUCTURAL_PLACEMENT_ADVERB_PATTERN = PLACEMENT_ADVERB;
 
 /**
  * The verbs each action is written with, and a **superset** of the three lists
@@ -119,10 +126,17 @@ const ACTION_VERB: Record<StructuralPageEdit["action"], string> = {
  * remainder is then the request restated, and a restatement priced as prose is a
  * whole-book replan.
  */
+/**
+ * How a reader opens a request before its verb: "please", "can you", "I'd like
+ * you to", "go ahead and". Only "please" was known, so "can you delete page 6"
+ * read as prose work and was quoted as a whole-book rebuild.
+ */
+const LEADING_COURTESY = String.raw`(?:(?:please|pls|kindly|just|(?:can|could|would|will)\s+you|i(?:\s+(?:want|need|would\s+like)|['’]d\s+like)\s+(?:you\s+)?to|let['’]?s|go\s+ahead\s+and)\s+)*`;
+
 export const STRUCTURAL_ACTION_PREFIX_PATTERN: Record<StructuralPageEdit["action"], string> = {
-  insert: `(?:please\\s+)?${ACTION_VERB.insert}\\s+(?:${PAGE_QUANTITY}\\s+)?(?:(?:new|opening|closing|final)\\s+)*pages?\\b`,
-  delete: `(?:please\\s+)?${ACTION_VERB.delete}\\s+${PAGE_SELECTION}`,
-  move: `(?:please\\s+)?${ACTION_VERB.move}\\s+${PAGE_SELECTION}`
+  insert: `${LEADING_COURTESY}${ACTION_VERB.insert}\\s+(?:${PAGE_QUANTITY}\\s+)?(?:(?:new|opening|closing|final)\\s+)*pages?\\b`,
+  delete: `${LEADING_COURTESY}${ACTION_VERB.delete}\\s+${PAGE_SELECTION}`,
+  move: `${LEADING_COURTESY}${ACTION_VERB.move}\\s+${PAGE_SELECTION}`
 };
 
 /** Naming the book the pages are leaving is not naming something to write. */
@@ -138,22 +152,54 @@ export const STRUCTURAL_WHOLE_BOOK_TAIL_PATTERN =
 // most was the one determiner missing here, and a delete the resolver had
 // already pinned to a single row was priced as a whole second book.
 const GENERIC_PAGE_OBJECT = "(?:(?:the|this|that|these|those)\\s+)?pages?";
+/**
+ * Pages picked by a pattern or by what they hold rather than by number — "every
+ * other page", "all the pages about shopping", "the page with the checklist".
+ * The router resolves which rows those are and the card lists them; the words
+ * only locate pages, so a delete or a move of them asks for nothing to write.
+ * Both were quoted as whole-book rebuilds. The locator is a few words with no
+ * second request in it: a conjunction or an edit verb ends the bare reading.
+ */
+const PATTERNED_PAGE_OBJECT = String.raw`(?:every\s+(?:other|second)\s+page|(?:all\s+(?:of\s+)?)?(?:the\s+)?(?:even|odd)(?:-numbered)?\s+pages)`;
+const LOCATED_PAGE_OBJECT = String.raw`(?:all\s+(?:of\s+)?)?(?:(?:the|this|that|these|those|any)\s+)?pages?\s+(?:about|on|covering|regarding|where|with|that\s+(?:talks?|is|are)\s+about)(?:\s+(?!(?:and|then|but|also|plus|make|rewrite|write|add|replace|change|fix|turn|keep|merge|combine|expand|shorten|move|delete|remove)\b)[\p{L}\p{N}'’-]+){1,8}`;
 const EDGE_PLACEMENT =
   "(?:(?:at|to)\\s+(?:the\\s+)?(?:very\\s+)?(?:front|beginning|start|end|back)(?:\\s+of\\s+(?:the\\s+)?book)?|as\\s+(?:the\\s+)?(?:first|last|opening|closing)\\s+pages?)";
-const NUMBERED_PLACEMENT = `(?:(?:to\\s+)?(?:after|before|following|preceding)|at|to)\\s+${PAGE_SELECTION}`;
-/** A closing courtesy is not a content requirement, and the opening one already was not. */
-const COURTESY_TAIL = "(?:\\s*,?\\s*(?:please|thanks|thank\\s+you))?";
+const NUMBERED_PLACEMENT = `(?:(?:to\\s+)?(?:${PLACEMENT_ADVERB}\\s+)?(?:after|before|following|preceding)|at|to)\\s+${PAGE_SELECTION}`;
+/**
+ * A closing courtesy is not a content requirement, and the opening one already
+ * was not. Readers stack them — "please and thanks" — and one alone was known,
+ * so "delete page 6 please and thanks" was quoted as a whole-book rebuild.
+ */
+const COURTESY_TAIL = "(?:\\s*,?\\s*(?:and\\s+)?(?:please|pls|thanks|thank\\s+you|thx|ty|cheers)(?:\\s+(?:so\\s+much|a\\s+lot))?)*";
+/**
+ * Why a page should go is not something to write: "delete page 3, it repeats
+ * page 7" was quoted as a whole-book rebuild with "Which repeats the content of
+ * page 7" as its brief. Only a reason that says the page is redundant is read
+ * this way; any other words keep the request on the generation path.
+ */
+const DELETE_REASON_TAIL = `(?:\\s*(?:,|—|–|-|because|since|as)?\\s*(?:it|this|which|that)?\\s*(?:['’]s|is)?\\s*(?:(?:just|only|basically)\\s+)?(?:repeats|duplicates|restates|copies|a\\s+(?:repeat|duplicate|copy)\\s+of|the\\s+same\\s+as|redundant|empty|blank|unnecessary|not\\s+needed)(?:\\s+(?:the\\s+content\\s+of\\s+)?${PAGE_SELECTION})?)?`;
 
 const PURE_INSERT = new RegExp(
   `^${STRUCTURAL_ACTION_PREFIX_PATTERN.insert}(?:\\s+(?:${NUMBERED_PLACEMENT}|${EDGE_PLACEMENT}))?${COURTESY_TAIL}$`,
   "i"
 );
 const PURE_DELETE = new RegExp(
-  `^(?:please\\s+)?${ACTION_VERB.delete}\\s+(?:${PAGE_SELECTION}|${GENERIC_PAGE_OBJECT})${STRUCTURAL_WHOLE_BOOK_TAIL_PATTERN}${COURTESY_TAIL}$`,
-  "i"
+  `^${LEADING_COURTESY}${ACTION_VERB.delete}\\s+(?:${PAGE_SELECTION}|${PATTERNED_PAGE_OBJECT}|${LOCATED_PAGE_OBJECT}|${GENERIC_PAGE_OBJECT})${STRUCTURAL_WHOLE_BOOK_TAIL_PATTERN}${DELETE_REASON_TAIL}${COURTESY_TAIL}$`,
+  "iu"
 );
 const PURE_MOVE = new RegExp(
-  `^(?:please\\s+)?${ACTION_VERB.move}\\s+(?:${PAGE_SELECTION}|${GENERIC_PAGE_OBJECT})(?:(?:\\s+from\\s+(?:(?:after|before|following|preceding)\\s+)?${PAGE_SELECTION})?\\s+(?:${NUMBERED_PLACEMENT}|${EDGE_PLACEMENT}))?${COURTESY_TAIL}$`,
+  `^${LEADING_COURTESY}${ACTION_VERB.move}\\s+(?:${PAGE_SELECTION}|${LOCATED_PAGE_OBJECT}|${GENERIC_PAGE_OBJECT})(?:(?:\\s+from\\s+(?:(?:after|before|following|preceding)\\s+)?${PAGE_SELECTION})?\\s+(?:${NUMBERED_PLACEMENT}|${EDGE_PLACEMENT}))?${COURTESY_TAIL}$`,
+  "iu"
+);
+/**
+ * "Swap pages 2 and 3" asks for one reorder and nothing else. The API reads a
+ * swap of two neighbouring pages as the one move that performs it and answers
+ * any other swap before a card exists (`swapPagesFromMessage`,
+ * `apps/api/src/bookEditStructure.ts`), so a bare swap reaching a move edit is
+ * that move. Read as prose, it was quoted as a whole-book rebuild.
+ */
+const PURE_SWAP = new RegExp(
+  `^${LEADING_COURTESY}(?:swap|switch|exchange|trade|flip)\\s+(?:the\\s+(?:order\\s+of\\s+(?:the\\s+)?)?)?(?:printed\\s+)?pages?\\s+${PAGE_NUMBER}\\s*(?:,|and|&|with)\\s*(?:(?:the\\s+)?(?:printed\\s+)?page\\s+)?${PAGE_NUMBER}(?:\\s+(?:around|round))?${COURTESY_TAIL}$`,
   "i"
 );
 
@@ -203,7 +249,7 @@ const PAGE_NOUN = `(?:ال)?(?:${BOOK_PAGE_WORD_PATTERN})${INFLECTION}`;
  */
 const STRUCTURAL_VERB_STEMS = [
   // Persian, Dari and Urdu
-  "حذف", "پاک", "بردار", "ببر", "منتقل", "جابجا", "مٹا", "ہٹا",
+  "حذف", "پاک", "بردار", "ببر", "منتقل", "جابجا", "جابه‌جا", "مٹا", "ہٹا",
   // Arabic
   "احذف", "امسح", "مسح", "أزل", "ازل", "انقل", "نقل", "حرك",
   // Spanish, Portuguese and Italian
@@ -232,7 +278,7 @@ const STRUCTURAL_VERB_STEMS = [
 const STRUCTURAL_FUNCTION_WORDS = [
   // Persian, Dari and Urdu
   "را", "کن", "کنید", "کنین", "بکن", "کریں", "کرو", "کر", "دیں", "دو",
-  "از", "به", "بعد", "قبل", "اول", "آخر", "انتها", "ابتدا", "پایان",
+  "از", "به", "بعد", "قبل", "اول", "آخر", "انتها", "ابتدا", "پایان", "و", "با", "هم",
   "کتاب", "داستان", "لطفا", "لطفن", "ممنون",
   // Arabic
   "من", "في", "إلى", "الى", "الكتاب", "كتاب", "القصة", "قصة", "رجاء", "فضلك", "شكرا",
@@ -448,7 +494,7 @@ export function isBareStructuralInstruction(
     case "delete":
       return PURE_DELETE.test(normalized) || restatesStructuralEditOnly(edit, normalized);
     case "move":
-      return PURE_MOVE.test(normalized) || restatesStructuralEditOnly(edit, normalized);
+      return PURE_MOVE.test(normalized) || PURE_SWAP.test(normalized) || restatesStructuralEditOnly(edit, normalized);
   }
 }
 

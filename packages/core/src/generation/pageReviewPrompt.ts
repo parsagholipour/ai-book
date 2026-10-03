@@ -48,6 +48,7 @@ export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonO
             "For confirmed planning-label leakage or fictional-status disclaimers leaking into narration, reject the page and set checks.promptLeakFree=false.",
             ...citationReviewRules,
             "Treat semantic repetition as a failure even when wording differs: the same encounter, same decision, same exposition, or same emotional turn cannot appear twice.",
+            "The last previousPages entry may carry ending: the words the page immediately before this draft closes on, which the draft follows.",
             "Do not reject merely because the same character performs a necessary recurring action type assigned by the current pageBrief; reject it only when it restages the same beat, reuses distinctive wording, or fails to add a new consequence.",
             "For a final page, reject vague closure unless it resolves the core promise with a concrete consequence or completed choice.",
             ...opening.rules,

@@ -55,9 +55,12 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
     } catch (error) {
       if (!mounted) return;
       if (!_finishPlanRetry(retryRequest, projectId)) return;
-      ScaffoldMessenger.of(
+      await reportGenerationRetryFailure(
         context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+        ref,
+        error,
+        projectId: projectId,
+      );
     }
   }
 
@@ -93,9 +96,12 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
       ).showAppSnackBar(SnackBar(content: Text(recovery.currentAction)));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await reportGenerationRetryFailure(
         context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+        ref,
+        error,
+        projectId: projectId,
+      );
     }
   }
 

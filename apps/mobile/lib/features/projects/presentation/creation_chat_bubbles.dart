@@ -143,6 +143,13 @@ class _ProjectChatMessageBubble extends StatelessWidget {
               label: 'Add credits',
             ),
           ],
+          if (message.isAssistant && message.pageLimit != null) ...[
+            const SizedBox(height: 10),
+            PageLimitUnlockRow(
+              limit: message.pageLimit!,
+              projectId: message.projectId,
+            ),
+          ],
           if (showReplanCopyLink) ...[
             const SizedBox(height: 10),
             ActionChip(

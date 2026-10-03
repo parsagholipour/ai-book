@@ -1,9 +1,17 @@
-import { createHash, createSign } from "node:crypto";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { AppConfig } from "@book-maker/core";
 import type { GooglePlaySubscriptionGrantState, VerifiedGooglePlayPurchase } from "@book-maker/db/billing";
+import {
+  DEFAULT_GOOGLE_TOKEN_URI,
+  parseServiceAccountCredentials,
+  signServiceAccountJwt,
+  type ServiceAccountCredentials
+} from "./googleServiceAccount.js";
 
 type FetchLike = typeof fetch;
+
+const ANDROID_PUBLISHER_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 
 export type GooglePlayProductType = "ONE_TIME_UNLOCK" | "CREDIT_PACK" | "SUBSCRIPTION" | "INTERNAL_GRANT";
 
@@ -16,6 +24,21 @@ export type GooglePlayVerificationRequest = {
 
 export interface GooglePlayVerifier {
   verifyPurchase(request: GooglePlayVerificationRequest): Promise<VerifiedGooglePlayPurchase>;
+  /**
+   * Acknowledges a purchase with Google. Play refunds anything unacknowledged
+   * after three days, and only the app used to do it — after the server had
+   * already granted the credits — so an app killed in between left a refunded
+   * payment and credits that stayed. Idempotent on Google's side.
+   */
+  acknowledgePurchase(request: GooglePlayVerificationRequest): Promise<void>;
+}
+
+/** Whether a verified purchase still needs acknowledging, read off what Google reported. */
+export function purchaseNeedsAcknowledgement(verification: VerifiedGooglePlayPurchase): boolean {
+  if (!verification.grantable) return false;
+  const state = (verification.metadata as Record<string, unknown> | undefined)?.acknowledgementState;
+  // Products report 0 for "yet to be acknowledged"; subscriptions v2 a string.
+  return state === 0 || state === "ACKNOWLEDGEMENT_STATE_PENDING";
 }
 
 type GooglePlayVerifierOptions = {
@@ -24,12 +47,6 @@ type GooglePlayVerifierOptions = {
   serviceAccountJson?: string | undefined;
   serviceAccountFile?: string | undefined;
   fetchImpl?: FetchLike | undefined;
-};
-
-type ServiceAccountCredentials = {
-  client_email: string;
-  private_key: string;
-  token_uri?: string | undefined;
 };
 
 type AccessTokenCache = {
@@ -57,6 +74,26 @@ export class GooglePlayVerificationError extends Error {
   }
 }
 
+/**
+ * The subscription token does not cover the plan the request named.
+ *
+ * Google's subscription endpoint is keyed by token alone, so the plan comes
+ * from the purchase's own line items — and the verifier used to fall back to
+ * the first line item when none matched, returning the *requested* SKU. A
+ * token from the cheapest plan posted as the most expensive one was granted
+ * the expensive plan's credits, and the hourly renewal sweep kept granting
+ * them (2026-10-03 audit). One-time products are safe: their endpoint takes
+ * the product id, so Google itself refuses a token for another product.
+ */
+export class GooglePlayProductMismatchError extends Error {
+  readonly code = "GOOGLE_PLAY_PRODUCT_MISMATCH";
+
+  constructor(readonly requestedSku: string) {
+    super(`The Google Play purchase does not include ${requestedSku}.`);
+    this.name = "GooglePlayProductMismatchError";
+  }
+}
+
 export function createGooglePlayVerifierFromConfig(config: AppConfig): GooglePlayVerifier {
   if (config.MOCK_GOOGLE_PLAY_BILLING) {
     return createMockGooglePlayVerifier();
@@ -71,6 +108,7 @@ export function createGooglePlayVerifierFromConfig(config: AppConfig): GooglePla
 
 export function createMockGooglePlayVerifier(): GooglePlayVerifier {
   return {
+    async acknowledgePurchase() {},
     async verifyPurchase(request) {
       const now = new Date();
       // Google issues a fresh order id every renewal, and the credit grant is
@@ -136,8 +174,8 @@ export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): Go
       return cache.token;
     }
     const credentials = await loadServiceAccountCredentials(options);
-    const tokenUri = credentials.token_uri ?? "https://oauth2.googleapis.com/token";
-    const assertion = signServiceAccountJwt(credentials, tokenUri);
+    const tokenUri = credentials.token_uri ?? DEFAULT_GOOGLE_TOKEN_URI;
+    const assertion = signServiceAccountJwt(credentials, ANDROID_PUBLISHER_SCOPE, tokenUri);
     const response = await fetchImpl(tokenUri, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -158,6 +196,18 @@ export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): Go
       expiresAt: now + Math.max(60, body.expires_in ?? 3600) * 1000
     };
     return cache.token;
+  }
+
+  async function googlePost(url: string): Promise<void> {
+    const token = await accessToken();
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: "{}"
+    });
+    if (!response.ok) {
+      throw new GooglePlayVerificationError("Google Play purchase acknowledgement failed.", response.status);
+    }
   }
 
   async function googleJson<T>(url: string): Promise<T> {
@@ -195,6 +245,19 @@ export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): Go
       );
       const purchase = await googleJson<GooglePlayProductPurchase>(url);
       return mapOneTimePurchase(request.productId, request.purchaseToken, purchase);
+    },
+    async acknowledgePurchase(request) {
+      const packageName = request.packageName || options.packageName;
+      if (!packageName) {
+        throw new GooglePlayBillingConfigError();
+      }
+      const kind = request.productType === "SUBSCRIPTION" ? "subscriptions" : "products";
+      await googlePost(
+        androidPublisherUrl(
+          packageName,
+          `/purchases/${kind}/${encodeURIComponent(request.productId)}/tokens/${encodeURIComponent(request.purchaseToken)}:acknowledge`
+        )
+      );
     }
   };
 }
@@ -254,7 +317,10 @@ function mapSubscriptionPurchase(
   purchaseToken: string,
   purchase: GooglePlaySubscriptionPurchaseV2
 ): VerifiedGooglePlayPurchase {
-  const matchingLineItem = purchase.lineItems?.find((item) => item.productId === productSku) ?? purchase.lineItems?.[0] ?? null;
+  const matchingLineItem = purchase.lineItems?.find((item) => item.productId === productSku);
+  if (!matchingLineItem) {
+    throw new GooglePlayProductMismatchError(productSku);
+  }
   const status = mapSubscriptionStatus(purchase.subscriptionState);
   return {
     productSku,
@@ -316,38 +382,11 @@ async function loadServiceAccountCredentials(options: GooglePlayVerifierOptions)
   if (!raw) {
     throw new GooglePlayBillingConfigError();
   }
-  const parsed = JSON.parse(raw) as Partial<ServiceAccountCredentials>;
-  if (!parsed.client_email || !parsed.private_key) {
+  const credentials = parseServiceAccountCredentials(raw);
+  if (!credentials) {
     throw new GooglePlayBillingConfigError("Google Play service account JSON is missing client_email or private_key.");
   }
-  return {
-    client_email: parsed.client_email,
-    private_key: parsed.private_key,
-    token_uri: parsed.token_uri
-  };
-}
-
-function signServiceAccountJwt(credentials: ServiceAccountCredentials, tokenUri: string): string {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const header = base64UrlJson({ alg: "RS256", typ: "JWT" });
-  const claim = base64UrlJson({
-    iss: credentials.client_email,
-    scope: "https://www.googleapis.com/auth/androidpublisher",
-    aud: tokenUri,
-    exp: nowSeconds + 3600,
-    iat: nowSeconds
-  });
-  const unsigned = `${header}.${claim}`;
-  const signature = createSign("RSA-SHA256").update(unsigned).sign(credentials.private_key);
-  return `${unsigned}.${base64Url(signature)}`;
-}
-
-function base64UrlJson(value: Record<string, unknown>): string {
-  return base64Url(Buffer.from(JSON.stringify(value), "utf8"));
-}
-
-function base64Url(value: Buffer): string {
-  return value.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return credentials;
 }
 
 function millisDate(value: string | undefined): Date | null {

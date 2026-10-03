@@ -1,8 +1,9 @@
+import { STATUS_CODES } from "node:http";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
 import { existsSync } from "node:fs";
 import { objectStore, sweepTemporaryDirectories } from "@book-maker/storage";
 import { readFile } from "node:fs/promises";
@@ -10,9 +11,11 @@ import { dirname, resolve } from "node:path";
 import { browserPoolStatus, closeSharedBrowser, loadConfig } from "@book-maker/core";
 import { loadCreditPricing, prisma } from "@book-maker/db";
 import { recoverMessageUsage } from "@book-maker/db/billing";
+import { runAccountDeletionSweep } from "./accountDeletion.js";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
+import { appUpdateRoutes, registerAppUpdateGate } from "./appUpdates.js";
 import { registerAuth } from "./auth.js";
-import { CORS_OPTIONS } from "./cors.js";
+import { corsOptionsFor } from "./cors.js";
 import { createGooglePlayVerifierFromConfig } from "./googlePlayBilling.js";
 import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
 import { createMailerFromConfig } from "./mailer.js";
@@ -25,11 +28,15 @@ import { startStudioImageSweep, studioImageSweepMode } from "./mobile/studioImag
 import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { publicShareRoutes } from "./mobile/shares/publicShareRoutes.js";
 import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
+import { loadSerializedProjectStatus } from "./mobile/projectStatusSerializers.js";
+import { BOOK_PUSH_SWEEP_INTERVAL_MS, runBookPushSweep } from "./push/bookPushSweep.js";
+import { createPushSenderFromConfig } from "./push/pushSender.js";
 import { adminAnalyticsRoutes } from "./routes/adminAnalytics.js";
 import { adminGenerationQualityRoutes } from "./routes/adminGenerationQuality.js";
 import { adminPricingRoutes } from "./routes/adminPricing.js";
 import { adminProjectExportRoutes } from "./routes/adminProjectExports.js";
 import { adminSafetyRoutes } from "./routes/adminSafety.js";
+import { adminAppUpdateRoutes } from "./routes/adminAppUpdates.js";
 import { adminShareRoutes } from "./routes/adminShares.js";
 import { projectRoutes } from "./routes/projects.js";
 
@@ -51,6 +58,25 @@ const app = Fastify({
       "body.reviewNotes"
     ]
   }
+});
+
+// Fastify's default handler answers a 5xx with the thrown error's own message —
+// a Prisma or provider error, a file path — straight to the client. In
+// production a server fault says only that it happened (the log keeps it all);
+// a 4xx keeps its message, which is written for the caller. Route-level
+// handlers (the upload parsers' `sendUnreadableBodyError`) still run first.
+app.setErrorHandler((error: FastifyError, request, reply) => {
+  const statusCode = typeof error.statusCode === "number" && error.statusCode >= 400 ? error.statusCode : 500;
+  if (statusCode >= 500) {
+    request.log.error({ err: error }, "Request failed");
+  }
+  const hideMessage = statusCode >= 500 && config.NODE_ENV === "production";
+  return reply.code(statusCode).send({
+    statusCode,
+    ...(error.code && !hideMessage ? { code: error.code } : {}),
+    error: STATUS_CODES[statusCode] ?? "Error",
+    message: hideMessage ? "Something went wrong on our side. Try again in a moment." : error.message
+  });
 });
 
 if (config.NODE_ENV === "production" && config.TRUST_PROXY_HOPS === 0) {
@@ -122,6 +148,23 @@ const sweepVoiceCalls = async () => {
 await sweepVoiceCalls();
 const voiceCallSweepTimer = setInterval(() => void sweepVoiceCalls(), 30_000);
 voiceCallSweepTimer.unref();
+
+// Account deletion requests are carried out once their grace period passes.
+// Nothing completed one before: the app and the public page promised deletion
+// within 30 days, and Google Play requires it of any app with accounts.
+const sweepAccountDeletions = async () => {
+  try {
+    const completed = await runAccountDeletionSweep(app.log);
+    if (completed > 0) {
+      app.log.info({ event: "account.deletions_completed", completed }, "Account deletions completed");
+    }
+  } catch (error) {
+    app.log.warn({ err: error }, "Account deletion sweep failed");
+  }
+};
+await sweepAccountDeletions();
+const accountDeletionSweepTimer = setInterval(() => void sweepAccountDeletions(), 60 * 60 * 1000);
+accountDeletionSweepTimer.unref();
 
 let recoveringMessages = false;
 const recoverMessages = async () => {
@@ -197,7 +240,39 @@ await reconcileQueue();
 const queueReconcileTimer = setInterval(() => void reconcileQueue(), 5_000);
 queueReconcileTimer.unref();
 
-await app.register(cors, CORS_OPTIONS);
+// Book-progress and book-ready notifications (src/push/bookPushSweep.ts). With
+// no FCM key configured the sender is null, a warning is logged once, and the
+// sweep never runs. A sweep still running when the next tick comes is not
+// doubled: each one reads a dozen queries per followed book.
+const pushSender = await createPushSenderFromConfig(config, app.log);
+let bookPushSweepRunning = false;
+const sweepBookPushes = async () => {
+  if (!pushSender || bookPushSweepRunning) {
+    return;
+  }
+  bookPushSweepRunning = true;
+  try {
+    const swept = await runBookPushSweep({
+      sender: pushSender,
+      loadStatus: (projectId, userId) => loadSerializedProjectStatus(projectId, config, userId),
+      log: app.log
+    });
+    if (swept.settled > 0 || swept.unregistered > 0 || swept.failed > 0) {
+      app.log.info({ event: "push.book_sweep", ...swept }, "Book pushes swept");
+    }
+  } catch (error) {
+    app.log.warn({ err: error, event: "push.book_sweep_failed" }, "Book push sweep failed");
+  } finally {
+    bookPushSweepRunning = false;
+  }
+};
+const bookPushTimer = pushSender ? setInterval(() => void sweepBookPushes(), BOOK_PUSH_SWEEP_INTERVAL_MS) : null;
+bookPushTimer?.unref();
+
+await app.register(cors, corsOptionsFor(config));
+// Ahead of auth, so a build the operator has retired is told to update before
+// it is told anything else — including that its session expired.
+registerAppUpdateGate(app);
 await registerAuth(app, config);
 await app.register(swagger, {
   openapi: {
@@ -220,10 +295,12 @@ await app.register(mobilePasswordResetRoutes, { mailer });
 await app.register(mobileProjectRoutes);
 await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);
+await app.register(appUpdateRoutes);
 // Outside /api/ and outside the auth surface; also named in deploy/nginx.conf.
 await app.register(publicShareRoutes);
 await app.register(adminPricingRoutes);
 await app.register(adminSafetyRoutes);
+await app.register(adminAppUpdateRoutes);
 await app.register(adminShareRoutes);
 await app.register(adminGenerationQualityRoutes);
 await app.register(adminProjectExportRoutes);
@@ -253,6 +330,7 @@ const shutdown = async () => {
   clearInterval(messageRecoveryTimer);
   clearInterval(pricingRefreshTimer);
   clearInterval(queueReconcileTimer);
+  if (bookPushTimer) clearInterval(bookPushTimer);
   await studioImageSweep.stop();
   await app.close();
   // The lazy export rebuild renders in this process too, so the API holds a

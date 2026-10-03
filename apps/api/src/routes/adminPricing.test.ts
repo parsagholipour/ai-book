@@ -205,6 +205,63 @@ describe("GET /api/admin/pricing", () => {
 });
 
 describe("PUT /api/admin/pricing", () => {
+  it("persists welcome switches, regional amounts, the fallback, and IP account caps", async () => {
+    app = await buildApp();
+    const values = { ...DEFAULT_CREDIT_COSTS, welcomeCreditsEnabled: 0, welcomeCreditsRegionalEnabled: 1,
+      welcomeCredits: 100, welcomeCreditsHighIncome: 2000, welcomeCreditsLowMiddleIncome: 500,
+      welcomeCreditsAccountsPerIpHighIncome: 4, welcomeCreditsAccountsPerIpLowMiddleIncome: 3 };
+    expect((await app.inject({ method: "PUT", url: "/api/admin/pricing", payload: { values, expectedVersion: 0 } })).statusCode).toBe(200);
+    const saved = (await app.inject({ method: "GET", url: "/api/admin/pricing" })).json();
+    expect(saved.values).toEqual(values);
+  });
+
+  it.each([
+    { welcomeCreditsEnabled: 2 }, { welcomeCreditsRegionalEnabled: 2 }, { welcomeCreditsHighIncome: -1 },
+    { welcomeCreditsLowMiddleIncome: 1.5 }, { welcomeCreditsHighIncome: 100001 },
+    { welcomeCreditsAccountsPerIpHighIncome: -1 }, { welcomeCreditsAccountsPerIpLowMiddleIncome: -1 },
+    { welcomeCreditsAccountsPerIpHighIncome: 1.5 }, { welcomeCreditsAccountsPerIpLowMiddleIncome: 1.5 },
+    { welcomeCreditsAccountsPerIpHighIncome: 101 }, { welcomeCreditsAccountsPerIpLowMiddleIncome: 101 }
+  ])("rejects invalid welcome settings %j", async (override) => {
+    app = await buildApp();
+    const response = await app.inject({ method: "PUT", url: "/api/admin/pricing", payload: { values: { ...DEFAULT_CREDIT_COSTS, ...override } } });
+    expect(response.statusCode).toBe(400);
+    expect(mockDb.state.version).toBe(0);
+  });
+
+  it("accepts zero and the maximum account cap", async () => {
+    app = await buildApp();
+    const response = await app.inject({ method: "PUT", url: "/api/admin/pricing", payload: {
+      values: { ...DEFAULT_CREDIT_COSTS,
+        welcomeCreditsAccountsPerIpHighIncome: 0, welcomeCreditsAccountsPerIpLowMiddleIncome: 100 }
+    } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().values).toMatchObject({
+      welcomeCreditsAccountsPerIpHighIncome: 0, welcomeCreditsAccountsPerIpLowMiddleIncome: 100
+    });
+  });
+
+  it("lets the operator move the longest free book, within the 600-page ceiling", async () => {
+    app = await buildApp();
+    const before = (await app.inject({ method: "GET", url: "/api/admin/pricing" })).json();
+    expect(before.values.freeMaxBookPages).toBe(30);
+
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/api/admin/pricing",
+      payload: { values: { ...DEFAULT_CREDIT_COSTS, freeMaxBookPages: 45 }, expectedVersion: 0 }
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(mockDb.state.values.freeMaxBookPages).toBe(45);
+    expect((await app.inject({ method: "GET", url: "/api/admin/pricing" })).json().values.freeMaxBookPages).toBe(45);
+
+    const tooLong = await app.inject({
+      method: "PUT",
+      url: "/api/admin/pricing",
+      payload: { values: { ...DEFAULT_CREDIT_COSTS, freeMaxBookPages: 601 } }
+    });
+    expect(tooLong.statusCode).toBe(400);
+  });
+
   it("saves a complete, in-range price list", async () => {
     app = await buildApp();
 

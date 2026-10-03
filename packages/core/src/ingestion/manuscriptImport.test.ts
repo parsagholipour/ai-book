@@ -256,4 +256,17 @@ describe("deriveManuscriptTitle", () => {
     ).toBe("long winter final");
     expect(deriveManuscriptTitle({ sections: [], fileName: ".docx" })).toBe("Imported manuscript");
   });
+
+  it("names the book by the heading it opens with when the chapters follow under their own", async () => {
+    const text = "# The Rooftop Orchard\n\n## Chapter One: Soil\n\nLeila moved in.\n\n## Chapter Two: Roots\n\nThe seedlings died.";
+    const parsed = await parseManuscript({ data: Buffer.from(text, "utf8"), format: "text" });
+    expect(parsed.bookTitle).toBe("The Rooftop Orchard");
+    expect(parsed.sections.map((section) => section.title)).toEqual(["Chapter One: Soil", "Chapter Two: Roots"]);
+    expect(deriveManuscriptTitle({ bookTitle: parsed.bookTitle, sections: parsed.sections, fileName: "garden.md" })).toBe(
+      "The Rooftop Orchard"
+    );
+    // A first chapter with no text yet is not a book title.
+    const blank = await parseManuscript({ data: Buffer.from("# Chapter 1\n\n# Chapter 2\n\nText.", "utf8"), format: "text" });
+    expect(deriveManuscriptTitle({ bookTitle: blank.bookTitle, sections: blank.sections, fileName: "draft.md" })).toBe("draft");
+  });
 });

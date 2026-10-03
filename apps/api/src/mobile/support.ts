@@ -82,6 +82,31 @@ export function previewText(value: string): string {
 }
 
 /**
+ * A book's prompt as the reader would describe it, for the summary.
+ *
+ * A book made in the creation chat stores the planner's instruction
+ * (`composeMobileProjectPrompt`): "Create a short story. Book type choice: … Creation
+ * chat: Assistant: Hi! …", and 180 characters of that end before the reader has said
+ * a word. The shelf searches this field "by title, author or topic", so a story
+ * asked for as "an old lighthouse keeper" was not found by "lighthouse". The
+ * preview is the first line the reader wrote, else the stored idea; a prompt
+ * someone typed is previewed as it was.
+ */
+export function promptPreviewText(prompt: string): string {
+  const transcript = /(?:^|\n)Creation chat:\s*/.exec(prompt);
+  if (transcript) {
+    const firstUserLine = /(?:^|\n)User(?: \([^)\n]*\))?:[ \t]*([^\n]*\S[^\n]*)/.exec(
+      prompt.slice(transcript.index + transcript[0].length)
+    );
+    if (firstUserLine?.[1]) {
+      return previewText(firstUserLine[1]);
+    }
+  }
+  const idea = /(?:^|\n)Original idea:[ \t]*([^\n]*\S[^\n]*)/.exec(prompt);
+  return previewText(idea?.[1] ?? prompt);
+}
+
+/**
  * A page's text as one readable line for the book page's preview.
  *
  * Block by block, because the preview is prose: a heading ends its own

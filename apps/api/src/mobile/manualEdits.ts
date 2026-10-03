@@ -626,9 +626,13 @@ function undoConfirmation(
     structural === null
       ? null
       : structural.action === "insert"
-        ? "took the new pages back out"
+        ? structural.insertedPageIds.length === 1
+          ? "took the new page back out"
+          : "took the new pages back out"
         : structural.action === "delete"
-          ? "put the deleted pages back"
+          ? structural.removedPages.length === 1
+            ? "put the deleted page back"
+            : "put the deleted pages back"
           : "put the pages back in their original order";
   const undone =
     shape && restored ? `${shape} and ${restored}` : (shape ?? restored ?? "put the book back to how it was");

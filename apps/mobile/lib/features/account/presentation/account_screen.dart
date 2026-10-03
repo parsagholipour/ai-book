@@ -6,6 +6,7 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../notifications/presentation/book_notifications_offer.dart';
 import '../../characters/presentation/character_library_screen.dart';
 import '../../projects/data/creation_repository.dart';
 import '../data/app_version.dart';
@@ -97,6 +98,7 @@ class AccountScreen extends ConsumerWidget {
                 value: appearance.label,
                 onTap: () => showAppearanceSheet(context),
               ),
+              const BookNotificationsSettingsRow(),
             ],
           ),
           AppSettingsSection(

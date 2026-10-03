@@ -52,7 +52,7 @@ void main() {
     expect(find.text('Approve this plan?'), findsOneWidget);
     expect(
       find.text(
-        'Book after approval: $expected credits. You have 5000 available. Planning is not charged again.',
+        'Book after approval: $expected credits. You have 5,000 available. Planning is not charged again.',
       ),
       findsOneWidget,
     );

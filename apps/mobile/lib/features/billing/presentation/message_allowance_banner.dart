@@ -9,6 +9,7 @@ import '../data/billing_repository.dart';
 import '../data/message_allowance_repository.dart';
 import '../domain/message_allowance.dart';
 import 'billing_paywall.dart';
+import '../domain/billing_models.dart';
 
 final _checkingAllowance = Expando<bool>();
 
@@ -270,7 +271,9 @@ class _MessageAllowanceSheetState
                 const SizedBox(height: 8),
                 Text('Refreshes $resetLabel (your local time).'),
                 const SizedBox(height: 8),
-                Text('Balance: ${value.credits.available} credits'),
+                Text(
+                  'Balance: ${formatCredits(value.credits.available)} credits',
+                ),
                 const SizedBox(height: 16),
                 if (resetAvailable) ...[
                   Text(

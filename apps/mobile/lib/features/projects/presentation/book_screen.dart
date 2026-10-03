@@ -459,9 +459,12 @@ class _BookScreenState extends ConsumerState<BookScreen>
         return;
       }
       setState(() => _busyAction = null);
-      ScaffoldMessenger.of(
+      await reportGenerationRetryFailure(
         context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+        ref,
+        error,
+        projectId: widget.projectId,
+      );
     }
   }
 

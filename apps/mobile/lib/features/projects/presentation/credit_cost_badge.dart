@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../billing/domain/billing_models.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
@@ -62,7 +63,7 @@ class CreditCostBadge extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '$credits',
+                    formatCredits(credits),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: tint,
                       fontWeight: FontWeight.w700,
@@ -81,7 +82,7 @@ class CreditCostBadge extends StatelessWidget {
 }
 
 String _semanticLabel(int credits, CreditCostKind kind) {
-  final amount = '$credits credits';
+  final amount = '${formatCredits(credits)} credits';
   return switch (kind) {
     CreditCostKind.quoted => '$amount. Tap to learn what this costs.',
     CreditCostKind.charged => '$amount used. Tap to learn what this paid for.',
@@ -149,7 +150,7 @@ class CreditCostSheet extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '$credits credits',
+                        '${formatCredits(credits)} credits',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -213,7 +214,7 @@ class CreditCostSheet extends ConsumerWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'You have $available credits.',
+                        'You have ${formatCredits(available)} credits.',
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),

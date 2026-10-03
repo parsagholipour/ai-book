@@ -64,9 +64,11 @@ const exactReplacementSchema = z.object({
 const structuralPageEditSchema = z.object({
   action: z.enum(["insert", "delete", "move"]),
   anchorPageIndex: z.number().int().nullable(),
+  // Display only (`StructuralPageEdit.anchorSide`); the worker never reads it.
+  anchorSide: z.literal("before").optional().catch(undefined),
   pageIndexes: z.array(z.number().int()),
   pageCount: z.number().int().nonnegative()
-});
+}).transform(({ anchorSide, ...edit }) => (anchorSide ? { ...edit, anchorSide } : edit));
 
 const imageInsertionSchema = z.object({
   subject: z.string().trim().min(1, "imageInsertion.subject is required"),

@@ -1,3 +1,4 @@
+import { InMemoryRateLimiter } from "./rateLimit.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AppConfig } from "@book-maker/core";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -24,6 +25,9 @@ type AuthStatus = {
   authenticated: boolean;
 };
 
+/** Ten guesses per address per fifteen minutes. */
+const operatorLoginLimiter = new InMemoryRateLimiter({ maxAttempts: 10, windowMs: 15 * 60 * 1000 });
+
 export async function registerAuth(app: FastifyInstance, config: AppConfig) {
   app.get("/api/auth/status", async (request): Promise<AuthStatus> => {
     const enabled = isAuthEnabled(config);
@@ -38,12 +42,25 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
       return { enabled: false, authenticated: true };
     }
 
-    const { password } = loginBodySchema.parse(request.body);
-    if (!passwordMatches(password, config.WEB_PASSWORD)) {
+    // One shared password guards pricing, moderation and every admin read on
+    // the public hostname, so guesses are counted per address.
+    const limit = operatorLoginLimiter.hit(`operator-login:${request.ip}`);
+    if (!limit.allowed) {
+      return reply
+        .code(429)
+        .header("Retry-After", String(limit.retryAfterSeconds))
+        .send({ error: "Too many sign-in attempts. Try again later." });
+    }
+
+    const parsed = loginBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Password required" });
+    }
+    if (!passwordMatches(parsed.data.password, config.WEB_PASSWORD)) {
       return reply.code(401).send({ error: "Invalid password" });
     }
 
-    setAuthCookie(reply, createSessionToken(config.WEB_PASSWORD));
+    setAuthCookie(reply, createSessionToken(config.WEB_PASSWORD), config.NODE_ENV === "production");
     return { enabled: true, authenticated: true };
   });
 
@@ -119,6 +136,7 @@ function shouldProtectPath(path: string): boolean {
     path === "/api/health" ||
     path === "/api/mobile/legal" ||
     path === "/api/mobile/sample-book" ||
+    path === "/api/mobile/app-update" ||
     path.startsWith("/api/auth/") ||
     path.startsWith("/api/mobile/auth/")
   ) {
@@ -223,20 +241,22 @@ function safeEqual(left: string, right: string): boolean {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function setAuthCookie(reply: FastifyReply, value: string): void {
-  reply.header("Set-Cookie", serializeCookie(AUTH_COOKIE_NAME, value, SESSION_MAX_AGE_SECONDS));
+function setAuthCookie(reply: FastifyReply, value: string, secure: boolean): void {
+  reply.header("Set-Cookie", serializeCookie(AUTH_COOKIE_NAME, value, SESSION_MAX_AGE_SECONDS, secure));
 }
 
 function clearAuthCookie(reply: FastifyReply): void {
   reply.header("Set-Cookie", serializeCookie(AUTH_COOKIE_NAME, "", 0));
 }
 
-function serializeCookie(name: string, value: string, maxAgeSeconds: number): string {
+function serializeCookie(name: string, value: string, maxAgeSeconds: number, secure = false): string {
   return [
     `${name}=${encodeURIComponent(value)}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
+    // Production is HTTPS end to end at the edge; the cookie never rides plain HTTP.
+    ...(secure ? ["Secure"] : []),
     `Max-Age=${maxAgeSeconds}`
   ].join("; ");
 }

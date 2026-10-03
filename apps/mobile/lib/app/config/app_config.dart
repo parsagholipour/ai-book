@@ -4,6 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// link into this app's Play subscription settings.
 const androidPackageName = 'com.tomeza.tomeza';
 
+/// Where the production API lives — the default for a release build that was
+/// not told otherwise (`docs/deployment.md`).
+const productionApiBaseUrl = 'https://tomeza.ravanix.app';
+
+/// True in a release (`--release`) build. The dart-define defaults below read
+/// it so a release built without flags talks to production rather than to the
+/// emulator host with a fake store, which a single forgotten flag used to ship.
+const _isReleaseBuild = bool.fromEnvironment('dart.vm.product');
+
 enum AppEnvironment {
   local,
   staging,
@@ -38,7 +47,7 @@ class AppConfig {
   static AppConfig fromDartDefine() {
     const rawEnvironment = String.fromEnvironment(
       'APP_ENV',
-      defaultValue: 'local',
+      defaultValue: _isReleaseBuild ? 'production' : 'local',
     );
     const rawApiBaseUrl = String.fromEnvironment('API_BASE_URL');
     const rawPrivacyPolicyUrl = String.fromEnvironment(
@@ -98,10 +107,13 @@ class AppConfig {
   }
 
   static Uri _defaultApiBaseUrl(AppEnvironment environment) {
-    if (environment == AppEnvironment.local) {
-      return Uri.parse('http://10.0.2.2:4001');
-    }
-    throw StateError('API_BASE_URL is required outside local builds.');
+    return switch (environment) {
+      AppEnvironment.local => Uri.parse('http://10.0.2.2:4001'),
+      AppEnvironment.production => Uri.parse(productionApiBaseUrl),
+      AppEnvironment.staging => throw StateError(
+        'API_BASE_URL is required for staging builds.',
+      ),
+    };
   }
 }
 

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/account/data/appearance_store.dart';
 import '../features/account/domain/appearance_prefs.dart';
+import '../features/app_update/presentation/app_update_watcher.dart';
+import '../features/notifications/presentation/push_notifications_watcher.dart';
 import 'routing/app_router.dart';
 import 'theme/app_theme.dart';
 
@@ -29,6 +31,13 @@ class TomezaApp extends ConsumerWidget {
       routeInformationParser: router.routeInformationParser,
       routeInformationProvider: router.routeInformationProvider,
       backButtonDispatcher: ref.watch(appBackButtonDispatcherProvider),
+      builder: (context, child) => AppUpdateWatcher(
+        router: router,
+        child: PushNotificationsWatcher(
+          router: router,
+          child: child ?? const SizedBox.shrink(),
+        ),
+      ),
     );
   }
 }

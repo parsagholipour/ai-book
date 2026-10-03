@@ -3,7 +3,9 @@ import { refuseAuthorBookReplan } from "./authorBookReplan.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectRecord } from "./dto.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
-import { queueAttemptChatOperation } from "./editOperations.js";
+import { creditsBlockedResume, queueAttemptChatOperation } from "./editOperations.js";
+import { pageLimitChatMessage, pageLimitRefusal, replannedBookPages } from "./bookPageLimit.js";
+import { numberingForProject } from "../bookPageNumbering.js";
 import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { attachReplanCopyToCreationSession, createReplanProjectCopy } from "./projectRecords.js";
 import { cleanTargetLanguage, jsonInputValue, languageDisplayName } from "./support.js";
@@ -31,6 +33,24 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
   // and is charged another.
   const replanSettings = intent.replanSettings ?? null;
   const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings });
+  const pageLimit = await pageLimitRefusal(userId, replannedBookPages(intent, project));
+  if (pageLimit) {
+    const reply = await pageLimitChatMessage(
+      project.id,
+      userMessageId,
+      intent,
+      pageLimit,
+      creditsBlockedResume({
+        request: message,
+        scope: intent.scope,
+        intent,
+        affectedPageIndexes: [],
+        credits: cost,
+        ...(options.characterContext ? { characterContext: options.characterContext } : {})
+      }, numberingForProject(project))
+    );
+    return { reply, operation: null };
+  }
   if (options.quotedCredits !== undefined && cost > options.quotedCredits) {
     // The same ceiling the other charged kinds enforce: the book changed
     // between the card and Apply (a continuation landed, the page count

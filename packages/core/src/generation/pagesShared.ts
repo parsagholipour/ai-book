@@ -270,9 +270,43 @@ export function chapterBriefPayloadForPageScope(brief: ChapterBrief | undefined)
   return rest;
 }
 
-export function compactPriorPages(pages: PriorPageContext[], count: number, excerptLength: number) {
-  return compactPageContexts(pages.slice(-count), excerptLength);
+/** How much of the nearest prior page's close a prior window carries. */
+const PRIOR_PAGE_ENDING_CHARACTERS = 500;
+
+/**
+ * The last `count` pages before this one, each as its opening excerpt — and
+ * the nearest one with its `ending` too, when the excerpt stops short of it.
+ *
+ * Every excerpt here is cut from the *front* of its page, so a page longer
+ * than the excerpt never showed the page after it where it stops. A
+ * continuation's page 14 was drafted and revised against page 13's first 700
+ * characters and its summary, and opened by re-narrating 13's last beat — oil
+ * wiped from the lamp's brass, the messenger carrying Salim's answer — at the
+ * seam (2026-10-02). The compact draft mode always sent both edges
+ * (`nearestPriorPage`); this is the same hand-off for every other window.
+ */
+export type CompactPriorPage = ReturnType<typeof compactPageContexts>[number] & { ending?: string };
+
+export function compactPriorPages(pages: PriorPageContext[], count: number, excerptLength: number): CompactPriorPage[] {
+  const recent = pages.slice(-count);
+  const window = compactPageContexts(recent, excerptLength);
+  const nearest = recent.at(-1);
+  const last = window.at(-1);
+  if (!nearest || !last) {
+    return window;
+  }
+  const characters = Array.from(figureStandInMarkdown(nearest.markdown));
+  const shown = Array.from(last.excerpt).length;
+  if (characters.length <= shown) {
+    return window;
+  }
+  const endingStart = Math.max(shown, characters.length - PRIOR_PAGE_ENDING_CHARACTERS);
+  return [...window.slice(0, -1), { ...last, ending: characters.slice(endingStart).join("") }];
 }
+
+/** What a prompt that shows a prior window tells the model the nearest page's `ending` is. */
+export const PRIOR_PAGE_ENDING_RULE =
+  "The last previous-page entry may carry ending: the words the page immediately before closes on. This page begins after them, so do not re-narrate an action, image or line from that ending.";
 
 /**
  * The forward twin of {@link compactPriorPages}, and it must take the pages

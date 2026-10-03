@@ -1,5 +1,5 @@
 import { registerCreationSessionHistoryRoute } from "./creationSessionHistory.js";
-import { settleMessageUsage } from "@book-maker/db/billing";
+import { getBookPageLimit, settleMessageUsage } from "@book-maker/db/billing";
 import { messageRequestKey, persistMessageReply, withMessageUsage } from "../messageUsage.js";
 import { createSourceEmbedding } from "@book-maker/core";
 import { attachmentSourceRefs, hydrateSourceAttachments, submittedAttachments } from "../sourceAttachments.js";
@@ -66,6 +66,7 @@ import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { advisorSnapshotForStorage, createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuild.js";
+import { pageLimitExceededError } from "../bookPageLimit.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
 import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
@@ -710,15 +711,19 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           )
         }
       });
-      const recommendations = prepared.pageCount.resolved
-        ? []
-        : await pageCountRecommendationsForPreflight(prepared.finalPayload, prepared.finalAdvisor);
+      const [recommendations, maxPages] = await Promise.all([
+        prepared.pageCount.resolved
+          ? Promise.resolve([])
+          : pageCountRecommendationsForPreflight(prepared.finalPayload, prepared.finalAdvisor),
+        getBookPageLimit(auth.user.id)
+      ]);
       return {
         requiresPageCount: !prepared.pageCount.resolved,
         detectedPageCount: prepared.pageCount.resolved
           ? { targetPages: prepared.pageCount.targetPages, source: prepared.pageCount.source }
           : null,
-        recommendations
+        recommendations,
+        maxPages
       } satisfies MobileCreationBuildPreflightResponseDto;
     }
   );
@@ -730,7 +735,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       schema: {
         tags: ["mobile"],
         body: mobileCreationBuildOpenApiBody,
-        response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError }
+        response: { 201: {}, 401: mobileAuthError, 403: pageLimitExceededError, 404: mobileAuthError, 409: mobileAuthError }
       }
     },
     async (request, reply) => {

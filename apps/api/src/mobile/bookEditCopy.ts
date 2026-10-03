@@ -1,5 +1,5 @@
 import { type BookEditIntent, type BookEditIntentKind } from "../bookEditIntent.js";
-import { clippedImageSubject, imageLayoutProposalSummary, imageLayoutQueuedMessage } from "../bookEditImage.js";
+import { clippedImageSubject, describedImageSubject, imageLayoutProposalSummary, imageLayoutQueuedMessage } from "../bookEditImage.js";
 import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { type StructuralCardPlan } from "./pendingEditState.js";
 import { structuralActionInstruction } from "./structuralPageEdits.js";
@@ -41,8 +41,11 @@ export function editProposalSummary(
     // This is the execution contract the reader approves, not preview copy.
     // The router accepts up to 1,200 characters because multi-requirement
     // edits need that space; clipping the card hid requirements that the
-    // worker would still execute after Apply.
-    return durableInstruction;
+    // worker would still execute after Apply. A request typed in lower case
+    // is still the opening of a sentence on the card.
+    return /^\p{Ll}/u.test(durableInstruction)
+      ? `${durableInstruction[0]!.toUpperCase()}${durableInstruction.slice(1)}`
+      : durableInstruction;
   }
   if (kind === "plan_revision") {
     // Only ever carded by a credits-blocked revision's resume proposal; the
@@ -77,8 +80,14 @@ export function editProposalSummary(
     if (replace) {
       // The card is the "shall I replace it?" ask — its summary names both
       // pictures so Apply confirms exactly the swap.
-      return replace.oldSubject
-        ? `Replace the illustration of “${clippedImageSubject(replace.oldSubject)}” with “${subject}”`
+      const oldSubject = describedImageSubject(replace.oldSubject);
+      if (oldSubject) {
+        return `Replace the illustration of “${clippedImageSubject(oldSubject)}” with “${subject}”`;
+      }
+      // A reader who named the page is told the page, not "the latest".
+      const replacedPage = intent.imageEdit?.pageIndex ?? affectedPageIndexes[0];
+      return replacedPage !== undefined
+        ? `Replace the illustration on page ${numbering.displayPage(replacedPage)} with one of “${subject}”`
         : `Replace the latest illustration with one of “${subject}”`;
     }
     const onPage =

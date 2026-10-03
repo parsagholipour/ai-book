@@ -1,5 +1,6 @@
 .PHONY: up down deps dbmigration-up logs-api logs-web logs-worker fix-docker-access \
-	mobile-deps mobile-devices mobile-run mobile-test mobile-analyze mobile-build-apk-debug
+	mobile-deps mobile-devices mobile-run mobile-test mobile-analyze mobile-build-apk-debug \
+	mobile-build-release
 
 MOBILE_DIR := apps/mobile
 FLUTTER_APP_ENV ?= local
@@ -55,3 +56,9 @@ mobile-analyze:
 
 mobile-build-apk-debug:
 	cd $(MOBILE_DIR) && flutter build apk --debug $(FLUTTER_DART_DEFINES)
+
+# The Play Store bundle: production API, real Google Play billing, signed with the
+# upload key in apps/mobile/android/key.properties (see docs/deployment.md).
+mobile-build-release:
+	cd $(MOBILE_DIR) && flutter build appbundle --release \
+		--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://tomeza.ravanix.app

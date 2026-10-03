@@ -63,6 +63,63 @@ describe("mobile pending edit recovery", () => {
     await app.close();
   });
 
+  it.each(["undo", "redo"])("answers a typed %s on a busy book without saving it over the reader's pending edit", async (verb) => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "GENERATING",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: []
+      })
+    );
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([openJobRow()]);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: verb }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toBe(`This book is still being worked on. Ask me to ${verb} again once the current job finishes.`);
+    expect(body.reply.metadata).toMatchObject({ blockedByActiveJob: true });
+    // No pending edit: a request saved a turn earlier is still the one "apply it" resumes.
+    expect(body.reply.metadata.pendingEdit).toBeUndefined();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("says a refused message was too long rather than asking for one", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const app = await buildMobileApp();
+
+    const tooLong = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "a".repeat(5001) }
+    });
+    expect(tooLong.statusCode).toBe(400);
+    expect(tooLong.json().error.message).toBe(
+      "That message is too long. Keep it under 5,000 characters, or send it in parts."
+    );
+
+    const empty = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "   " }
+    });
+    expect(empty.json().error.message).toBe("Send a chat message.");
+    await app.close();
+  });
+
   it("returns the busy reply without charging when a concurrent edit wins the open-operation slot", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
@@ -575,6 +632,11 @@ describe("mobile pending edit recovery", () => {
     expect(isPendingEditConfirmationMessage("do it anyway")).toBe(true);
     expect(isPendingEditConfirmationMessage("you decide")).toBe(true);
     expect(isPendingEditConfirmationMessage("up to you")).toBe(true);
+    // The card's own button and its sentence are confirmations, typed.
+    expect(isPendingEditConfirmationMessage("apply")).toBe(true);
+    expect(isPendingEditConfirmationMessage("Apply.")).toBe(true);
+    expect(isPendingEditConfirmationMessage("confirm")).toBe(true);
+    expect(isPendingEditConfirmationMessage("apply the sunset filter to page 2")).toBe(false);
     // Bare verbs stay out: this also confirms a priced proposal.
     expect(isPendingEditConfirmationMessage("change")).toBe(false);
     expect(isPendingEditConfirmationMessage("fix")).toBe(false);

@@ -268,7 +268,8 @@ class ChatDrawerFooter extends StatelessWidget {
                 },
                 leading: const Icon(Icons.account_circle_outlined),
               ),
-              if (credits != null) _CreditsPill(label: '$credits credits'),
+              if (credits != null)
+                _CreditsPill(label: '${formatCredits(credits)} credits'),
             ],
           ),
         ),

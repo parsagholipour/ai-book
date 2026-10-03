@@ -50,6 +50,7 @@ import {
   reviewerStyleRules,
   styleGuidancePayload,
   writerToneRules,
+  PRIOR_PAGE_ENDING_RULE,
   type PriorPageContext
 } from "./pagesShared.js";
 import { pagePromptBookStyle } from "./styleContract.js";
@@ -104,6 +105,15 @@ export type RevisePageOptions = ReviewPageOptions & {
   qaBriefRepaired?: boolean | undefined;
   /** Approved edit instruction; authoritative over a stale page brief. */
   editInstruction?: string | undefined;
+  /**
+   * The page was drafted for this edit — a continuation's or an inserted page —
+   * so `editInstruction` is its brief and the draft is not finished prose the
+   * reader approved. Such a page is repaired like any generated page. Told it
+   * was "a reader-requested edit of finished prose" and to keep every unnamed
+   * sentence byte for byte, a continuation's repair kept a page opening that
+   * re-narrated the page before it (2026-10-02).
+   */
+  draftedForEdit?: boolean | undefined;
   /** Prompt-only character canon; never an additional edit requirement. */
   characterContext?: string | undefined;
   /** Supplemental guidance for this page; it may refine but never replace editInstruction. */
@@ -316,6 +326,7 @@ function shouldUseLocalReviewFallback(error: unknown): boolean {
 }
 
 export async function revisePageDraft(options: RevisePageOptions): Promise<PageDraft> {
+  const finishedProseEdit = Boolean(options.editInstruction) && !options.draftedForEdit;
   if (options.sentenceRepair && !options.editInstruction) {
     return sentenceLengthRepairFor(options.input, options.draft, options.report)
       ? reviseSentenceLength(options) : options.draft;
@@ -367,7 +378,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             : []),
           "Return a complete replacement page, not notes.",
           "Preserve rejectedDraft.imagePrompt byte-for-byte when the depicted scene, characters, action and setting stay the same. Prose, grammar, pacing or summary edits alone do not change an illustration. When the depicted scene does change, update imagePrompt to match the accepted scene and its exact named characters.",
-          ...(options.editInstruction
+          ...(finishedProseEdit
             ? [
                 // A reader's edit lands in finished, approved prose. The two
                 // generic lines below it told the model to move the beat and
@@ -387,6 +398,16 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
           "If the current pageBrief requires a recurring action type from previousPages, keep the required action but change the physical details, sentence rhythm, and consequence.",
           "Do not reuse distinctive phrases from previousPages; replace them with fresh concrete wording.",
           "Vary how pages open: do not begin the replacement with the same opening move, image, or sentence shape the previousPages excerpts begin with.",
+          // A reader's edit of finished prose keeps every opening nothing named.
+          ...(finishedProseEdit
+            ? []
+            : [
+                PRIOR_PAGE_ENDING_RULE,
+                // Replayed on the page-14 seam (2026-10-02): the reviser keeps what
+                // it was handed, so the ending alone still let one repeat in three
+                // through on its rejected draft's opening; named, three in four held.
+                "A rejectedDraft that opens by re-narrating that ending needs a new opening."
+              ]),
           "Use pageScope to keep the replacement inside the current global page and chapter-local position.",
           ...(options.nextPages && options.nextPages.length > 0
             ? [

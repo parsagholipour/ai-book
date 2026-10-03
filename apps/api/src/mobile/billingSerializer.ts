@@ -2,6 +2,7 @@ import { type MobileBillingDto } from "./dto.js";
 import { DEFAULT_BILLING_PRODUCTS, creditPricing } from "@book-maker/core";
 import {
   getCreditBalance,
+  getWelcomeCreditsGranted,
   getMessageAllowance,
   getImageQuota,
   getPlanSummary,
@@ -34,6 +35,7 @@ export async function serializeMobileBilling(
   // Read once: an operator edit landing between the plan block and `creditCosts`
   // would otherwise describe the free tier two different ways in one payload.
   const pricing = creditPricing();
+  const welcomeCredits = await getWelcomeCreditsGranted(userId);
   return {
     messageAllowance,
     credits: {
@@ -56,9 +58,13 @@ export async function serializeMobileBilling(
     },
     freeTier: {
       monthlyCredits: pricing.freeMonthlyCredits,
-      welcomeCredits: pricing.welcomeCreditsEnabled > 0 ? pricing.welcomeCredits : 0,
-      illustratedBooksPerMonth: pricing.freeIllustratedBooksPerMonth
+      welcomeCredits,
+      illustratedBooksPerMonth: pricing.freeIllustratedBooksPerMonth,
+      maxBookPages: pricing.freeMaxBookPages
     },
+    // `getBookPageLimit`'s answer, read off the tier already resolved above
+    // rather than resolving it a second time.
+    maxBookPages: plan.tier === "free" ? pricing.freeMaxBookPages : null,
     allowance: {
       monthlyCredits: balance.planCreditsPerPeriod,
       planCredits: balance.planCredits,

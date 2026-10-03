@@ -41,7 +41,7 @@ export {
   listActiveUserEntitlements
 } from "./billingEntitlements.ts";
 
-export { WELCOME_CREDITS_IP_WINDOW_DAYS, ensureWelcomeCreditsTx } from "./welcomeCredits.ts";
+export { WELCOME_CREDITS_IP_WINDOW_DAYS, ensureWelcomeCreditsTx, getWelcomeCreditsGranted } from "./welcomeCredits.ts";
 
 export {
   type ConsumeUsageResult,
@@ -56,6 +56,7 @@ export {
   consumeManuscriptImportUse,
   consumeManuscriptImportUseTx,
   ensureCurrentPlanPeriod,
+  getBookPageLimit,
   getImageQuota,
   getImportQuota,
   getPlanSummary,

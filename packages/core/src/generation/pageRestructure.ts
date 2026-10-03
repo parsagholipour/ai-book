@@ -51,6 +51,15 @@ export type StructuralPageEdit = {
    * destination is the whole of what a move is.
    */
   anchorPageIndex: number | null;
+  /**
+   * Insert and move: `"before"` when the reader named the place by the page
+   * that follows it ("before page 7"). Display only — the anchor already says
+   * where the pages land and the resolver never reads this — but a gap inside
+   * one printed sheet is "after page 7" and "before page 7" at once, and a card
+   * answering "before page 7" with "after page 7" reads as the opposite
+   * (2026-10-02). Absent is "after", which every row stored before it means.
+   */
+  anchorSide?: "before";
   /** Delete and move: which pages, in the reader's own order. */
   pageIndexes: number[];
   /** Insert: how many pages to write. */
@@ -122,7 +131,15 @@ export type StructuralPagePlan = {
 
 export type StructuralPageResolution =
   | { ok: true; plan: StructuralPagePlan }
-  | { ok: false; reason: StructuralPageRefusal };
+  | {
+      ok: false;
+      reason: StructuralPageRefusal;
+      /**
+       * For `would_empty_chapter`, the chapters left with no pages, in book
+       * order — so the refusal can name them instead of "one of the chapters".
+       */
+      emptiedChapterIds?: string[];
+    };
 
 export type StructuralPageRefusal =
   | "no_pages"
@@ -215,8 +232,9 @@ export function resolveStructuralPageEdit(
     // A chapter with no pages left is a row nothing renumbers and a heading
     // with nothing under it. Refusing says so; deleting the chapter would
     // invent chapter-renumbering semantics this project has nowhere else.
-    if (emptiesAChapter(ordered, survivors)) {
-      return { ok: false, reason: "would_empty_chapter" };
+    const emptied = emptiedChapterIds(ordered, survivors);
+    if (emptied.length > 0) {
+      return { ok: false, reason: "would_empty_chapter", emptiedChapterIds: emptied };
     }
     return {
       ok: true,
@@ -299,8 +317,9 @@ export function resolveStructuralPageEdit(
     // bump the revision, recompile an identical book and report a change.
     return { ok: false, reason: "nothing_to_do" };
   }
-  if (emptiesAChapter(ordered, rearranged)) {
-    return { ok: false, reason: "would_empty_chapter" };
+  const emptied = emptiedChapterIds(ordered, rearranged);
+  if (emptied.length > 0) {
+    return { ok: false, reason: "would_empty_chapter", emptiedChapterIds: emptied };
   }
   return {
     ok: true,
@@ -353,7 +372,7 @@ function renumbered(pages: readonly ExistingPage[]): PagePlacement[] {
  */
 export type StructuralPlanReconciliation =
   | { ok: true; plan: StructuralPagePlan; drifted: boolean }
-  | { ok: false; reason: StructuralPageRefusal };
+  | { ok: false; reason: StructuralPageRefusal; emptiedChapterIds?: string[] };
 
 /**
  * The resolved plan, held to the pages the project actually has at the moment
@@ -553,8 +572,9 @@ function reconciledOrdering(
     const chapterId = placement.chapterId === undefined ? held : placement.chapterId;
     return { id: placement.pageId, index: placement.index, ...(chapterId === undefined ? {} : { chapterId }) };
   });
-  if (emptiesAChapter(live, after)) {
-    return { ok: false, reason: "would_empty_chapter" };
+  const emptied = emptiedChapterIds(live, after);
+  if (emptied.length > 0) {
+    return { ok: false, reason: "would_empty_chapter", emptiedChapterIds: emptied };
   }
   const drifted =
     order.length !== plan.order.length ||
@@ -639,9 +659,10 @@ function sameChapterCounts(left: Record<string, number>, right: Record<string, n
   return chapterIds.every((chapterId) => left[chapterId] === right[chapterId]);
 }
 
-function emptiesAChapter(before: readonly ExistingPage[], after: readonly ExistingPage[]): boolean {
+/** The chapters `before` had and `after` leaves without a page, in book order. */
+function emptiedChapterIds(before: readonly ExistingPage[], after: readonly ExistingPage[]): string[] {
   const remaining = chapterCounts(after);
-  return Object.keys(chapterCounts(before)).some((chapterId) => (remaining[chapterId] ?? 0) === 0);
+  return Object.keys(chapterCounts(before)).filter((chapterId) => (remaining[chapterId] ?? 0) === 0);
 }
 
 /**
@@ -758,6 +779,7 @@ export function structuralEditFromClassifier(classifier: unknown): StructuralPag
 export const structuralPageEditSchema = z.object({
   action: z.enum(["insert", "delete", "move"]),
   anchorPageIndex: z.number().int().min(0).nullable().default(null),
+  anchorSide: z.literal("before").optional().catch(undefined),
   pageIndexes: z.array(z.number().int().positive()).default([]),
   pageCount: z.number().int().min(0).default(0)
-});
+}).transform(({ anchorSide, ...edit }): StructuralPageEdit => (anchorSide ? { ...edit, anchorSide } : edit));

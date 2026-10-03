@@ -5,7 +5,6 @@ import '../../../shared/ui/app_components.dart';
 import '../domain/billing_models.dart';
 import 'billing_controller.dart';
 import 'billing_free_plan_card.dart';
-import 'billing_plan_tiles.dart';
 import 'billing_shared_parts.dart';
 import 'play_subscriptions_link.dart';
 
@@ -207,7 +206,7 @@ class _CancelSubscriptionSheetState
   }
 }
 
-/// Monthly credits, welcome credits, illustrated books — not the trailing
+/// Monthly credits, welcome credits, illustrated books, book length — not the trailing
 /// "stay yours" line, which [_whatYouKeep] already says in its own words.
 List<String> _freePlanGrants(MobileFreeTier freeTier) {
   final benefits = freePlanBenefits(freeTier);

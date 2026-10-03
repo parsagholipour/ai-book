@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { FastifyRequest } from "fastify";
-import { loadConfig } from "@book-maker/core";
 import { deleteProjectStorage } from "./projectStorage.js";
 import { seedObject, testObjectStore } from "./testing/objectStorage.js";
 
@@ -12,7 +10,7 @@ describe("project object cleanup", () => {
     }
     seedObject("images/characters/user-a/portrait.webp", "keep");
     const warn = vi.fn();
-    const result = await deleteProjectStorage(loadConfig(), "project-1", { log: { warn } } as unknown as FastifyRequest);
+    const result = await deleteProjectStorage("project-1", { log: { warn } });
     expect(result).toEqual({ book: true, images: true, voice: true, audio: true });
     expect([...testObjectStore.objects.keys()].sort()).toEqual([
       "audio/project-10/artifact", "books/project-10/artifact", "images/characters/user-a/portrait.webp",
@@ -25,7 +23,7 @@ describe("project object cleanup", () => {
     const deletion = vi.spyOn(testObjectStore, "deletePrefix").mockRejectedValueOnce(new Error("S3 unavailable"));
     const warn = vi.fn();
     try {
-      const result = await deleteProjectStorage(loadConfig(), "project-1", { log: { warn } } as unknown as FastifyRequest);
+      const result = await deleteProjectStorage("project-1", { log: { warn } });
       expect(result).toEqual({ book: false, images: true, voice: true, audio: true });
       expect(deletion).toHaveBeenCalledTimes(4);
       expect(warn).toHaveBeenCalledOnce();

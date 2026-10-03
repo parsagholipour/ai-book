@@ -48,8 +48,21 @@ export function serializeImage(
     ),
     contentType: imageContentType(image),
     altText,
-    pageId: image.pageId
+    pageId: image.pageId,
+    aiGenerated: imageIsAiGenerated(image.metadata)
   };
+}
+
+/**
+ * Whether a model drew this picture, read off what made it: the cover pipeline
+ * writes `coverArtSource: "design" | "ai"` on everything it renders and an
+ * upload writes `source: "upload"` (`manuscript/manuscriptCover.ts`). A row
+ * that says neither — a page illustration, a cover from before the field —
+ * was drawn, so it stays reportable.
+ */
+export function imageIsAiGenerated(metadata: unknown): boolean {
+  const record = jsonRecord(metadata);
+  return record.source !== "upload" && record.coverArtSource !== "design";
 }
 
 export function serializePlan(planVersion: MobilePlanRecord): MobilePlanDto {

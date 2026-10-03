@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 
-enum _MessageAction { copy, reply, edit }
+enum _MessageAction { copy, reply, edit, report }
 
 Future<void> showMessageActionsMenu({
   required BuildContext context,
@@ -12,6 +12,9 @@ Future<void> showMessageActionsMenu({
   required String message,
   VoidCallback? onEdit,
   VoidCallback? onReply,
+
+  /// Reports an AI reply for review; null on the reader's own messages.
+  VoidCallback? onReport,
 }) async {
   final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
   if (overlay is! RenderBox) return;
@@ -59,8 +62,25 @@ Future<void> showMessageActionsMenu({
             ],
           ),
         ),
+      if (onReport != null)
+        const PopupMenuItem<_MessageAction>(
+          value: _MessageAction.report,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.flag_outlined),
+              SizedBox(width: 12),
+              Text('Report'),
+            ],
+          ),
+        ),
     ],
   );
+
+  if (action == _MessageAction.report) {
+    onReport?.call();
+    return;
+  }
 
   if (action == _MessageAction.reply) {
     onReply?.call();

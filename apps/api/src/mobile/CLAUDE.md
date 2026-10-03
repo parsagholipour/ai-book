@@ -102,6 +102,18 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   see the free tier again. `endSubscriptionNow` nulls `purchaseToken` for that reason — leaving it
   would let the next refresh or sweep resubscribe you. Restore purchases in a debug build is how
   you get back to Creator for the next run.
+- **A subscription token is granted only for the plan its own line items name, and the server
+  acknowledges what it records.** Google's subscription endpoint (`subscriptionsv2`) is keyed by the
+  token alone, and the verifier fell back to the first line item when none matched the SKU the app
+  sent — so a Creator token posted as Max was granted Max, and the hourly renewal sweep kept granting
+  it (2026-10-03 launch audit). `mapSubscriptionPurchase` (`googlePlayBilling.ts`) now throws
+  `GooglePlayProductMismatchError` (400 `GOOGLE_PLAY_PRODUCT_MISMATCH`); one-time products were safe,
+  because their endpoint takes the product id. Acknowledgement used to be the app's alone, after the
+  server had granted the credits, and Play refunds anything unacknowledged after three days — an app
+  killed in between kept the credits and lost the payment. The verify route now acknowledges a
+  grantable purchase Google still reports pending (`purchaseNeedsAcknowledgement`), best-effort and
+  idempotent on Google's side; the app still consumes credit packs. Voided purchases and refunds are
+  still not clawed back: there is no RTDN endpoint yet.
 - **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat
   `add_image` Apply.** `POST /api/mobile/plans/:id/approve` claims the `UsageCounter` slot for a
   generation planned with images (403 `IMAGE_LIMIT_REACHED` when it is gone — never a silent
@@ -117,6 +129,24 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   `imageInsertion`, through the same `addImageQuotaLimit` decision the original Apply used.
   **Known, pre-existing gap:** a chat replan copy carrying `illustrationsEnabled` generates an
   illustrated book through the worker's self-approval, with no approve step and no claim.
+- **The free tier's book length is a rule asked at every door that starts generating a book, not a
+  quota.** A free account gets books of up to `freeMaxBookPages` (30, operator-tunable at `/pricing`);
+  longer, up to the 600 every schema allows, is a plan perk. `bookPageLimit.ts` owns the check
+  (`pageLimitRefusal`), the one sentence and the 403 `PAGE_LIMIT_EXCEEDED` body, whose
+  `pageLimit: { limit, requestedPages, maxPages }` is what the app draws its long-book offer from —
+  so a route that *declares* its 403 must use `pageLimitExceededError`, or the serializer ships the
+  sentence without the numbers. The doors: the creation Build and `/projects/:id/plan` (before
+  planning is charged, on the built input's `targetPages`, which covers a legacy draft's
+  book-type default), plan approval and the paid full-book `/resume` (the authoritative two — a plan
+  sized while subscribed is refused once the plan lapses), and the chat's `book_replan`,
+  `continue_book` and `restructure_pages`, gated at the proposal (the reply says why, the priced card
+  still follows, `metadata.pageLimit` draws the unlock row) and again at Apply, which answers like
+  `imageLimitChatMessage` with a fresh resume pair so the card's Apply works once they upgrade.
+  Nothing is claimed, so a refusal has nothing to hand back. Only *generation* is held to it: an
+  author's or imported book is theirs at any length, a page change is refused only when it makes the
+  book longer (`restructuredBookPages`), and deleting from or rewriting a long book stays open. The
+  preflight's `maxPages` and the billing payload's `maxBookPages` (null on any plan) are how the app
+  locks the longer lengths before anything is sent.
 - **Reading a book in the app spends nothing; only taking its file out spends the export unlock,
   and the app asks first.** A generated book's unlock is granted by its generation charge
   (`grantExportEntitlement` on the plan approval attempt), so its reader never met the price. A
@@ -135,6 +165,17 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   credits buy and that failures are refunded. `stripCreditAnnouncement` in
   `apps/api/src/mobile/projectChat.ts` removes the old sentence from transcripts written before
   that, so a new priced reply that writes the price into its text would say it twice.
+- **A credit-history line names what a charge bought, never the rate it was billed at.** A ledger
+  `operation` is a rate: a page rewrite, a chapter rewrite, a structural insert, a continuation and
+  the Studio's chapter draft are all `PAGE_REGENERATION`, and the Studio's notes, consistency check
+  and outline borrow `BOOK_TEXT_EDIT`, `PREMIUM_REVIEW` and `PLAN_GENERATION`. Titled by it, the log
+  called an added page "Page rewrite" and its refund "Page rewrite refunded". `creditLogActions.ts`
+  reads the label off what the charge recorded — `intent.kind`, `writingAssist`, or for a retry-lane
+  charge the edit operation it re-ran (one batched read) — and titles a refund from the charge it
+  reverses (`reversesEntry`), since a refund records only why. No new operation was added, because
+  the rate is right and every pricing, retry and economics query keys off it; the label being read
+  from the row also corrects every line already in the ledger. `description` is never read: it holds
+  refund reasons that are often raw provider errors.
 
 ## The edit chat router
 
@@ -221,7 +262,16 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   proposal bubble, the move destination, the applied insert's card — is the *end*, because that is
   the sheet the new or moved pages actually follow. Printing the start named a sheet before where
   the prose lands on any page long enough to span two, which is the same widening
-  `anchorModelPageIndex` takes `Math.max` over on the way in. **A place the card cannot name is
+  `anchorModelPageIndex` takes `Math.max` over on the way in. **And a place the reader named by the
+  page after it is named that way back** (`StructuralPageEdit.anchorSide`, display only;
+  `readerPlaceOfGap`): on a book of short pages two of them share a sheet, so the gap between them
+  is "after page 4" and "before page 4" at once, and "move page 6 before page 4", "swap pages 4 and
+  5" and "put a new page before page 7" were confirmed "… after page 4/7" (2026-10-02). "Before page
+  N" is the sheet the page past the gap begins on, which is true of every gap; the wire sends
+  `placement: "before"` with `beforeReaderPage` and keeps `afterReaderPage` for builds that predate
+  it. A "before" anchor is also taken ahead of the pages that *begin* on its sheet
+  (`beforeAnchorPages`), never ahead of one that began a sheet earlier and runs onto it — that put
+  the new page before page 9's text for "before page 10". **A place the card cannot name is
   left out of the sentence rather than approximated, and there are two ways to fail to name one.**
   `displayPageEnd` answers a page the map has never seen with the model index, which is the right
   degradation inside a *list* of pages — dropping one out of "pages 3 and 4" is worse — and the
@@ -362,6 +412,35 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   `GenerationJob.message`, which these serializers never forward — so `editProgress.ts` keeps the
   words and picks them per `structuralEdit.action` (falling back on `intentKind`), the same payload
   discriminator the admin operations map reads.
+- **A page change is one action, read by code where the reader spoke only numbers, and words that only locate or excuse a page are not prose to price.**
+  Words that only locate, excuse or soften a page change were each a free delete quoted at 520–550
+  credits (2026-10-02): courtesy at either end ("can you…", "please and
+  thanks"), a reason that only says the page is redundant ("it repeats page 4"), pages picked by a
+  pattern or by what they hold ("every other page", "all the pages about shopping") and a swap of two
+  pages are all in the closed grammar now. A locator is a few words with no conjunction or edit verb
+  in it, so "delete the page about X and rewrite page 8" still reaches the replan.
+  **A request one card cannot carry is answered before any card.** A structural edit is one action
+  with one anchor, so "add a page after page 4 and delete page 9" became an insert whose brief said
+  "Also delete page 9" — prose the drafter cannot perform — and a swap of two pages with others
+  between them would be half done by any one move. `multipleStructuralActionsMessage` and
+  `unswappablePagesMessage` (`structuralPageEdits.ts`) answer both free; a swap of neighbours is the
+  one move `swapPagesFromMessage` (`bookEditStructure.ts`) builds, read whole — pages *and* anchor —
+  because the router writes one swap two ways and code's pages beside its anchor move a page after
+  itself.
+  **A request that names its pages by number alone is translated by code, even where the router
+  guessed elsewhere** (`codeTranslatedSelection`, `bookEditDecision.ts`): "delete page 0" was offered
+  as "Remove page 2". A page named by what it holds is still the router's. Ranges read "to" and
+  "through" as core's grammar does — read with the dash alone, "pages 3 to 5" was page 3.
+  **An insert's instruction carries what to write, never where**: the router restated the place in a
+  new form on every run ("so they fall between printed page 4 and printed page 5", "(internal page
+  index 4)"), and each one reached the card as a requirement. It is told to leave the place to the
+  structural fields, and an opening sentence or aside made only of page references and placement
+  words is dropped as a backstop (`withoutPlacementOnlySentence`).
+  **A numbered delete or move the router asked about is settled by code** (`numberedStructuralIntent`,
+  `bookEditDecision.ts`): on a sheet two pages share, the router asked "which one?" for "remove page
+  three" and offered a card for "remove page 3". The pages that begin on the sheet are the answer
+  either way, so a bare request code resolves to real pages becomes that card whatever the router
+  said; a number holding no page, a move with nowhere to go or a second request stays the router's.
 - **The model-free recogniser fires only when the verb's object *is* the page.** `bookEditStructure.ts`
   runs third in `classifyWithDegradedHeuristics`, ahead of the replan battery and with no image or
   patch recogniser in front of it (image requests have no regex fast path by design), so whatever it
@@ -764,6 +843,28 @@ of the same manuscript can have fixed.
   illustration row on a page. Anywhere else the edit says so and changes nothing: writing it would
   recompile an identical book and tell the reader it changed. The three presentation kinds are
   dispatched from `mobile/presentationIntents.ts`.
+- **A book's title is not page text either, and only an AI cover makes changing it cost anything.**
+  "Change the book title to …" was quoted as a 550-credit whole-book rebuild (2026-10-02): nothing
+  recognised it, the router prompt had no target for it, and the model-free battery listed "title"
+  beside the premise and the ending. It is a `book_title` intent now (`bookEditBookTitle.ts` reads a
+  title the reader spelled out before the router; the router's `book_title` target writes one when
+  they asked for it to be invented; the heuristics ask "What should the new title be?" instead of
+  rebuilding). `bookTitleEdits.ts` writes the title to the project row *and* the current plan — the
+  app, cover typesetting and file names read the first, the compile's title page, cover alt text and
+  EPUB/Word metadata the second — through `commitCoverChange` (`coverChange.ts`, shared with the
+  Studio's cover routes), one transaction with the revision bump, the presentation reprint and the
+  cover row. **What it costs is the cover's**: a designed cover is re-set free in the design it
+  wears (a revision-owned cover row, with `coverArtSource: "design"` written into the plan snapshot
+  too, because the cover job reads its source there); no cover, or an uploaded one, has nothing to
+  redraw; an AI cover holds the old title in its pixels and its artwork is not stored apart, so the
+  change is a card priced at `coverRegeneration`, charged and settled like the Studio's paid cover,
+  and claimed by a `BOOK_TITLE` operation row so Cancel and Apply cannot both win. A cover row that
+  names neither a design nor an upload is read as AI — a cover from before the source was recorded
+  was drawn by a model, and read as a design it would be swapped for a fresh pick, free. A
+  children's book with no chosen page design has the one its old title picked written down, or the
+  new title could re-dress it. An author's book (a Studio book or an import) is sent to the Studio's
+  settings, whose publish already re-typesets its cover; a chat write would leave the Studio's
+  published record behind.
 - **A request about one kind of content is an edit of the pages that carry it, and the router is
   told what each page carries.** The router sees page titles and summaries, and a summary does not
   say whether a page has a code block; "Use JavaScript in the codes" therefore routed as
@@ -1377,6 +1478,12 @@ contract: `.scratch/writing-studio/spec.md`.
   regenerates it whole: `refuseAuthorBookReplan` (`authorBookReplan.ts`) answers it at the proposal
   *and* at Apply, because a card quoted before a takeover can still be applied after it.
   `continue_book` stays open — it exists for imports, and derivation appends its chapters.
+- **An author's book offers no book report, and a picture offers one only if a model drew it.**
+  Reporting exists for AI content, and an author's text is theirs — the preview already left off
+  its "AI-generated content" line for the same reason (`isAuthorManuscript`). Image DTOs carry
+  `aiGenerated` (`imageIsAiGenerated`): false for `coverArtSource: "design"` and `source: "upload"`,
+  true for everything else, a legacy cover with no source included. An AI cover or a Studio AI
+  picture in an author's book stays reportable. The app reads a missing field as true.
 - **An uploaded picture never makes a book "illustrated".** `projectAlreadyIllustrated` decides
   whether an `add_image` needs a free-tier illustrated-book slot; counting an author's own
   `upload-…` photo would let one upload unlock unlimited free AI pictures. It skips `upload-` files;

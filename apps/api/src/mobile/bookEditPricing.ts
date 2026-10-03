@@ -72,6 +72,12 @@ export function bookEditCreditCost(
   if (kind === "move_image" || kind === "remove_image") {
     return 0;
   }
+  if (kind === "book_title") {
+    // The title itself is free. An AI cover drawn with the old one in it is
+    // redrawn at `coverRegeneration`, which `bookTitleEdits.ts` prices from the
+    // cover it finds — something this function has no way to see.
+    return 0;
+  }
   if (kind === "restructure_pages") {
     // Only the pages a model has to *write*. Deleting and reordering pages
     // calls no provider at all — the same reasoning that prices move_image and
@@ -102,7 +108,13 @@ export function operationKindForIntent(
   | "ADD_IMAGE"
   | "MOVE_IMAGE"
   | "REMOVE_IMAGE"
-  | "RESTRUCTURE_PAGES" {
+  | "RESTRUCTURE_PAGES"
+  | "BOOK_TITLE" {
+  if (kind === "book_title") {
+    // Only an AI cover's redraw makes a title change a card, and only that card
+    // can be cancelled or applied through a claim row.
+    return "BOOK_TITLE";
+  }
   if (kind === "restructure_pages") {
     // One kind for insert, delete and move: which one it was rides the
     // operation's classifier, so every list that switches on the kind gains a

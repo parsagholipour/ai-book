@@ -84,6 +84,18 @@ describe("currentActionForEditOperation for an applied insert", () => {
     );
   });
 
+  it("confirms a place from the side the proposal named it", () => {
+    // Model page 1 ends on printed 4 and the page past the new run (4) begins
+    // there: the gap is inside one sheet. Asked for "before page 4", the card
+    // used to confirm "after page 4".
+    const operation = appliedRestructure(
+      { action: "insert", anchorPageIndex: 1, anchorSide: "before", pageIndexes: [], pageCount: 2 },
+      [2, 3],
+      { action: "insert", insertedPageIds: ["page-a", "page-b"] }
+    );
+    expect(currentActionForEditOperation(operation, numberingDuringEdit)).toBe("2 new pages added before page 4.");
+  });
+
   it("says the front of the book for anchor 0 and the end for no anchor at all", () => {
     expect(
       currentActionForEditOperation(

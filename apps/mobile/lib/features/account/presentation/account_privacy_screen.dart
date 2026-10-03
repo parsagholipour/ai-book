@@ -333,7 +333,9 @@ class _DeleteAccountCard extends StatelessWidget {
           point(
             'Projects and user content are removed, apart from the limited records we may have to keep.',
           ),
-          point('We verify each request and aim to finish within 30 days.'),
+          point(
+            'Your account is deleted a day after you ask. Write to support before then if you change your mind.',
+          ),
           point(
             'It does not cancel a Google Play subscription. Cancel that separately in Google Play.',
           ),
@@ -423,8 +425,8 @@ class _AccountDeletionRequestDialogState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'This sends a request to delete your account and everything in it. '
-            'We verify each request before anything is removed.',
+            'Your account and everything in it are deleted a day after you '
+            'send this. Write to support before then to stop it.',
           ),
           const SizedBox(height: AppSpacing.md),
           TextField(

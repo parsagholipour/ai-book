@@ -1,3 +1,4 @@
+import { sanitizeBookTitle } from "../bookEditBookTitle.js";
 import {
   bookEditScopeFromMessage,
   isBookEditScopeOnlyMessage,
@@ -378,6 +379,11 @@ export function pendingEditProposalFromMetadata(
       ? structuralEditFromMetadata(intentSource.structuralEdit)
       : {}),
     ...(kind === "add_image" ? imageEditFromMetadata(intentSource.imageEdit) : {}),
+    // The title the card named is what the reader confirmed; without it the
+    // Apply has nothing to print.
+    ...(kind === "book_title" && sanitizeBookTitle(intentSource.bookTitle as string | undefined)
+      ? { bookTitle: sanitizeBookTitle(intentSource.bookTitle as string | undefined)! }
+      : {}),
     ...(kind === "move_image" || kind === "remove_image"
       ? imageLayoutFromMetadata(intentSource.imageLayout)
       : {}),
@@ -679,8 +685,11 @@ export function isPendingEditConfirmationMessage(message: string): boolean {
   const normalized = normalizeShortFollowUpMessage(message);
   // Deliberately no bare verbs ("change", "fix"): this also confirms a priced
   // proposal, so the intent to proceed has to be explicit — a "just" prefix, an
-  // "it" object, or an adverb like "anyway".
-  return /^(?:ok|okay|yes|yep|yeah|sure|do it|apply it|go ahead|please do|start|run it)$/i.test(normalized) ||
+  // "it" object, or an adverb like "anyway". "Apply" and "confirm" are the
+  // exception because they are the card's own words ("Tap Apply to confirm")
+  // and name no edit of their own; refused, the router re-read the transcript
+  // and answered each typed "apply" with a fresh copy of the same card.
+  return /^(?:ok|okay|yes|yep|yeah|sure|do it|apply it|apply|confirm|go ahead|please do|start|run it)$/i.test(normalized) ||
     /^just\s+(?:do|add|apply|go|run|make|write|change|fix)(?:\s+it)?(?:\s+(?:anyway|already|now|please))?$/i.test(
       normalized
     ) ||

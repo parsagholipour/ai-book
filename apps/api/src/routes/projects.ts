@@ -729,7 +729,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     await prisma.project.delete({ where: { id } });
-    const assetCleanup = await deleteProjectStorage(appConfig, id, request);
+    const assetCleanup = await deleteProjectStorage(id, request);
     return {
       ok: true,
       deletedProjectId: id,

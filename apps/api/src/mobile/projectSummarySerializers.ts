@@ -35,7 +35,7 @@ import {
   mobileLengthPresetSchema,
   mobileQualityPresetSchema
 } from "./schemas.js";
-import { generatedPagePreview, jsonRecord, previewText, stringField } from "./support.js";
+import { generatedPagePreview, jsonRecord, promptPreviewText, stringField } from "./support.js";
 import {
   createProjectSchema,
   isImportedManuscript,
@@ -86,7 +86,7 @@ export async function serializeProjectSummary(
     statusLabel: studioDraft?.statusLabel ?? statusLabel(project.status),
     progressPercent,
     currentAction: studioDraft?.currentAction ?? currentActionForProject(project.status, progressPercent, { hasExistingPlan }),
-    promptPreview: previewText(project.prompt),
+    promptPreview: promptPreviewText(project.prompt),
     targetPages: project.targetPages,
     pageCount,
     imageCount,

@@ -236,7 +236,7 @@ class PlanApprovalBar extends StatelessWidget {
                 ? 'Approve when this plan matches the book you want.'
                 : balance == null
                 ? 'Book after approval. Planning is not charged again.'
-                : 'Book after approval: $quote credits. You have $balance available. Planning is not charged again.',
+                : 'Book after approval: ${formatCredits(quote)} credits. You have ${formatCredits(balance)} available. Planning is not charged again.',
             style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
           ),
           if (short) ...[

@@ -396,6 +396,7 @@ export function rebuildProjectPdfExport(
           imageSource: "object-storage",
           publicApiUrl: appConfig.PUBLIC_API_URL,
           outputPath,
+          documentTitle: project.title,
           language: project.language,
           targetPageCount: isAuthorManuscript(project.mediaSettings) ? undefined : project.targetPages,
           // Scopes the renderer's file access to this book's own illustrations,

@@ -1,6 +1,7 @@
 part of 'creation_chat_screen.dart';
 
-// Modal sheets for page count, source notes and advanced book settings.
+// Modal sheets for source notes, the title and advanced book settings; the
+// page-count sheet Build opens lives in creation_chat_page_count_sheet.dart.
 // Imports and shared state live in the parent library file.
 
 /// The screen's own openers for the sheets below. They live here, next to the
@@ -58,267 +59,9 @@ extension _CreationChatSheets on _CreationChatScreenState {
   }
 }
 
-class _PageCountSelection {
-  const _PageCountSelection({required this.targetPages, required this.source});
-
-  final int targetPages;
-  final String source;
-}
-
 // ---------------------------------------------------------------------------
 // Sheets
 // ---------------------------------------------------------------------------
-
-class _PageCountPromptSheet extends StatefulWidget {
-  const _PageCountPromptSheet({
-    required this.preflight,
-    required this.estimateCredits,
-  });
-
-  final MobileCreationBuildPreflight preflight;
-  final int Function(int targetPages) estimateCredits;
-
-  @override
-  State<_PageCountPromptSheet> createState() => _PageCountPromptSheetState();
-}
-
-class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
-  final _customController = TextEditingController();
-
-  @override
-  void dispose() {
-    _customController.dispose();
-    super.dispose();
-  }
-
-  int? get _customPages {
-    final value = int.tryParse(_customController.text.trim());
-    if (value == null || value < 1 || value > 600) {
-      return null;
-    }
-    return value;
-  }
-
-  /// The count Continue submits when the custom field is empty: the flagged
-  /// recommendation, or the first option if the payload omitted the flag.
-  MobilePageCountRecommendation? get _continueRecommendation {
-    for (final recommendation in widget.preflight.recommendations) {
-      if (recommendation.isRecommended) {
-        return recommendation;
-      }
-    }
-    final recommendations = widget.preflight.recommendations;
-    return recommendations.isEmpty ? null : recommendations.first;
-  }
-
-  void _popSelection(int targetPages, String source) {
-    Navigator.of(
-      context,
-    ).pop(_PageCountSelection(targetPages: targetPages, source: source));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final colors = Theme.of(context).colorScheme;
-    final recommendations = [...widget.preflight.recommendations]
-      ..sort((a, b) => a.targetPages.compareTo(b.targetPages));
-    return Padding(
-      padding: EdgeInsets.fromLTRB(18, 4, 18, 18 + bottomInset),
-      child: _ScrollableFooterContext(
-        key: const ValueKey('page-count-scroll'),
-        fadeColor: colors.surfaceContainerLowest,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'How many pages?',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              'Your chat did not say how long the book should be. Pick a length, or type your own.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            for (final recommendation in recommendations) ...[
-              _PageCountOption(
-                recommendation: recommendation,
-                credits: widget.estimateCredits(recommendation.targetPages),
-                onTap: () =>
-                    _popSelection(recommendation.targetPages, 'recommended'),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-            ],
-            if (recommendations.isNotEmpty) ...[
-              Text(
-                'Book after approval only: charged after you approve the plan. Planning is charged separately when Build starts.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-            TextField(
-              controller: _customController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Custom pages',
-                helperMaxLines: 4,
-                helperText: _customPages == null
-                    ? 'Enter a number from 1 to 600.'
-                    : '≈ ${widget.estimateCredits(_customPages!)} credits '
-                          'for $_customPages pages.',
-              ),
-              onChanged: (_) => setState(() {}),
-              onSubmitted: (_) {
-                final pages = _customPages;
-                if (pages != null) {
-                  _popSelection(pages, 'settings');
-                }
-              },
-            ),
-            const SizedBox(height: 14),
-            AppActionGroup(
-              primary: ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _customController,
-                builder: (context, value, child) {
-                  final customPages = _customPages;
-                  if (value.text.trim().isNotEmpty) {
-                    return AppButton.primary(
-                      onPressed: customPages == null
-                          ? null
-                          : () => _popSelection(customPages, 'settings'),
-                      label: 'Use custom',
-                      expanded: true,
-                    );
-                  }
-                  final recommended = _continueRecommendation;
-                  return AppButton.primary(
-                    onPressed: recommended == null
-                        ? null
-                        : () => _popSelection(
-                            recommended.targetPages,
-                            'recommended',
-                          ),
-                    label: 'Continue',
-                    expanded: true,
-                  );
-                },
-              ),
-              secondary: [
-                AppButton.outlined(
-                  onPressed: () => Navigator.of(context).pop(),
-                  label: 'Cancel',
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One recommended count: pages, price, and why — two tight rows instead of
-/// a stacked card, so three options still fit above the custom field.
-class _PageCountOption extends StatelessWidget {
-  const _PageCountOption({
-    required this.recommendation,
-    required this.credits,
-    required this.onTap,
-  });
-
-  final MobilePageCountRecommendation recommendation;
-  final int credits;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-    final pagesLabel = '${recommendation.targetPages} pages';
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        side: BorderSide(
-          color: recommendation.isRecommended
-              ? colors.primary
-              : colors.outlineVariant,
-          width: recommendation.isRecommended ? 2 : 1,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: AppSpacing.xs,
-                runSpacing: AppSpacing.xxs,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(
-                    pagesLabel,
-                    style: text.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  if (recommendation.isRecommended)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xs,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.primaryContainer,
-                        borderRadius: BorderRadius.circular(AppRadii.compact),
-                      ),
-                      child: Text(
-                        'Recommended',
-                        style: text.labelSmall?.copyWith(
-                          color: colors.onPrimaryContainer,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  Text(
-                    '≈ $credits credits',
-                    style: text.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: colors.primary,
-                    ),
-                  ),
-                ],
-              ),
-              if (recommendation.label != pagesLabel) ...[
-                const SizedBox(height: 2),
-                Text(recommendation.label, style: text.labelMedium),
-              ],
-              if (recommendation.description.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(recommendation.description, style: text.bodySmall),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _SourceNotesSheet extends StatelessWidget {
   const _SourceNotesSheet({required this.controller});
@@ -530,6 +273,26 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
   Widget _sectionAnchor(_AdvancedSection section) =>
       SizedBox(key: _sectionKeys[section]);
 
+  /// A locked length was chosen: offer the plan, and take whichever length
+  /// the reader settles on — the one they wanted once they have a plan, the
+  /// free tier's longest if they would rather keep it free.
+  Future<void> _unlockPages(
+    int pages,
+    CreationChatController controller,
+  ) async {
+    final limit = ref.read(billingProvider).asData?.value.maxBookPages;
+    if (limit == null) {
+      controller.setCustomTargetPages(pages);
+      return;
+    }
+    final resolved = await _resolveLongBook(
+      context,
+      ref,
+      BookPageLimit(limit: limit, requestedPages: pages),
+    );
+    if (resolved != null) controller.setCustomTargetPages(resolved);
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -603,6 +366,12 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
                     presets: presets,
                     onAuto: controller.setPageCountAuto,
                     onCustom: controller.setCustomTargetPages,
+                    maxPages: ref
+                        .watch(billingProvider)
+                        .asData
+                        ?.value
+                        .maxBookPages,
+                    onLocked: (pages) => _unlockPages(pages, controller),
                     estimateCredits: (pages) => estimateProjectCredits(
                       bookType: presets.bookType,
                       bookTypeChoice: presets.bookTypeChoice,

@@ -1,12 +1,15 @@
 import { backMatterIntent } from "./bookEditBackMatter.js";
+import { bookTitleIntent, sanitizeBookTitle } from "./bookEditBookTitle.js";
 import { chapterHeadingEditFromDecision, chapterHeadingIntent } from "./bookEditChapterHeading.js";
 import { pageDesignEditFromDecision, pageDesignIntent } from "./bookEditPageDesign.js";
 import { imageInsertionIntentFromDecision, imageLayoutIntentFromDecision } from "./bookEditImage.js";
 import {
   anchorModelPageIndex,
+  beforeAnchorPages,
   chapterRegenerateFromMessage,
   continuationRequestFromMessage,
   replanSettingsFromEditMessage,
+  spokenPageNumbersFromMessage,
   showContentTargetFromMessage,
   targetLanguageFromLanguageVersionRequest
 } from "./bookEditMessage.js";
@@ -16,8 +19,9 @@ import type {
   BookEditScope
 } from "./bookEditIntent.js";
 import type { DecideActionPayload } from "./bookEditRouterPrompt.js";
-import { structuralPageEditFromMessage } from "./bookEditStructure.js";
-import { exactReplacementInstructionMatches, type ExactReplacement } from "@book-maker/core";
+import { structuralPageEditFromMessage, swapPagesFromMessage } from "./bookEditStructure.js";
+import { withCorrectedActionVerb } from "./structuralVerbTypos.js";
+import { exactReplacementInstructionMatches, isBareStructuralInstruction, normalizeNumerals, pdfPageForPrintedPage, type BookPdfPageMap, type ExactReplacement, type StructuralPageEdit } from "@book-maker/core";
 import {
   MODEL_PAGE_NUMBERING,
   modelPagesForCopiedPrintedPages,
@@ -67,6 +71,12 @@ export function intentFromDecideAction(
   chapters: BookEditChapterContext[] = [],
   context: IntentDecisionContext = {}
 ): BookEditIntent {
+  if (decision.action === "clarify" || decision.action === "answer") {
+    const settled = numberedStructuralIntent(decision, message, context.pageNumbering?.pdfPageMap);
+    if (settled) {
+      return settled;
+    }
+  }
   if (decision.action === "propose_edit") {
     return intentFromProposeEdit(decision, message, chapters, context);
   }
@@ -200,7 +210,7 @@ function intentFromProposeEditBase(
   const imageDecision = copied
     ? { ...decision, pageIndexes: routed, imageDestPageIndexes: copied[1] ?? decision.imageDestPageIndexes }
     : decision;
-  const routedAnchorPageIndex = anchorPageIndexFromDecision(decision, copied?.[2]);
+  const routedAnchorPageIndex = anchorPageIndexFromDecision(decision, copied?.[2], context.pageNumbering?.pdfPageMap);
   const perPageInstructions = instructions.flatMap((entry, offset) =>
     (copied?.[offset + 3] ?? [entry.pageIndex]).map((pageIndex) => ({ pageIndex, instruction: entry.instruction }))
   );
@@ -262,6 +272,22 @@ function intentFromProposeEditBase(
     return backMatterIntent({ includeSources: decision.backMatterSources ?? false }, decision);
   }
 
+  if (target === "book_title") {
+    const title = sanitizeBookTitle(decision.bookTitle);
+    // A rename with no title to print has one question to ask, and it is this.
+    return title
+      ? bookTitleIntent(title, decision)
+      : {
+          kind: "clarify",
+          confidence: decision.confidence,
+          reasoning: decision.reasoning,
+          affectedPageIndexes: [],
+          assistantMessage: "What should the new title be?",
+          scope: "none",
+          impact: "small_text",
+          clarification: "scope"
+        };
+  }
   if (target === "chapter_heading") {
     return chapterHeadingIntent(
       chapterHeadingEditFromDecision(decision.chapterHeadingStyle, decision.chapterHeadingLabel),
@@ -412,11 +438,88 @@ function exactReplacementFromDecision(
  */
 function anchorPageIndexFromDecision(
   decision: DecideActionPayload,
-  mappedAnchorPages: number[] | undefined
+  mappedAnchorPages: number[] | undefined,
+  map: BookPdfPageMap | undefined
 ): number | null {
-  const pages =
-    mappedAnchorPages ?? (decision.structuralAnchorPageIndex != null ? [decision.structuralAnchorPageIndex] : []);
-  return anchorModelPageIndex(decision.structuralAnchorPosition === "before" ? "before" : "after", pages);
+  const before = decision.structuralAnchorPosition === "before";
+  const pages = mappedAnchorPages
+    ? before
+      ? beforeAnchorPages(map, mappedAnchorPages)
+      : mappedAnchorPages
+    : decision.structuralAnchorPageIndex != null
+      ? [decision.structuralAnchorPageIndex]
+      : [];
+  return anchorModelPageIndex(before ? "before" : "after", pages);
+}
+
+/**
+ * A delete or move named by page number alone, which code can settle when the
+ * router asked or answered instead.
+ *
+ * On a sheet two pages share, the router asked "which one?" for "remove page
+ * three" and offered a card for "remove page 3" (2026-10-02) — a coin toss on
+ * one request. A spoken number is the pages that begin on that sheet, the rule
+ * every numbered delete and move follows, so the question has an answer. Only
+ * for a request that is the bare edit and nothing else, and only when code
+ * finds pages (and, for a move, a place): a number that holds no page, a move
+ * with nowhere to go or anything asked beside it stays the router's to answer.
+ */
+function numberedStructuralIntent(
+  decision: DecideActionPayload,
+  message: string,
+  map: BookPdfPageMap | undefined
+): BookEditIntent | null {
+  if (!map) return null;
+  const request = message.replace(/\?\s*$/, "");
+  if (spokenPageNumbersFromMessage(request).length === 0) return null;
+  const recognized = structuralPageEditFromMessage(request, mapPages(map), { pdfPageMap: map });
+  const edit = recognized?.edit;
+  if (!edit || edit.action === "insert" || edit.pageIndexes.length === 0) return null;
+  if (edit.action === "move" && edit.anchorPageIndex === null) return null;
+  if (!isBareStructuralInstruction(edit, request)) return null;
+  // Code's reading, so the router's hesitation is not this card's.
+  return structuralIntent({ ...decision, confidence: Math.max(decision.confidence, 0.9) }, edit);
+}
+
+/** The book's pages as the recogniser reads them, from the measured map alone. */
+function mapPages(map: BookPdfPageMap) {
+  return map.pages.map((page) => ({ id: `page-${page.index}`, index: page.index, title: "", summary: "", previewText: "" }));
+}
+
+/** The recogniser's reading of the pages a delete or move names, when the router named nothing else. */
+function codeTranslatedSelection(
+  action: "delete" | "move",
+  message: string,
+  routed: readonly number[],
+  map: BookPdfPageMap | undefined
+): number[] | null {
+  if (!map || routed.length === 0) return null;
+  // The recogniser declines a question ("delete page 3?") so it never acts on
+  // one; here the router has already decided the edit, and only its pages are
+  // being read, so the question mark is not a reason to keep its guess.
+  const request = withCorrectedActionVerb(message.replace(/\?\s*$/, ""), action);
+  const spoken = spokenPageNumbersFromMessage(message);
+  const spokenSheets = new Set(
+    spoken.map((number) => pdfPageForPrintedPage(map, number)).filter((sheet): sheet is number => sheet !== undefined)
+  );
+  const onSpokenSheet = (index: number) => {
+    const range = map.pages.find((page) => page.index === index);
+    return range !== undefined && [...spokenSheets].some((sheet) => range.startPdfPage <= sheet && sheet <= range.endPdfPage);
+  };
+  // A request made of page numbers and nothing else names its pages no other
+  // way, so a page the router found anywhere else is a guess: "delete page 0"
+  // was offered as "Remove page 2" (2026-10-02). There, code's reading stands
+  // even when it is empty, and the resolver asks which page.
+  // Any digit counts as a number spoken: the reader's "0" is one, though no
+  // sheet has it and so the spoken list leaves it out.
+  const numbersOnly =
+    (spoken.length > 0 || /\d/.test(normalizeNumerals(request))) &&
+    isBareStructuralInstruction({ action, anchorPageIndex: null, pageIndexes: [...routed] }, request);
+  if (!numbersOnly && !routed.every(onSpokenSheet)) return null;
+  const recognized = structuralPageEditFromMessage(request, mapPages(map), { pdfPageMap: map });
+  if (recognized?.edit.action !== action) return null;
+  const translated = recognized.edit.pageIndexes;
+  return translated.length > 0 || numbersOnly ? translated : null;
 }
 
 /**
@@ -495,6 +598,43 @@ function structuralIntentFromDecision(
   // into the one page "add a page" means — the router leaving the field out, and
   // a borrowed recognition that is not an insert, which carries 0.
   const pageCount = Math.max(1, decision.structuralPageCount ?? recognized?.edit.pageCount ?? 1);
+  // **The pages a delete or a move takes are translated by code when the reader
+  // spoke them as numbers.** The router is told each page's printed span and
+  // asked for model indexes, and on a book whose pages straddle sheets it
+  // guessed: "delete pages 2, 4 and 6" came back as [1, 3, 6] on one run and as
+  // a set emptying a chapter on the next (2026-10-02). Code reads each number as
+  // the pages that begin on that sheet. It wins only when every page the router
+  // named lies on a sheet the reader spoke — a router that was only translating
+  // — so a page named by what it holds ("page 3 and the recipe page") keeps the
+  // router's reading.
+  const selectedPageIndexes =
+    action === "insert" ? [] : codeTranslatedSelection(action, message, namedPageIndexes, map) ?? namedPageIndexes;
+  // A swap is read whole — which pages *and* where — because the router can
+  // write one swap two ways ("move page 3 before page 2", "move page 2 after
+  // page 3"), and code's pages beside the router's anchor would move a page
+  // after itself.
+  const swap = action === "move" && map ? swapPagesFromMessage(message.replace(/\?\s*$/, ""), mapPages(map), { pdfPageMap: map }) : null;
+  if (swap?.edit) {
+    return structuralIntent(decision, swap.edit);
+  }
+  // Which side of the page the reader named it from, for the card's wording
+  // only: the borrowed anchor brings the side it was read with.
+  const namedBefore =
+    action !== "delete" &&
+    anchorPageIndex !== null &&
+    (routedAnchorPageIndex !== null
+      ? decision.structuralAnchorPosition === "before"
+      : recognized?.edit.action === action && recognized.edit.anchorSide === "before");
+  return structuralIntent(decision, {
+    action,
+    anchorPageIndex,
+    ...(namedBefore ? { anchorSide: "before" as const } : {}),
+    pageIndexes: selectedPageIndexes,
+    pageCount: action === "insert" ? pageCount : 0
+  });
+}
+
+function structuralIntent(decision: DecideActionPayload, structuralEdit: StructuralPageEdit): BookEditIntent {
   return {
     kind: "restructure_pages",
     confidence: decision.confidence,
@@ -504,11 +644,6 @@ function structuralIntentFromDecision(
     scope: "none",
     impact: "style_rewrite",
     clarification: "none",
-    structuralEdit: {
-      action,
-      anchorPageIndex,
-      pageIndexes: action === "insert" ? [] : namedPageIndexes,
-      pageCount: action === "insert" ? pageCount : 0
-    }
+    structuralEdit
   };
 }

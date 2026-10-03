@@ -6,7 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { enqueueGenerationJob } from "../queue.js";
-import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
+import { InsufficientCreditsError, getBookPageLimit, reserveCredits } from "@book-maker/db/billing";
 import {
   bearer,
   buildMobileApp,
@@ -129,6 +129,70 @@ describe("mobile creation session project build", () => {
     expect(mockPrisma.mobileCreationOutput.create).not.toHaveBeenCalled();
     expect(mockPrisma.mobileCreationDraft.update).not.toHaveBeenCalled();
     expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses a free account's long book before planning is charged", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(getBookPageLimit).mockResolvedValue(30);
+    const payload = buildPayloadAtTier("balanced");
+    payload.selectedPresets.targetPages = 45;
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: { requestId: "build-request-long" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    // The numbers survive the route's declared 403 schema: the app draws the
+    // long-book offer from them.
+    expect(response.json().error).toEqual({
+      code: "PAGE_LIMIT_EXCEEDED",
+      message: expect.stringContaining("30 pages"),
+      pageLimit: { limit: 30, requestedPages: 45, maxPages: 600 }
+    });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("builds a free account's book at exactly the page limit", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(getBookPageLimit).mockResolvedValue(30);
+    const payload = buildPayloadAtTier("balanced");
+    payload.selectedPresets.targetPages = 30;
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({ id: "project-from-session", targetPages: data.targetPages, mediaSettings: data.mediaSettings })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan-limit" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: { requestId: "build-request-at-limit" }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(mockPrisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ targetPages: 30 }) })
+    );
     await app.close();
   });
 

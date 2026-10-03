@@ -11,10 +11,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tomeza/app/app.dart';
 import 'package:tomeza/features/account/data/app_version.dart';
 import 'package:tomeza/features/account/data/appearance_store.dart';
+import 'package:tomeza/features/app_update/data/app_update_repository.dart';
 import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/notifications/data/push_device_repository.dart';
+import 'package:tomeza/features/notifications/data/push_messaging.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
@@ -29,9 +32,15 @@ Widget testApp({
   FakeBillingRepository? billingRepository,
   FakeCreationRepository? creationRepository,
   BookShareRepository? shareRepository,
+  PushMessaging? pushMessaging,
+  PushDeviceRepository? pushDeviceRepository,
 }) {
   return ProviderScope(
     overrides: [
+      if (pushMessaging != null)
+        pushMessagingProvider.overrideWithValue(pushMessaging),
+      if (pushDeviceRepository != null)
+        pushDeviceRepositoryProvider.overrideWithValue(pushDeviceRepository),
       // Always overridden: the file-backed store calls path_provider.
       pendingRemixStoreProvider.overrideWithValue(MemoryPendingRemixStore()),
       if (shareRepository != null)
@@ -47,6 +56,10 @@ Widget testApp({
         billingRepository ?? FakeBillingRepository(),
       ),
       appearanceStoreProvider.overrideWithValue(MemoryAppearanceStore()),
+      // Always overridden: the file-backed store calls path_provider.
+      appUpdatePromptStoreProvider.overrideWithValue(
+        MemoryAppUpdatePromptStore(),
+      ),
       appVersionProvider.overrideWith((ref) async => 'Tomeza 1.0.0 (1)'),
     ],
     child: const TomezaApp(),

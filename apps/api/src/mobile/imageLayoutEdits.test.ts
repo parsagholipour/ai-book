@@ -118,7 +118,7 @@ describe("chat image layout", () => {
       kind: "remove_image",
       affectedPageIndexes: [1],
       credits: 0,
-      summary: "Remove the illustration of “the illustration on page 1” from page 1"
+      summary: "Remove the illustration on page 1"
     });
     expect(body.reply.metadata.pendingEdit.intent.imageLayout).toEqual({
       action: "remove",
@@ -227,7 +227,7 @@ describe("chat image layout", () => {
       kind: "move_image",
       affectedPageIndexes: [1],
       credits: 0,
-      summary: "Move the illustration of “the illustration on page 1” to the bottom of page 1"
+      summary: "Move the illustration to the bottom of page 1"
     });
     expect(body.reply.metadata.pendingEdit.intent.imageLayout.destPosition).toBe("bottom");
     await app.close();

@@ -1,4 +1,4 @@
-import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
+import { MODEL_PAGE_NUMBERING, readerPlaceOfGap, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { type MobileBookEditOperationRecord } from "./dto.js";
 import { jsonRecord } from "./support.js";
 
@@ -87,6 +87,8 @@ function appliedEditSummary(
       return jsonRecord(operation.classifier).takeover === true
         ? "Book moved into the Writing Studio."
         : "Book updated from the Writing Studio.";
+    case "BOOK_TITLE":
+      return "Title changed and cover redrawn.";
     default:
       return "Edit applied.";
   }
@@ -259,6 +261,9 @@ export function currentActionForEditOperation(
       ? "Setting your book up in the Writing Studio."
       : "Updating your book from the Writing Studio.";
   }
+  if (operation.kind === "BOOK_TITLE") {
+    return "Drawing the cover with the new title.";
+  }
   return "Applying text edits.";
 }
 
@@ -381,8 +386,11 @@ function insertedPagesLocation(
   if (!Number.isFinite(firstNewPage) || firstNewPage < 2) {
     return "";
   }
-  const printedAnchor = numbering.printedPageEnd(firstNewPage - 1);
-  return printedAnchor === undefined ? "" : ` after page ${printedAnchor}`;
+  // Named from the side the proposal named it: "before" is the sheet the first
+  // page past the new run begins on.
+  const side = jsonRecord(classifier.structuralEdit).anchorSide === "before" ? "before" : "after";
+  const place = readerPlaceOfGap(numbering, firstNewPage - 1, firstNewPage + written.length, side);
+  return place === undefined ? "" : ` ${place.side} page ${place.readerPage}`;
 }
 
 /**

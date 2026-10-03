@@ -219,6 +219,10 @@ enum BookEditOperationKind {
   /// earlier operation (classifier.sealedAt), and the Studio's version history is
   /// how an author walks a publish back.
   MANUSCRIPT_PUBLISH
+  /// A chat title change on a book with an AI cover: retitled in the API
+  /// transaction and the cover redrawn at the cover price. Never undoable. A
+  /// free title change (a designed cover, or none) writes no operation.
+  BOOK_TITLE
 }
 
 enum BookEditOperationStatus {
@@ -235,6 +239,10 @@ enum ModerationReportTargetType {
   /// A public share link (`BookShare`): an anonymous report from the share
   /// page, or a system review of a caption the moderation gate could not decide.
   BOOK_SHARE
+  /// A live voice call with a book character; the snapshot keeps its last turns.
+  VOICE_CALL
+  /// A reply in a book's chat; the snapshot keeps it and the message it answered.
+  CHAT_MESSAGE
 }
 
 enum ModerationReportReason {
@@ -315,6 +323,7 @@ model User {
   messageUsageReservations MessageUsageReservation[]
   welcomeCreditGrant       WelcomeCreditGrant?
   bookShares               BookShare[]
+  pushDevices              PushDevice[]
 }
 
 /// Append-only proof that a user affirmatively accepted a specific pair of
@@ -358,6 +367,21 @@ model GenerationQualityRevision {
   id        String   @id @default(cuid())
   version   Int      @unique
   settings  Json
+  note      String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Append-only operator history for app-store releases and what each one asks
+/// of older installs: `silent`, `prompt` or `required`. Newest version wins; no
+/// rows means no release has asked anything, so every build is left alone.
+/// `releases` is validated by `appUpdateReleasesSchema` in apps/api/src/appUpdates.ts.
+model AppUpdatePolicyRevision {
+  id        String   @id @default(cuid())
+  version   Int      @unique
+  releases  Json
   note      String?
   updatedBy String?
   createdAt DateTime @default(now())
@@ -411,11 +435,61 @@ model MobileSession {
   createdAt                DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushDevices PushDevice[]
 
   @@index([userId, revokedAt])
   @@index([accessTokenExpiresAt])
   @@index([refreshTokenExpiresAt])
+}
+
+enum PushPlatform {
+  ANDROID
+  IOS
+}
+
+/// One installed app that may be sent push notifications through Firebase
+/// Cloud Messaging. The token is the install's address and belongs to the
+/// session that last registered it: a push goes only to a device whose session
+/// is still live, so signing out, a revoked or expired session, and an account
+/// deletion (which deletes the sessions) all stop the pushes without the app
+/// having to say so. A token FCM reports as unregistered is deleted.
+model PushDevice {
+  id        String       @id @default(cuid())
+  token     String       @unique
+  platform  PushPlatform
+  userId    String
+  sessionId String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session MobileSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+}
+
+/// What the push sweep last told a book's owner about the generation in
+/// flight (`apps/api/src/push/bookPushSweep.ts`). A row exists only while a
+/// book is being followed: the first progress push creates it, every later one
+/// is a compare-and-swap on `version`, and the push that says how the
+/// generation ended is sent only by the delete that claims the row — so two
+/// sweeps never send the same message.
+model ProjectPushState {
+  projectId  String   @id
+  /// The highest percent sent so far; the notification never goes backwards.
+  percent    Int
+  detail     String?
+  version    Int      @default(0)
+  lastSentAt DateTime
+  /// When the bar or its phrase last changed. Keep-alive pushes stop half an
+  /// hour after it, so a book stuck in GENERATING does not refresh a frozen
+  /// bar forever; the phone's timeout then takes the notification down.
+  changedAt  DateTime
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ProductCatalog {
@@ -488,6 +562,8 @@ model UserCreditAccount {
 model WelcomeCreditGrant {
   userId        String               @id
   ipHash        String?
+  /// Approximate signup country from server-side IP lookup; never updated on login.
+  countryCode   String?              @db.VarChar(2)
   outcome       WelcomeCreditOutcome @default(PENDING)
   amountCredits Int                  @default(0)
   ledgerEntryId String?              @unique
@@ -721,6 +797,7 @@ model Project {
   share              BookShare?
   audiobook          Audiobook?
   generationAttempts GenerationAttempt[]
+  pushState          ProjectPushState?
 
   @@index([userId, updatedAt])
   @@index([userId, createdAt])

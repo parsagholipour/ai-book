@@ -37,11 +37,22 @@ const evidenceItemBound = (maxLength: number) =>
 const CODE_VERIFIED_FACTS_RULE =
   "codeVerifiedFacts, when present, were established by code over the whole edited text, including pages you are not shown: treat each as proven, and never report as missing, unverifiable or contradicted anything a code-verified fact establishes.";
 
+/**
+ * A request to keep what the book already has is a consistency clause, not a
+ * list of things to show. A continuation's brief read "Keep the same characters
+ * (Salim, the messenger, Nasser, and the memory of Mariam)"; the reviewer
+ * refused a chapter without Mariam in it, the repair wrote her in, and page QA
+ * then refused that page for repeating her (2026-10-02).
+ */
+const CONSISTENCY_CLAUSE_RULE =
+  "A clause asking the edit to keep what the book already has — the same characters, setting, voice or tone — is met when the after pages stay consistent with the book; it does not require every character, place or detail it names to appear, and pages that leave one out have omitted nothing.";
+
 export const wholeSetSystemMessage = (maxProseLength: number): string => [
   "You are an instruction-adherence checker for an already approved book edit.",
   "Judge only whether the after pages fully perform the approved instruction when compared with the before pages.",
   "Do not judge morality, safety, taste, advisability, writing style, or whether you would have chosen this edit.",
   "Review the changed page set jointly, because one requirement may be distributed across several pages.",
+  CONSISTENCY_CLAUSE_RULE,
   CODE_VERIFIED_FACTS_RULE,
   "A material omission, contradiction, substitution, or silent softening means satisfied is false.",
   "missingRequirements, contradictions and pageIndexesToRevise are the repair order a satisfied=false verdict carries: name the concrete unmet requirements, the contradictions, and the after pages that can repair them. Leave all three empty when satisfied is true — nothing else is read from a satisfied verdict, and this review has no field for optional improvements.",
@@ -63,6 +74,7 @@ export function evidenceSystemMessage(capacity: number, maxItemLength: number): 
     "Inspect every supplied manuscript segment and report concrete facts relevant to the approved instruction.",
     "Do not make the operation-level satisfied or missing judgment: a requirement may be fulfilled in another segment.",
     "Preserve evidence of performed changes, possible omissions or softening, and contradictions for the global reviewer.",
+    CONSISTENCY_CLAUSE_RULE,
     `Each evidence list has capacity ${capacity}; set evidenceComplete=false rather than omitting, sampling, or truncating a material fact, and a smaller slice of the same manuscript will be sent back to you.`,
     evidenceItemBound(maxItemLength),
     "Copy every supplied segment id into acceptedInputIds exactly once.",
@@ -106,6 +118,7 @@ export const finalSystemMessage = (maxProseLength: number): string => [
   "Judge only whether the after pages fully perform the approved instruction when compared with the before pages.",
   "Do not judge morality, safety, taste, advisability, writing style, or whether you would have chosen this edit.",
   "Requirements may be distributed across evidence nodes, but a material omission, contradiction, substitution, or silent softening means satisfied is false.",
+  CONSISTENCY_CLAUSE_RULE,
   "Copy every supplied negative fact id into acceptedNegativeFactIds exactly once and in order.",
   CODE_VERIFIED_FACTS_RULE,
   "A possible omission may appear in resolvedPossibleOmissionIds only when the complete positive evidence or a codeVerifiedFacts entry proves that exact concern was fulfilled; preserve order and never include a contradiction id.",

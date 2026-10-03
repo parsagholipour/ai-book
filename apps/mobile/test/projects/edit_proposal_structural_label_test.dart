@@ -86,6 +86,47 @@ void main() {
     );
   });
 
+  test('names a gap inside one sheet by the page it comes before', () {
+    // On a book of short pages two of them can share a sheet, and the gap
+    // between them is in its middle. "Move page 6 before page 4" was confirmed
+    // "after page 4"; the server now names that gap by the page that begins on
+    // the sheet, and still sends the old field for builds that predate it.
+    final move = proposalWith({
+      'action': 'move',
+      'pageCount': 1,
+      'totalPages': 12,
+      'placement': 'before',
+      'beforeReaderPage': 4,
+      'afterReaderPage': 4,
+      'readerPageNumbers': const [6, 7],
+    });
+    expect(move.structural!.placement, MobileStructuralPlacement.before);
+    expect(move.pageLabel, 'Pages 6, 7 move before page 4');
+    expect(
+      proposalWith({
+        'action': 'insert',
+        'pageCount': 1,
+        'totalPages': 13,
+        'placement': 'before',
+        'beforeReaderPage': 7,
+        'afterReaderPage': 7,
+      }).pageLabel,
+      'Before page 7 (+1)',
+    );
+  });
+
+  test('names the title and cover for a title change, which touches no page', () {
+    final proposal = MobileEditProposal.fromJson({
+      'id': 'proposal-2',
+      'kind': 'book_title',
+      'scope': 'none',
+      'affectedPageIndexes': const <int>[],
+      'credits': 80,
+      'summary': 'Retitle the book “Dinner Made Simple” and draw a new AI cover with it',
+    });
+    expect(proposal.pageLabel, 'Title and cover');
+  });
+
   test('says only what it knows when the server could not name the place', () {
     // A page an earlier edit added has no printed number until the recompile
     // publishes, so the server sends no destination rather than a model index

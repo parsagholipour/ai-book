@@ -27,6 +27,7 @@ import {
   writerToneRules,
   type GeneratePageOptions,
   type PageDraftContextMode,
+  PRIOR_PAGE_ENDING_RULE,
   type PriorPageContext
 } from "./pagesShared.js";
 
@@ -156,7 +157,8 @@ export function buildPageDraftSystemContent(
         ]
       : [
           "Treat previousPages as a phrase blacklist for distinctive action wording; do not reuse memorable clauses from earlier pages.",
-          "Vary how pages open: do not begin this page with the same opening move, image, or sentence shape the recentPages excerpts begin with."
+          "Vary how pages open: do not begin this page with the same opening move, image, or sentence shape the recentPages excerpts begin with.",
+          PRIOR_PAGE_ENDING_RULE
         ]),
     "Use pageScope to distinguish global page position from chapter-local position.",
     ...(options.nextPages && options.nextPages.length > 0

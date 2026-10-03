@@ -80,9 +80,25 @@ export const EDIT_START_FAILED =
 /** Something broke mid-flight. The card reports the refund; this says what to do. */
 export const EDIT_RUN_FAILED = "That change couldn’t be finished. Send it again to try once more.";
 
-/** The adherence gate kept the published manuscript unchanged. */
+/**
+ * The adherence gate kept the published manuscript unchanged.
+ *
+ * It says nothing about how the change was asked for. The gate is a model, and
+ * it refuses correct work too — a continuation it had already accepted, an
+ * insert placed exactly where the reader asked (2026-10-02) — so "try
+ * describing the change differently" blamed readers who had done nothing wrong
+ * and sent them to reword a request that was never the problem.
+ */
 export const EDIT_ADHERENCE_FAILED =
-  "That change couldn’t be applied as requested, so the original book was kept and your credits were returned. Try describing the change differently.";
+  "That change didn’t pass our final check, so the original book was kept and your credits were returned. Send it again to try once more.";
+
+/**
+ * The same gate, for pages the reader asked us to write — a continuation or an
+ * inserted page. Their request is not what was judged: the pages were, and a
+ * second attempt drafts them fresh.
+ */
+export const NEW_PAGES_ADHERENCE_FAILED =
+  "The new pages didn’t pass our final check, so your book was kept as it was and your credits were returned. Send the request again for a fresh draft.";
 
 /**
  * Mirrors `insufficientCreditsChatMessage`'s way forward without repeating its

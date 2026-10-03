@@ -77,8 +77,8 @@ vi.mock("../runtime/durableEditCompletion.js", () => ({
   settleDurableEditAttemptTx: vi.fn(async () => true)
 }));
 
-import { EDIT_ADHERENCE_FAILED } from "@book-maker/core/editFailure";
-import { draftInsertedPages, publishDraftedInsertedPages } from "./restructurePagesDrafting.js";
+import { NEW_PAGES_ADHERENCE_FAILED } from "@book-maker/core/editFailure";
+import { draftInsertedPages, insertedPagesBrief, publishDraftedInsertedPages } from "./restructurePagesDrafting.js";
 
 const approvedReport = {
   approved: true,
@@ -197,6 +197,7 @@ describe("draftInsertedPages adherence publication gate", () => {
       reviseOptions: {
         pageIndex: 5,
         editInstruction: expect.stringContaining("red key"),
+        draftedForEdit: true,
         adherenceRepair: ["Page 5 does not explain what the key unlocks."]
       }
     });
@@ -218,6 +219,75 @@ describe("draftInsertedPages adherence publication gate", () => {
     );
     expect(mocks.prisma.page.updateMany.mock.invocationCallOrder.at(-1)!).toBeLessThan(
       mocks.prisma.bookEditOperation.update.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it("keeps the set the reviewer accepted when a page-QA repair round loses adherence", async () => {
+    mocks.reviewAndSaveGeneratedPage.mockImplementation(
+      async ({ draft: candidate }: { draft: ReturnType<typeof draft> & { index: number } }) => ({
+        page: candidate,
+        candidate: {
+          draft: candidate,
+          qualityReport:
+            candidate.index === 5 && candidate.markdown.startsWith("Initial")
+              ? { ...approvedReport, approved: false, score: 60 }
+              : approvedReport
+        }
+      })
+    );
+    mocks.reviewAppliedBookEdit
+      .mockResolvedValueOnce({
+        basis: "reviewed",
+        satisfied: true,
+        confidence: 0.93,
+        missingRequirements: [],
+        contradictions: [],
+        pageIndexesToRevise: []
+      })
+      .mockResolvedValue({
+        basis: "reviewed",
+        satisfied: false,
+        confidence: 0.89,
+        missingRequirements: ["The red key is gone."],
+        contradictions: [],
+        pageIndexesToRevise: [4, 5]
+      });
+
+    const drafted = await draftInsertedPages(options());
+
+    expect(mocks.revisePageDraftWithRestart).toHaveBeenCalled();
+    expect(drafted.candidates.map((candidate) => candidate.draft.markdown)).toEqual(["Initial 4", "Initial 5"]);
+    expect(drafted.audit).toMatchObject({ verdict: { satisfied: true }, proseApproved: false });
+  });
+
+  it("drafts and judges a canonical insert against its content, never the card's printed placement", async () => {
+    mocks.reviewAppliedBookEdit.mockResolvedValue({
+      basis: "reviewed",
+      satisfied: true,
+      confidence: 0.99,
+      missingRequirements: [],
+      contradictions: [],
+      pageIndexesToRevise: []
+    });
+    const canonical = {
+      ...options(),
+      editInstruction: "Add 2 new pages after page 3. Content requirements: Reveal the red key."
+    };
+    await draftInsertedPages(canonical);
+
+    const reviewed = mocks.reviewAppliedBookEdit.mock.calls[0]![0].instruction as string;
+    expect(reviewed).toBe("Write 2 new pages for this book. Reveal the red key.");
+    for (const [draftOptions] of mocks.generatePageDraft.mock.calls) {
+      expect(draftOptions.editInstruction).toBe(reviewed);
+    }
+  });
+
+  it("reads a bare insert as pages that continue the book, and leaves an older spelling alone", () => {
+    expect(insertedPagesBrief("Add 1 new page after page 11", 1)).toBe(
+      "Write one new page that continues the book where it stands."
+    );
+    expect(insertedPagesBrief("Add two closing pages about the red key.", 2)).toBe(
+      "Add two closing pages about the red key."
     );
   });
 
@@ -562,7 +632,7 @@ describe("draftInsertedPages adherence publication gate", () => {
       pageIndexesToRevise: [4, 5]
     });
 
-    await expect(draftInsertedPages(options())).rejects.toThrow(EDIT_ADHERENCE_FAILED);
+    await expect(draftInsertedPages(options())).rejects.toThrow(NEW_PAGES_ADHERENCE_FAILED);
 
     expect(mocks.reviewAppliedBookEdit).toHaveBeenCalledTimes(3);
     expect(mocks.revisePageDraftWithRestart).toHaveBeenCalledTimes(4);

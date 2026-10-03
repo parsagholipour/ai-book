@@ -440,7 +440,7 @@ void main() {
         .dy;
     expect(buttonTop, greaterThanOrEqualTo(listBottom));
     // The credits stay as tidy as the rest: a balance you can tap.
-    expect(find.text('1200 credits'), findsOneWidget);
+    expect(find.text('1,200 credits'), findsOneWidget);
   });
 
   testWidgets('long titles wrap to two lines instead of one truncated line', (

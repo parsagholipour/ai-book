@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../billing/domain/billing_models.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
@@ -443,8 +444,8 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
       icon: Icons.lock_outline,
       title: 'Full sharing uses the export unlock',
       message: shortOfCredits
-          ? 'Ready after export unlock. You need $price credits and have '
-                '$available. Previews are free.'
+          ? 'Ready after export unlock. You need ${formatCredits(price)} credits and have '
+                '${formatCredits(available!)}. Previews are free.'
           : 'Ready after export unlock. This uses $price credits — the same '
                 'unlock the PDF download takes, so this book’s downloads are '
                 'included too. Previews are free.',

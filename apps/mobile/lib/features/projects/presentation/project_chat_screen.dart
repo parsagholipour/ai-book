@@ -24,6 +24,7 @@ import 'plan_revision_retry.dart';
 import 'project_chat_bubbles.dart';
 import 'project_chat_composer.dart';
 import 'project_chat_identity.dart';
+import 'ai_content_report.dart';
 import 'project_chat_operations.dart';
 import 'project_chat_welcome.dart';
 import 'project_route_error.dart';

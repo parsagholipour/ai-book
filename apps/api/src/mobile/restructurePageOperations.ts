@@ -6,7 +6,8 @@ import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord
 import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
-import { queueAttemptChatOperation } from "./editOperations.js";
+import { creditsBlockedResume, queueAttemptChatOperation } from "./editOperations.js";
+import { pageLimitChatMessage, pageLimitRefusal, restructuredBookPages } from "./bookPageLimit.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
 import {
   canonicalStructuralEditInstruction,
@@ -58,7 +59,7 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
     // free — the same answer `queueChatBookEdit` gives when its pages are gone.
     return settleStructuralProposal({
       ...options,
-      content: structuralRefusalMessage(resolved.reason, intent, numberingForProject(project))
+      content: structuralRefusalMessage(resolved, intent, numberingForProject(project), project)
     });
   }
 
@@ -107,6 +108,26 @@ export async function queueChatRestructurePages(options: QueuedChatEdit): Promis
   const contractChanged = Boolean(approvedInstruction) && executionInstruction !== approvedInstruction;
 
   const cost = bookEditCreditCost(intent.kind, resolved.plan.pagesBilled, project);
+  const grownTo = restructuredBookPages(project, resolved.plan.totalPages);
+  const pageLimit = grownTo === null ? null : await pageLimitRefusal(userId, grownTo);
+  if (pageLimit) {
+    const reply = await pageLimitChatMessage(
+      project.id,
+      userMessageId,
+      executionIntent,
+      pageLimit,
+      creditsBlockedResume({
+        request: message,
+        scope: executionIntent.scope,
+        intent: executionIntent,
+        affectedPageIndexes: [],
+        credits: cost,
+        structuralPlan,
+        ...(options.characterContext ? { characterContext: options.characterContext } : {})
+      }, numbering)
+    );
+    return { reply, operation: null };
+  }
   if (contractChanged || (options.quotedCredits !== undefined && cost > options.quotedCredits)) {
     // A changed canonical instruction is a changed contract even when the
     // quote did not rise. Re-propose the live plan before creating an operation

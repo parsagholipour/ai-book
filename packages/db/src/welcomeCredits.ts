@@ -8,11 +8,14 @@
  *
  * Credits land in the purchased pool so they do not evaporate at a period
  * boundary. The operator toggle and amount live on the same price list as the
- * other free-tier limits. Same-IP grants inside
- * {@link WELCOME_CREDITS_IP_WINDOW_DAYS} settle as RECENT_IP without telling
- * the reader. A missing IP settles as NO_IP — no grant, also silent.
+ * other free-tier limits, including separate per-IP account caps for high-income
+ * and low/middle-income signup countries inside {@link WELCOME_CREDITS_IP_WINDOW_DAYS}.
+ * Unknown countries use the low/middle-income cap; a zero cap disables that gift.
+ * Further claims settle as RECENT_IP without telling the reader. A missing IP
+ * settles as NO_IP — no grant, also silent.
  */
-import { creditPricing } from "@book-maker/core";
+import { creditPricing, welcomeCreditAmount, welcomeCreditIpLimit } from "@book-maker/core";
+import { prisma } from "./client.ts";
 import {
   type BillingTx,
   type PlanAccountRow,
@@ -42,8 +45,9 @@ export async function ensureWelcomeCreditsTx(
   }
 
   const pricing = creditPricing();
-  const amount = Math.max(0, Math.floor(pricing.welcomeCredits));
-  if (pricing.welcomeCreditsEnabled <= 0 || amount <= 0) {
+  const amount = Math.max(0, Math.floor(welcomeCreditAmount(pending.countryCode, pricing)));
+  const ipLimit = welcomeCreditIpLimit(pending.countryCode, pricing);
+  if (amount <= 0 || ipLimit <= 0) {
     await settleWelcomeClaim(tx, account.userId, { outcome: "DISABLED", amountCredits: 0, now });
     return account;
   }
@@ -55,16 +59,15 @@ export async function ensureWelcomeCreditsTx(
 
   await tx.$queryRaw`SELECT "userId" FROM "WelcomeCreditGrant" WHERE "ipHash" = ${pending.ipHash} FOR UPDATE`;
 
-  const recent = await tx.welcomeCreditGrant.findFirst({
+  const recentGrants = await tx.welcomeCreditGrant.count({
     where: {
       ipHash: pending.ipHash,
       outcome: "GRANTED",
       settledAt: { gte: new Date(now.getTime() - WELCOME_CREDITS_IP_WINDOW_MS) },
       userId: { not: account.userId }
-    },
-    select: { userId: true }
+    }
   });
-  if (recent) {
+  if (recentGrants >= ipLimit) {
     await settleWelcomeClaim(tx, account.userId, { outcome: "RECENT_IP", amountCredits: 0, now });
     return account;
   }
@@ -114,6 +117,15 @@ export async function ensureWelcomeCreditsTx(
     now
   });
   return updated;
+}
+
+/** Read after balance settlement; describe what this account actually received. */
+export async function getWelcomeCreditsGranted(userId: string): Promise<number> {
+  const grant = await prisma.welcomeCreditGrant.findUnique({
+    where: { userId },
+    select: { outcome: true, amountCredits: true }
+  });
+  return grant?.outcome === "GRANTED" ? grant.amountCredits : 0;
 }
 
 async function settleWelcomeClaim(

@@ -24,6 +24,8 @@ type LedgerRowOverrides = {
   projectId?: string | null;
   project?: { title: string } | null;
   description?: string | null;
+  metadata?: unknown;
+  reversesEntry?: { metadata: unknown } | null;
 };
 
 function ledgerRow(overrides: LedgerRowOverrides = {}) {
@@ -108,6 +110,54 @@ describe("mobile credit log", () => {
     ]);
     // Refund reasons are worker error text. They never reach the app.
     expect(JSON.stringify(body)).not.toMatch(/TypeError|description|provider|model/);
+    await app.close();
+  });
+
+  it("names a per-page charge by what it bought, not by the rate it was billed at", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const insert = { intent: { kind: "restructure_pages", structuralEdit: { action: "insert" } }, pagesBilled: 1 };
+    mockPrisma.creditLedgerEntry.findMany.mockResolvedValueOnce([
+      ledgerRow({ id: "insert", operation: "PAGE_REGENERATION", amountCredits: -40, metadata: insert }),
+      // A refund records why it happened, not what it reversed; the charge it reverses says that.
+      ledgerRow({
+        id: "insert-refund",
+        entryType: "REFUND",
+        operation: "PAGE_REGENERATION",
+        amountCredits: 40,
+        metadata: { reason: "That change couldn’t be applied." },
+        reversesEntry: { metadata: insert }
+      }),
+      ledgerRow({
+        id: "continue",
+        operation: "PAGE_REGENERATION",
+        amountCredits: -120,
+        metadata: { intent: { kind: "continue_book" }, chapterCount: 1, newPageCount: 3 }
+      }),
+      ledgerRow({ id: "chapter", operation: "PAGE_REGENERATION", amountCredits: -90, metadata: { intent: { kind: "chapter_regenerate" } } }),
+      ledgerRow({ id: "rewrite", operation: "PAGE_REGENERATION", amountCredits: -50, metadata: { intent: { kind: "page_rewrite" } } }),
+      ledgerRow({ id: "notes", operation: "BOOK_TEXT_EDIT", amountCredits: -30, metadata: { writingAssist: "chapter_feedback" } }),
+      // The retry lane re-runs an operation and records only its id.
+      ledgerRow({ id: "retry", operation: "PAGE_REGENERATION", amountCredits: -40, metadata: { operationId: "op-insert", planId: "plan-1" } }),
+      ledgerRow({ id: "plain", operation: "PAGE_REGENERATION", amountCredits: -40 })
+    ]);
+    mockPrisma.bookEditOperation.findMany.mockResolvedValueOnce([{ id: "op-insert", kind: "RESTRUCTURE_PAGES" }]);
+    const app = await buildMobileApp();
+
+    const body = (await app.inject({ method: "GET", url: "/api/mobile/billing/credit-log", headers: bearer("token-a") })).json();
+
+    expect(body.log.entries.map((entry: { id: string; title: string }) => [entry.id, entry.title])).toEqual([
+      ["insert", "New page"],
+      ["insert-refund", "New page refunded"],
+      ["continue", "New chapter"],
+      ["chapter", "Chapter rewrite"],
+      ["rewrite", "Page rewrite"],
+      ["notes", "Chapter notes"],
+      ["retry", "New pages"],
+      ["plain", "Page rewrite"]
+    ]);
+    expect(mockPrisma.bookEditOperation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ["op-insert"] } } })
+    );
     await app.close();
   });
 

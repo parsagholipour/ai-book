@@ -770,6 +770,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           imageSource: "object-storage",
           publicApiUrl: config.PUBLIC_API_URL,
           outputPath: pending.pdf,
+          documentTitle: plan.title,
           language: input.language,
           targetPageCount: pdfTargetPageCount,
           // Scopes the renderer's file access to this book's own illustrations.

@@ -113,12 +113,27 @@ export const DEFAULT_CREDIT_COSTS = {
   freeMonthlyCredits: 1_000,
   welcomeCredits: 1_000,
   welcomeCreditsEnabled: 1,
+  welcomeCreditsRegionalEnabled: 0,
+  welcomeCreditsHighIncome: 1_000,
+  welcomeCreditsLowMiddleIncome: 1_000,
+  welcomeCreditsAccountsPerIpHighIncome: 2,
+  welcomeCreditsAccountsPerIpLowMiddleIncome: 1,
   freeIllustratedBooksPerMonth: 3,
-  freeManuscriptImportsPerMonth: 1
+  freeManuscriptImportsPerMonth: 1,
+  // The longest book a free account may have generated. Longer books — up to
+  // the 600-page ceiling every request schema already enforces — are a plan
+  // perk. Zero would refuse every free generation.
+  freeMaxBookPages: 30
 } as const;
 
 export type CreditPricingKey = keyof typeof DEFAULT_CREDIT_COSTS;
 export type CreditPricing = { [K in CreditPricingKey]: number };
+
+/** Earlier persisted names, shared by value and revision-history readers. */
+export const LEGACY_CREDIT_PRICING_KEYS: Partial<Record<CreditPricingKey, string>> = {
+  welcomeCreditsHighIncome: "welcomeCreditsUsEuCanada",
+  welcomeCreditsLowMiddleIncome: "welcomeCreditsAsiaAfricaSouthAmerica"
+};
 
 export const CREDIT_PRICING_KEYS = Object.keys(DEFAULT_CREDIT_COSTS) as CreditPricingKey[];
 
@@ -143,8 +158,14 @@ export const PLAN_ALLOWANCE_KEYS = [
   "freeMonthlyCredits",
   "welcomeCredits",
   "welcomeCreditsEnabled",
+  "welcomeCreditsRegionalEnabled",
+  "welcomeCreditsHighIncome",
+  "welcomeCreditsLowMiddleIncome",
+  "welcomeCreditsAccountsPerIpHighIncome",
+  "welcomeCreditsAccountsPerIpLowMiddleIncome",
   "freeIllustratedBooksPerMonth",
-  "freeManuscriptImportsPerMonth"
+  "freeManuscriptImportsPerMonth",
+  "freeMaxBookPages"
 ] as const;
 
 export type PlanAllowanceKey = (typeof PLAN_ALLOWANCE_KEYS)[number];
@@ -225,8 +246,14 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   freeMonthlyCredits: 100_000,
   welcomeCredits: 100_000,
   welcomeCreditsEnabled: 1,
+  welcomeCreditsRegionalEnabled: 1,
+  welcomeCreditsHighIncome: 100_000,
+  welcomeCreditsLowMiddleIncome: 100_000,
+  welcomeCreditsAccountsPerIpHighIncome: 100,
+  welcomeCreditsAccountsPerIpLowMiddleIncome: 100,
   freeIllustratedBooksPerMonth: 100,
-  freeManuscriptImportsPerMonth: 100
+  freeManuscriptImportsPerMonth: 100,
+  freeMaxBookPages: 600
 };
 
 /**
@@ -289,7 +316,9 @@ export function normalizeCreditPricing(raw: unknown): CreditPricing {
   const record = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const values = {} as CreditPricing;
   for (const key of CREDIT_PRICING_KEYS) {
-    const candidate = record[key];
+    // Read earlier regional revisions without resetting an operator's amounts.
+    const legacyKey = LEGACY_CREDIT_PRICING_KEYS[key];
+    const candidate = record[key] ?? (legacyKey ? record[legacyKey] : undefined);
     if (isChargeableInteger(candidate, key)) {
       values[key] = candidate;
       continue;

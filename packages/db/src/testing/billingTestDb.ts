@@ -113,6 +113,7 @@ export type Usage = {
 export type WelcomeGrant = {
   userId: string;
   ipHash: string | null;
+  countryCode?: string | null;
   outcome: string;
   amountCredits: number;
   ledgerEntryId: string | null;
@@ -586,6 +587,9 @@ export function createBillingTestDb() {
     },
     welcomeCreditGrant: {
       findUnique: vi.fn(async ({ where }: any) => state.welcomeGrants.get(where.userId) ?? null),
+      count: vi.fn(async ({ where }: any) =>
+        [...state.welcomeGrants.values()].filter((row) => welcomeGrantMatchesWhere(row, where ?? {})).length
+      ),
       findFirst: vi.fn(async ({ where }: any) =>
         [...state.welcomeGrants.values()].find((row) => welcomeGrantMatchesWhere(row, where ?? {})) ?? null
       ),

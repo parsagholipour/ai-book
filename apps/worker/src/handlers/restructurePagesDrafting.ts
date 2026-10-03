@@ -26,6 +26,7 @@ import {
 } from "../runtime/durableEditCompletion.js";
 import {
   applyStoryDelta,
+  isBareStructuralInstruction,
   jsonRecord,
   reviewAppliedBookEdit,
   type ChapterBrief,
@@ -36,7 +37,7 @@ import {
   type PriorPageContext
 } from "@book-maker/core";
 import type { bookPlanSchema } from "@book-maker/core";
-import { EDIT_ADHERENCE_FAILED, ReaderEditFailure } from "@book-maker/core/editFailure";
+import { NEW_PAGES_ADHERENCE_FAILED, ReaderEditFailure } from "@book-maker/core/editFailure";
 import { PAGE_RESTRUCTURE_TRANSACTION_OPTIONS, pageScope, Prisma, prisma } from "@book-maker/db";
 
 type InsertedPage = {
@@ -125,6 +126,9 @@ export async function draftInsertedPages(options: {
   if (pages.length === 0) {
     return { pageIds: [], pageIndexes: [], candidates: [], audit: null };
   }
+  // Every model call below reads the brief, never the card's placement: see
+  // `insertedPagesBrief`. The canonical instruction is still what is stored.
+  options = { ...options, editInstruction: insertedPagesBrief(options.editInstruction, pages.length) };
 
   const storedAudit = await prisma.bookEditOperation.findUnique({
     where: { id: options.operationId },
@@ -199,6 +203,9 @@ export async function draftInsertedPages(options: {
   let verdict = await reviewCandidates(options, candidates);
   let attempts = 1;
   let proseApproved = allApproved(candidates);
+  // The last set the reviewer accepted: a page-QA repair round may improve it
+  // but never cost it (the continuation's rule, `continueBook.ts`).
+  let accepted = verdict.satisfied && verdict.basis === "reviewed" ? { verdict, candidates: new Map(candidates) } : null;
   while ((!verdict.satisfied || !proseApproved) && attempts < 3) {
     attempts += 1;
     // A verdict the reviewer never reached says nothing about which pages are
@@ -245,6 +252,7 @@ export async function draftInsertedPages(options: {
           draft: current.draft,
           report: repairReport(current.qualityReport, repairRequirements),
           editInstruction: options.editInstruction,
+          draftedForEdit: true,
           ...(options.characterContext ? { characterContext: options.characterContext } : {}),
           adherenceRepair: repairRequirements,
           previousPages: context.previousPages,
@@ -258,6 +266,15 @@ export async function draftInsertedPages(options: {
       candidates.set(page.index, await reviewCandidate(options, context, draft));
     }
     verdict = await reviewCandidates(options, candidates);
+    proseApproved = allApproved(candidates);
+    if (verdict.satisfied && verdict.basis === "reviewed") {
+      accepted = { verdict, candidates: new Map(candidates) };
+    }
+  }
+  if (!verdict.satisfied && accepted) {
+    candidates.clear();
+    for (const [index, candidate] of accepted.candidates) candidates.set(index, candidate);
+    verdict = accepted.verdict;
     proseApproved = allApproved(candidates);
   }
 
@@ -292,7 +309,7 @@ export async function draftInsertedPages(options: {
         data: { adherenceAudit: audit as unknown as Prisma.InputJsonValue }
       });
     }, PAGE_RESTRUCTURE_TRANSACTION_OPTIONS);
-    throw new ReaderEditFailure(EDIT_ADHERENCE_FAILED);
+    throw new ReaderEditFailure(NEW_PAGES_ADHERENCE_FAILED);
   }
 
   const prepared = await prepareCandidatesForPublication(
@@ -476,6 +493,34 @@ async function candidateContext(
     researchNotes,
     styleExcerpts
   };
+}
+
+/**
+ * What inserted pages are drafted and judged against: the request's content,
+ * never its placement.
+ *
+ * The canonical instruction opens with the card's own sentence — "Add 1 new
+ * page after page 11" — and that number is a *printed* one, while every page
+ * these calls see carries its model index. On a book whose cover and Contents
+ * sit between the two, the page that lands after printed page 11 is model page
+ * 13, so the adherence review read "indexed 13, not after page 11" as an unmet
+ * requirement on every round, and a correctly placed insert was rolled back and
+ * refunded (2026-10-02). The resolver placed the pages before any model ran,
+ * so the placement is a fact here rather than something to check. A row
+ * written before the canonical spelling is left as it was.
+ */
+export function insertedPagesBrief(instruction: string, pageCount: number): string {
+  const pages = pageCount === 1 ? "one new page" : `${pageCount} new pages`;
+  const continuing = `Write ${pages} that ${pageCount === 1 ? "continues the book where it stands" : "continue the book where they stand"}.`;
+  if (isBareStructuralInstruction({ action: "insert", anchorPageIndex: null, pageIndexes: [] }, instruction)) {
+    return continuing;
+  }
+  const marker = /\bContent requirements:\s*/i.exec(instruction);
+  if (!marker) {
+    return instruction;
+  }
+  const content = instruction.slice(marker.index + marker[0].length).trim();
+  return content ? `Write ${pages} for this book. ${content}` : continuing;
 }
 
 async function reviewCandidate(

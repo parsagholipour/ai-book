@@ -31,6 +31,7 @@ import {
   type MobilePlanOperationDto,
   type MobileProjectRecord
 } from "./dto.js";
+import { pageLimitRefusal, sendPageLimitExceeded } from "./bookPageLimit.js";
 import { sendInsufficientCredits, sendMobileError } from "./httpErrors.js";
 import {
   buildMobileCreateProjectInput,
@@ -283,6 +284,14 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       creationPayload: finalPayload,
       advisor: finalAdvisor
     });
+    // Before planning is charged: a plan for a book this account may not have
+    // written is spend for nothing. `input.targetPages` rather than the
+    // resolved count, because a legacy draft that never resolved one still gets
+    // its book type's default length here — and the workbook's longest is 40.
+    const pageLimit = await pageLimitRefusal(userId, input.targetPages);
+    if (pageLimit) {
+      return { ok: false, pageLimit };
+    }
     const planQuote = planGenerationCreditCost(input);
     let project: MobileProjectRecord | null = null;
     let output: MobileCreationOutputRecord;
@@ -635,6 +644,9 @@ export function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcom
   }
   if ("insufficient" in outcome) {
     return sendInsufficientCredits(reply, outcome.insufficient);
+  }
+  if ("pageLimit" in outcome) {
+    return sendPageLimitExceeded(reply, outcome.pageLimit);
   }
   return sendMobileError(reply, outcome.status, outcome.code, outcome.message);
 }

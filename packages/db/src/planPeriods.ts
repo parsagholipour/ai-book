@@ -245,6 +245,20 @@ export async function getImageQuota(userId: string, now: Date = new Date()): Pro
 }
 
 /**
+ * The longest book this account may have generated, or `null` on any paid plan,
+ * which is held only to the 600-page ceiling every request schema enforces.
+ *
+ * Not a monthly counter like the two quotas beside it: nothing is claimed, so a
+ * refused request has nothing to hand back and every door simply asks again.
+ * Callers treat `null` as "no free-tier cap" rather than as "unknown", the same
+ * as {@link getImageQuota}.
+ */
+export async function getBookPageLimit(userId: string, now: Date = new Date()): Promise<number | null> {
+  const tier = await resolvePlanTier(userId, now);
+  return tier === "free" ? creditPricing().freeMaxBookPages : null;
+}
+
+/**
  * The free tier's manuscript-import budget; `null` means unlimited (any paid
  * plan). Same semantics as {@link getImageQuota}.
  */

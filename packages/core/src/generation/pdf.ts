@@ -33,6 +33,12 @@ import { storyPageDesign, type StoryPageDesignId } from "./storyPageDesigns.js";
 
 export type GenerateBookPdfOptions = BookImageOptions & {
   publicApiUrl: string;
+  /**
+   * The PDF's own Title metadata — what a viewer's title bar and a share sheet
+   * show. Absent, Chrome named the file after the render's scratch document
+   * (".book-render-<uuid>.html").
+   */
+  documentTitle?: string | undefined;
   outputPath?: string | undefined;
   /** Desired physical PDF length, including cover, Contents and back matter. */
   targetPageCount?: number | undefined;
@@ -235,7 +241,8 @@ export async function generateBookPdfWithPageMap(
       markdown: expanded,
       css: `${fontCss}\n${bookPdfPaginationCss(bookPdfCss(profile), profile, adjustment)}${separate ? STORY_PAGE_PDF_CSS : ""}`,
       profile,
-      ...(nav !== undefined ? { pageAnchorNav: nav } : {})
+      ...(nav !== undefined ? { pageAnchorNav: nav } : {}),
+      ...(options.documentTitle ? { title: options.documentTitle } : {})
     });
     // Contents correction belongs inside the fit: a changed digit can move a
     // break, and the chosen sheet count must describe the final reprint.

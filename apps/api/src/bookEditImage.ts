@@ -404,6 +404,26 @@ export function resolveImageLayoutDest(
 }
 
 /** Summaries stay one line; a long subject is capped rather than wrapped. */
+/**
+ * What a card may quote as a picture's subject, or nothing.
+ *
+ * A target's `oldSubject` is not always a description: the picture finder
+ * writes "the illustration on page N" (a model index) when a row names none,
+ * a hero's alt is "Illustration", and the router restates its locator. Quoted,
+ * the card read "Move the illustration of “the illustration on page 1” to the
+ * bottom of page 1" (2026-10-02). A generic one falls back to the page.
+ */
+export function describedImageSubject(subject: string | undefined): string | undefined {
+  const clean = subject?.trim().replace(/[.\s]+$/, "") ?? "";
+  if (
+    !clean ||
+    /^(?:(?:the|this|that|these|those|an?|my|its)\s+)?(?:(?:only|latest|last|first|new|old|current)\s+)?(?:illustration|picture|image|photo|drawing|artwork|art|visual)s?(?:\s+(?:on|of|from|in|for|at)\s+(?:the\s+)?(?:page|chapter)\s*\d+)?$/i.test(clean)
+  ) {
+    return undefined;
+  }
+  return clean;
+}
+
 export function clippedImageSubject(subject: string): string {
   const clean = subject.trim().replace(/\s+/g, " ");
   return clean.length > 60 ? `${clean.slice(0, 59)}…` : clean;
@@ -459,7 +479,7 @@ export function imageLayoutProposalSummary(
         ? "Remove the only illustration in this book"
         : `Remove all ${count} illustrations`;
     }
-    const named = target?.oldSubject;
+    const named = describedImageSubject(target?.oldSubject);
     const page = target?.pageIndex ?? affectedPageIndexes[0];
     const shown = page === undefined ? undefined : numbering.displayPage(page);
     if (named && shown !== undefined) {
@@ -467,7 +487,7 @@ export function imageLayoutProposalSummary(
     }
     return shown !== undefined ? `Remove the illustration on page ${shown}` : "Remove the latest illustration";
   }
-  const named = target?.oldSubject;
+  const named = describedImageSubject(target?.oldSubject);
   const fromPage = target?.pageIndex;
   const dest = layoutDestPhrase(layout, affectedPageIndexes.at(-1), numbering);
   // A within-page move has one page on both sides, so naming it twice ("from

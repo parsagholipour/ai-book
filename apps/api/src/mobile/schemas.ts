@@ -244,9 +244,12 @@ export const mobileAudiobookChapterParamsSchema = z.object({
 
 export const mobileVoiceSampleParamsSchema = z.object({ voice: z.string().trim().min(1).max(60) });
 
+/** The longest book-chat message the route takes. */
+export const PROJECT_CHAT_MESSAGE_MAX = 5000;
+
 export const mobileProjectChatMessageBodySchema = z
   .object({
-    message: z.string().trim().min(1).max(5000),
+    message: z.string().trim().min(1).max(PROJECT_CHAT_MESSAGE_MAX),
     editMessageId: z.string().trim().min(1).max(128).optional(),
     // The earlier message this one is a reply to. Any role can be replied to.
     // It is quoted for the model only — never folded into the routed text.
@@ -631,3 +634,25 @@ export const mobileLibraryVoiceCallStartBodySchema = z.object({}).strict();
 export const mobileVoiceCallStartOpenApiBody = toOpenApiRequestBody(mobileVoiceCallStartBodySchema);
 export const mobileLibraryVoiceCallStartOpenApiBody = toOpenApiRequestBody(mobileLibraryVoiceCallStartBodySchema);
 export const mobileVoiceCallProgressOpenApiBody = toOpenApiRequestBody(mobileVoiceCallProgressBodySchema);
+
+/**
+ * `PUT /api/mobile/push-device`: this install's FCM registration token, filed
+ * under the caller's session (`src/push/pushDevices.ts`). The token is opaque
+ * and Google does not promise its length, so the bound is generous.
+ */
+export const pushDeviceRegisterBodySchema = z
+  .object({
+    token: z.string().trim().min(1).max(4096),
+    platform: z.enum(["android", "ios"])
+  })
+  .strict();
+
+/** `DELETE /api/mobile/push-device`: the app turned notifications off, or lost the permission. */
+export const pushDeviceUnregisterBodySchema = z
+  .object({
+    token: z.string().trim().min(1).max(4096)
+  })
+  .strict();
+
+export const pushDeviceRegisterOpenApiBody = toOpenApiRequestBody(pushDeviceRegisterBodySchema);
+export const pushDeviceUnregisterOpenApiBody = toOpenApiRequestBody(pushDeviceUnregisterBodySchema);

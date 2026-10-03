@@ -15,12 +15,17 @@ import { extractPdfNamedDestinations } from "./pdfNamedDestinations.js";
 
 afterAll(closeSharedBrowser);
 
-function wordBounds(path: string, page: number, word: string): { x: number; y: number; height: number } {
+function wordBounds(path: string, page: number, word: string): { x: number; y: number; width: number; height: number } {
   const xml = execFileSync("pdftotext", ["-f", String(page), "-l", String(page), "-bbox", path, "-"], { encoding: "utf8" });
   const match = [...xml.matchAll(/<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]+)<\/word>/g)]
     .find((entry) => entry[5] === word);
   expect(match, `Printed word ${word} on sheet ${page}`).toBeDefined();
-  return { x: Number(match![1]), y: Number(match![2]), height: Number(match![4]) - Number(match![2]) };
+  return {
+    x: Number(match![1]),
+    y: Number(match![2]),
+    width: Number(match![3]) - Number(match![1]),
+    height: Number(match![4]) - Number(match![2])
+  };
 }
 
 it("centres text-only story sheets in picture-book type, with fifteen chapters on one Contents sheet", async () => {
@@ -214,9 +219,24 @@ it("prints thirty separate story sheets with ten matching scene images and truth
     expect(result.pagination).toBeUndefined(); // No attempt to squeeze frontmatter into the thirty story sheets.
     expect(map.totalPdfPages).toBe(map.pages[0]!.startPdfPage - 1 + 30);
     expect(map.contentsStartPdfPage).toBe(2);
-    const bounds = wordBounds(outputPath, map.pages[0]!.startPdfPage, "OpeningScene1Token.");
-    expect(bounds.height).toBeLessThan(20); // Mixed books retain their existing typography on all scenes.
-    expect(bounds.y).toBeLessThan(120);
+    // A picture book sets its words for a child on every sheet. A text-only
+    // scene is sized and centred like a text-only book's (an A4 sheet is 842pt
+    // tall) — it used to print two 11pt lines at the top of a blank page...
+    // The token is ~116pt wide at body size; the text column is narrower than
+    // the sheet's writing width and centred, so its left edge moves in from 52pt.
+    const textOnly = wordBounds(outputPath, map.pages[3]!.startPdfPage, "OpeningScene4Token.");
+    expect(textOnly.width).toBeGreaterThan(160);
+    expect(textOnly.x).toBeGreaterThan(70);
+    const textEnd = wordBounds(outputPath, map.pages[3]!.startPdfPage, "EndingScene4Token.");
+    const middle = (textOnly.y + textEnd.y + textEnd.height) / 2;
+    expect(middle).toBeGreaterThan(842 / 2 - 80);
+    expect(middle).toBeLessThan(842 / 2 + 80);
+    // ...and a picture scene's words sit under its capped picture at picture-book size.
+    const underPicture = wordBounds(outputPath, map.pages[2]!.startPdfPage, "OpeningScene3Token.");
+    expect(underPicture.width).toBeGreaterThan(160);
+    expect(underPicture.y).toBeGreaterThan(300);
+    // Its text column is centred under the picture, not hung on the left margin (52pt).
+    expect(underPicture.x).toBeGreaterThan(70);
     const measured = extractPdfNamedDestinations(result.pdf)!;
     for (const [position, page] of map.pages.entries()) {
       expect(page.endPdfPage).toBe(page.startPdfPage);

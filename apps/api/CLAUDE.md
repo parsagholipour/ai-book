@@ -66,6 +66,74 @@ Everything protected is cookie-only except `/api/mobile/*` and the two asset pre
   `payload.brief.audience` speak before the lane's generic audience does; it never could, because
   the old function always answered.
 
+## App updates
+
+- **An app update is a policy per store release, and only a build that already sends its build
+  number can ever be retired.** Each `AppUpdatePolicyRevision` (append-only, edited at
+  `/admin/app-updates`) lists store releases, each `silent`, `prompt` or `required` for the builds
+  below it. `decideAppUpdate` (`src/appUpdates.ts`) answers a build from the releases newer than it,
+  strongest policy winning, so one required release keeps every build below it gated whatever
+  ships after. The app sends `X-App-Build` and `X-App-Platform` on every request (`dioProvider`);
+  `GET /api/mobile/app-update` is its public launch-and-resume check, and `registerAppUpdateGate`
+  answers 426 `APP_UPDATE_REQUIRED` to every other `/api/mobile/*` request from a required build.
+  The gate runs ahead of auth, so even sign-in is refused. A request without the headers (the
+  console, curl, the suites) is never gated. That is why the client half is load-bearing: an
+  installed build only ever does what it shipped knowing, so renaming a header or the 426 body
+  strands every build already on phones.
+  - **426, never 403.** The app's `ApiException.isAuthFailure` reads 403 as a dead session and
+    clears the tokens.
+  - **It fails open.** A policy the database cannot return, or one that no longer parses, gates
+    nobody. The head is cached for 30 s, and a console save drops that cache in its own process.
+  - **The app reads an unknown action as no update** (`AppUpdateAction.fromWire`), so a newer
+    server cannot lock an older build out by adding a policy word.
+  - **Ask or Require only once Play Console shows 100% rollout**, and about a day after that.
+    A reader outside a staged rollout has nothing to install, so a required update locks them out.
+    The console says so; nothing enforces it.
+
+## Push notifications
+
+- **A book push is decided by the API's sweep from the status the app already reads, and its
+  ending is sent only by the delete that claims the book's row.** The percent the app shows is
+  computed only in `apps/api` (`loadSerializedProjectStatus`, from many job rows; the worker never
+  stores one), so the pushes are driven from here rather than from worker hooks.
+  `runBookPushSweep` (`src/push/bookPushSweep.ts`, every 15 s from `server.ts`) follows every
+  `GENERATING` book whose owner has a live device. A progress push is a compare-and-swap on
+  `ProjectPushState.version`. The ending (ready, failed, or a silent clear when the owner pressed
+  Stop) is sent only by the `deleteMany` that matched the version the sweep read, so two sweeps
+  never both announce it. Edits, continuations and narration are deliberately not followed.
+  Setup and behaviour are in `docs/push-notifications.md`.
+  - **A device is reachable only through the session that filed it**
+    (`livePushDeviceWhere`). Logout revokes the session and so stops the phone's pushes without
+    an unregister call; account deletion deletes the sessions, and `PushDevice` cascades.
+  - **The data keys and `kind` values are a wire contract with installed builds**
+    (`src/push/bookPushMessages.ts` ↔ `apps/mobile/lib/features/notifications/domain/book_push.dart`).
+    The app ignores a kind it does not know, so adding one is safe; renaming one silences every
+    build already on phones. Android gets data-only messages because the app draws the progress
+    bar itself; iOS gets only the endings, as APNs alerts.
+  - **Only a token FCM calls dead is deleted**: `UNREGISTERED`, `SENDER_ID_MISMATCH`, or an
+    `INVALID_ARGUMENT` whose message names the registration token. A bare `INVALID_ARGUMENT` is a
+    malformed *message*, and deleting every device over a bug in the payload would be the wrong
+    lesson.
+  - With no FCM key (and `MOCK_PUSH` off) `createPushSenderFromConfig` returns null and the sweep
+    never runs. That is a logged warning, never a failed boot.
+
+## Account deletion
+
+- **A deletion request is carried out a day after it is made, and the user row stays as a tombstone
+  that keeps the financial records.** `POST /api/mobile/account/deletion-request` used to record a
+  PENDING row and nothing completed one, while the app and the public page promised deletion within
+  30 days and Google Play requires it (2026-10-03 launch audit). `runAccountDeletionSweep`
+  (`src/accountDeletion.ts`, hourly from `server.ts`) runs `executeAccountDeletion` once
+  `ACCOUNT_DELETION_GRACE_MS` (24 h) has passed, and `POST /api/admin/account-deletions/:id/complete`
+  runs it at once for a request support received by email. It deletes every book through the same
+  stop-jobs, delete and storage cleanup the book's own delete runs, then drafts and their uploads,
+  imports, saved characters and their pictures, voice calls with their transcripts, sessions, the
+  password and the legal acceptances. The `User` row is kept — email replaced by
+  `deleted-<id>@deleted.invalid`, name cleared, `DISABLED` — because `Project` and
+  `MobileCreationDraft` restrict its deletion and because the credit ledger, purchases and
+  subscriptions it owns are the billing records the policy pages say are retained. A tombstone
+  cannot sign in and frees the email for a new account.
+
 ## Where the rest of the invariants live
 
 - `src/mobile/CLAUDE.md` — billing surfaces, the edit chat router, free presentation edits, export

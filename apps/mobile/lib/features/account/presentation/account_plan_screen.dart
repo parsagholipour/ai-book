@@ -7,7 +7,6 @@ import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_cancel_sheet.dart';
-import '../../billing/presentation/billing_plan_tiles.dart' show formatCredits;
 import '../../billing/presentation/billing_shared_parts.dart';
 import '../../billing/presentation/billing_tier_style.dart';
 import '../../billing/presentation/message_allowance_banner.dart';

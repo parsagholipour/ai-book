@@ -161,7 +161,7 @@ void main() {
     expect(
       find.descendant(
         of: successDialog,
-        matching: find.text('1000 credits added.'),
+        matching: find.text('1,000 credits added.'),
       ),
       findsOneWidget,
     );
@@ -177,7 +177,7 @@ void main() {
     // Enough credits now — the shortfall sheet has nothing left to ask for.
     expect(find.byType(BillingPaywall), findsNothing);
     expect(find.text('You have enough credits'), findsNothing);
-    expect(find.text('1000 credits added.'), findsNothing);
+    expect(find.text('1,000 credits added.'), findsNothing);
   });
 
   testWidgets('a backend-pending purchase keeps the buy sheet open', (

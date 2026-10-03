@@ -3,7 +3,9 @@ part of 'creation_chat_screen.dart';
 // Plan preflight, revision, approval, and question progression remain methods
 // on the screen state while living away from transcript composition.
 extension _CreationChatPlanActions on _CreationChatScreenState {
-  Future<void> _build() async {
+  /// [retried] is set on the one rebuild a `PAGE_LIMIT_EXCEEDED` refusal may
+  /// trigger, so a server that keeps refusing cannot loop the offer.
+  Future<void> _build({bool retried = false}) async {
     try {
       final controller = ref.read(creationChatControllerProvider.notifier);
       final preflight = await controller.preflightBuildPlan();
@@ -18,10 +20,33 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
       // The page count the illustration quote is priced against. When the sheet
       // ran it is the answer just given; otherwise the server resolved one from
       // the chat, and `detectedPageCount` is null exactly when the sheet ran.
-      final targetPages =
+      var targetPages =
           selection?.targetPages ??
           preflight.detectedPageCount?.targetPages ??
           ref.read(creationChatControllerProvider).presets.targetPages;
+      // The chat settled on a length this reader's plan does not write. Asked
+      // here, before Build charges for planning it: unlock it, or write it at
+      // the free length — never a plan for a book that cannot be approved.
+      final maxPages = preflight.maxPages;
+      if (!mounted) return;
+      if (selection == null &&
+          targetPages != null &&
+          maxPages != null &&
+          preflight.locks(targetPages)) {
+        final resolved = await _resolveLongBook(
+          context,
+          ref,
+          BookPageLimit(limit: maxPages, requestedPages: targetPages),
+        );
+        if (resolved == null || !mounted) return;
+        if (resolved != targetPages) {
+          selection = _PageCountSelection(
+            targetPages: resolved,
+            source: 'settings',
+          );
+        }
+        targetPages = resolved;
+      }
       if (targetPages != null) {
         final presets = ref.read(creationChatControllerProvider).presets;
         if (!await _CreationChatVisualsPrompt(
@@ -52,6 +77,20 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
       _startPlanPoll();
     } on ApiException catch (error) {
       if (!mounted) return;
+      // A plan that lapsed between the preflight and the tap: the same offer,
+      // then the same Build once more at whatever length the reader chose.
+      final pageLimit = pageLimitFromError(error);
+      if (pageLimit != null) {
+        final resolved = await _resolveLongBook(context, ref, pageLimit);
+        if (resolved == null || !mounted || retried) return;
+        if (resolved != pageLimit.requestedPages) {
+          ref
+              .read(creationChatControllerProvider.notifier)
+              .setCustomTargetPages(resolved, source: 'settings');
+        }
+        await _build(retried: true);
+        return;
+      }
       final paywallTitle = _paywallTitleForError(error.code);
       if (paywallTitle != null) {
         // A credits refusal carries its numbers, so it becomes the sheet's
@@ -98,11 +137,19 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
       targetPages: pages,
       creditCosts: creditCosts,
     );
+    final maxPages = preflight.maxPages;
     return showAppBottomSheet<_PageCountSelection>(
       context,
-      builder: (context) => _PageCountPromptSheet(
+      builder: (sheetContext) => _PageCountPromptSheet(
         preflight: preflight,
         estimateCredits: estimateCredits,
+        resolveLocked: maxPages == null
+            ? null
+            : (pages) => _resolveLongBook(
+                sheetContext,
+                ref,
+                BookPageLimit(limit: maxPages, requestedPages: pages),
+              ),
       ),
     );
   }

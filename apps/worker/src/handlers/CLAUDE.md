@@ -135,6 +135,14 @@ presentation reprint or detached repair cannot silently turn into an outcome-own
 If that revision has no compile row yet — an image edit that returned waiting because
 GENERATE_IMAGE jobs were still open — it recovers from the latest APPLIED edit, the same mapping
 `strandedCompileRecoveryPolicy` uses, so the wait cannot upgrade skip-review into full QA.
+An import is the one settled book with neither: it stamps itself COMPLETE in the commit that writes
+its pages, then asks for its compile and asks again when its cover lands, with no compile row and no
+edit on record. Recovery refused it (an unknown settled state is not permission to publish), so from
+2026-08-24 no import compiled on its own — its PDF appeared only when the app's status read queued
+an export repair, and an import nobody opened had none (found 2026-10-02). An imported book that is
+COMPLETE or REVIEW_REQUIRED with no compile at its current revision and no edit now recovers the
+default outcome policy, which publishes over COMPLETE and, like every compile of an author's book,
+never runs the final review.
 Presentation edits created before their compile intent became transactional have one narrower
 legacy recovery door: when the current EDITING revision has neither a compile nor an APPLIED edit,
 the immediately preceding revision's presentation compile supplies both the non-owning policy and
@@ -658,6 +666,24 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   refunded the whole charge rather than a slice of a book with blank pages in it — which is why
   `refundUnwrittenEditPages` now has no production caller. Redelivery safety for any refund is the
   ledger's operation-derived settlement key. See `packages/db/CLAUDE.md`.
+- **Inserted pages are drafted and judged against what they hold, never where they go.** The
+  canonical instruction opens with the card's sentence, and its "after page 11" is a *printed*
+  number while every call sees model indexes. On a book with a cover and Contents, the adherence
+  review read the page landing after printed page 11 ("indexed 13") as misplaced on all three
+  rounds, and every such insert was rolled back and refunded (2026-10-02). The resolver placed the
+  pages before any model ran, so `insertedPagesBrief` (`restructurePagesDrafting.ts`) gives the
+  drafter, page QA and the adherence review the content requirements alone. The operation still
+  stores the canonical instruction, and a row from before the canonical spelling is sent as it was.
+- **A page-QA repair round may improve a set the adherence reviewer accepted, never cost it.** The
+  insert and continuation loops run while adherence *or* page QA fails, and used to publish or
+  refuse on the last round's verdict alone. A live continuation (2026-10-02) was satisfied at 0.93
+  in round one; page QA failed one page, its repair dropped a character the reviewer then asked
+  for, the next repair was refused for repeating that character, and round three refused the set
+  as "three separately titled units" — three page titles of one chapter. The whole accepted
+  continuation was rolled back and refunded. Both loops now keep the last reviewed, satisfied set
+  and publish it when a later round loses adherence, FAILED_QA pages and all, which is what page
+  QA's own rule already says. The continuation also names each page's chapter and position in the
+  title the reviewer reads (`continuationReviewTitle`).
 - **Only the post-APPLIED window is that handler's to flip.** The `updateMany` after the rollback
   claims `status: "APPLIED"` and deliberately does not claim ACTIVE: a drafting failure — the
   ordinary one — leaves the operation ACTIVE, and `markFailed` settles exactly that row through
@@ -767,7 +793,8 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   `exportPublicationProjectStatus` over a book that already has a designed cover. `generateCover`
   reads the current cover's `coverDesignId` and renders that design again (`coverDesignSelectedBy:
   "kept"`) rather than asking the selector, which could hand the same book a different picture for a
-  one-word title change. Only a revision-owned job keeps it; the operator's regenerate route asks
+  one-word title change. The chat's free title change on a designed cover queues the same row
+  (`commitCoverChange`, `apps/api/src/mobile/coverChange.ts`). Only a revision-owned job keeps it; the operator's regenerate route asks
   for a fresh pick. The handler itself never refused an existing cover — only the enqueue gates
   (`maybeEnqueueCover`, `maybeEnqueueRevisionOwnedReplanCover`) do, and the API writes this row
   directly.

@@ -394,7 +394,9 @@ export const EDIT_OPERATION_PAGE_REWRITE_SCOPE = {
   MOVE_IMAGE: "none",
   REMOVE_IMAGE: "none",
   /** The author's own text published from the Writing Studio — nothing is redrafted. */
-  MANUSCRIPT_PUBLISH: "none"
+  MANUSCRIPT_PUBLISH: "none",
+  /** A new title and a redrawn cover; no page is touched. */
+  BOOK_TITLE: "none"
 } as const satisfies Record<BookEditOperationKind, EditPageRewriteScope>;
 
 /**

@@ -23,6 +23,27 @@ ignores it. If you touched anything here, run `pnpm check:mobile` (or `make mobi
 The pdfrx natives are unavailable under `flutter test`, which is why `BookReaderScreen` takes its
 viewer through `readerViewerBuilderProvider` — so tests can stub it.
 
+## Book notifications
+
+`lib/features/notifications/` draws the server's book pushes (see `docs/push-notifications.md`).
+Firebase is optional per build: without `android/app/google-services.json` the Gradle plugin is
+not applied, `FirebasePushMessaging.initialize()` returns null, `pushMessagingProvider` stays null,
+and every piece of the feature, the Account row included, switches itself off. Tests get that
+null by default; pass a `FakePushMessaging` to `testApp()` to exercise it.
+
+- **Every push is drawn by Dart, and usually in an isolate with no app around it.**
+  `firebaseBackgroundMessageHandler` runs on a fresh isolate for a backgrounded or closed app,
+  so whatever it needs is set up again there. That is why the per-book ordering guard is a
+  file (`FileBookPushLedger`), not memory.
+- **A book has one notification slot**, `bookNotificationId` (FNV-1a over the id, never
+  `String.hashCode`). The ending cancels the bar and then posts, so it alerts as new rather than
+  updating a bar that only alerts once.
+- **A tapped notification opens its book only once there is a session.**
+  `PushNotificationsWatcher` holds the book until auth settles, then pushes `/projects/<id>`
+  after a frame, and asks for that frame itself. Read the top page from
+  `currentConfiguration.last.matchedLocation`: a pushed page leaves `currentConfiguration.uri`
+  on the page underneath it.
+
 ## Feature-level invariants
 
 - `lib/features/projects/CLAUDE.md` — the export-repair watch budget, credit quoting, the
@@ -52,5 +73,14 @@ at once:
   greps for job-type names in `lib/` return nothing. Keep it that way.
 - **Prices are not hardcoded** anywhere in the app; they arrive in the billing payload. Keep that
   too.
+- **The book-push wire.** `BookPush.fromData` in
+  `lib/features/notifications/domain/book_push.dart` reads the FCM data that
+  `apps/api/src/push/bookPushMessages.ts` writes: `kind`, `projectId`, `sentAt`, `title`, `body`
+  and `percent`, all strings. An unknown kind is ignored, so the server may add one; a renamed
+  key or kind silences every installed build. The notification text is the server's, like
+  progress steps.
+- **The app-update wire.** `AppBuild.headers` and the 426 `APP_UPDATE_REQUIRED` body are read by
+  `apps/api/src/appUpdates.ts`. Every installed build keeps the spelling it shipped with, so the
+  server keeps answering the old one — see "App updates" in `apps/api/CLAUDE.md`.
 
 <!-- gotcha-index: pointer-only -->

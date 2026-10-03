@@ -13,6 +13,7 @@ import '../domain/voice_models.dart';
 import 'voice_call_controller.dart';
 import 'voice_call_menu.dart';
 import 'voice_call_stage.dart';
+import '../../billing/domain/billing_models.dart';
 
 part 'voice_call_transcript.dart';
 
@@ -308,7 +309,7 @@ class _CallStatusLine extends StatelessWidget {
             state.chargedCredits > 0) ...[
           const SizedBox(height: 6),
           Text(
-            '${state.chargedCredits} credits',
+            '${formatCredits(state.chargedCredits)} credits',
             style: theme.textTheme.labelMedium?.copyWith(
               color: colors.onSurfaceVariant,
             ),

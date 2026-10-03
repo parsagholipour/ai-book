@@ -20,6 +20,7 @@ import '../domain/studio_pricing.dart';
 import 'studio_cover_image.dart';
 import 'studio_location.dart';
 import 'studio_progress.dart';
+import '../../billing/domain/billing_models.dart';
 
 /// Opens the cover choice on a sheet of its own: from the book page, for a
 /// book that is already published or still being written.
@@ -337,7 +338,7 @@ class _StudioCoverPickerState extends ConsumerState<StudioCoverPicker> {
                 'keep writing while it’s made.',
       confirmLabel: price == null
           ? 'Generate cover'
-          : 'Generate cover · $price credits',
+          : 'Generate cover · ${formatCredits(price)} credits',
       icon: Icons.auto_awesome_outlined,
     );
     if (!confirmed || !mounted) return;
@@ -529,7 +530,9 @@ class _StudioCoverPickerState extends ConsumerState<StudioCoverPicker> {
                 key: const ValueKey('cover-choice-ai'),
                 icon: Icons.auto_awesome_outlined,
                 title: 'Generate with AI',
-                detail: price == null ? 'Uses credits' : '$price credits',
+                detail: price == null
+                    ? 'Uses credits'
+                    : '${formatCredits(price)} credits',
                 selected: cover.source.isAi,
                 onTap: idle && !(cover.pending && cover.source.isAi)
                     ? _chooseAi

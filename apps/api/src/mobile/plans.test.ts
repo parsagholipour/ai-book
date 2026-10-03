@@ -8,6 +8,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import {
   InsufficientCreditsError,
   consumeIllustratedBookUse,
+  getBookPageLimit,
   getImageQuota,
   grantProjectEntitlement,
   releaseIllustratedBookUse,
@@ -320,6 +321,30 @@ describe("free tier illustrated book limit", () => {
     });
     // Nothing was charged and nothing was queued — the user still has the choice.
     expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses approving a book past the free page limit before anything is charged", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // A plan built while subscribed, approved after the plan lapsed.
+    draftPlanForApproval(projectRecord({ id: "project-1", targetPages: 40 }));
+    vi.mocked(getBookPageLimit).mockResolvedValue(30);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-1/approve",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toMatchObject({
+      code: "PAGE_LIMIT_EXCEEDED",
+      pageLimit: { limit: 30, requestedPages: 40, maxPages: 600 }
+    });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(consumeIllustratedBookUse).not.toHaveBeenCalled();
     expect(enqueueGenerationJob).not.toHaveBeenCalled();
     await app.close();
   });

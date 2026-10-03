@@ -301,13 +301,13 @@ describe("chapters, which are only ever their pages' chapterId", () => {
   it("refuses a delete that would leave a chapter with no pages", () => {
     expect(
       resolveStructuralPageEdit(edit({ action: "delete", pageIndexes: [4, 5, 6] }), chaptered)
-    ).toEqual({ ok: false, reason: "would_empty_chapter" });
+    ).toEqual({ ok: false, reason: "would_empty_chapter", emptiedChapterIds: ["chapter-2"] });
   });
 
   it("refuses a move that would empty the chapter it left", () => {
     expect(
       resolveStructuralPageEdit(edit({ action: "move", pageIndexes: [4, 5, 6], anchorPageIndex: 1 }), chaptered)
-    ).toEqual({ ok: false, reason: "would_empty_chapter" });
+    ).toEqual({ ok: false, reason: "would_empty_chapter", emptiedChapterIds: ["chapter-2"] });
   });
 
   it("leaves a book with no chapters alone", () => {
@@ -441,7 +441,7 @@ describe("holding a resolved plan to the book the shift actually finds", () => {
       without(chaptered(), "page-6")
     );
 
-    expect(refitted).toEqual({ ok: false, reason: "would_empty_chapter" });
+    expect(refitted).toEqual({ ok: false, reason: "would_empty_chapter", emptiedChapterIds: ["chapter-2"] });
   });
 
   it("re-clamps an insert whose anchor outran a book that shrank", () => {

@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lookupSignupCountry } from "./signupCountry.js";
+vi.mock("./signupCountry.js", () => ({ lookupSignupCountry: vi.fn(async () => null) }));
 import {
   createMobileSession,
   hashPassword,
@@ -221,6 +223,41 @@ describe("mobile auth routes", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockMobileSessionCreate();
+    vi.mocked(lookupSignupCountry).mockResolvedValue(null);
+  });
+
+  it.each([false, true])("records server country and tolerates lookup failure (%s)", async (failLookup) => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue(activeUser());
+    if (failLookup) vi.mocked(lookupSignupCountry).mockRejectedValue(new Error("Missing database"));
+    else vi.mocked(lookupSignupCountry).mockResolvedValue("IN");
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST", url: "/api/mobile/auth/signup", remoteAddress: "8.8.8.8",
+      headers: { "cf-ipcountry": "US", "x-country-code": "CA", "accept-language": "en-US" },
+      payload: { email: "new@example.com", password: "CorrectPass123", termsAccepted: true, ageGuardianAttested: true }
+    });
+    expect(response.statusCode).toBe(201);
+    expect(lookupSignupCountry).toHaveBeenCalledWith("8.8.8.8");
+    expect(mockPrisma.user.create.mock.calls[0]?.[0].data.welcomeCreditGrant.create).toEqual({
+      ipHash: hashToken("ip:8.8.8.8"), ...(failLookup ? {} : { countryCode: "IN" })
+    });
+    await app.close();
+  });
+
+  it("does not infer a country when the forwarded client IP cannot be trusted", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue(activeUser());
+    const app = await buildApp();
+    const response = await app.inject({
+      method: "POST", url: "/api/mobile/auth/signup",
+      headers: { "x-forwarded-for": "8.8.8.8", "cf-ipcountry": "US" },
+      payload: { email: "new@example.com", password: "CorrectPass123", termsAccepted: true, ageGuardianAttested: true }
+    });
+    expect(response.statusCode).toBe(201);
+    expect(lookupSignupCountry).not.toHaveBeenCalled();
+    expect(mockPrisma.user.create.mock.calls[0]?.[0].data.welcomeCreditGrant.create).toEqual({});
+    await app.close();
   });
 
   it("signs up a new user and returns a mobile session", async () => {
@@ -237,8 +274,8 @@ describe("mobile auth routes", () => {
         email: "Reader@Example.COM",
         password: "CorrectPass123",
         displayName: "Reader",
-        termsVersion: "2026-08-08",
-        privacyVersion: "2026-08-08",
+        termsVersion: "2026-10-03",
+        privacyVersion: "2026-10-03",
         termsAccepted: true,
         ageGuardianAttested: true
       }
@@ -252,8 +289,8 @@ describe("mobile auth routes", () => {
     expect(body.session.refreshToken).toMatch(/^bma_rt_/);
     expect(createCall.data.passwordCredential.create.passwordHash).not.toContain("CorrectPass123");
     expect(createCall.data.legalAcceptances.create).toMatchObject({
-      termsVersion: "2026-08-08",
-      privacyVersion: "2026-08-08",
+      termsVersion: "2026-10-03",
+      privacyVersion: "2026-10-03",
       termsAttested: true,
       ageGuardianAttested: true,
       source: "mobile_signup"
@@ -327,8 +364,8 @@ describe("mobile auth routes", () => {
 
     expect(response.statusCode).toBe(201);
     expect(createCall.data.legalAcceptances.create).toMatchObject({
-      termsVersion: "2026-08-08",
-      privacyVersion: "2026-08-08",
+      termsVersion: "2026-10-03",
+      privacyVersion: "2026-10-03",
       termsAttested: true,
       ageGuardianAttested: true,
       source: "mobile_signup"
@@ -504,8 +541,8 @@ async function signUp(app: FastifyInstance) {
     payload: {
       email: "reader@example.com",
       password: "CorrectPass123",
-      termsVersion: "2026-08-08",
-      privacyVersion: "2026-08-08",
+      termsVersion: "2026-10-03",
+      privacyVersion: "2026-10-03",
       termsAccepted: true,
       ageGuardianAttested: true
     }

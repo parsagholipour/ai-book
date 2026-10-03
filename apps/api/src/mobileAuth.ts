@@ -11,6 +11,7 @@ import {
   type RateLimitConfig
 } from "./rateLimit.js";
 import { hasCurrentLegalAcceptance, legalAcceptanceEvidence } from "./legalAcceptance.js";
+import { lookupSignupCountry } from "./signupCountry.js";
 
 const ACCESS_TOKEN_PREFIX = "bma_at";
 const REFRESH_TOKEN_PREFIX = "bma_rt";
@@ -176,6 +177,12 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
 
       const passwordHash = await hashPassword(parsed.data.password);
       const sessionContext = requestSessionContext(request);
+      const countryCode = sessionContext.ipHash
+        ? await lookupSignupCountry(request.ip).catch(() => {
+            request.log.warn({ event: "signup.country_lookup_failed" }, "Using the fallback welcome-credit amount");
+            return null;
+          })
+        : null;
       try {
         const user = await prisma.user.create({
           data: {
@@ -188,7 +195,10 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
               create: legalAcceptanceEvidence(parsed.data, "mobile_signup", request)
             },
             welcomeCreditGrant: {
-              create: sessionContext.ipHash ? { ipHash: sessionContext.ipHash } : {}
+              create: {
+                ...(sessionContext.ipHash ? { ipHash: sessionContext.ipHash } : {}),
+                ...(countryCode ? { countryCode } : {})
+              }
             }
           }
         });

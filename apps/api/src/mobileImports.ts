@@ -195,6 +195,7 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
       const importId = `imp_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
       const title = deriveManuscriptTitle({
         override: query.data.title,
+        bookTitle: parsed.bookTitle,
         sections: parsed.sections,
         fileName: query.data.filename
       });

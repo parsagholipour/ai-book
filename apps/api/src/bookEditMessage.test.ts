@@ -228,9 +228,10 @@ describe("an anchor on a printed sheet that carries several model pages", () => 
       position: "after",
       pageIndexes: [7, 8, 9]
     });
+    // Ahead of the pages that begin on the sheet: page 7 began on printed 9.
     expect(pageAnchorFromMessage("add a page before page 10", { pdfPageMap: map })).toEqual({
       position: "before",
-      pageIndexes: [7, 8, 9]
+      pageIndexes: [8, 9]
     });
   });
 

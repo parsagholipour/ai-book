@@ -11,6 +11,7 @@ import {
 import { z } from "zod";
 import type { StructuralPageEdit } from "@book-maker/core";
 import { backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
+import { bookTitleIntentFromMessage } from "./bookEditBookTitle.js";
 import { chapterHeadingIntentFromMessage, type ChapterHeadingEdit } from "./bookEditChapterHeading.js";
 import { pageDesignIntentFromMessage, type PageDesignEdit } from "./bookEditPageDesign.js";
 import { narrowCodeLanguageIntent } from "./bookEditCodeScope.js";
@@ -74,6 +75,7 @@ export type BookEditIntentKind =
   | "back_matter"
   | "chapter_heading"
   | "page_design"
+  | "book_title"
   | "add_image"
   | "move_image"
   | "remove_image"
@@ -183,6 +185,8 @@ export type BookEditIntent = {
   chapterHeading?: ChapterHeadingEdit | null;
   /** Set for page_design intents: the design a picture book's pages print in. */
   pageDesign?: PageDesignEdit | null;
+  /** Set for book_title intents: the title the book should have. */
+  bookTitle?: string | null;
   /** Set for add_image intents: the picture to generate and where it goes. */
   imageEdit?: ImageInsertionEdit | null;
   /** Set for move_image / remove_image: which picture, and for a move where it goes. */
@@ -217,7 +221,10 @@ export const PROPOSAL_GATED_EDIT_KINDS: ReadonlySet<BookEditIntentKind> = new Se
   "add_image",
   "move_image",
   "remove_image",
-  "restructure_pages"
+  "restructure_pages",
+  // Free and applied at once unless the cover is AI artwork, when it is a card
+  // priced at the redraw — and an Apply has to find that card again.
+  "book_title"
 ]);
 
 export const CLASSIFIER_PAGE_SAMPLE_CAP = 120;
@@ -355,6 +362,12 @@ export async function classifyProjectChatMessage(options: {
   const pageDesign = options.stage === "complete" ? pageDesignIntentFromMessage(message) : null;
   if (pageDesign) {
     return pageDesign;
+  }
+  // The book's title is printed from the project and its plan, never a page,
+  // and read as the book's identity it was quoted as a whole-book rebuild.
+  const bookTitle = options.stage === "complete" ? bookTitleIntentFromMessage(message) : null;
+  if (bookTitle) {
+    return bookTitle;
   }
   // A message that is, in full, one word or phrase swap is proved by the same
   // parse the free path runs, so it never reaches the router, which rewrites
@@ -801,7 +814,7 @@ function forcedStructuralDecision(intent: BookEditIntent, confidence: number): B
     clarification: "none",
     assistantMessage:
       edit.action === "delete"
-        ? "I couldn’t tell which page to remove. Tell me the page number and I’ll take it out."
-        : "I couldn’t tell which page to move. Tell me the page number and where it should go."
+        ? "I couldn’t tell which page you mean. Tell me the number printed at the bottom of the page and I’ll take it out."
+        : "I couldn’t tell which page you mean. Tell me the number printed at the bottom of the page and where it should go."
   };
 }

@@ -5,6 +5,7 @@ import {
   type GenerationJobType
 } from "../../queue.js";
 import { addImageQuotaLimit } from "../addImageOperations.js";
+import { pageLimitExceededError, pageLimitRefusal, sendPageLimitExceeded } from "../bookPageLimit.js";
 import { type MobileProjectRecoveryDto } from "../dto.js";
 import { queueDirectPlanRevision } from "../editOperations.js";
 import { retryBookEditOperation } from "../bookEditOperationRetries.js";
@@ -116,6 +117,10 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       }
       if (!(await enforceContentRestrictions(reply, project.prompt))) {
         return;
+      }
+      const pageLimit = await pageLimitRefusal(auth.user.id, project.targetPages);
+      if (pageLimit) {
+        return sendPageLimitExceeded(reply, pageLimit);
       }
 
       try {
@@ -330,6 +335,12 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!(await enforceContentRestrictions(reply, generationInput.prompt))) {
         return;
       }
+      // The door that writes the book, so the one that cannot be skipped: a
+      // plan built while subscribed is refused here once the plan has lapsed.
+      const pageLimit = await pageLimitRefusal(auth.user.id, generationInput.targetPages);
+      if (pageLimit) {
+        return sendPageLimitExceeded(reply, pageLimit);
+      }
       const creditEstimate = estimateFullBookCreditCost(generationInput);
 
       const imageQuota =
@@ -439,7 +450,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       schema: {
         tags: ["mobile"],
         body: mobileGenerationRetryOpenApiBody,
-        response: { 202: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError }
+        response: { 202: {}, 401: mobileAuthError, 403: pageLimitExceededError, 404: mobileAuthError, 409: mobileAuthError }
       }
     },
     async (request, reply) => {
@@ -551,6 +562,12 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       let imageQuotaLimit: number | null = null;
       if (isFullBookRetry) {
         const generationInput = createProjectSchema.parse(inputSnapshotFromProject(project));
+        // A retry re-charges the whole package, so it is held to the length
+        // rule the approval was: a plan that lapsed since may not rewrite it.
+        const pageLimit = await pageLimitRefusal(auth.user.id, generationInput.targetPages);
+        if (pageLimit) {
+          return sendPageLimitExceeded(reply, pageLimit);
+        }
         if (estimateFullBookCreditCost(generationInput).assumptions.estimatedInteriorImages > 0) {
           imageQuotaLimit = (await getImageQuota(auth.user.id))?.limit ?? null;
         }

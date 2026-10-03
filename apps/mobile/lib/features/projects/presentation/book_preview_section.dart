@@ -77,7 +77,9 @@ class _GeneratedBookPreviewState extends State<GeneratedBookPreview> {
               ),
             ),
           ],
-          if (widget.onReportProject != null)
+          // Reporting is for what a model wrote; an author's own book is their
+          // writing, the same reason the AI-content line above is left off.
+          if (widget.onReportProject != null && !project.isAuthorManuscript)
             Align(
               alignment: AlignmentDirectional.centerStart,
               child: AppButton.text(
@@ -90,7 +92,7 @@ class _GeneratedBookPreviewState extends State<GeneratedBookPreview> {
           if (cover != null) ...[
             _CoverRow(
               image: cover,
-              onReport: onReportImage == null
+              onReport: onReportImage == null || !cover.aiGenerated
                   ? null
                   : () => onReportImage(cover),
             ),
@@ -201,7 +203,7 @@ class _GeneratedPagePreview extends StatelessWidget {
         if (page.image != null) ...[
           const SizedBox(height: 10),
           _AuthenticatedProjectImage(image: page.image!),
-          if (onReportImage != null)
+          if (onReportImage != null && page.image!.aiGenerated)
             Align(
               alignment: AlignmentDirectional.centerStart,
               child: _ReportVisualButton(

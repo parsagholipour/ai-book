@@ -180,6 +180,73 @@ export type StructuralRecognition = {
   anchored: boolean;
 };
 
+/** "swap pages 2 and 3", "switch page 4 with page 5", "swap the order of pages 6 and 7". */
+const SWAP_PATTERN =
+  /^\s*(?:please\s+)?(?:swap|switch|exchange|trade|flip)\s+(?:the\s+(?:order\s+of\s+(?:the\s+)?)?)?(?:printed\s+)?pages?\s+(\d{1,4})\s*(?:,|and|&|with)\s*(?:(?:the\s+)?(?:printed\s+)?page\s+)?(\d{1,4})\b/i;
+
+export type SwapReading = {
+  /** The two numbers the reader spoke, lower first. */
+  spoken: [number, number];
+  /** The one move that swaps them, or null when no single move can. */
+  edit: StructuralPageEdit | null;
+  /** True when both numbers land on the same model page. */
+  samePage: boolean;
+};
+
+/**
+ * A swap of two pages, read by code.
+ *
+ * "swap pages 2 and 3" is a reorder, and it was quoted as a 550-credit
+ * whole-book rebuild: "swap" is in no move grammar, so the router's paraphrase
+ * of it was read as prose work (2026-10-02). Two neighbouring pages swap with
+ * one move — the later one's pages placed ahead of the earlier one's. Two pages
+ * with others between them take two moves, and a structural edit is one, so
+ * that reading carries no edit and the proposal answers it instead of moving
+ * half of it. Each number is the pages that begin on that sheet, the rule every
+ * spoken delete and move follows. Null when the message is not a swap, or names
+ * a sheet with no page on it.
+ */
+/** "صفحه ۳ و ۴ را جابجا کن" — the same request in Persian, read after its digits are normalised. */
+const PERSIAN_SWAP_PATTERN =
+  /(?:صفحه|صفحات)\s*(\d{1,4})\s*(?:و|با)\s*(?:صفحه\s*)?(\d{1,4})\s*(?:را\s*)?(?:با\s*هم\s*)?(?:جابجا|جابه\u200c?جا|جا\s*به\s*جا)/u;
+
+export function swapPagesFromMessage(
+  message: string,
+  pages: BookEditPageContext[],
+  context: ReaderPageNumberContext = {}
+): SwapReading | null {
+  const normalized = normalizeNumerals(message);
+  const match = SWAP_PATTERN.exec(normalized) ?? PERSIAN_SWAP_PATTERN.exec(normalized);
+  if (!match) {
+    return null;
+  }
+  const spoken = [Number(match[1]), Number(match[2])].sort((left, right) => left - right) as [number, number];
+  const sheet = (spokenPage: number) =>
+    pageIndexesFromMessage(`page ${spokenPage}`, pages, { ...context, pagesBeginningOnSheet: true });
+  const earlier = sheet(spoken[0]);
+  const later = sheet(spoken[1]);
+  if (earlier.length === 0 || later.length === 0) {
+    return null;
+  }
+  if (spoken[0] === spoken[1] || later.some((index) => earlier.includes(index))) {
+    return { spoken, edit: null, samePage: true };
+  }
+  if (Math.max(...earlier) + 1 !== Math.min(...later)) {
+    return { spoken, edit: null, samePage: false };
+  }
+  return {
+    spoken,
+    edit: {
+      action: "move",
+      anchorPageIndex: anchorModelPageIndex("before", earlier),
+      anchorSide: "before",
+      pageIndexes: later,
+      pageCount: 0
+    },
+    samePage: false
+  };
+}
+
 /**
  * Reads a structural page request out of a message, or null.
  *
@@ -226,13 +293,18 @@ export function structuralPageEditFromMessage(
   // edge one.
   const lastIndex = pages.length > 0 ? pages.reduce((highest, page) => Math.max(highest, page.index), 0) : null;
 
+  const swap = swapPagesFromMessage(message, pages, context);
+  if (swap) {
+    return swap.edit ? { edit: swap.edit, anchored: true } : null;
+  }
+
   const deleted = pageObjectMatch(text, DELETE_PATTERN);
   if (deleted && !SHORTENING_VETO.test(text.slice(deleted.index + deleted[0].length))) {
     // Read out of the object clause alone. A delete has no anchor — the pages
     // it names are the pages it removes — so anything the message says after
     // them is a reason, a second request or a place, and none of those is a
     // page to delete.
-    const pageIndexes = pageIndexesFromMessage(deleted[0], pages, context);
+    const pageIndexes = pageIndexesFromMessage(deleted[0], pages, { ...context, pagesBeginningOnSheet: true });
     return {
       edit: { action: "delete", anchorPageIndex: null, pageIndexes, pageCount: 0 },
       anchored: pageIndexes.length > 0
@@ -242,7 +314,9 @@ export function structuralPageEditFromMessage(
   const moved = pageObjectMatch(text, MOVE_PATTERN);
   // The sources come from the object clause, the destination from the anchor
   // clause the whole message carries ("after page 1", "at the end").
-  const move = moved ? movePageEdit(anchor, pageIndexesFromMessage(moved[0], pages, context), lastIndex) : null;
+  const move = moved
+    ? movePageEdit(anchor, pageIndexesFromMessage(moved[0], pages, { ...context, pagesBeginningOnSheet: true }), lastIndex)
+    : null;
   if (move) {
     return move;
   }
@@ -254,7 +328,13 @@ export function structuralPageEditFromMessage(
     const pageCount = Number.isFinite(parsed) ? Math.max(1, parsed) : 1;
     const anchorPageIndex = insertAnchorIndex(anchor, lastIndex);
     return {
-      edit: { action: "insert", anchorPageIndex, pageIndexes: [], pageCount },
+      edit: {
+        action: "insert",
+        anchorPageIndex,
+        ...(anchor?.position === "before" && anchorPageIndex !== null ? { anchorSide: "before" as const } : {}),
+        pageIndexes: [],
+        pageCount
+      },
       anchored: anchorPageIndex !== null
     };
   }
@@ -300,7 +380,13 @@ function movePageEdit(
     return null;
   }
   return {
-    edit: { action: "move", anchorPageIndex, pageIndexes: sources, pageCount: 0 },
+    edit: {
+      action: "move",
+      anchorPageIndex,
+      ...(anchor.position === "before" ? { anchorSide: "before" as const } : {}),
+      pageIndexes: sources,
+      pageCount: 0
+    },
     anchored: true
   };
 }
@@ -331,6 +417,30 @@ function insertAnchorIndex(
     return lastIndex;
   }
   return anchorModelPageIndex(anchor.position, anchor.pageIndexes);
+}
+
+/**
+ * Which structural actions a message asks for, read clause by clause.
+ *
+ * A structural edit is one action, so "add a page after page 4 and delete page
+ * 9" became an insert whose brief said "Also delete page 9" — a page the drafter
+ * cannot remove, so half the request was dropped without a word (2026-10-02).
+ */
+export function structuralActionsInMessage(message: string): Set<StructuralPageEdit["action"]> {
+  const text = normalizeNumerals(message);
+  const actions = new Set<StructuralPageEdit["action"]>();
+  const deleted = pageObjectMatch(text, DELETE_PATTERN);
+  if (deleted && !SHORTENING_VETO.test(text.slice(deleted.index + deleted[0].length))) {
+    actions.add("delete");
+  }
+  if (pageObjectMatch(text, MOVE_PATTERN) || SWAP_PATTERN.test(text) || PERSIAN_SWAP_PATTERN.test(text)) {
+    actions.add("move");
+  }
+  const insert = pageObjectMatch(text, INSERT_PATTERN);
+  if (insert && !insertObjectIsANamedPage(text, insert)) {
+    actions.add("insert");
+  }
+  return actions;
 }
 
 /** The intent a recognised structural request becomes. */

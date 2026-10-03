@@ -65,6 +65,7 @@ export function resetMobileHarness(): void {
     lifetimeCreditsGranted: 0,
     lifetimeCreditsSpent: 0
   });
+  mockBilling.getWelcomeCreditsGranted.mockResolvedValue(1000);
   mockBilling.listActiveUserEntitlements.mockResolvedValue([]);
   mockBilling.reserveCredits.mockImplementation(async ({ amountCredits, operation }: { amountCredits: number; operation: string }) =>
     amountCredits > 0

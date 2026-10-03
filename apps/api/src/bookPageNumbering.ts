@@ -83,7 +83,37 @@ export type ReaderPageNumbering = {
    * reader has always been given.
    */
   printedPageEnd(index: number): number | undefined;
+  /** The first sheet of one model page, or `undefined` when a map in force cannot place it. */
+  printedPageStart(index: number): number | undefined;
 };
+
+/**
+ * The gap after model page `anchor` and before model page `next`, named from the
+ * side the reader named it.
+ *
+ * "After page N" is the last sheet the anchor prints on; "before page N" is the
+ * sheet `next` begins on. Both are true of every gap, and on most books they
+ * are neighbouring numbers. On a book of short pages two of them can share a
+ * sheet, and there they are the *same* number: "move page 6 before page 4",
+ * "swap pages 4 and 5" and "put a new page before page 7" were all confirmed
+ * "… after page 4/7", which reads as the opposite of the request (2026-10-02).
+ * So the side follows the request, and "after" — what every stored edit means —
+ * is the answer whenever "before" has no page to name. `next` is undefined past
+ * the last page.
+ */
+export function readerPlaceOfGap(
+  numbering: ReaderPageNumbering,
+  anchor: number,
+  next: number | undefined,
+  side: "after" | "before" = "after"
+): { side: "after" | "before"; readerPage: number } | undefined {
+  const nextStart = side === "before" && next !== undefined ? numbering.printedPageStart(next) : undefined;
+  if (nextStart !== undefined) {
+    return { side: "before", readerPage: nextStart };
+  }
+  const readerPage = numbering.printedPageEnd(anchor);
+  return readerPage === undefined ? undefined : { side: "after", readerPage };
+}
 
 /** The project fields the page-map gate reads. */
 export type ProjectPageMapSource = {
@@ -191,6 +221,9 @@ export function readerPageNumbering(pdfPageMap: BookPdfPageMap | undefined): Rea
     },
     printedPageEnd(index: number): number | undefined {
       return printedEdge(index, "endPdfPage");
+    },
+    printedPageStart(index: number): number | undefined {
+      return printedEdge(index, "startPdfPage");
     }
   };
 }

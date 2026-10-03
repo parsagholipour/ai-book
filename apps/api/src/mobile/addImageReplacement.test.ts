@@ -126,7 +126,7 @@ describe("chat image replacement", () => {
         kind: "add_image",
         affectedPageIndexes: [1],
         credits: 45,
-        summary: "Replace the illustration of “the illustration on page 1” with “a more aggressive fox”"
+        summary: "Replace the illustration on page 1 with one of “a more aggressive fox”"
       });
       expect(body.reply.metadata.pendingEdit.intent.imageEdit).toEqual({
         subject: "a more aggressive fox",

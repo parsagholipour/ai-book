@@ -436,6 +436,44 @@ describe("maybeEnqueueCompile publication-policy identity", () => {
     expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
   });
 
+  describe("an import's own first compile", () => {
+    // The import stamps the book COMPLETE with its pages, then asks for its
+    // compile — and asks again when the cover it waited for lands.
+    const importedBook = { status: "COMPLETE", contentRevision: 1, mediaSettings: { mobile: { import: { importId: "imp_1" } } } };
+
+    it("is queued as the book's outcome compile, published over COMPLETE", async () => {
+      mocks.prisma.project.findUnique.mockResolvedValue(importedBook);
+
+      expect(await maybeEnqueueCompile("project-1", "plan-1")).not.toBe("not-ready");
+
+      expect(createdCompile().payload).toMatchObject({ exportPublicationProjectStatus: "COMPLETE" });
+      expect(createdCompile().payload).not.toHaveProperty("detachedFromProjectLifecycle");
+      expect(createdCompile().payload).not.toHaveProperty("skipFinalReview");
+    });
+
+    it("is recovered by the cover job that finished after the import asked", async () => {
+      mocks.prisma.project.findUnique.mockResolvedValue(importedBook);
+
+      await maybeCompileAfterCompletedJob({
+        name: "generate-image",
+        data: { projectId: "project-1", planId: "plan-1" }
+      } as unknown as Job);
+
+      expect(createdCompile().payload).toMatchObject({ exportPublicationProjectStatus: "COMPLETE" });
+    });
+
+    it("is not guessed for a settled book that was never imported", async () => {
+      mocks.prisma.project.findUnique.mockResolvedValue({ ...importedBook, mediaSettings: {} });
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        expect(await maybeEnqueueCompile("project-1", "plan-1")).toBe("not-ready");
+      } finally {
+        error.mockRestore();
+      }
+      expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(["ADD_IMAGE", "MOVE_IMAGE", "REMOVE_IMAGE"] as const)(
     "keeps the applied %s policy when a newer failed edit exists at image fan-in",
     async (kind) => {

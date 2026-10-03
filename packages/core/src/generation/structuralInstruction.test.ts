@@ -62,6 +62,78 @@ describe("structural edit instruction classification", () => {
   });
 
   /**
+   * Courtesy at either end and a reason that only says the page is redundant
+   * are not prose work; each of these was quoted as a whole-book rebuild.
+   */
+  it.each([
+    [remove(6), "delete page 6 please and thanks"],
+    [remove(6), "Delete page 6, thanks so much!"],
+    [remove(6), "can you delete page 6"],
+    [remove(6), "Could you please remove page 6?"],
+    [remove(6), "I'd like you to delete page 6"],
+    [remove(5), "remove page 5, it repeats page 4"],
+    [remove(5), "delete page 5 because it's a duplicate of page 4"],
+    [remove(5), "delete page 5, it's empty"],
+    [carry(4, 2), "can you move page 2 after page 4 please"]
+  ] as const)("reads courtesy and a redundancy reason as structural: %#", (edit, instruction) => {
+    expect(structuralEditRequiresWholeBookGeneration(edit, instruction)).toBe(false);
+  });
+
+  /**
+   * Pages located by a pattern or by what they hold: the router picks the rows
+   * and the card lists them, so nothing here asks for prose. Both were quoted as
+   * whole-book rebuilds.
+   */
+  it.each([
+    [remove(2, 4, 6), "delete every other page"],
+    [remove(7, 8), "remove all the pages about shopping"],
+    [remove(9), "delete the page with the printable checklist"],
+    [carry(12, 3), "move the page about leftovers to the end"],
+    [remove(3, 4), "صفحه ۳ و ۴ را حذف کن"],
+    [carry(2, 4), "صفحه ۳ و ۴ را جابجا کن"]
+  ] as const)("reads a located page object as structural: %#", (edit, instruction) => {
+    expect(structuralEditRequiresWholeBookGeneration(edit, instruction)).toBe(false);
+  });
+
+  it.each([
+    [remove(7), "remove the page about shopping and rewrite page 8"],
+    [remove(7), "delete the page about shopping, merging its tip into page 8"],
+    [carry(12, 3), "move the page about leftovers to the end and make it shorter"]
+  ] as const)("keeps a located page object that asks for more on the generation path: %#", (edit, instruction) => {
+    expect(structuralEditRequiresWholeBookGeneration(edit, instruction)).toBe(true);
+  });
+
+  it.each([
+    [remove(5), "remove page 5, it repeats page 4, and fix the ending of page 6"],
+    [remove(5), "delete page 5 because the ending is weak"],
+    [remove(5), "can you delete page 5 and rewrite page 6"]
+  ] as const)("keeps a reason or a request that asks for more on the generation path: %#", (edit, instruction) => {
+    expect(structuralEditRequiresWholeBookGeneration(edit, instruction)).toBe(true);
+  });
+
+  /**
+   * "swap pages 2 and 3" was quoted as a whole-book rebuild: "swap" is in no
+   * move grammar, so the request read as prose work. It is one reorder, and the
+   * API answers any swap one move cannot perform before a card exists.
+   */
+  it.each([
+    [carry(0, 3), "swap pages 2 and 3"],
+    [carry(0, 3), "Switch page 2 with page 3, please"],
+    [carry(0, 3), "swap the order of pages 2 and 3"],
+    [carry(0, 3), "exchange pages 2 & 3 around"]
+  ] as const)("reads a swap as a bare move: %#", (edit, instruction) => {
+    expect(structuralEditRequiresWholeBookGeneration(edit, instruction)).toBe(false);
+  });
+
+  it.each([
+    [carry(0, 3), "swap pages 2 and 3 and make page 3 funnier"],
+    [remove(3), "swap pages 2 and 3"],
+    [carry(0, 3), "swap the pictures on pages 2 and 3"]
+  ] as const)("keeps a swap that asks for more, or is not a move, off the free path: %#", (edit, instruction) => {
+    expect(structuralEditRequiresWholeBookGeneration(edit, instruction)).toBe(true);
+  });
+
+  /**
    * The determiner a reader with the page in front of them actually types. The
    * generic page object knew "the", "that" and "those" but neither
    * demonstrative, so
@@ -161,11 +233,11 @@ describe("structural edit instruction classification", () => {
   it("never briefs a replan from the marker's own words", () => {
     const classified = classifyStructuralEditInstruction(
       remove(4),
-      "Delete the page about the storm\nContent requirements: "
+      "Delete the page about the storm and keep its last line\nContent requirements: "
     );
     expect(classified).toEqual({
       hasContentRequirements: true,
-      contentRequirements: "Delete the page about the storm"
+      contentRequirements: "Delete the page about the storm and keep its last line"
     });
     expect(classified.contentRequirements).not.toContain("Content requirements");
     // A bare action clause under an empty body is still free.

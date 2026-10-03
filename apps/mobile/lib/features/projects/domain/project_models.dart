@@ -1,15 +1,17 @@
 // The export/download models live in export_models.dart, the chat models in
 // project_chat_models.dart, the live status payload in
-// project_status_models.dart and the edit diff in edit_changes_models.dart; all
-// are re-exported so the many screens that import project_models.dart keep
-// seeing them.
+// project_status_models.dart, the edit diff in edit_changes_models.dart and the
+// image model in project_image_models.dart; all are re-exported so the many
+// screens that import project_models.dart keep seeing them.
 export 'edit_changes_models.dart';
 export 'export_models.dart';
 export 'project_chat_models.dart';
+export 'project_image_models.dart';
 export 'project_status_models.dart';
 export 'question_answers.dart';
 
 import '../../studio/domain/manuscript_models.dart';
+import 'project_image_models.dart';
 import 'credit_rates.dart';
 import 'export_models.dart';
 import 'project_status_models.dart';
@@ -426,35 +428,6 @@ class MobileProjectPage {
           ? null
           : MobileProjectImage.fromJson(json['image'] as Map<String, dynamic>),
       imageFailed: json['imageFailed'] as bool? ?? false,
-    );
-  }
-}
-
-class MobileProjectImage {
-  const MobileProjectImage({
-    required this.id,
-    required this.role,
-    required this.url,
-    required this.contentType,
-    required this.altText,
-    this.pageId,
-  });
-
-  final String id;
-  final String role;
-  final String url;
-  final String contentType;
-  final String altText;
-  final String? pageId;
-
-  factory MobileProjectImage.fromJson(Map<String, dynamic> json) {
-    return MobileProjectImage(
-      id: json['id'] as String,
-      role: json['role'] as String,
-      url: json['url'] as String,
-      contentType: json['contentType'] as String,
-      altText: json['altText'] as String,
-      pageId: json['pageId'] as String?,
     );
   }
 }

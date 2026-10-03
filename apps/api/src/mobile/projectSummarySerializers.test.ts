@@ -16,6 +16,7 @@ import {
   serializeProjectDetail,
   serializeProjectSummary
 } from "./projectSummarySerializers.js";
+import { promptPreviewText } from "./support.js";
 import {
   approvedPlanRecord,
   mockPrisma,
@@ -171,6 +172,30 @@ describe("summary/detail serializer parity", () => {
     expect(mockPrisma.generationJob.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ ownsQualityVerdict: true }) })
     );
+  });
+});
+
+describe("promptPreviewText", () => {
+  it("previews a chat-made book by the first thing the reader wrote, not the planner's instruction", () => {
+    const composed = [
+      "Create a short story.",
+      "Book type choice: Auto - the creation chat settled on Short story",
+      "Creation chat: Assistant: Hi! Tell me about the book you want to make.",
+      "User: A short literary story about an old lighthouse keeper in a storm.",
+      "Assistant: Lovely. I'll set it up as a short story.",
+      "User: Make it melancholy."
+    ].join("\n");
+    expect(promptPreviewText(composed)).toBe("A short literary story about an old lighthouse keeper in a storm.");
+    expect(
+      promptPreviewText("Create a short story.\nCreation chat: Assistant: Hi!\nUser (replying to “Hi!”): A tale of the sea.")
+    ).toBe("A tale of the sea.");
+  });
+
+  it("falls back to the stored idea, then to the prompt as it was typed", () => {
+    expect(promptPreviewText("Create a short story.\nBook type choice: Short story\nOriginal idea: Two foxes and a kite\nTone or vibe: warm")).toBe(
+      "Two foxes and a kite"
+    );
+    expect(promptPreviewText("A practical guide to balcony gardens")).toBe("A practical guide to balcony gardens");
   });
 });
 

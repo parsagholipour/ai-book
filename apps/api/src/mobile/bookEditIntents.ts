@@ -6,6 +6,7 @@ import { proposeAddImageEdit } from "./addImageOperations.js";
 import { proposeImageLayoutEdit } from "./imageLayoutOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
 import { refuseAuthorBookReplan } from "./authorBookReplan.js";
+import { applyBookTitleEdit } from "./bookTitleEdits.js";
 import { applyPresentationIntent } from "./presentationIntents.js";
 import {
   affectedPagesForIntent,
@@ -13,37 +14,32 @@ import {
   exactReplacementForIntent
 } from "./bookEditScope.js";
 import { exactReplacementPreviewCard, planExactReplacement, replyReplacementNotFound } from "./exactReplacementPreview.js";
-import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "./dto.js";
+import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { type ProposedChatEdit } from "./chatEditOptions.js";
 import {
-  createOpenBookEditOperation,
-  hasOpenProjectWork,
   queueChatBookEdit,
   queueChatPlanRevision
 } from "./editOperations.js";
-import { AUTHOR_MANUSCRIPT_MESSAGE, sendMobileError, sendProjectNotFound } from "./httpErrors.js";
+import { AUTHOR_MANUSCRIPT_MESSAGE } from "./httpErrors.js";
 import { redoLastBookEdit } from "./bookEditRedoApply.js";
 import { undoLastBookEdit } from "./manualEdits.js";
 import {
-  activeProjectChatLeafId,
   createAssistantChatMessage,
-  createUserProjectChatMessage,
-  loadActiveProjectChatMessages,
   loadChatPageBodies,
-  loadProjectChatResponse,
-  loadProjectForChat,
-  replayProjectChatRequest,
-  serializeBookEditOperation,
-  serializeProjectChatMessage,
   type ProjectForChat
 } from "./projectChat.js";
-import { bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
+import { bookEditCreditCost } from "./bookEditPricing.js";
+import {
+  continuedBookPages,
+  pageLimitChatText,
+  pageLimitMetadata,
+  pageLimitRefusal,
+  replannedBookPages,
+  restructuredBookPages
+} from "./bookPageLimit.js";
 import { generateGroundedProjectAnswer } from "./groundedAnswer.js";
-import { replayClaimedProposal } from "./proposalExecutionClaims.js";
-import { isPrismaUniqueConflict, jsonInputValue } from "./support.js";
-import { findPendingProposalById, type PendingEditState } from "./pendingEditState.js";
+import { type PendingEditState } from "./pendingEditState.js";
 import { bookPlanSchema, chapterDisplayHeading, isAuthorManuscript, resolveStructuralPageEdit, type TextModelAdapter } from "@book-maker/core";
-import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
   canonicalStructuralEditInstruction,
@@ -52,7 +48,9 @@ import {
   structuralCardPlanOf,
   structuralEditForProposal,
   structuralPagesOf,
-  structuralRefusalMessage
+  multipleStructuralActionsMessage,
+  structuralRefusalMessage,
+  unswappablePagesMessage
 } from "./structuralPageEdits.js";
 
 /** Classifies chat into a book-edit intent, price, and confirmation reply. */
@@ -65,146 +63,6 @@ export * from "./pendingEditState.js";
 // The proposal-card and queued-reply prose lives in bookEditCopy.ts; re-exported
 // because every consumer historically imported it from this file.
 export { editProposalMessage, editProposalSummary, operationQueuedMessage } from "./bookEditCopy.js";
-
-
-export async function applyOrCancelEditProposal(options: {
-  reply: FastifyReply;
-  userId: string;
-  projectId: string;
-  proposalId: string;
-  requestId?: string | undefined;
-  action: "apply" | "cancel";
-  textModel?: TextModelAdapter | undefined;
-}): Promise<MobileProjectChatMessageResponseDto | void> {
-  const { reply, userId, projectId, proposalId, requestId, action, textModel } = options;
-  // Ownership before replay, matching the messages route: a replay answers
-  // with the project's whole chat response, so replaying for a caller who does
-  // not own the project would hand them another reader's transcript.
-  const project = await loadProjectForChat(userId, projectId);
-  if (!project) {
-    return sendProjectNotFound(reply);
-  }
-  if (requestId) {
-    const replay = await replayProjectChatRequest(projectId, requestId);
-    if (replay) {
-      return replay;
-    }
-  }
-
-  if (action === "apply") {
-    const claimed = await replayClaimedProposal(projectId, proposalId);
-    if (claimed) return claimed;
-  }
-
-  // Loaded once for both the proposal lookup and the leaf resolution below.
-  const activeMessages = await loadActiveProjectChatMessages(projectId);
-  const pending = findPendingProposalById(activeMessages, proposalId);
-  if (!pending?.intent || pending.clarification !== "confirm") {
-    return sendMobileError(reply, 404, "PROPOSAL_NOT_FOUND", "That edit proposal is no longer available.");
-  }
-  let userMessage: MobileProjectChatMessageRecord;
-  try {
-    userMessage = await createUserProjectChatMessage({
-      projectId,
-      parentId: activeProjectChatLeafId(activeMessages),
-      content: action === "apply" ? "Apply" : "Cancel",
-      requestId,
-      metadata: { proposalAction: action, proposalId }
-    });
-  } catch (error) {
-    if (requestId && isPrismaUniqueConflict(error)) {
-      const replay = await replayProjectChatRequest(projectId, requestId);
-      if (replay) {
-        return replay;
-      }
-      // The user row exists but its reply does not yet: the same requestId is
-      // still being processed. A retry with the same id replays it once the
-      // first request finishes — a conflict, not a server failure.
-      return sendMobileError(reply, 409, "REQUEST_IN_PROGRESS", "That request is still being processed. Try again in a moment.");
-    }
-    throw error;
-  }
-
-  if (action === "cancel") {
-    // Cancelling claims the proposal id durably, through the same unique
-    // [projectId, requestId] index Apply's operation insert uses. Whichever
-    // settlement lands first owns the proposal; a Cancel that only wrote chat
-    // messages could "succeed" while a concurrent Apply charged anyway.
-    const cancelClaim = await createOpenBookEditOperation({
-      projectId,
-      requestId: proposalId,
-      userMessageId: userMessage.id,
-      kind: operationKindForIntent(pending.intent.kind),
-      status: "CANCELED",
-      request: pending.request,
-      editInstruction: pending.intent.editInstruction?.trim() || pending.request,
-      classifier: jsonInputValue({ ...pending.intent, cancelledProposal: true }),
-      affectedPageIndexes: [],
-      creditsCharged: 0
-    });
-    if (!cancelClaim) {
-      // Apply won the settlement: hand back the executed operation instead of
-      // pretending the proposal was dropped.
-      const claimed = await replayClaimedProposal(projectId, proposalId);
-      if (claimed) return claimed;
-    }
-    const replyMessage = await createAssistantChatMessage({
-      projectId,
-      parentId: userMessage.id,
-      ...(cancelClaim ? { operationId: cancelClaim.id } : {}),
-      content: "Okay, I dropped that request. No edit was applied.",
-      metadata: { pendingEditCancelled: true, charged: false, proposalId }
-    });
-    return {
-      ...(await loadProjectChatResponse(projectId)),
-      reply: serializeProjectChatMessage(replyMessage),
-      operation: null
-    } satisfies MobileProjectChatMessageResponseDto;
-  }
-
-  const openEditBlocked = await hasOpenProjectWork(projectId);
-  if (openEditBlocked) {
-    // The busyness may be the winner itself: a concurrent Apply that committed
-    // its operation and job after our claim check above. Saving the request as
-    // a pending edit here would let a later confirmation rebuild the proposal
-    // and charge the same edit twice — replay the claim instead.
-    const claimed = await replayClaimedProposal(projectId, proposalId);
-    if (claimed) return claimed;
-    const replyMessage = await busyEditReply({
-      projectId,
-      parentMessageId: userMessage.id,
-      intent: pending.intent,
-      request: pending.request,
-      pendingState: pending
-    });
-    return {
-      ...(await loadProjectChatResponse(projectId)),
-      reply: serializeProjectChatMessage(replyMessage),
-      operation: null
-    } satisfies MobileProjectChatMessageResponseDto;
-  }
-
-  const outcome = await handleProjectChatIntent({
-    userId,
-    project,
-    userMessageId: userMessage.id,
-    message: pending.request,
-    intent: pending.intent,
-    textModel,
-    executeProposal: true,
-    executionCommandId: proposalId,
-    ...(pending.credits !== undefined ? { quotedCredits: pending.credits } : {}),
-    ...(pending.characterContext ? { characterContext: pending.characterContext } : {})
-  });
-
-  return {
-    ...(await loadProjectChatResponse(projectId)),
-    reply: serializeProjectChatMessage(outcome.reply),
-    operation: outcome.operation
-      ? serializeBookEditOperation(outcome.operation, { pageNumbering: numberingForProject(project) })
-      : null
-  } satisfies MobileProjectChatMessageResponseDto;
-}
 
 
 export async function handleProjectChatIntent(options: {
@@ -324,6 +182,20 @@ export async function handleProjectChatIntent(options: {
     });
   }
 
+  if (intent.kind === "book_title") {
+    return applyBookTitleEdit({
+      userId,
+      project,
+      intent,
+      userMessageId,
+      message: pendingRequest,
+      executeProposal: options.executeProposal,
+      executionCommandId: options.executionCommandId,
+      quotedCredits: options.quotedCredits,
+      pendingEditMetadata: pendingEditMetadataFromState
+    });
+  }
+
   const presentation = await applyPresentationIntent(project, intent, userMessageId);
   if (presentation) {
     return { reply: presentation, operation: null };
@@ -387,12 +259,15 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
     // against pages that *currently exist*: a page about to be created is not
     // one of them, so an insert reaching it is answered "which page or exact
     // phrase should I edit?" and never gets a card at all.
+    // Requests one card cannot honestly carry are answered before any card.
+    const answeredInstead =
+      multipleStructuralActionsMessage(pendingRequest) ?? unswappablePagesMessage(pendingRequest, intent, project);
     const resolved = resolveStructuralPageEdit(structuralEditForProposal(intent), structuralPagesOf(project));
-    if (!resolved.ok) {
+    if (answeredInstead || !resolved.ok) {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: structuralRefusalMessage(resolved.reason, intent, numbering),
+        content: answeredInstead ?? (resolved.ok ? "" : structuralRefusalMessage(resolved, intent, numbering, project)),
         metadata: { intent, charged: false, pendingEditCancelled: true }
       });
       return { reply, operation: null };
@@ -421,6 +296,8 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
     } else {
       const cost = bookEditCreditCost(intent.kind, resolved.plan.pagesBilled, project);
       const proposalIntent = { ...intent, clarification: "none" as const };
+      const grownTo = restructuredBookPages(project, resolved.plan.totalPages);
+      const pageLimit = grownTo === null ? null : await pageLimitRefusal(project.userId, grownTo);
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
@@ -429,10 +306,13 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
         // page numbers, and a model index here beside a printed one there — or
         // the request's unclamped anchor here beside the resolver's there — names
         // two different pages.
-        content: editProposalMessage(intent.kind, [], intent, numbering, structuralPlan),
+        content: pageLimit
+          ? pageLimitChatText(pageLimit)
+          : editProposalMessage(intent.kind, [], intent, numbering, structuralPlan),
         metadata: {
           intent: proposalIntent,
           charged: false,
+          ...(pageLimit ? pageLimitMetadata(pageLimit) : {}),
           pendingEdit: pendingEditMetadataFromState({
             request: message,
             scope: "none",
@@ -465,13 +345,15 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
     const newPageCount = continuationNewPageCount(intent, project);
     const cost = bookEditCreditCost(intent.kind, newPageCount, project);
     const proposalIntent = { ...intent, clarification: "none" as const };
+    const pageLimit = await pageLimitRefusal(project.userId, continuedBookPages(project, newPageCount));
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
-      content: editProposalMessage(intent.kind, [], intent),
+      content: pageLimit ? pageLimitChatText(pageLimit) : editProposalMessage(intent.kind, [], intent),
       metadata: {
         intent: proposalIntent,
         charged: false,
+        ...(pageLimit ? pageLimitMetadata(pageLimit) : {}),
         pendingEdit: pendingEditMetadataFromState({
           request: message,
           scope: "none",
@@ -499,13 +381,15 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
     if (refused) return { reply: refused, operation: null };
     const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings: intent.replanSettings });
     const proposalIntent = { ...intent, clarification: "none" as const };
+    const pageLimit = await pageLimitRefusal(project.userId, replannedBookPages(intent, project));
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
-      content: editProposalMessage(intent.kind, [], intent),
+      content: pageLimit ? pageLimitChatText(pageLimit) : editProposalMessage(intent.kind, [], intent),
       metadata: {
         intent: proposalIntent,
         charged: false,
+        ...(pageLimit ? pageLimitMetadata(pageLimit) : {}),
         pendingEdit: pendingEditMetadataFromState({
           request: message,
           scope: intent.scope === "none" ? "all_pages" : intent.scope,
@@ -749,7 +633,7 @@ export async function busyEditReply(options: {
     clarification: "busy"
   };
   const resumesWithoutProposal =
-    ["back_matter", "chapter_heading", "page_design"].includes(options.intent.kind);
+    ["back_matter", "chapter_heading", "page_design", "book_title"].includes(options.intent.kind);
   return createAssistantChatMessage({
     projectId: options.projectId,
     parentId: options.parentMessageId,

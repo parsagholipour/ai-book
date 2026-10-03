@@ -1,4 +1,9 @@
-import { GooglePlayBillingConfigError, GooglePlayVerificationError } from "../../googlePlayBilling.js";
+import {
+  GooglePlayBillingConfigError,
+  GooglePlayProductMismatchError,
+  GooglePlayVerificationError,
+  purchaseNeedsAcknowledgement
+} from "../../googlePlayBilling.js";
 import {
   type MobileBillingDto,
   type MobileBillingResponseDto,
@@ -29,6 +34,9 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
   function sendPlayError(reply: FastifyReply, error: unknown): FastifyReply {
     if (error instanceof GooglePlayBillingConfigError) {
       return sendMobileError(reply, 503, error.code, "Google Play Billing is not configured on this backend yet.");
+    }
+    if (error instanceof GooglePlayProductMismatchError) {
+      return sendMobileError(reply, 400, error.code, "That purchase is for a different plan. Try restoring purchases.");
     }
     if (error instanceof GooglePlayVerificationError) {
       return sendMobileError(
@@ -145,6 +153,22 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
             }
           }
         });
+        // Acknowledged here, once the purchase is on record, rather than left to
+        // the app alone: Play refunds an unacknowledged purchase after three days
+        // whether or not the credits were granted. Best-effort — the app still
+        // acknowledges, and Google treats a second one as a no-op.
+        if (purchaseNeedsAcknowledgement(verification)) {
+          await googlePlayVerifier
+            .acknowledgePurchase({
+              packageName: appConfig.GOOGLE_PLAY_PACKAGE_NAME ?? "",
+              productId: product.sku,
+              productType: product.productType,
+              purchaseToken: parsed.data.purchaseToken
+            })
+            .catch((error: unknown) =>
+              request.log.warn({ err: error, event: "billing.acknowledge_failed", sku: product.sku }, "Purchase acknowledgement failed")
+            );
+        }
         return {
           purchase: {
             id: purchase.purchaseRecordId,

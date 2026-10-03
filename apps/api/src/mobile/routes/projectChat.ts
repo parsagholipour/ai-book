@@ -7,8 +7,8 @@ import { modelPageForReaderContext, numberingForProject } from "../../bookPageNu
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import { libraryCharacterAppearanceRule, libraryCharacterPromptBlock } from "@book-maker/core";
 import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
+import { applyOrCancelEditProposal } from "../editProposalActions.js";
 import {
-  applyOrCancelEditProposal,
   busyEditReply,
   editProposalCardFromState,
   findPendingScopeClarification,
@@ -52,6 +52,7 @@ import {
   mobileProjectChatBranchBodySchema,
   mobileProjectChatBranchOpenApiBody,
   mobileProjectChatMessageBodySchema,
+  PROJECT_CHAT_MESSAGE_MAX,
   mobileProjectChatMessageOpenApiBody,
   projectChatQuerySchema
 } from "../schemas.js";
@@ -110,7 +111,18 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const { id } = idParamsSchema.parse(request.params);
       const parsed = mobileProjectChatMessageBodySchema.safeParse(request.body);
       if (!parsed.success) {
-        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a chat message.");
+        // The book chat's composer sets no length cap, so a pasted passage
+        // reaches this; "Send a chat message." read as if nothing had been sent.
+        const message = (request.body as { message?: unknown } | undefined)?.message;
+        const tooLong = typeof message === "string" && message.trim().length > PROJECT_CHAT_MESSAGE_MAX;
+        return sendMobileError(
+          reply,
+          400,
+          "VALIDATION_ERROR",
+          tooLong
+            ? `That message is too long. Keep it under ${PROJECT_CHAT_MESSAGE_MAX.toLocaleString("en-US")} characters, or send it in parts.`
+            : "Send a chat message."
+        );
       }
       if (!(await enforceContentRestrictions(reply, parsed.data.message))) {
         return;
@@ -377,6 +389,25 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           if (confirmedProposal?.proposalId) {
             const claimed = await replayClaimedProposal(id, confirmedProposal.proposalId);
             if (claimed) return claimed;
+          }
+          // Undo and redo name no edit to save for later: the Undo button's own
+          // route answers a busy book this way, and a typed one used to become
+          // the book's one pending edit — replacing the request the reader had
+          // saved a moment earlier, and running an undo on "apply it" against
+          // whatever had finished in between.
+          if (intent.kind === "undo_last_edit" || intent.kind === "redo_last_edit") {
+            const verb = intent.kind === "undo_last_edit" ? "undo" : "redo";
+            const replyMessage = await createAssistantChatMessage({
+              projectId: id,
+              parentId: userMessage.id,
+              content: `This book is still being worked on. Ask me to ${verb} again once the current job finishes.`,
+              metadata: { intent, blockedByActiveJob: true, charged: false }
+            });
+            return {
+              ...(await loadProjectChatResponse(id)),
+              reply: serializeProjectChatMessage(replyMessage),
+              operation: null
+            } satisfies MobileProjectChatMessageResponseDto;
           }
           const replyMessage = await busyEditReply({
             projectId: id,

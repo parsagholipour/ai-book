@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "@book-maker/core";
 import {
   GooglePlayBillingConfigError,
+  GooglePlayProductMismatchError,
   createGooglePlayVerifier,
+  purchaseNeedsAcknowledgement,
   createGooglePlayVerifierFromConfig
 } from "./googlePlayBilling.js";
 
@@ -112,6 +114,74 @@ describe("Google Play billing verifier", () => {
     });
   });
 
+  it("refuses a subscription token posted as a plan it does not cover", async () => {
+    // A Creator token claimed as Max used to be granted Max: the endpoint is
+    // keyed by token alone, and the first line item stood in for a match.
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        latestOrderId: "GPA.1111-2222-3333-44444",
+        startTime: "2026-06-15T00:00:00Z",
+        subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+        lineItems: [{ productId: "tomeza.creator_monthly", expiryTime: "2099-07-15T00:00:00Z" }]
+      })
+    );
+    const verifier = createGooglePlayVerifier({
+      packageName: "com.tomeza.tomeza",
+      accessToken: "test-access-token",
+      fetchImpl: fetchMock as typeof fetch
+    });
+
+    await expect(
+      verifier.verifyPurchase({
+        packageName: "com.tomeza.tomeza",
+        productId: "tomeza.max_monthly",
+        productType: "SUBSCRIPTION",
+        purchaseToken: "creator-token"
+      })
+    ).rejects.toBeInstanceOf(GooglePlayProductMismatchError);
+  });
+
+  it("acknowledges a purchase with Google on the endpoint for its kind", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("{}", { status: 200 }));
+    const verifier = createGooglePlayVerifier({
+      packageName: "com.tomeza.tomeza",
+      accessToken: "test-access-token",
+      fetchImpl: fetchMock as unknown as typeof fetch
+    });
+    await verifier.acknowledgePurchase({
+      packageName: "com.tomeza.tomeza",
+      productId: "tomeza.creator_monthly",
+      productType: "SUBSCRIPTION",
+      purchaseToken: "sub/token"
+    });
+    await verifier.acknowledgePurchase({
+      packageName: "com.tomeza.tomeza",
+      productId: "tomeza.credits_small",
+      productType: "CREDIT_PACK",
+      purchaseToken: "pack-token"
+    });
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+      [
+        "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.tomeza.tomeza/purchases/subscriptions/tomeza.creator_monthly/tokens/sub%2Ftoken:acknowledge",
+        "POST"
+      ],
+      [
+        "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.tomeza.tomeza/purchases/products/tomeza.credits_small/tokens/pack-token:acknowledge",
+        "POST"
+      ]
+    ]);
+  });
+
+  it("acknowledges only a grantable purchase Google still reports pending", () => {
+    const base = { productSku: "x", purchaseToken: "t", kind: "one_time" as const, providerStatus: "PURCHASED", externalPurchaseId: null, purchasedAt: null };
+    expect(purchaseNeedsAcknowledgement({ ...base, grantable: true, metadata: { acknowledgementState: 0 } })).toBe(true);
+    expect(purchaseNeedsAcknowledgement({ ...base, grantable: true, metadata: { acknowledgementState: 1 } })).toBe(false);
+    expect(
+      purchaseNeedsAcknowledgement({ ...base, grantable: true, metadata: { acknowledgementState: "ACKNOWLEDGEMENT_STATE_PENDING" } })
+    ).toBe(true);
+    expect(purchaseNeedsAcknowledgement({ ...base, grantable: false, metadata: { acknowledgementState: 0 } })).toBe(false);
+  });
+
   it("reads auto-renew off as a plan that ends rather than one that renews", async () => {
     // Play reports this well before it moves the subscription to CANCELED, and
     // the benefits run to the expiry either way — so it still grants.
@@ -214,12 +284,19 @@ describe("Google Play billing verifier", () => {
       NODE_ENV: "production",
       S3_BUCKET: "test-private-bucket",
       MOCK_AI: "true",
+      ALLOW_MOCK_AI_IN_PRODUCTION: "true",
       MOCK_GOOGLE_PLAY_BILLING: "true"
     });
 
     expect(config.NODE_ENV).toBe("production");
     expect(config.MOCK_AI).toBe(true);
     expect(config.MOCK_GOOGLE_PLAY_BILLING).toBe(false);
+  });
+
+  it("refuses to start production on mock AI unless the smoke test asked for it", () => {
+    expect(() => loadConfig({ NODE_ENV: "production", S3_BUCKET: "test-private-bucket", MOCK_AI: "true" })).toThrow(
+      /MOCK_AI must be off in production/
+    );
   });
 });
 

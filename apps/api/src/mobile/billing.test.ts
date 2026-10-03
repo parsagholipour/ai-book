@@ -8,6 +8,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import {
   endSubscriptionNow,
   getCreditBalance,
+  getWelcomeCreditsGranted,
   getImageQuota,
   getPlanSummary,
   listActiveUserEntitlements,
@@ -27,6 +28,17 @@ import {
 describe("mobile billing and Google Play", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
+
+  it.each([0, 500, 2000])("reports the actual welcome grant of %s credits", async (amount) => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(getWelcomeCreditsGranted).mockResolvedValue(amount);
+    const app = await buildMobileApp();
+    const response = await app.inject({ method: "GET", url: "/api/mobile/billing", headers: bearer("token-a") });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().billing.freeTier.welcomeCredits).toBe(amount);
+    expect(getWelcomeCreditsGranted).toHaveBeenCalledWith("user-a");
+    await app.close();
+  });
 
   it("exposes mobile credit balance and active entitlements without provider internals", async () => {
     mockAccessTokens({ "token-a": "user-a" });
@@ -121,8 +133,11 @@ describe("mobile billing and Google Play", () => {
     expect(body.billing.freeTier).toEqual({
       monthlyCredits: 1000,
       welcomeCredits: 1000,
-      illustratedBooksPerMonth: 3
+      illustratedBooksPerMonth: 3,
+      maxBookPages: 30
     });
+    // The reader's own cap: a free reader is held to the free tier's length.
+    expect(body.billing.maxBookPages).toBe(30);
     expect(body.billing.imageQuota).toEqual({ used: 2, limit: 3, resetsAt: "2026-07-01T00:00:00.000Z" });
     // The app reads `available` as everything spendable, allowance included.
     expect(body.billing.credits).toMatchObject({ available: 1400, purchased: 500 });
@@ -165,8 +180,11 @@ describe("mobile billing and Google Play", () => {
     expect(paid.billing.freeTier).toEqual({
       monthlyCredits: 1000,
       welcomeCredits: 1000,
-      illustratedBooksPerMonth: 3
+      illustratedBooksPerMonth: 3,
+      maxBookPages: 30
     });
+    // …while the reader's own length cap is lifted.
+    expect(paid.billing.maxBookPages).toBeNull();
     await app.close();
   });
 

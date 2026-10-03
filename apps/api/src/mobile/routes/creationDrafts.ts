@@ -15,6 +15,7 @@ import { jsonInputValue } from "../support.js";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import { createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuild.js";
+import { pageLimitExceededError } from "../bookPageLimit.js";
 import type { MobileRouteContext } from "../routeContext.js";
 
 /**
@@ -162,7 +163,13 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
 
   fastify.post(
     "/api/mobile/creation-drafts/:id/create-project",
-    { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        response: { 201: {}, 401: mobileAuthError, 403: pageLimitExceededError, 404: mobileAuthError, 409: mobileAuthError }
+      }
+    },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {

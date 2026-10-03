@@ -65,6 +65,8 @@ export type ImportSection = {
 
 export type ParsedManuscript = {
   sections: ImportSection[];
+  /** A heading the document opens with and writes nothing under, ahead of its chapters. */
+  bookTitle?: string | undefined;
   /** Concatenated normalized text of every section. */
   text: string;
   charCount: number;
@@ -109,9 +111,13 @@ export async function parseManuscript(input: {
     throw error;
   }
 
-  sections = sections
-    .map((section) => ({ title: section.title, text: normalizeExtractedText(section.text) }))
-    .filter((section) => section.text.length > 0);
+  sections = sections.map((section) => ({ title: section.title, text: normalizeExtractedText(section.text) }));
+  // "# The Rooftop Orchard" over "## Chapter One" is the book's own name, and a
+  // section with no text is dropped below — so the title went with it and the
+  // book was named after its file ("garden"), 2026-10-02.
+  const leading = sections[0];
+  const bookTitle = sections.length > 1 && leading && !leading.text ? leading.title?.trim() || undefined : undefined;
+  sections = sections.filter((section) => section.text.length > 0);
   const text = sections.map((section) => section.text).join("\n\n");
   if (!text) {
     throw new ManuscriptImportError("UNREADABLE_FILE", "No readable text was found in that file.");
@@ -125,6 +131,7 @@ export async function parseManuscript(input: {
 
   return {
     sections,
+    ...(bookTitle ? { bookTitle } : {}),
     text,
     charCount: text.length,
     wordCount: countWords(text)
@@ -633,6 +640,7 @@ export function synthesizeImportedBookPlan(input: {
 /** Best available title: explicit override → first section heading → file stem. */
 export function deriveManuscriptTitle(options: {
   override?: string | undefined;
+  bookTitle?: string | undefined;
   sections: ImportSection[];
   fileName: string;
 }): string {
@@ -640,9 +648,10 @@ export function deriveManuscriptTitle(options: {
   if (override) {
     return override.slice(0, 200);
   }
-  const first = options.sections[0]?.title?.trim();
-  if (first && first.length >= 2 && !/^(chapter|part|prologue)\b/i.test(first)) {
-    return first.slice(0, 200);
+  for (const candidate of [options.bookTitle?.trim(), options.sections[0]?.title?.trim()]) {
+    if (candidate && candidate.length >= 2 && !/^(chapter|part|prologue)\b/i.test(candidate)) {
+      return candidate.slice(0, 200);
+    }
   }
   const stem = options.fileName.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").trim();
   return (stem || "Imported manuscript").slice(0, 200);

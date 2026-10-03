@@ -788,11 +788,19 @@ class MobileCreationBuildPreflight {
     required this.requiresPageCount,
     required this.recommendations,
     this.detectedPageCount,
+    this.maxPages,
   });
 
   final bool requiresPageCount;
   final MobileDetectedPageCount? detectedPageCount;
   final List<MobilePageCountRecommendation> recommendations;
+
+  /// The longest book this reader may build; null on a paid plan. Longer
+  /// counts are still offered — locked, with the plan that unlocks them.
+  final int? maxPages;
+
+  /// Whether [pages] is past [maxPages].
+  bool locks(int pages) => maxPages != null && pages > maxPages!;
 
   factory MobileCreationBuildPreflight.fromJson(Map<String, dynamic> json) {
     final detected = json['detectedPageCount'];
@@ -810,6 +818,7 @@ class MobileCreationBuildPreflight {
             ),
           )
           .toList(),
+      maxPages: (json['maxPages'] as num?)?.toInt(),
     );
   }
 }

@@ -59,8 +59,14 @@ export type CreditPricingKey =
   | "freeMonthlyCredits"
   | "welcomeCredits"
   | "welcomeCreditsEnabled"
+  | "welcomeCreditsRegionalEnabled"
+  | "welcomeCreditsHighIncome"
+  | "welcomeCreditsLowMiddleIncome"
+  | "welcomeCreditsAccountsPerIpHighIncome"
+  | "welcomeCreditsAccountsPerIpLowMiddleIncome"
   | "freeIllustratedBooksPerMonth"
-  | "freeManuscriptImportsPerMonth";
+  | "freeManuscriptImportsPerMonth"
+  | "freeMaxBookPages";
 
 export type CreditPricingValues = Record<CreditPricingKey, number>;
 

@@ -4,6 +4,10 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../../account/presentation/account_billing_copy.dart';
 import '../domain/billing_models.dart';
+
+// Defined beside the models so their own labels can use it; every importer of
+// this file has always found it here.
+export '../domain/billing_models.dart' show formatCredits;
 import 'billing_tier_style.dart';
 
 /// The cards the paywall is built from: the balance panel saying where you are
@@ -727,6 +731,7 @@ class _BannerFootnote extends StatelessWidget {
 /// list on something the eye has just read.
 List<String> planBenefits(MobileBillingProduct product) {
   return <String>[
+    'Books up to $maxPlanBookPages pages',
     'Unlimited illustrated books',
     'Bring your own manuscript',
     switch (product.sku) {
@@ -740,18 +745,6 @@ List<String> planBenefits(MobileBillingProduct product) {
 String fallbackPrice(MobileBillingProduct product) {
   final price = product.priceMicros / 1000000;
   return '${product.currency} ${price.toStringAsFixed(2)}';
-}
-
-String formatCredits(int value) {
-  final digits = value.toString();
-  final buffer = StringBuffer();
-  for (var index = 0; index < digits.length; index += 1) {
-    if (index > 0 && (digits.length - index) % 3 == 0) {
-      buffer.write(',');
-    }
-    buffer.write(digits[index]);
-  }
-  return buffer.toString();
 }
 
 /// A paid plan in one line: when it renews, or when it stops.

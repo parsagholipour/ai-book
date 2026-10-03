@@ -108,6 +108,20 @@ mixin _ProjectChatTranscriptView
               ? () => _startEdit(message)
               : null,
           onReply: () => _startReply(message),
+          onReport: message.isAssistant
+              ? () => reportAiContent(
+                  context: context,
+                  title: 'Report this AI reply',
+                  submit: (reason, comment) => ref
+                      .read(aiContentReportsApiProvider)
+                      .reportChatReply(
+                        projectId: message.projectId,
+                        messageId: message.id,
+                        reason: reason,
+                        comment: comment,
+                      ),
+                )
+              : null,
           onCancelEdit: _cancelEdit,
           onSubmitEdit: _submitEdit,
           onSwitchBranch: (direction) => _switchBranch(message, direction),

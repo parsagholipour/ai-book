@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/billing/presentation/billing_long_book_offer.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 
 import 'creation_chat_fakes.dart';
@@ -119,6 +120,132 @@ void main() {
       await tester.teardownScreen();
     });
   }
+
+  group('on the free plan', () {
+    testWidgets('a longer count is shown locked and opens the plan offer', (
+      tester,
+    ) async {
+      final creation = ScriptedCreationRepository(
+        preflightRequiresPageCount: true,
+      )..preflightMaxPages = 10;
+      await openPages(tester, creation);
+
+      // Still on offer — locked, with the plan badge where the price was.
+      expect(
+        find.byKey(const ValueKey('page-option-locked-12')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('page-option-locked-24')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('page-option-locked-8')), findsNothing);
+
+      await tester.ensureVisible(find.text('12 pages'));
+      await tester.tap(find.text('12 pages'));
+      await tester.pumpAndSettle();
+      expect(find.text('Your book wants\n12 pages.'), findsOneWidget);
+      expect(creation.buildCount, 0);
+
+      // Keeping it free writes the longest free book instead.
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('long-book-shorten')),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(BillingLongBookOffer),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('long-book-shorten')));
+      await tester.pumpAndSettle();
+      await tester.continuePastVisualsPrompt();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(creation.buildPresets?.targetPages, 10);
+      expect(creation.buildPresets?.pageCountSource, 'settings');
+      await tester.teardownScreen();
+    });
+
+    testWidgets('closing the offer keeps the sheet and builds nothing', (
+      tester,
+    ) async {
+      final creation = ScriptedCreationRepository(
+        preflightRequiresPageCount: true,
+      )..preflightMaxPages = 10;
+      await openPages(tester, creation);
+      await tester.ensureVisible(find.text('Expanded'));
+      await tester.tap(find.text('Expanded'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('How many pages?'), findsOneWidget);
+      expect(creation.buildCount, 0);
+      await tester.teardownScreen();
+    });
+
+    testWidgets('a free reader is never offered only locked counts', (
+      tester,
+    ) async {
+      final creation = ScriptedCreationRepository(
+        preflightRequiresPageCount: true,
+      )..preflightMaxPages = 6;
+      await openPages(tester, creation);
+
+      expect(find.text('6 pages'), findsOneWidget);
+      expect(
+        find.text('The longest book the free plan writes.'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('6 pages'));
+      await tester.tap(find.text('6 pages'));
+      await tester.continuePastVisualsPrompt();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(creation.buildPresets?.targetPages, 6);
+      await tester.teardownScreen();
+    });
+
+    testWidgets('a long book the chat asked for is offered before Build', (
+      tester,
+    ) async {
+      final creation = ScriptedCreationRepository()
+        ..preflightMaxPages = 30
+        ..preflightDetectedPages = 60;
+      await tester.pumpWidget(
+        app(creation: creation, projects: PlanProjectsRepository()),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('A kids book'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+      await tester.pumpAndSettle();
+
+      // No page sheet — the chat already said 60 — but no Build either.
+      expect(find.text('How many pages?'), findsNothing);
+      expect(find.text('Your book wants\n60 pages.'), findsOneWidget);
+      expect(creation.buildCount, 0);
+
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('long-book-shorten')),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(BillingLongBookOffer),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('long-book-shorten')));
+      await tester.pumpAndSettle();
+      await tester.continuePastVisualsPrompt();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(creation.buildPresets?.targetPages, 30);
+      await tester.teardownScreen();
+    });
+  });
 
   testWidgets('continue uses the recommended count', (tester) async {
     final creation = ScriptedCreationRepository(

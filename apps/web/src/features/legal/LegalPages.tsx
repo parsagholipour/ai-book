@@ -5,8 +5,8 @@ import { AppLogo } from "../shared/AppLogo.js";
 const company = "Ravanix Technologies L.L.C-FZ";
 const address = "Meydan Grandstand, 6th floor, Meydan Road, Nad Al Sheba, Dubai, U.A.E.";
 const supportEmail = "support@ravanix.app";
-const effectiveDate = "8 August 2026";
-const version = "2026-08-08";
+const effectiveDate = "3 October 2026";
+const version = "2026-10-03";
 
 export function TermsPage() {
   return (
@@ -49,6 +49,12 @@ export function TermsPage() {
           Credits are a limited contractual right to use eligible Service features; they are not money, transferable
           property, or redeemable for cash. Purchased credits do not expire unless law requires otherwise. Plan
           allowances reset at the stated period and do not accumulate.
+        </p>
+        <p>
+          Welcome credits are an optional, one-time promotional gift. Availability and amounts may vary by signup
+          region and offer, subject to applicable law. Eligibility checks help prevent repeated claims. The amount
+          actually granted appears in your credit history and does not expire. Changes to future offers do not
+          remove credits already granted. Contact <EmailLink /> if your region or eligibility was determined incorrectly.
         </p>
         <p>
           Android purchases and subscriptions are processed by Google Play and are also subject to Google&apos;s terms.
@@ -109,15 +115,32 @@ export function TermsPage() {
       </Section>
 
       <Section title="7. Acceptable use">
-        <p>You must not use the Service to:</p>
+        <p>You must not use the Service to create, upload, share, or request content that:</p>
         <ul>
-          <li>violate law or another person&apos;s rights;</li>
-          <li>create deceptive official records intended to pass as genuine;</li>
-          <li>sexually exploit minors or facilitate severe real-world violence or terrorism;</li>
-          <li>upload malware, bypass access controls, probe systems without authorization, or disrupt the Service;</li>
-          <li>misrepresent AI output as verified professional advice or factual evidence; or</li>
-          <li>resell, scrape, reverse engineer, or automate access except as we expressly permit.</li>
+          <li>violates law or another person&apos;s rights;</li>
+          <li>sexually exploits or endangers minors in any way, or is sexually explicit or pornographic;</li>
+          <li>promotes hatred or violence against people based on a protected characteristic, or harasses, bullies,
+            or threatens anyone;</li>
+          <li>depicts graphic violence for its own sake, or encourages self-harm, suicide, or eating disorders;</li>
+          <li>facilitates severe real-world violence, terrorism, or dangerous illegal activity;</li>
+          <li>impersonates a real person or organization in a way intended to deceive, or creates deceptive official
+            records intended to pass as genuine;</li>
+          <li>misrepresents AI output as verified professional advice or factual evidence.</li>
         </ul>
+        <p>
+          You must also not upload malware, bypass access controls, probe systems without authorization, disrupt the
+          Service, or resell, scrape, reverse engineer, or automate access except as we expressly permit.
+        </p>
+        <p>
+          <strong>Public sharing.</strong> When you share a book through a public link, anyone with the link can read
+          it, and you are responsible for what it contains and for having the rights to share it. Shared books must
+          follow these rules. Readers can report a shared book, and we may remove a share, disable sharing for an
+          account, or take the other actions in section 8 without notice. You can stop sharing at any time.
+        </p>
+        <p>
+          You can report AI-generated content you find offensive or harmful — a book, a picture, a chat reply, or a
+          voice call — from inside the app. We review reports and act on content that breaks these rules.
+        </p>
       </Section>
 
       <Section title="8. Moderation and intellectual-property notices">
@@ -224,8 +247,14 @@ export function PrivacyPage() {
         <h3>Account and device data</h3>
         <p>
           Email address, optional display name, password hash, internal identifiers, account status, session
-          metadata, hashed IP information, user-agent information, and security events. We do not store your raw
+          metadata, hashed IP information, approximate signup country, user-agent information, and security events. We do not store your raw
           account password.
+        </p>
+        <p>
+          We estimate your signup country from your IP address to apply regional welcome-credit offers and prevent
+          repeated claims. This lookup runs on our server without sending your IP address to a location provider.
+          We retain the country code, not precise location coordinates. This product includes GeoLite2 data created
+          by <a href="https://www.maxmind.com/">MaxMind</a>.
         </p>
         <h3>User content</h3>
         <p>
@@ -255,6 +284,7 @@ export function PrivacyPage() {
           <li>generate, edit, store, narrate, and export user projects;</li>
           <li>provide live voice and character-memory features;</li>
           <li>verify purchases, manage credits, subscriptions, and entitlements;</li>
+          <li>determine eligibility and amounts for regional welcome-credit offers;</li>
           <li>provide support and process reports and deletion requests;</li>
           <li>detect fraud, abuse, failures, and security threats;</li>
           <li>diagnose and improve Service reliability and usability;</li>
@@ -275,10 +305,14 @@ export function PrivacyPage() {
       <Section title="4. Service providers and sharing">
         <p>
           We share data only as reasonably needed with providers that help operate the Service, including hosting,
-          database, storage, queue, security, support, and analytics infrastructure; Google Play for purchases; and,
-          depending on the feature and availability, Google Gemini, OpenAI, DeepSeek, DeepInfra, and Alibaba Cloud for
-          AI processing. Submitted content is processed under those providers&apos; applicable service terms and privacy
-          arrangements.
+          database, storage, queue, security, support, and analytics infrastructure (including Amazon Web Services for
+          hosting and storage, and an email delivery provider for account emails); Google Play for purchases; and,
+          depending on the feature and availability, Google (Gemini, including live voice calls, which stream your
+          microphone audio from the app directly to Google, Google Search grounding, speech, and document reading),
+          OpenAI, DeepSeek, DeepInfra, Alibaba Cloud, OpenRouter, and the Vercel AI Gateway for AI processing, and
+          Cloudflare for relaying some voice-call connections. Research features send search terms (not your account
+          details) to public catalogues such as the Internet Archive, Project Gutenberg, and Wikisource. Submitted
+          content is processed under those providers&apos; applicable service terms and privacy arrangements.
         </p>
         <p>
           We may also disclose data when required by law, to protect rights and safety, during a corporate transaction

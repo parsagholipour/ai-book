@@ -6,18 +6,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/config/app_config.dart';
 import '../../features/auth/domain/auth_models.dart';
+import '../../features/app_update/domain/app_update.dart';
 import '../../features/auth/domain/legal_gate.dart';
 import 'api_error.dart';
 import 'auth_token_store.dart';
 
 final dioProvider = Provider<Dio>((ref) {
   final config = ref.watch(appConfigProvider);
+  final build = ref.watch(appBuildProvider);
   return Dio(
     BaseOptions(
       baseUrl: config.apiBaseUrl.toString(),
       connectTimeout: const Duration(seconds: 12),
       receiveTimeout: const Duration(seconds: 20),
-      headers: const {'Accept': 'application/json'},
+      // The build rides every request so the server can turn away one it has
+      // retired, whatever screen the request came from (see `AppBuild`).
+      headers: {'Accept': 'application/json', ...?build?.headers},
     ),
   );
 });
@@ -28,6 +32,8 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     tokenStore: ref.watch(authTokenStoreProvider),
     onLegalAcceptanceRequired: () =>
         ref.read(legalGateDismissedProvider.notifier).reset(),
+    onAppUpdateRequired: (details) =>
+        ref.read(appUpdateStatusProvider.notifier).reportRequired(details),
   );
 });
 
@@ -94,6 +100,7 @@ class ApiClient {
     required this.dio,
     required this.tokenStore,
     this.onLegalAcceptanceRequired,
+    this.onAppUpdateRequired,
   });
 
   final Dio dio;
@@ -103,6 +110,11 @@ class ApiClient {
   /// accepted the current legal documents. Re-arms the updated-terms gate a
   /// "Not now" had dismissed, so the router walks the reader back to it.
   final void Function()? onLegalAcceptanceRequired;
+
+  /// Called with the error body when the server refuses a request with 426:
+  /// the operator has retired this build. The router follows the status this
+  /// sets to the update screen.
+  final void Function(Map<String, dynamic> details)? onAppUpdateRequired;
 
   /// Coalesces concurrent refresh attempts. The backend rotates the refresh
   /// token on every call, so parallel refreshes desync the stored pair from
@@ -521,6 +533,12 @@ class ApiClient {
       onLegalAcceptanceRequired?.call();
     }
     final data = response?.data;
+    if (response?.statusCode == 426) {
+      final errorBody = data is Map<String, dynamic> ? data['error'] : null;
+      onAppUpdateRequired?.call(
+        errorBody is Map<String, dynamic> ? errorBody : const {},
+      );
+    }
     if (data is Map<String, dynamic>) {
       final errorBody = data['error'];
       if (errorBody is Map<String, dynamic>) {

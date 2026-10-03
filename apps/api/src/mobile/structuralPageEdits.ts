@@ -1,5 +1,7 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
-import { type ReaderPageNumbering } from "../bookPageNumbering.js";
+import { withCorrectedActionVerb } from "../structuralVerbTypos.js";
+import { bookPageMapForProject, readerPlaceOfGap, type ReaderPageNumbering } from "../bookPageNumbering.js";
+import { structuralActionsInMessage, swapPagesFromMessage } from "../bookEditStructure.js";
 import { type StructuralCardPlan } from "./pendingEditState.js";
 import { type ProjectForChat } from "./projectChat.js";
 import {
@@ -8,6 +10,7 @@ import {
   MAX_MOVED_PAGES,
   STRUCTURAL_ACTION_PREFIX_PATTERN,
   STRUCTURAL_PAGE_SELECTION_PATTERN,
+  STRUCTURAL_PLACEMENT_ADVERB_PATTERN,
   STRUCTURAL_WHOLE_BOOK_TAIL_PATTERN,
   isBareStructuralInstruction,
   structuralEditRequiresWholeBookGeneration,
@@ -27,6 +30,55 @@ import {
  */
 
 /** The pages the resolver needs, assembled from what the chat already loaded. */
+/**
+ * The answer to a swap no single move performs, or null for every other request.
+ *
+ * A structural edit moves one run of pages to one place, so "swap pages 2 and
+ * 5" is two moves. Delivered as the one the router picked, the card would read
+ * "Move page 5 before page 2" and the reader would get half a swap; quoted as a
+ * rebuild it cost a whole book. It is answered here, free, before any card.
+ */
+/**
+ * The answer to a message asking for more than one page change, or null.
+ *
+ * Each change gets its own card, price and Undo; folded into one, the second
+ * rode an insert's brief as prose the drafter could not perform.
+ */
+export function multipleStructuralActionsMessage(request: string): string | null {
+  const actions = structuralActionsInMessage(request);
+  if (actions.size < 2) {
+    return null;
+  }
+  const named = (["insert", "delete", "move"] as const)
+    .filter((action) => actions.has(action))
+    .map((action) => ({ insert: "adding pages", delete: "removing pages", move: "moving pages" })[action]);
+  return `That asks for ${named.slice(0, -1).join(", ")} and ${named.at(-1)} at once, and I make one page change at a time so each gets its own card and its own Undo. Tell me which to do first, and ask for the next once it’s in.`;
+}
+
+export function unswappablePagesMessage(
+  request: string,
+  intent: BookEditIntent,
+  project: Pick<ProjectForChat, "pages"> & Parameters<typeof bookPageMapForProject>[0]
+): string | null {
+  if (intent.structuralEdit?.action !== "move") {
+    return null;
+  }
+  const map = bookPageMapForProject(project);
+  const pages = project.pages.map((page) => ({ id: page.id, index: page.index, title: "", summary: "", previewText: "" }));
+  const swap = swapPagesFromMessage(request, pages, map ? { pdfPageMap: map } : {});
+  if (!swap || swap.edit) {
+    return null;
+  }
+  const [earlier, later] = swap.spoken;
+  if (earlier === later) {
+    return `That names page ${earlier} twice, so there’s nothing to swap. Tell me the two pages you want to trade places.`;
+  }
+  if (swap.samePage) {
+    return `Pages ${earlier} and ${later} are one page of the book, so there’s nothing to swap.`;
+  }
+  return `Swapping pages ${earlier} and ${later} takes two moves, and I make one at a time. Ask me to move page ${later} before page ${earlier} first, then tell me where page ${earlier} should go.`;
+}
+
 export function structuralPagesOf(project: Pick<ProjectForChat, "pages" | "chapters">): ExistingPage[] {
   // `loadProjectForChat` selects the chapter's *index*, not its id, so the id
   // is recovered here — the resolver keys chapter membership by id because that
@@ -144,6 +196,11 @@ export type StructuralPlacement =
   /** After a page the reader can see, in printed numbering. */
   | { at: "after"; readerPage: number }
   /**
+   * Before the page that begins on this sheet, for a place the reader named
+   * that way — see {@link readerPlaceOfGap}.
+   */
+  | { at: "before"; readerPage: number; afterReaderPage?: number }
+  /**
    * Nothing this surface may name: a delete moves nothing, and an anchor the
    * map cannot place is left out rather than approximated.
    */
@@ -175,8 +232,22 @@ export function structuralPlacementOf(
   if (anchor === 0) {
     return { at: "front" };
   }
-  const readerPage = numbering.printedPageEnd(anchor);
-  return readerPage === undefined ? { at: "unnamed" } : { at: "after", readerPage };
+  // The page the gap comes before, in the book the edit leaves: a move's own
+  // pages are leaving their places, so the page after the gap is the first one
+  // past the anchor that is staying.
+  let next = anchor + 1;
+  while (edit.action === "move" && edit.pageIndexes.includes(next)) {
+    next += 1;
+  }
+  const place = readerPlaceOfGap(numbering, anchor, next, edit.anchorSide ?? "after");
+  if (place === undefined) {
+    return { at: "unnamed" };
+  }
+  if (place.side === "after") {
+    return { at: "after", readerPage: place.readerPage };
+  }
+  const afterReaderPage = numbering.printedPageEnd(anchor);
+  return { at: "before", readerPage: place.readerPage, ...(afterReaderPage === undefined ? {} : { afterReaderPage }) };
 }
 
 /**
@@ -206,6 +277,8 @@ export function structuralActionInstruction(
         return `${moved} to the end of the book`;
       case "after":
         return `${moved} after page ${placement.readerPage}`;
+      case "before":
+        return `${moved} before page ${placement.readerPage}`;
       case "unnamed":
         return moved;
     }
@@ -218,6 +291,8 @@ export function structuralActionInstruction(
       return `Add ${pages} at the end of the book`;
     case "after":
       return `Add ${pages} after page ${placement.readerPage}`;
+    case "before":
+      return `Add ${pages} before page ${placement.readerPage}`;
     case "unnamed":
       return `Add ${pages}`;
   }
@@ -243,7 +318,18 @@ export function canonicalStructuralEditInstruction(options: {
 }): string {
   const action = structuralActionInstruction(options.intent, options.numbering, options.plan);
   const source = options.intent.editInstruction?.trim() || options.request?.trim() || "";
-  const requirements = structuralContentRequirements(source, options.intent.structuralEdit);
+  // The reader's own words decide whether prose work was asked for. "delete
+  // page 5" came back from the router as "Delete printed page 5 from the book,
+  // removing the content that appears on that page" — a restatement this file's
+  // grammar could not strip — and the leftover was read as a content
+  // requirement, which repriced a free row deletion as a 540-credit rebuild. A
+  // paraphrase can add words; it cannot add a request the reader never made.
+  const edit = options.intent.structuralEdit;
+  const request = options.request?.trim();
+  const requestIsBare = Boolean(
+    edit && edit.action !== "insert" && request && isBareStructuralInstruction(edit, withCorrectedActionVerb(request, edit.action))
+  );
+  const requirements = requestIsBare ? "" : structuralContentRequirements(source, edit);
   if (!requirements) {
     return action;
   }
@@ -338,7 +424,28 @@ function structuralContentRequirements(
   if (action === "insert") {
     const insert = new RegExp(`^${STRUCTURAL_ACTION_PREFIX_PATTERN.insert}`, "i").exec(remainder);
     if (insert) {
-      remainder = stripLeadingStructuralPlacement(remainder.slice(insert[0].length));
+      // The router can say one place twice — "at the very beginning of the book,
+      // before the current first page, that explains…" — so the strip repeats
+      // until it removes nothing.
+      remainder = remainder.slice(insert[0].length);
+      const unplaced = remainder;
+      for (let previous = ""; previous !== remainder; ) {
+        previous = remainder;
+        remainder = stripLeadingStructuralPlacement(
+          withoutPlacementOnlyAside(
+            remainder.replace(/^\s*[,;:—–-]\s*/, " ").replace(/^\s*(?:in|into)\s+(?:the\s+)?(?:book|story|manuscript)\b/i, "")
+          )
+        );
+      }
+      // What follows the pages, or a stripped place, is often a relative clause
+      // ("Add 2 pages that bridge…", "…, that explains why dinners matter"),
+      // which reads as a sentence only once it has the pages back as its
+      // subject. Not "which" after a place: in "page 4, which is where Mina
+      // finds the key" it is page 4 the clause describes.
+      const relative = remainder === unplaced ? /^\s*(?:that|which)\s+(?=[a-z])/i : /^\s*[,;:—–-]?\s*that\s+(?=[a-z])/i;
+      const subject = (edit?.pageCount ?? 1) > 1 ? "The new pages " : "The new page ";
+      remainder = remainder.replace(relative, subject);
+      remainder = withoutPlacementOnlySentence(remainder);
     }
   } else if (action === "delete") {
     const deletion = new RegExp(`^${STRUCTURAL_ACTION_PREFIX_PATTERN.delete}`, "i").exec(remainder);
@@ -356,7 +463,7 @@ function structuralContentRequirements(
     const move = new RegExp(`^${STRUCTURAL_ACTION_PREFIX_PATTERN.move}`, "i").exec(remainder);
     if (move) {
       remainder = stripLeadingMoveOrigin(remainder.slice(move[0].length));
-      remainder = stripLeadingStructuralPlacement(remainder);
+      remainder = withoutPlacementOnlySentence(stripLeadingStructuralPlacement(remainder));
     }
   }
   return cleanRequirement(stripEmbeddedStructuralPlacement(remainder, action));
@@ -384,18 +491,69 @@ function stripLeadingMoveOrigin(value: string): string {
  * substantive requirement such as "moving its quote to page 3".
  */
 function stripLeadingStructuralPlacement(value: string): string {
+  // The router names the anchor page as well as numbering it — "immediately
+  // after printed page 11 (the final page of the book, "The Weekly Reset
+  // Checklist")", or ", which is the final page of the book" — and that aside
+  // is still the placement. Only an aside that describes the page goes: one
+  // that says what the new page should hold is the brief.
+  // "Between page 4 and page 5", and the same place said from both sides —
+  // "after printed page 4 and before printed page 5" — are one placement too.
   const numbered = new RegExp(
-    `^\\s*(?:(?:to\\s+)?(?:after|before|following|preceding)|at|to)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
+    `^\\s*(?:(?:to\\s+)?(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:after|before|following|preceding|between)|at|to)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}` +
+      `(?:\\s*,?\\s*and\\s+(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:before|preceding|ahead\\s+of)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN})?` +
+      `(?:\\s*\\((?=\\s*(?:the\\b|titled\\b|called\\b|which\\b|i\\.e\\.|["“]))(?![^()]*\\b(?:should|must|about|covers?|explains?|adds?)\\b)[^()]{0,160}\\)` +
+      `|\\s*,\\s*(?:which|that)\\s+is\\b(?![^.!?]*\\b(?:should|must|where)\\b)[^.!?]{0,160}(?=[.!?]|$))?`,
     "i"
   ).exec(value);
   if (numbered) {
     return value.slice(numbered[0].length);
   }
+  // The router also restates an edge as the page it borders — "before the
+  // current first page", "after the existing last page" — which the card then
+  // printed as "Content requirements: Before the current first page" (2026-10-02).
   const edge =
-    /^\s*(?:(?:at|to)\s+(?:the\s+)?(?:very\s+)?(?:front|beginning|start|end|back)(?:\s+of\s+(?:the\s+)?book)?|as\s+(?:the\s+)?(?:first|last|opening|closing)\s+pages?)\b/i.exec(
+    /^\s*(?:(?:at|to)\s+(?:the\s+)?(?:very\s+)?(?:front|beginning|start|end|back)(?:\s+of\s+(?:the\s+)?book)?|as\s+(?:the\s+)?(?:first|last|opening|closing)\s+pages?|(?:before|ahead\s+of)\s+(?:the\s+)?(?:(?:current|existing|present)\s+)?(?:very\s+)?(?:first|opening)\s+page|after\s+(?:the\s+)?(?:(?:current|existing|present)\s+)?(?:very\s+)?(?:last|final|closing)\s+page)\b/i.exec(
       value
     );
   return edge ? value.slice(edge[0].length) : value;
+}
+
+/** The words a sentence that only says where the pages go is made of, beside its page numbers. */
+const PLACEMENT_ONLY_WORDS =
+  /\b(?:so|that|they|it|this|these|those|the|a|an|new|pages?|fall|falls|sit|sits|land|lands|go|goes|come|comes|are|is|be|will|placed|inserted|located|positioned|appear|appears|into|in|book|story|immediately|directly|right|just|printed|current|existing|between|after|before|following|preceding|and|at|to|of|front|beginning|start|end|back|very)\b/gi;
+
+/**
+ * Drops an opening sentence that only restates where the pages go.
+ *
+ * The router says the place in more ways than any strip can list — "…after
+ * printed page 4, so they fall between printed page 4 and printed page 5" put
+ * "Content requirements: So they fall between printed page 4 and printed page
+ * 5" on the card (2026-10-02). So the test is a closed vocabulary rather than a
+ * phrase: a sentence of page references and these words alone says nothing a
+ * drafter could write from, and any other word keeps it whole.
+ */
+function withoutPlacementOnlySentence(value: string): string {
+  const sentence = /^(?:[^.!?"“]|["“][^"”]*["”])*(?:[.!?]+|$)/.exec(value)?.[0] ?? "";
+  return sentence.trim() && isPlacementOnly(sentence) ? value.slice(sentence.length) : value;
+}
+
+/** The same test for a leading aside: "after printed page 4 (before printed page 5), continuing…". */
+function withoutPlacementOnlyAside(value: string): string {
+  const aside = /^\s*\(([^()]{0,200})\)/.exec(value);
+  return aside && isPlacementOnly(aside[1] ?? "") ? value.slice(aside[0].length) : value;
+}
+
+function isPlacementOnly(text: string): boolean {
+  const residue = text
+    // A page named by its quoted title is a page reference too: "immediately
+    // after the page titled "Finish the List" (printed page 4)".
+    .replace(/\b(?:titled|called|named)\s+["“][^"”]{0,200}["”]/gi, " ")
+    // The model's own numbering, which should never have reached the reader.
+    .replace(/\b(?:(?:internal|model)\s+)?page\s+index(?:es)?\s+\d+/gi, " ")
+    .replace(new RegExp(STRUCTURAL_PAGE_SELECTION_PATTERN, "gi"), " ")
+    .replace(PLACEMENT_ONLY_WORDS, " ")
+    .replace(/[\s,.;:!?—–()"“”-]+/g, "");
+  return residue === "";
 }
 
 const CONTENT_PAGE_REFERENCE_CUE =
@@ -427,7 +585,7 @@ function stripEmbeddedStructuralPlacement(
   }
 
   const numbered = new RegExp(
-    `\\s+(?:(?:to\\s+)?(?:after|before|following|preceding)|at)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
+    `\\s+(?:(?:to\\s+)?(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:after|before|following|preceding)|at)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
     "gi"
   );
   const edge =
@@ -534,6 +692,14 @@ function structuralPlacementFields(placement: StructuralPlacement): Record<strin
       return { placement: "front", atFrontOfBook: true };
     case "after":
       return { placement: "after", afterReaderPage: placement.readerPage };
+    case "before":
+      // Builds that know no `before` read `afterReaderPage` instead, and are
+      // handed the number every card gave them before this existed.
+      return {
+        placement: "before",
+        beforeReaderPage: placement.readerPage,
+        ...(placement.afterReaderPage === undefined ? {} : { afterReaderPage: placement.afterReaderPage })
+      };
     case "end":
       return { placement: "end" };
     case "unnamed":
@@ -572,10 +738,13 @@ export function structuralCardBlock(
  * a card they would have to cancel.
  */
 export function structuralRefusalMessage(
-  reason: StructuralPageRefusal,
+  refusal: StructuralPageRefusal | { reason: StructuralPageRefusal; emptiedChapterIds?: string[] | undefined },
   intent: BookEditIntent,
-  numbering: ReaderPageNumbering
+  numbering: ReaderPageNumbering,
+  /** The book the refusal was resolved against, to name an emptied chapter. */
+  book?: Pick<ProjectForChat, "pages" | "chapters">
 ): string {
+  const reason = typeof refusal === "string" ? refusal : refusal.reason;
   const spoken = intent.structuralEdit?.pageIndexes ?? [];
   const named = spoken.length > 0 ? numbering.displayPages(spoken).join(", ") : "";
   switch (reason) {
@@ -592,7 +761,11 @@ export function structuralRefusalMessage(
     case "would_empty_book":
       return "That would remove every page of the book. Tell me which pages to keep and I’ll take out the rest.";
     case "would_empty_chapter":
-      return "That would leave one of the chapters with no pages at all. Ask me to rewrite or replan the chapter instead.";
+      return emptiedChapterRefusal(
+        typeof refusal === "string" ? [] : (refusal.emptiedChapterIds ?? []),
+        book,
+        numbering
+      );
     case "anchor_inside_selection":
       return "Those pages can’t move to a place inside themselves. Tell me a page they should follow that isn’t one of them.";
     case "undo_history_too_large":
@@ -600,6 +773,38 @@ export function structuralRefusalMessage(
     case "nothing_to_do":
       return structuralNothingToDoMessage(structuralEditForProposal(intent));
   }
+}
+
+/**
+ * "That would leave one of the chapters with no pages" told a reader who asked to
+ * delete pages 2, 4 and 6 that something was in the way without saying what: a
+ * printed page can hold two short pages, so which pages a chapter owns is not
+ * visible from the request (2026-10-02). The refusal names each chapter it would
+ * empty and the printed pages it holds; a chapter the book no longer has, or a
+ * caller that passed no book, keeps the old sentence.
+ */
+function emptiedChapterRefusal(
+  chapterIds: readonly string[],
+  book: Pick<ProjectForChat, "pages" | "chapters"> | undefined,
+  numbering: ReaderPageNumbering
+): string {
+  const named = chapterIds.flatMap((chapterId) => {
+    const chapter = book?.chapters.find((candidate) => candidate.id === chapterId);
+    if (!chapter || !book) return [];
+    const pages = book.pages.filter((page) => page.chapter?.index === chapter.index).map((page) => page.index);
+    const printed = numbering.displayPages(pages);
+    const where =
+      printed.length === 0 ? "" : printed.length === 1 ? ` (page ${printed[0]})` : ` (pages ${printed[0]}–${printed.at(-1)})`;
+    const title = chapter.title.trim();
+    return [`${title ? `“${title}”` : `chapter ${chapter.index}`}${where}`];
+  });
+  if (named.length === 0) {
+    return "That would leave one of the chapters with no pages at all. Ask me to rewrite or replan the chapter instead.";
+  }
+  const list = named.length === 1 ? named[0]! : `${named.slice(0, -1).join(", ")} and ${named.at(-1)!}`;
+  return named.length === 1
+    ? `That would take out every page of the chapter ${list}, and a chapter can’t be left empty. Keep at least one of its pages, or ask me to rewrite or replan that chapter instead.`
+    : `That would take out every page of the chapters ${list}, and a chapter can’t be left empty. Keep at least one page of each, or ask me to rewrite or replan those chapters instead.`;
 }
 
 /**
@@ -627,8 +832,8 @@ function structuralNothingToDoMessage(edit: StructuralPageEdit): string {
   }
   if (edit.pageIndexes.length === 0) {
     return edit.action === "delete"
-      ? "I couldn’t tell which page to remove. Tell me the page number and I’ll take it out."
-      : "I couldn’t tell which page to move. Tell me the page number and where it should go.";
+      ? "I couldn’t tell which page you mean. Tell me the number printed at the bottom of the page and I’ll take it out."
+      : "I couldn’t tell which page you mean. Tell me the number printed at the bottom of the page and where it should go.";
   }
   return "Those pages are already where you asked me to put them, so there’s nothing to change.";
 }

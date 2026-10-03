@@ -248,7 +248,7 @@ Future<bool> confirmProjectExportUnlock(
         'Opening or sharing the ${projectExportFormatLabel(export)} uses '
         '$credits credits, once for this book and every format. Reading it '
         'here in the app stays free.',
-    confirmLabel: 'Unlock for $credits credits',
+    confirmLabel: 'Unlock for ${formatCredits(credits)} credits',
     icon: Icons.lock_open_outlined,
   );
 }

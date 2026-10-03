@@ -16,6 +16,7 @@ import {
   type CreditPricing,
   type CreditPricingKey,
   DEFAULT_CREDIT_COSTS,
+  LEGACY_CREDIT_PRICING_KEYS,
   creditPricing,
   diffCreditPricing,
   normalizeCreditPricing,
@@ -238,7 +239,8 @@ function changedFromJson(raw: unknown): Partial<Record<CreditPricingKey, { from:
   const record = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const changed: Partial<Record<CreditPricingKey, { from: number; to: number }>> = {};
   for (const key of Object.keys(DEFAULT_CREDIT_COSTS) as CreditPricingKey[]) {
-    const entry = record[key];
+    const legacyKey = LEGACY_CREDIT_PRICING_KEYS[key];
+    const entry = record[key] ?? (legacyKey ? record[legacyKey] : undefined);
     if (entry && typeof entry === "object") {
       const { from, to } = entry as { from?: unknown; to?: unknown };
       if (typeof from === "number" && typeof to === "number") {

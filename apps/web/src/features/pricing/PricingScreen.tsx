@@ -6,7 +6,7 @@ import type { CreditPricingKey, PricingPreview, PricingRevision } from "./types.
 import { usePricing } from "./usePricing.js";
 
 /**
- * Operator-facing editor for the fourteen credit prices.
+ * Operator-facing editor for credit prices and free-plan limits.
  *
  * Everything here is money that changes for real readers the moment Save
  * lands, so the screen leans on three things: the default is always shown next
@@ -49,16 +49,17 @@ export function PricingScreen() {
                     const defaultValue = pricing.state!.defaults[field.key];
                     const isDirty = dirty.has(field.key);
                     const isInvalid = invalid.has(field.key);
+                    const isToggle = field.toggle || field.key.startsWith("messageResetEnabled");
                     return (
                       <label className={fieldClass(isDirty, isInvalid)} key={field.key}>
                         <span className="pricing-field-label">
                           {field.label}
                           {isDirty ? <em className="pricing-flag">changed</em> : null}
                         </span>
-                        {field.key.startsWith("messageResetEnabled") ? (
+                        {isToggle ? (
                           <select value={pricing.draft![field.key]} onChange={(event) => pricing.setField(field.key, event.target.value)}>
-                            <option value="1">Enabled</option>
-                            <option value="0">Disabled</option>
+                            <option value="1">On</option>
+                            <option value="0">Off</option>
                           </select>
                         ) : (
                           <input
@@ -71,7 +72,7 @@ export function PricingScreen() {
                           />
                         )}
                         <span className="muted pricing-field-help">
-                          {field.help} Default {field.key.startsWith("messageResetEnabled") ? (defaultValue === 1 ? "enabled" : "disabled") : defaultValue}.
+                          {field.help} Default {isToggle ? (defaultValue === 1 ? "on" : "off") : defaultValue}.
                         </span>
                       </label>
                     );
@@ -100,7 +101,7 @@ export function PricingScreen() {
                 />
               </label>
               {pricing.invalidKeys.length > 0 ? (
-                <p className="pricing-invalid">Every price must be a whole number of credits, zero or more.</p>
+                <p className="pricing-invalid">Every setting must be a whole number, zero or more.</p>
               ) : null}
               <div className="pricing-actions">
                 <Button

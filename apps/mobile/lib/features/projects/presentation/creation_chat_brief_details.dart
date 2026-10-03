@@ -109,10 +109,29 @@ class _BriefDetails extends StatelessWidget {
               ),
               onTap: chipTap(_AdvancedSection.bookType),
             ),
-            _TappableBriefChip(
-              label: 'Size',
-              value: pageCountLabelFor(presets),
-              onTap: chipTap(_AdvancedSection.pages),
+            // A length past the free limit wears a lock here, in the brief,
+            // long before Build — the chip opens the setting that unlocks it.
+            Consumer(
+              builder: (context, ref, _) {
+                final pages = presets.pageCountMode == 'custom'
+                    ? presets.targetPages
+                    : null;
+                final locked =
+                    !built &&
+                    pages != null &&
+                    (ref
+                            .watch(billingProvider)
+                            .asData
+                            ?.value
+                            .locksBookPages(pages) ??
+                        false);
+                return _TappableBriefChip(
+                  label: 'Size',
+                  value: pageCountLabelFor(presets),
+                  icon: locked ? Icons.lock_outline : null,
+                  onTap: chipTap(_AdvancedSection.pages),
+                );
+              },
             ),
             _TappableBriefChip(
               label: 'Effort',

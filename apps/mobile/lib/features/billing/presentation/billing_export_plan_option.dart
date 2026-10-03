@@ -9,9 +9,17 @@ export 'billing_product_option.dart';
 
 /// Checkout stays outside the scrollable comparison, including while a store
 /// purchase is pending or failed, so the next action is always reachable.
+///
+/// Shared by every single-perk offer: the export offer passes only [format],
+/// and an offer for some other perk (a longer book) says what it unlocks
+/// through [includedLabel], [unlockLabel] and [includedActionLabel].
 class BillingExportCheckout extends StatelessWidget {
   const BillingExportCheckout({
     required this.format,
+    this.includedLabel,
+    this.unlockLabel,
+    this.includedActionLabel,
+    this.buttonKey = const ValueKey('export-upgrade'),
     required this.product,
     required this.storeProduct,
     required this.loading,
@@ -26,6 +34,16 @@ class BillingExportCheckout extends StatelessWidget {
   });
 
   final String format;
+
+  /// The line over the button when the reader's plan already includes the perk.
+  final String? includedLabel;
+
+  /// The button's label for buying [product], given the plan's name.
+  final String Function(String planName)? unlockLabel;
+
+  /// The button's label when the plan already includes the perk.
+  final String? includedActionLabel;
+  final Key buttonKey;
   final MobileBillingProduct? product;
   final StoreProduct? storeProduct;
   final bool loading;
@@ -70,7 +88,7 @@ class BillingExportCheckout extends StatelessWidget {
           if (accessIncluded || (plan != null && !loading)) ...[
             Text(
               accessIncluded
-                  ? '$format export is included in your plan.'
+                  ? includedLabel ?? '$format export is included in your plan.'
                   : '$name · ${storeProduct?.price ?? fallbackPrice(plan!)} / month',
               textAlign: TextAlign.center,
               style: text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
@@ -78,7 +96,7 @@ class BillingExportCheckout extends StatelessWidget {
             const SizedBox(height: 8),
           ],
           AppButton.primary(
-            key: const ValueKey('export-upgrade'),
+            key: buttonKey,
             onPressed: onBuy,
             loading: pending || restoring,
             loadingLabel: restoring
@@ -87,12 +105,13 @@ class BillingExportCheckout extends StatelessWidget {
             label: loading
                 ? 'Loading plans…'
                 : accessIncluded
-                ? 'Back to your book'
+                ? includedActionLabel ?? 'Back to your book'
                 : isCurrent
                 ? 'Your current plan'
                 : onBuy == null
                 ? 'Plan unavailable'
-                : 'Unlock $format with $name',
+                : unlockLabel?.call(name ?? 'a plan') ??
+                      'Unlock $format with $name',
           ),
           if (!accessIncluded) ...[
             const SizedBox(height: 8),

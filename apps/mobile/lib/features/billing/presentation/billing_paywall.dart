@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../domain/billing_models.dart';
 import 'billing_buy_credits_sheet.dart';
@@ -10,6 +11,7 @@ import 'billing_cancel_sheet.dart';
 import 'billing_controller.dart';
 import 'billing_credits_needed.dart';
 import 'billing_export_offer.dart';
+import 'billing_long_book_offer.dart';
 import 'billing_offers.dart';
 import 'billing_purchase_success_dialog.dart';
 import 'play_subscriptions_link.dart';
@@ -37,6 +39,9 @@ Future<BillingPurchaseSuccess?> showBillingPaywall(
   String? message,
   PaywallCreditsNeeded? creditsNeeded,
   String? exportFormatLabel,
+  BookPageLimit? longBook,
+  VoidCallback? onShorten,
+  VoidCallback? onIncluded,
 }) async {
   final outcome = await showAppBottomSheet<_PaywallOutcome>(
     context,
@@ -46,6 +51,19 @@ Future<BillingPurchaseSuccess?> showBillingPaywall(
       message: message,
       creditsNeeded: creditsNeeded,
       exportFormatLabel: exportFormatLabel,
+      longBook: longBook,
+      onShorten: onShorten == null
+          ? null
+          : () {
+              onShorten();
+              Navigator.of(sheetContext).pop();
+            },
+      onIncluded: onIncluded == null
+          ? null
+          : () {
+              onIncluded();
+              Navigator.of(sheetContext).pop();
+            },
       onPurchaseSuccess: (purchase) {
         if (ModalRoute.of(sheetContext)?.isCurrent ?? false) {
           Navigator.of(
@@ -59,6 +77,45 @@ Future<BillingPurchaseSuccess?> showBillingPaywall(
     await showBillingPurchaseSuccessDialog(context, outcome.purchase);
   }
   return outcome?.purchase;
+}
+
+/// What a reader did with the long-book offer.
+enum LongBookChoice {
+  /// They have a plan now (bought here, or already had one): write it long.
+  unlocked,
+
+  /// They chose to write it at the free length instead.
+  shorten,
+}
+
+/// The offer for a book longer than the free tier writes. Null when the sheet
+/// was dismissed without a choice — the caller then leaves everything as it
+/// was. Pass [canShorten] false where the length cannot be changed from the
+/// calling surface; the sheet then offers only "Not now".
+Future<LongBookChoice?> showLongBookOffer(
+  BuildContext context, {
+  required BookPageLimit limit,
+  String? projectId,
+  bool canShorten = true,
+}) async {
+  LongBookChoice? choice;
+  final purchase = await showBillingPaywall(
+    context,
+    projectId: projectId,
+    longBook: limit,
+    onShorten: canShorten ? () => choice = LongBookChoice.shorten : null,
+    onIncluded: () => choice = LongBookChoice.unlocked,
+  );
+  return purchase != null ? LongBookChoice.unlocked : choice;
+}
+
+/// The page limit a `PAGE_LIMIT_EXCEEDED` refusal carries, or null for any
+/// other error.
+BookPageLimit? pageLimitFromError(Object error) {
+  if (error is! ApiException || error.code != 'PAGE_LIMIT_EXCEEDED') {
+    return null;
+  }
+  return BookPageLimit.fromJson(error.details['pageLimit']);
 }
 
 /// What the paywall closed with: the purchase, and whether its success dialog
@@ -78,6 +135,9 @@ class BillingPaywall extends ConsumerStatefulWidget {
     this.message,
     this.creditsNeeded,
     this.exportFormatLabel,
+    this.longBook,
+    this.onShorten,
+    this.onIncluded,
     this.onPurchaseSuccess,
     super.key,
   });
@@ -87,6 +147,11 @@ class BillingPaywall extends ConsumerStatefulWidget {
   final String? message;
   final PaywallCreditsNeeded? creditsNeeded;
   final String? exportFormatLabel;
+
+  /// Opens the long-book offer instead of the plan comparison.
+  final BookPageLimit? longBook;
+  final VoidCallback? onShorten;
+  final VoidCallback? onIncluded;
   final ValueChanged<BillingPurchaseSuccess>? onPurchaseSuccess;
 
   @override
@@ -211,6 +276,19 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
       listenable: controller,
       builder: (context, _) {
         final state = controller.state;
+        if (widget.longBook case final limit?) {
+          return BillingLongBookOffer(
+            limit: limit,
+            state: state,
+            plans: controller.plans,
+            onBuy: (plan) => _buy(controller, plan),
+            onRestore: controller.restore,
+            onRetry: controller.load,
+            onClose: () => Navigator.of(context).pop(),
+            onIncluded: widget.onIncluded ?? () => Navigator.of(context).pop(),
+            onShorten: widget.onShorten,
+          );
+        }
         if (widget.exportFormatLabel case final format?) {
           return BillingExportOffer(
             format: format,

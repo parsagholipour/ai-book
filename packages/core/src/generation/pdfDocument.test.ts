@@ -37,6 +37,18 @@ describe("book PDF base stylesheets", () => {
 describe("buildBookPdfDocument", () => {
   const latin = scriptProfileForLanguage("en");
 
+  it("titles the document with the book, escaped, so the PDF is not named after its scratch file", async () => {
+    // Untitled, Chrome wrote ".book-render-<uuid>.html" as the PDF's Title,
+    // which a viewer's title bar and a share sheet show the reader.
+    const html = await buildBookPdfDocument({
+      markdown: "# The Book\n\nFirst page.",
+      css: "",
+      profile: latin,
+      title: 'Tom & Jerry <"Live">'
+    });
+    expect(html).toContain("<title>Tom &amp; Jerry &lt;&quot;Live&quot;&gt;</title>");
+  });
+
   it("carries both base stylesheets and ours, in cascade order", async () => {
     const html = await buildBookPdfDocument({
       markdown: "# The Book\n\nFirst page.",

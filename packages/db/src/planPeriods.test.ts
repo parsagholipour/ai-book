@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_CREDIT_COSTS, resetCreditPricing } from "@book-maker/core";
+import { DEFAULT_CREDIT_COSTS, resetCreditPricing, setCreditPricing } from "@book-maker/core";
 
 const fakeDb = await vi.hoisted(async () => (await import("./testing/billingTestDb.js")).createBillingTestDb());
 
@@ -13,6 +13,7 @@ const {
   consumeIllustratedBookUse,
   endSubscriptionNow,
   ensureCurrentPlanPeriod,
+  getBookPageLimit,
   getCreditBalance,
   getImageQuota,
   getPlanSummary,
@@ -521,5 +522,37 @@ describe("illustrated book quota", () => {
   it("releases at most down to zero", async () => {
     await releaseIllustratedBookUse("user-a", "2026-06");
     expect(await getImageQuota("user-a", JUNE)).toMatchObject({ used: 0 });
+  });
+});
+
+describe("book page limit", () => {
+  beforeEach(() => {
+    fakeDb.reset();
+    resetCreditPricing();
+  });
+
+  it("caps a free account at the operator's page limit", async () => {
+    expect(await getBookPageLimit("user-a", JUNE)).toBe(DEFAULT_CREDIT_COSTS.freeMaxBookPages);
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, freeMaxBookPages: 45 });
+    expect(await getBookPageLimit("user-a", JUNE)).toBe(45);
+  });
+
+  it("lifts the cap on a paid plan, and only while the plan lasts", async () => {
+    fakeDb.state.entitlements.set("entitlement-plan", {
+      id: "entitlement-plan",
+      userId: "user-a",
+      projectId: null,
+      type: "CREATOR_PLAN",
+      status: "ACTIVE",
+      source: "google_play_subscription",
+      creditsCost: 0,
+      relatedLedgerEntryId: null,
+      purchaseRecordId: null,
+      startsAt: new Date("2026-05-15T00:00:00.000Z"),
+      expiresAt: new Date("2026-06-20T00:00:00.000Z")
+    });
+
+    expect(await getBookPageLimit("user-a", JUNE)).toBeNull();
+    expect(await getBookPageLimit("user-a", JULY)).toBe(DEFAULT_CREDIT_COSTS.freeMaxBookPages);
   });
 });

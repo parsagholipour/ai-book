@@ -27,7 +27,7 @@ export type SubscriptionRenewalSweepResult = {
 const BATCH_SIZE = 25;
 
 export async function runSubscriptionRenewalSweep(options: {
-  verifier: GooglePlayVerifier;
+  verifier: Pick<GooglePlayVerifier, "verifyPurchase">;
   packageName: string;
   now?: Date | undefined;
   log?: { warn: (details: Record<string, unknown>, message: string) => void } | undefined;

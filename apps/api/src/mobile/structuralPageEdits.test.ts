@@ -158,7 +158,7 @@ describe("canonical structural edit instructions", () => {
       name: "after",
       edit: { action: "insert", anchorPageIndex: 3, pageIndexes: [], pageCount: 1 } as StructuralPageEdit,
       source: "Add a new page after page 3 that keeps the chase suspenseful.",
-      expected: "Add 1 new page after page 3. Content requirements: That keeps the chase suspenseful."
+      expected: "Add 1 new page after page 3. Content requirements: The new page keeps the chase suspenseful."
     },
     {
       name: "end",
@@ -375,7 +375,7 @@ describe("canonical structural edit instructions", () => {
     );
 
     expect(instruction).toBe(
-      "Add 1 new page after page 20. Content requirements: That reveals Mina hid the brass key and keeps the tone ominous."
+      "Add 1 new page after page 20. Content requirements: The new page reveals Mina hid the brass key and keeps the tone ominous."
     );
     expect(instruction).not.toContain("100");
   });
@@ -478,13 +478,13 @@ describe("what the chat says when the resolver finds nothing to do", () => {
 
   it("asks which page to remove when the delete named none", () => {
     expect(refusalFor({ action: "delete", anchorPageIndex: null, pageIndexes: [], pageCount: 0 })).toBe(
-      "I couldn’t tell which page to remove. Tell me the page number and I’ll take it out."
+      "I couldn’t tell which page you mean. Tell me the number printed at the bottom of the page and I’ll take it out."
     );
   });
 
   it("asks which page to move, and where, when the move named neither", () => {
     expect(refusalFor({ action: "move", anchorPageIndex: null, pageIndexes: [], pageCount: 0 })).toBe(
-      "I couldn’t tell which page to move. Tell me the page number and where it should go."
+      "I couldn’t tell which page you mean. Tell me the number printed at the bottom of the page and where it should go."
     );
   });
 

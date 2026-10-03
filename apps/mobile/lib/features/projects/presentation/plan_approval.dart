@@ -7,6 +7,7 @@ import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../../notifications/presentation/book_notifications_offer.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
@@ -34,7 +35,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
     return null;
   }
 
-  late final MobileBilling billing;
+  late MobileBilling billing;
   try {
     billing = await ref.read(billingProvider.future);
   } catch (error) {
@@ -44,6 +45,35 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
     return null;
+  }
+
+  if (!context.mounted) {
+    return null;
+  }
+  // A plan sized while subscribed, approved after the plan lapsed. The server
+  // refuses it too; asking first means the offer, not an error. The length
+  // cannot be changed from here — the plan's chapters are already sized to it
+  // — so the offer has no "shorter" way out.
+  final maxPages = billing.maxBookPages;
+  if (maxPages != null && project.targetPages > maxPages) {
+    final choice = await showLongBookOffer(
+      context,
+      projectId: project.id,
+      limit: BookPageLimit(
+        limit: maxPages,
+        requestedPages: project.targetPages,
+      ),
+      canShorten: false,
+    );
+    ref.invalidate(billingProvider);
+    if (choice != LongBookChoice.unlocked) {
+      return null;
+    }
+    try {
+      billing = await ref.read(billingProvider.future);
+    } catch (_) {
+      return null;
+    }
   }
 
   final hasProjectUnlock = billing.entitlements.any(
@@ -116,7 +146,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   }
 
   final estimateSummary =
-      'Book after approval: $estimate credits. You have ${billing.credits.available} available. Planning is not charged again.';
+      'Book after approval: ${formatCredits(estimate)} credits. You have ${formatCredits(billing.credits.available)} available. Planning is not charged again.';
   final approved = await showAppConfirmationDialog(
     context,
     title: 'Approve this plan?',
@@ -132,8 +162,9 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   }
 
   onStart?.call();
+  MobilePlanOperation operation;
   try {
-    final operation = await ref
+    operation = await ref
         .read(projectsRepositoryProvider)
         .approvePlan(
           plan.id,
@@ -143,9 +174,17 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
     ref.invalidate(projectsProvider);
     ref.invalidate(billingProvider);
     ref.invalidate(projectDetailProvider(project.id));
-    return operation;
   } catch (error) {
-    if (context.mounted) {
+    final pageLimit = pageLimitFromError(error);
+    if (pageLimit != null && context.mounted) {
+      await showLongBookOffer(
+        context,
+        projectId: project.id,
+        limit: pageLimit,
+        canShorten: false,
+      );
+      ref.invalidate(billingProvider);
+    } else if (context.mounted) {
       ScaffoldMessenger.of(
         context,
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
@@ -154,6 +193,10 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   } finally {
     onSettled?.call();
   }
+  // The book is being written now: the moment a "tell me when it's ready" is
+  // obviously worth saying yes to. Shown at most once, ever.
+  if (context.mounted) await offerBookNotifications(context, ref);
+  return operation;
 }
 
 enum _ImageLimitChoice { withoutIllustrations, upgrade }

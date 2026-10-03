@@ -305,9 +305,11 @@ class _PlanFailedFooter extends StatelessWidget {
                 : 'Your plan needs attention',
             message: message,
             actionLabel: retryAvailable
-                ? retryCredits == null
-                      ? 'Retry plan'
-                      : 'Retry plan · $retryCredits credits'
+                ? switch (retryCredits) {
+                    null => 'Retry plan',
+                    final credits =>
+                      'Retry plan · ${formatCredits(credits)} credits',
+                  }
                 : 'Check again',
             actionIcon: Icon(
               retryAvailable ? Icons.replay_outlined : Icons.refresh_outlined,
@@ -729,8 +731,9 @@ class _ApprovalCaption extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Text(
-        'Plan change: $revision credits · Book after approval: ≈ $estimate '
-        'credits · You have ${billing.credits.available}',
+        'Plan change: ${formatCredits(revision)} credits · Book after approval: ≈ '
+        '${formatCredits(estimate)} credits · You have '
+        '${formatCredits(billing.credits.available)}',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: Theme.of(context).colorScheme.onSurfaceVariant,

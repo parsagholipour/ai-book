@@ -4,6 +4,9 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import 'app/app.dart';
+import 'features/app_update/data/app_update_repository.dart';
+import 'features/app_update/domain/app_update.dart';
+import 'features/notifications/data/push_messaging.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,5 +20,20 @@ Future<void> main() async {
     androidNotificationOngoing: true,
     androidStopForegroundOnPause: true,
   );
-  runApp(const ProviderScope(child: TomezaApp()));
+  // Read before the first request: every request names this build, which is
+  // what lets the server retire it (see `AppBuild`).
+  final build = await readAppBuild();
+  // Book-progress and book-ready notifications. Null in a build made without
+  // google-services.json, and the app then simply never offers them.
+  final pushMessaging = await FirebasePushMessaging.initialize();
+  runApp(
+    ProviderScope(
+      overrides: [
+        appBuildProvider.overrideWithValue(build),
+        if (pushMessaging != null)
+          pushMessagingProvider.overrideWithValue(pushMessaging),
+      ],
+      child: const TomezaApp(),
+    ),
+  );
 }

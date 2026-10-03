@@ -5,9 +5,9 @@
  * correction may change the rendered revision date without changing these
  * values, so existing users are not asked to accept the same terms twice.
  */
-export const CURRENT_TERMS_VERSION = "2026-08-08";
-export const CURRENT_PRIVACY_VERSION = "2026-08-08";
-export const LEGAL_EFFECTIVE_DATE = "2026-08-08";
+export const CURRENT_TERMS_VERSION = "2026-10-03";
+export const CURRENT_PRIVACY_VERSION = "2026-10-03";
+export const LEGAL_EFFECTIVE_DATE = "2026-10-03";
 
 export const LEGAL_COMPANY_NAME = "Ravanix Technologies L.L.C-FZ";
 export const LEGAL_COMPANY_ADDRESS =

@@ -499,7 +499,7 @@ class BillingController extends ChangeNotifier {
       return 'Subscription verified. Your monthly credits are available.';
     }
     if (result.purchase.creditsGranted > 0) {
-      return '${result.purchase.creditsGranted} credits added.';
+      return '${formatCredits(result.purchase.creditsGranted)} credits added.';
     }
     return 'Purchase verified.';
   }

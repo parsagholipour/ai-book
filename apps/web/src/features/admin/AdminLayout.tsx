@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, Coins, Receipt, Settings, ShieldAlert, Sparkles, Users, Workflow } from "lucide-react";
+import { ArrowLeft, BarChart3, Coins, Receipt, Settings, ShieldAlert, Smartphone, Sparkles, Users, Workflow } from "lucide-react";
 import { NavLink, Outlet } from "react-router";
 import { AppLogo } from "../shared/AppLogo.js";
 import { ButtonLink } from "../shared/Button.js";
@@ -10,6 +10,7 @@ export const ADMIN_TABS = [
   { to: "/admin/users", label: "Users", icon: Users, end: false },
   { to: "/admin/moderation", label: "Moderation", icon: ShieldAlert, end: false },
   { to: "/admin/settings", label: "Safety", icon: Settings, end: false },
+  { to: "/admin/app-updates", label: "App updates", icon: Smartphone, end: false },
   { to: "/admin/pricing", label: "Pricing", icon: Coins, end: false },
   { to: "/admin/quality", label: "Quality", icon: Sparkles, end: false }
 ] as const;

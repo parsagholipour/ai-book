@@ -23,8 +23,9 @@ Two files, both around 900 lines, both about edit intents:
   `BookEditIntent`), `classifyProjectChatMessage`, `intentFromDecideAction`,
   `intentFromProposeEdit`, `normalizeIntentForStage`, `forcedDecision`.
 - `apps/api/src/mobile/bookEditIntents.ts` — **plural**. The apply side.
-  `handleProjectChatIntent`, `proposeBookEdit`, `applyOrCancelEditProposal`,
-  `editProposalMessage`, `editProposalSummary`, `operationQueuedMessage`.
+  `handleProjectChatIntent`, `proposeBookEdit`, `editProposalMessage`,
+  `editProposalSummary`, `operationQueuedMessage`. The card's Apply and Cancel buttons,
+  `applyOrCancelEditProposal`, are in `apps/api/src/mobile/editProposalActions.ts`.
 
 Free-standing recognisers pair the same way: `apps/api/src/bookEditBackMatter.ts` (recognise) with
 `apps/api/src/mobile/backMatterEdits.ts` (apply), and `apps/api/src/bookEditChapterHeading.ts` with
@@ -124,7 +125,9 @@ In `apps/api/src/mobile/bookEditIntents.ts`:
   proposal: cost from `bookEditCreditCost`, text from `editProposalMessage`, card from
   `editProposalSummary`, metadata from `pendingEditMetadataFromState`.
 - `proposeBookEdit` — resolves quoted targets and asks the one real "which page?" question.
-- `applyOrCancelEditProposal` — the Apply path, which is where the charge and the job happen.
+- `applyOrCancelEditProposal` (`editProposalActions.ts`) — claims the card and hands the Apply back
+  to `handleProjectChatIntent` with `executeProposal`, which is where the charge and the job happen.
+  A priced card whose kind is not in `PROPOSAL_GATED_EDIT_KINDS` cannot be found again on Apply.
 
 Chat replies never name a credit price in their text: the number travels as
 `metadata.creditsCharged` or `metadata.editProposal.credits` and the app draws the badge.

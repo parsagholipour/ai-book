@@ -64,6 +64,53 @@ void main() {
     expect(visualReports, ['cover-image']);
   });
 
+  testWidgets(
+    'an author\'s own book offers no book report, and only drawn pictures a visual report',
+    (tester) async {
+      final project = fakeProjectWithVisuals(
+        source: 'written',
+        coverImage: const MobileProjectImage(
+          id: 'cover-image',
+          role: 'cover',
+          url: '/api/mobile/projects/project-1/assets/cover-image',
+          contentType: 'image/png',
+          altText: 'Designed cover',
+          aiGenerated: false,
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appConfigProvider.overrideWithValue(testConfig),
+            apiAuthHeadersProvider.overrideWith(
+              (ref) async => const <String, String>{},
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: BookScreenBody(
+                status: fakeStatus(),
+                project: project,
+                onRefresh: () async {},
+                onOpen: (_) async {},
+                onDownload: (_) async {},
+                onOpenPaywall: (_) async {},
+                onReportProject: () async {},
+                onReportImage: (_) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // The writing is the author's; the designed cover was drawn by no model.
+      expect(find.text('Report book'), findsNothing);
+      // The page's picture was drawn, so it can still be reported.
+      expect(find.text('Report visual'), findsOneWidget);
+    },
+  );
+
   testWidgets('project privacy actions expose deletion', (tester) async {
     var deleted = false;
 
@@ -148,9 +195,19 @@ MobileProjectStatus fakeStatus() {
   );
 }
 
-MobileProjectDetail fakeProjectWithVisuals() {
+MobileProjectDetail fakeProjectWithVisuals({
+  String source = 'generated',
+  MobileProjectImage coverImage = const MobileProjectImage(
+    id: 'cover-image',
+    role: 'cover',
+    url: '/api/mobile/projects/project-1/assets/cover-image',
+    contentType: 'image/png',
+    altText: 'Generated cover',
+  ),
+}) {
   return MobileProjectDetail(
     id: 'project-1',
+    source: source,
     title: 'Launch Workbook',
     bookType: 'workbook',
     lengthPreset: 'standard',
@@ -170,13 +227,7 @@ MobileProjectDetail fakeProjectWithVisuals() {
     updatedAt: DateTime.utc(2026, 6, 15),
     prompt: 'Create a workbook for a launch workshop.',
     language: 'en',
-    coverImage: const MobileProjectImage(
-      id: 'cover-image',
-      role: 'cover',
-      url: '/api/mobile/projects/project-1/assets/cover-image',
-      contentType: 'image/png',
-      altText: 'Generated cover',
-    ),
+    coverImage: coverImage,
     pages: const [
       MobileProjectPage(
         id: 'page-1',

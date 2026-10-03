@@ -13,10 +13,13 @@ import 'package:tomeza/features/account/presentation/account_screen.dart';
 import 'package:tomeza/features/account/presentation/archived_chats_screen.dart';
 import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/notifications/data/push_device_repository.dart';
+import 'package:tomeza/features/notifications/data/push_messaging.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 
 import '../app/app_test_fixtures.dart';
+import '../features/notifications/fake_push_messaging.dart';
 
 void main() {
   testWidgets('hub shows identity, balance, and every settings row', (
@@ -54,6 +57,44 @@ void main() {
     expect(find.text('https://example.com/privacy'), findsOneWidget);
     expect(find.text('https://example.com/terms'), findsOneWidget);
     expect(find.text('Tomeza 1.0.0 (1)'), findsOneWidget);
+  });
+
+  testWidgets('a build that cannot send notifications shows no row for '
+      'them', (tester) async {
+    await _pumpHub(tester);
+    expect(find.byKey(const ValueKey('account-notifications')), findsNothing);
+  });
+
+  testWidgets('notifications never asked for: the row asks the system, then '
+      'files this install', (tester) async {
+    final push = FakePushMessaging(currentPermission: PushPermission.notAsked);
+    final devices = FakePushDeviceRepository();
+    await _pumpHub(tester, push: push, pushDevices: devices);
+
+    final row = find.byKey(const ValueKey('account-notifications'));
+    expect(
+      find.descendant(of: row, matching: find.text('Off')),
+      findsOneWidget,
+    );
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+
+    expect(push.permissionRequests, 1);
+    expect(devices.calls, ['register fcm-token-1 android']);
+    expect(find.descendant(of: row, matching: find.text('On')), findsOneWidget);
+    expect(push.settingsOpened, 0);
+  });
+
+  testWidgets('notifications already decided: the row opens the phone\'s '
+      'settings, where Android lets them change', (tester) async {
+    for (final permission in [PushPermission.granted, PushPermission.denied]) {
+      final push = FakePushMessaging(currentPermission: permission);
+      await _pumpHub(tester, push: push);
+      await tester.tap(find.byKey(const ValueKey('account-notifications')));
+      await tester.pumpAndSettle();
+      expect(push.settingsOpened, 1);
+      expect(push.permissionRequests, 0);
+    }
   });
 
   testWidgets('the overview card carries one action, and it is the upgrade', (
@@ -188,6 +229,8 @@ Future<void> _pumpHub(
   WidgetTester tester, {
   AppearanceStore? appearance,
   AuthRepository? auth,
+  PushMessaging? push,
+  PushDeviceRepository? pushDevices,
   bool dark = false,
 }) async {
   final router = GoRouter(
@@ -226,6 +269,9 @@ Future<void> _pumpHub(
         appConfigProvider.overrideWithValue(_testConfig),
         projectsRepositoryProvider.overrideWithValue(FakeProjectsRepository()),
         creationRepositoryProvider.overrideWithValue(FakeCreationRepository()),
+        if (push != null) pushMessagingProvider.overrideWithValue(push),
+        if (pushDevices != null)
+          pushDeviceRepositoryProvider.overrideWithValue(pushDevices),
       ],
       child: MaterialApp.router(
         theme: buildTomezaLightTheme(),

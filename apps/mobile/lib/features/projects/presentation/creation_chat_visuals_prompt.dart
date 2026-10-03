@@ -185,7 +185,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                     _VisualsCostRow(
                       label: 'Cover',
                       value: _coverEnabled
-                          ? '+$coverCredits credits'
+                          ? '+${formatCredits(coverCredits)} credits'
                           : 'Designed cover, free',
                       muted: !_coverEnabled,
                     ),
@@ -195,20 +195,20 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                           ? '1 illustration'
                           : '$imageCount illustrations',
                       value: _illustrationsEnabled
-                          ? '+$illustrationCredits credits'
+                          ? '+${formatCredits(illustrationCredits)} credits'
                           : 'Not included',
                       muted: !_illustrationsEnabled,
                     ),
                     const SizedBox(height: 8),
                     _VisualsCostRow(
                       label: '${widget.targetPages} pages, everything else',
-                      value: '$baseTotal credits',
+                      value: '${formatCredits(baseTotal)} credits',
                       muted: true,
                     ),
                     const Divider(height: 22),
                     _VisualsCostRow(
                       label: 'Estimated total',
-                      value: '≈ $selectedTotal credits',
+                      value: '≈ ${formatCredits(selectedTotal)} credits',
                       emphasised: true,
                     ),
                   ],

@@ -9,6 +9,7 @@ vi.mock("../generationTextModelRouting.js", () => ({
   createLiveFastJudgmentsTextModel: () => ({ generateJson })
 }));
 
+import { getBookPageLimit } from "@book-maker/db/billing";
 import { adviseMobileBook, mobileCreationDraftPayloadSchema } from "../mobileCreation.js";
 import { deterministicPageCountRecommendations } from "./projectRecords.js";
 import { mobilePageCountRecommendationAiSchema } from "./schemas.js";
@@ -81,6 +82,16 @@ describe("page-count preflight", () => {
     expect(request.messages[0].content).toContain("do not default to the middle");
     expect(request.messages[0].content).toContain("latest user requests in the active chat take priority");
     expect(context).not.toHaveProperty("fallback");
+  });
+
+  it("tells the app how long a book this reader may build", async () => {
+    expect((await preflight()).maxPages).toBeNull();
+    // The recommendations are left alone on the free tier: a longer option is
+    // shown locked in the app, which is the offer.
+    vi.mocked(getBookPageLimit).mockResolvedValue(30);
+    const free = await preflight();
+    expect(free.maxPages).toBe(30);
+    expect(free.recommendations).toEqual(recommendations);
   });
 
   it.each([0, 1, 2])("accepts option %i as the single best fit and orders by count", async (index) => {

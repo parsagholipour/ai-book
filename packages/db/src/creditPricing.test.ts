@@ -147,6 +147,31 @@ describe("loadCreditPricing", () => {
 });
 
 describe("saveCreditPricing", () => {
+  it("persists, reloads, and restores welcome-credit IP caps with revision history", async () => {
+    const saved = await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS,
+      welcomeCreditsAccountsPerIpHighIncome: 4, welcomeCreditsAccountsPerIpLowMiddleIncome: 3 } });
+    expect(saved.changed).toEqual({
+      welcomeCreditsAccountsPerIpHighIncome: { from: 2, to: 4 },
+      welcomeCreditsAccountsPerIpLowMiddleIncome: { from: 1, to: 3 }
+    });
+    resetCreditPricing();
+    const loaded = await loadCreditPricing();
+    expect(loaded.values).toMatchObject({
+      welcomeCreditsAccountsPerIpHighIncome: 4, welcomeCreditsAccountsPerIpLowMiddleIncome: 3
+    });
+    expect(creditPricing()).toMatchObject({
+      welcomeCreditsAccountsPerIpHighIncome: 4, welcomeCreditsAccountsPerIpLowMiddleIncome: 3
+    });
+    await saveCreditPricing({ values: { ...loaded.values, welcomeCreditsAccountsPerIpHighIncome: 0 } });
+    const restored = await revertCreditPricing({ version: saved.version });
+    expect(restored.values.welcomeCreditsAccountsPerIpHighIncome).toBe(4);
+    expect(restored.changed).toEqual({ welcomeCreditsAccountsPerIpHighIncome: { from: 0, to: 4 } });
+    const revisions = await listCreditPricingRevisions();
+    expect(revisions[0]?.values).toMatchObject({
+      welcomeCreditsAccountsPerIpHighIncome: 4, welcomeCreditsAccountsPerIpLowMiddleIncome: 3
+    });
+  });
+
   it("records a revision, bumps the version, and applies the change", async () => {
     const result = await saveCreditPricing({
       values: { ...DEFAULT_CREDIT_COSTS, imageGeneration: 90 },
@@ -230,6 +255,24 @@ describe("saveCreditPricing", () => {
 });
 
 describe("revertCreditPricing", () => {
+  it("loads and reverts geographic revisions into income fields without losing amounts or history", async () => {
+    fakeDb.state.rows.push({
+      id: "old-geographic", version: 1, createdAt: new Date("2026-10-01"), updatedBy: null, note: "Regional gift",
+      values: { welcomeCreditsRegionalEnabled: 1, welcomeCreditsUsEuCanada: 2000, welcomeCreditsAsiaAfricaSouthAmerica: 400 },
+      changed: { welcomeCreditsUsEuCanada: { from: 1000, to: 2000 }, welcomeCreditsAsiaAfricaSouthAmerica: { from: 1000, to: 400 } }
+    });
+    const old = await loadCreditPricing();
+    expect(old.values).toMatchObject({ welcomeCreditsHighIncome: 2000, welcomeCreditsLowMiddleIncome: 400 });
+    expect((await listCreditPricingRevisions())[0]?.changed).toEqual({
+      welcomeCreditsHighIncome: { from: 1000, to: 2000 }, welcomeCreditsLowMiddleIncome: { from: 1000, to: 400 }
+    });
+    await saveCreditPricing({ values: { ...old.values, welcomeCreditsHighIncome: 800 } });
+    const reverted = await revertCreditPricing({ version: 1 });
+    expect(reverted.version).toBe(3);
+    expect(reverted.values).toMatchObject({ welcomeCreditsHighIncome: 2000, welcomeCreditsLowMiddleIncome: 400 });
+    expect(fakeDb.state.rows[0]?.values).toHaveProperty("welcomeCreditsUsEuCanada", 2000);
+  });
+
   it("restores old values as a new forward revision", async () => {
     await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, imageGeneration: 90 } });
     await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, imageGeneration: 300 } });

@@ -18,6 +18,40 @@ function editIntent(overrides: Partial<BookEditIntent>): BookEditIntent {
   };
 }
 
+describe("a picture replacement's card", () => {
+  it("names the page a picture is on when nothing describes the picture itself", () => {
+    const intent = editIntent({
+      kind: "add_image",
+      affectedPageIndexes: [2],
+      imageEdit: {
+        subject: "Pim hugging the firefly",
+        placement: "page",
+        pageIndex: 2,
+        replace: { operationId: "", assetId: "asset-2", oldSubject: "the illustration on page 2" }
+      }
+    } as Partial<BookEditIntent>);
+    expect(editProposalSummary("add_image", [2], intent)).toBe(
+      "Replace the illustration on page 2 with one of “Pim hugging the firefly”"
+    );
+  });
+});
+
+describe("a text edit's card sentence", () => {
+  it("opens with a capital however the reader typed it, and leaves the stored instruction alone", () => {
+    const intent = editIntent({
+      kind: "local_patch",
+      editInstruction: "replace the word Biscuit with Marmalade everywhere"
+    });
+    expect(editProposalMessage(intent.kind, [1, 2], intent)).toBe(
+      "Replace the word Biscuit with Marmalade everywhere. Tap Apply to confirm, or Cancel to drop it."
+    );
+    expect(intent.editInstruction).toBe("replace the word Biscuit with Marmalade everywhere");
+    // Not every script has case; those sentences pass through as typed.
+    const persian = editIntent({ kind: "local_patch", editInstruction: "کلمه گربه را با پیشی عوض کن" });
+    expect(editProposalSummary(persian.kind, [1], persian)).toBe("کلمه گربه را با پیشی عوض کن");
+  });
+});
+
 describe("continuation and replan proposal contracts", () => {
   it("shows the resolved continuation instruction instead of contextual request copy", () => {
     const editInstruction =

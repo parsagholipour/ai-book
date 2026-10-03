@@ -98,6 +98,12 @@ class _BookTypePicker extends StatelessWidget {
 
 /// Page count as presets first, an exact number second. Most readers want "a
 /// short one" or "about forty", and a bare number field asked them to know.
+///
+/// On the free plan the lengths past [maxPages] stay on screen with a lock
+/// rather than disappearing: a reader who can see the forty-page book is one
+/// tap from the offer that unlocks it. A locked chip opens that offer instead
+/// of selecting ([onLocked]); a typed count past it is kept — the field is the
+/// reader's own words — and the caption turns into the way to unlock it.
 class _PageCountControl extends StatefulWidget {
   const _PageCountControl({
     required this.title,
@@ -106,6 +112,8 @@ class _PageCountControl extends StatefulWidget {
     required this.onAuto,
     required this.onCustom,
     this.estimateCredits,
+    this.maxPages,
+    this.onLocked,
   });
 
   final String title;
@@ -114,6 +122,14 @@ class _PageCountControl extends StatefulWidget {
   final VoidCallback onAuto;
   final void Function(int targetPages, {String source}) onCustom;
   final int Function(int targetPages)? estimateCredits;
+
+  /// The longest book this reader may build; null on a paid plan.
+  final int? maxPages;
+
+  /// Opens the long-book offer for a count past [maxPages].
+  final Future<void> Function(int targetPages)? onLocked;
+
+  bool _locks(int pages) => maxPages != null && pages > maxPages!;
 
   @override
   State<_PageCountControl> createState() => _PageCountControlState();
@@ -174,6 +190,40 @@ class _PageCountControlState extends State<_PageCountControl> {
     if (pages != null) widget.onCustom(pages);
   }
 
+  /// What a free reader sees under a count past their limit: what it needs,
+  /// and the way to get it, in place of the price line.
+  Widget _lockedCaption(BuildContext context, int pages) {
+    final colors = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final onLocked = widget.onLocked;
+    return Container(
+      key: const ValueKey('page-count-locked'),
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(AppRadii.control),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 18, color: colors.primary),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              '$pages pages is a plan perk. Free books go up to '
+              '${widget.maxPages} pages.',
+              style: text.bodySmall,
+            ),
+          ),
+          if (onLocked != null)
+            TextButton(
+              onPressed: () => unawaited(onLocked(pages)),
+              child: const Text('Unlock'),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// The one place the cost of the chosen count is said, in the same terms as
   /// the plan-approval dialog.
   String _caption(int? pages, bool auto) {
@@ -216,10 +266,24 @@ class _PageCountControlState extends State<_PageCountControl> {
             ),
             for (final pages in _presetPages)
               ChoiceChip(
+                key: ValueKey('page-preset-$pages'),
+                avatar: widget._locks(pages)
+                    ? const Icon(Icons.lock_outline, size: 18)
+                    : null,
                 label: Text('$pages pages'),
+                tooltip: widget._locks(pages)
+                    ? 'Books over ${widget.maxPages} pages need a plan'
+                    : null,
                 selected: !_customOpen && committed == pages,
                 showCheckmark: false,
                 onSelected: (_) {
+                  final onLocked = widget.onLocked;
+                  if (widget._locks(pages) &&
+                      committed != pages &&
+                      onLocked != null) {
+                    unawaited(onLocked(pages));
+                    return;
+                  }
                   setState(() => _customOpen = false);
                   _controller.clear();
                   widget.onCustom(pages);
@@ -255,12 +319,15 @@ class _PageCountControlState extends State<_PageCountControl> {
           ),
         ],
         const SizedBox(height: AppSpacing.xs),
-        Text(
-          _caption(captionPages, auto),
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-        ),
+        if (!auto && captionPages != null && widget._locks(captionPages))
+          _lockedCaption(context, captionPages)
+        else
+          Text(
+            _caption(captionPages, auto),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
       ],
     );
   }
@@ -313,7 +380,7 @@ class _AdvancedGroup extends StatelessWidget {
     final planning = planCredits?.call(option.value);
     if (rate == null && planning == null) return null;
     return [
-      if (planning != null) 'Plan now: $planning credits',
+      if (planning != null) 'Plan now: ${formatCredits(planning)} credits',
       if (rate != null) 'Book after approval: ≈ $rate credits per page',
     ].join(' · ');
   }

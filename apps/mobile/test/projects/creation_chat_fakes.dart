@@ -41,6 +41,12 @@ class ScriptedCreationRepository
   /// returns it on the turn for the Advanced-settings sheet to pick up.
   final String? replyAuthorName;
   final bool preflightRequiresPageCount;
+
+  /// The free-tier cap the preflight reports; null is a paid plan.
+  int? preflightMaxPages;
+
+  /// The count the chat "settled on" when the sheet is not needed.
+  int preflightDetectedPages = 8;
   List<MobilePageCountRecommendation> preflightRecommendations = const [
     MobilePageCountRecommendation(
       targetPages: 8,
@@ -508,6 +514,7 @@ class ScriptedCreationRepository
     return MobileCreationBuildPreflight(
       requiresPageCount: requiresPageCount,
       recommendations: preflightRecommendations,
+      maxPages: preflightMaxPages,
       detectedPageCount: requiresPageCount
           ? null
           : presetsResolvePageCount
@@ -515,7 +522,10 @@ class ScriptedCreationRepository
               targetPages: presets!.targetPages!,
               source: presets.pageCountSource ?? 'settings',
             )
-          : const MobileDetectedPageCount(targetPages: 8, source: 'chat'),
+          : MobileDetectedPageCount(
+              targetPages: preflightDetectedPages,
+              source: 'chat',
+            ),
     );
   }
 

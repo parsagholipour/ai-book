@@ -261,6 +261,9 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     }
   }
 
+  /// The call on screen, ended or not, so the menu can report what was said.
+  String? get callId => _session?.callId;
+
   /// Clears the leftovers of a previous call on this controller.
   void _resetForNewCall() {
     _session = null;

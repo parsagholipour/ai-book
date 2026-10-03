@@ -1,3 +1,4 @@
+import { ACCOUNT_DELETION_GRACE_MS, executeAccountDeletion } from "./accountDeletion.js";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { objectKey, objectStore } from "@book-maker/storage";
 import { loadConfig } from "@book-maker/core";
@@ -231,6 +232,103 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     return reply.code(201).send({ report: serializeModerationReport(report) });
   });
 
+  // Google Play's generative-AI policy wants every surface that shows AI output
+  // reportable in the app. Books and pictures were; a live voice call and a
+  // chat reply were not. Each report snapshots what was said, because a call's
+  // transcript and a chat's branches can change or go before anyone reviews it.
+  fastify.post("/api/mobile/voice/calls/:id/reports", async (request, reply) => {
+    const auth = await requireMobileAuth(request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!hitAuthenticatedLimit(reportLimiter, reply, auth.user.id, "report-voice-call")) {
+      return;
+    }
+    const { id } = idParamsSchema.parse(request.params);
+    const parsed = moderationReportBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose a report reason.");
+    }
+    const call = await prisma.voiceCall.findFirst({
+      where: { id, userId: auth.user.id },
+      select: {
+        id: true,
+        projectId: true,
+        startedAt: true,
+        endedAt: true,
+        transcript: true,
+        voiceCharacter: { select: { name: true } },
+        libraryCharacter: { select: { name: true } }
+      }
+    });
+    if (!call) {
+      return sendMobileError(reply, 404, "VOICE_CALL_NOT_FOUND", "That call could not be found.");
+    }
+    const transcript = Array.isArray(call.transcript) ? call.transcript.slice(-40) : [];
+    const report = (await prisma.moderationReport.create({
+      data: {
+        reporterUserId: auth.user.id,
+        projectId: call.projectId,
+        targetType: "VOICE_CALL",
+        reason: toReportReason(parsed.data.reason),
+        comment: cleanText(parsed.data.comment) ?? null,
+        targetSnapshot: jsonInput({
+          voiceCallId: call.id,
+          projectId: call.projectId,
+          characterName: call.voiceCharacter?.name ?? call.libraryCharacter?.name ?? null,
+          startedAt: call.startedAt.toISOString(),
+          endedAt: call.endedAt?.toISOString() ?? null,
+          transcript
+        })
+      },
+      select: moderationReportSelect
+    })) as ModerationReportRecord;
+    return reply.code(201).send({ report: serializeModerationReport(report) });
+  });
+
+  fastify.post("/api/mobile/projects/:id/chat/messages/:messageId/reports", async (request, reply) => {
+    const auth = await requireMobileAuth(request, reply);
+    if (!auth) {
+      return;
+    }
+    if (!hitAuthenticatedLimit(reportLimiter, reply, auth.user.id, "report-chat-message")) {
+      return;
+    }
+    const params = z.object({ id: z.string().min(1), messageId: z.string().min(1) }).safeParse(request.params);
+    const parsed = moderationReportBodySchema.safeParse(request.body);
+    if (!params.success || !parsed.success) {
+      return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose a report reason.");
+    }
+    const message = await prisma.projectChatMessage.findFirst({
+      where: { id: params.data.messageId, projectId: params.data.id, role: "ASSISTANT", project: { userId: auth.user.id } },
+      select: { id: true, projectId: true, content: true, parentId: true, project: { select: { title: true } } }
+    });
+    if (!message) {
+      return sendMobileError(reply, 404, "CHAT_MESSAGE_NOT_FOUND", "That reply could not be found.");
+    }
+    const asked = message.parentId
+      ? await prisma.projectChatMessage.findFirst({ where: { id: message.parentId }, select: { content: true } })
+      : null;
+    const report = (await prisma.moderationReport.create({
+      data: {
+        reporterUserId: auth.user.id,
+        projectId: message.projectId,
+        targetType: "CHAT_MESSAGE",
+        reason: toReportReason(parsed.data.reason),
+        comment: cleanText(parsed.data.comment) ?? null,
+        targetSnapshot: jsonInput({
+          chatMessageId: message.id,
+          projectId: message.projectId,
+          projectTitle: message.project.title,
+          reply: message.content.slice(0, 4000),
+          asked: asked?.content.slice(0, 2000) ?? null
+        })
+      },
+      select: moderationReportSelect
+    })) as ModerationReportRecord;
+    return reply.code(201).send({ report: serializeModerationReport(report) });
+  });
+
   fastify.post("/api/mobile/projects/:id/assets/:assetId/reports", async (request, reply) => {
     const auth = await requireMobileAuth(request, reply);
     if (!auth) {
@@ -320,7 +418,7 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     }
 
     await prisma.project.delete({ where: { id } });
-    const assetCleanup = await deleteProjectStorage(appConfig, id, request);
+    const assetCleanup = await deleteProjectStorage(id, request);
     return {
       ok: true,
       deletedProjectId: id,
@@ -393,6 +491,44 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
         share: report.bookShare ? serializeAdminShare(report.bookShare, appConfig.PUBLIC_API_URL) : null
       }))
     };
+  });
+
+  // Account deletion requests: the mobile app's and the ones support received
+  // by email through the public deletion page. The sweep carries each out once
+  // its grace period passes (`accountDeletion.ts`); these let an operator see
+  // what is waiting and carry one out now.
+  fastify.get("/api/admin/account-deletions", async (request, reply) => {
+    const operator = await requireOperatorAuth(request, reply);
+    if (!operator) {
+      return;
+    }
+    const requests = await prisma.accountDeletionRequest.findMany({
+      where: { status: "PENDING" },
+      orderBy: { requestedAt: "asc" },
+      take: 200,
+      select: { id: true, userId: true, email: true, reason: true, requestedAt: true }
+    });
+    return { requests, graceHours: ACCOUNT_DELETION_GRACE_MS / 3_600_000 };
+  });
+
+  fastify.post("/api/admin/account-deletions/:id/complete", async (request, reply) => {
+    const operator = await requireOperatorAuth(request, reply);
+    if (!operator) {
+      return;
+    }
+    const { id } = reviewParamsSchema.parse(request.params);
+    const pending = await prisma.accountDeletionRequest.findFirst({
+      where: { id, status: "PENDING" },
+      select: { userId: true }
+    });
+    if (!pending) {
+      return sendMobileError(reply, 404, "NOT_FOUND", "That deletion request is not pending.");
+    }
+    if (!pending.userId) {
+      await prisma.accountDeletionRequest.update({ where: { id }, data: { status: "COMPLETED", completedAt: new Date() } });
+      return { ok: true, result: null };
+    }
+    return { ok: true, result: await executeAccountDeletion(pending.userId, request.log) };
   });
 
   fastify.patch("/api/admin/moderation/reports/:id", async (request, reply) => {

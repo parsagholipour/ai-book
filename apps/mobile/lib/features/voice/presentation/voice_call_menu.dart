@@ -8,21 +8,25 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
+import '../../projects/presentation/ai_content_report.dart';
 import 'voice_call_controller.dart';
 
 /// The overflow menu on the call screen.
 ///
-/// One item today. It lives behind a menu rather than as a fourth control in
-/// the footer because the three that are there are the ones a caller reaches
-/// for without looking — mute, end, speaker — and a download sitting next to
-/// "End" at thumb size is a mistap waiting to happen.
+/// The recording's download and the call's report live behind a menu rather
+/// than as more controls in the footer, because the three that are there are
+/// the ones a caller reaches for without looking — mute, end, speaker — and a
+/// download sitting next to "End" at thumb size is a mistap waiting to happen.
+/// The report is what Google Play's generative-AI policy asks of every surface
+/// that shows AI output, so it is offered whenever there is a call to report.
 class VoiceCallMenu extends ConsumerWidget {
   const VoiceCallMenu({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(voiceCallControllerProvider);
-    if (!state.recordingAvailable) {
+    final callId = ref.read(voiceCallControllerProvider.notifier).callId;
+    if (!state.recordingAvailable && callId == null) {
       return const SizedBox.shrink();
     }
     final colors = Theme.of(context).colorScheme;
@@ -48,17 +52,43 @@ class VoiceCallMenu extends ConsumerWidget {
           AppHaptics.tap();
           unawaited(downloadCallRecording(context: context, ref: ref));
         }
+        if (value == 'report' && callId != null) {
+          unawaited(
+            reportAiContent(
+              context: context,
+              title: 'Report this call',
+              submit: (reason, comment) => ref
+                  .read(aiContentReportsApiProvider)
+                  .reportVoiceCall(
+                    callId: callId,
+                    reason: reason,
+                    comment: comment,
+                  ),
+            ),
+          );
+        }
       },
       itemBuilder: (context) => [
-        const PopupMenuItem(
-          key: ValueKey('call-menu-download'),
-          value: 'download',
-          child: ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.download_outlined),
-            title: Text('Download recording'),
+        if (callId != null)
+          const PopupMenuItem(
+            key: ValueKey('call-menu-report'),
+            value: 'report',
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.flag_outlined),
+              title: Text('Report this call'),
+            ),
           ),
-        ),
+        if (state.recordingAvailable)
+          const PopupMenuItem(
+            key: ValueKey('call-menu-download'),
+            value: 'download',
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.download_outlined),
+              title: Text('Download recording'),
+            ),
+          ),
       ],
     );
   }

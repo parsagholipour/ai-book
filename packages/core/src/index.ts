@@ -12,6 +12,7 @@ export * from "./categories.js";
 export * from "./costs.js";
 export * from "./searchGroundingCost.js";
 export * from "./creditPricing.js";
+export * from "./welcomeCredits.js";
 export * from "./billing.js";
 export * from "./schemas/book.js";
 export * from "./prompting/templates.js";

@@ -81,13 +81,43 @@ describe("Gemini speech adapter", () => {
     });
   });
 
-  it("fails loudly when the response carries no audio", async () => {
-    const adapter = new GeminiSpeechAdapter({
-      apiKey: "k",
-      model: "tts-model",
-      fetchImpl: respondWith({ candidates: [{ content: { parts: [{ text: "sorry" }] } }] })
-    });
-    await expect(adapter.synthesize({ text: "Hi.", voice: "Kore" })).rejects.toThrow(/did not return audio/i);
+  it("fails loudly when the response carries no audio, after asking once more", async () => {
+    const fetchImpl = respondWith({ candidates: [{ content: { parts: [{ text: "sorry" }] }, finishReason: "OTHER" }] });
+    const adapter = new GeminiSpeechAdapter({ apiKey: "k", model: "tts-model", fetchImpl });
+    await expect(adapter.synthesize({ text: "Hi.", voice: "Kore" })).rejects.toThrow(
+      /did not return audio \(finish reason OTHER\)/i
+    );
+    expect(vi.mocked(fetchImpl)).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a passage again when one answer held no audio", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      const body = calls === 1 ? { candidates: [{ content: { parts: [] } }] } : inlineAudioResponse(pcm.toString("base64"));
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch;
+    const adapter = new GeminiSpeechAdapter({ apiKey: "k", model: "tts-model", fetchImpl });
+
+    const result = await adapter.synthesize({ text: "Hi.", voice: "Kore", stylePrompt: "Read warmly." });
+
+    expect(result.durationMs).toBeCloseTo(1000, 0);
+    expect(result.stylePromptDropped).toBeUndefined();
+    expect(vi.mocked(fetchImpl)).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops the style prompt when the directed passage keeps coming back silent", async () => {
+    const fetchImpl = vi.fn(async (_url: unknown, init: unknown) => {
+      const sent = JSON.parse(String((init as { body?: unknown }).body)).contents[0].parts[0].text;
+      const body = sent.includes("Read warmly.") ? { candidates: [] } : inlineAudioResponse(pcm.toString("base64"));
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch;
+    const adapter = new GeminiSpeechAdapter({ apiKey: "k", model: "tts-model", fetchImpl });
+
+    const result = await adapter.synthesize({ text: "Hi.", voice: "Kore", stylePrompt: "Read warmly." });
+
+    expect(result.stylePromptDropped).toBe(true);
+    expect(vi.mocked(fetchImpl)).toHaveBeenCalledTimes(3);
   });
 
   it("surfaces an HTTP failure with its status", async () => {

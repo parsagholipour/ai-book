@@ -7,6 +7,7 @@ import 'billing_controller.dart';
 import 'billing_plan_tiles.dart';
 import 'billing_product_option.dart';
 import 'billing_shared_parts.dart';
+import 'billing_tier_style.dart';
 
 /// The exact next purchase, outside the scrolling offer. Multi-pack goals still
 /// charge for one pack here; the total goal belongs in the quote above it.
@@ -140,7 +141,7 @@ class BillingOfferCheckout extends StatelessWidget {
                 : !enabled
                 ? unavailableLabel
                 : subscription
-                ? 'Choose ${billingPlanName(item)}'
+                ? planCallToAction(item, state.billing?.planTier)
                 : 'Add ${formatCredits(item.creditAmount)} credits',
           ),
           const SizedBox(height: AppSpacing.xxs),
@@ -183,4 +184,18 @@ class BillingOfferCheckout extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What the checkout button says for a plan: "Choose Pro" from the free tier,
+/// "Upgrade to Pro" from a smaller plan, "Switch to Creator" from a larger one.
+/// It said "Choose" to every subscriber, which read as a second plan on top of
+/// the one they pay for.
+String planCallToAction(MobileBillingProduct product, String? currentTier) {
+  final name = billingPlanName(product);
+  final from = planTierOrder.indexOf(currentTier ?? 'free');
+  final to = planTierOrder.indexOf(billingTierForSku(product.sku));
+  if (from <= 0 || to < 0) {
+    return 'Choose $name';
+  }
+  return to > from ? 'Upgrade to $name' : 'Switch to $name';
 }

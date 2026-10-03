@@ -43,6 +43,7 @@ holds the event loop open and vitest will never exit.
 - [Repetition gates and the evidence ledger](#repetition-gates-and-the-evidence-ledger)
 - [Whole-set edit adherence](#whole-set-edit-adherence)
 - [Surgical page patches](#surgical-page-patches)
+- [Page seams](#page-seams)
 - [Best-of candidate sampling](#best-of-candidate-sampling)
 - [Covers](#covers)
 - [PDF typesetting and the render transport](#pdf-typesetting-and-the-render-transport)
@@ -921,6 +922,15 @@ holds the event loop open and vitest will never exit.
   advertised capacity is halved and re-asked exactly as `evidenceComplete: false` is. A reducer's
   overflow stays fatal — it has no smaller slice to be given, and its merge must be lossless.
 
+  **A keep-the-same clause is consistency, never a list of things to show.** The router wrote a
+  continuation's brief as "Keep the same characters (Salim, the messenger, Nasser, and the memory of
+  Mariam)…", and the reviewer refused a chapter that left Mariam out; the repair wrote her in and
+  page QA refused that page for repeating her (2026-10-02). `CONSISTENCY_CLAUSE_RULE` tells the
+  whole-set, evidence and final calls that such a clause is met by pages consistent with the book,
+  and the router is told not to list the characters, setting or tone to keep. Replayed on the three
+  logged whole-set calls of that run, with the continuation's chapter-labelled page titles: 2 of 9
+  samples satisfied before, 7 of 9 after, and neither false reason recurred.
+
   **`MOCK_AI` can reach the expensive half of this protocol.** A marker in the edit instruction —
   `[mock-adherence:unsatisfied|incomplete|truncated|failed]` — drives the fake adapter down the
   unsatisfied, backpressure, truncation and provider-error paths. Without it the fake always said
@@ -967,6 +977,24 @@ holds the event loop open and vitest will never exit.
   the page at one token per character, since the reply echoes every replaced span. `MOCK_AI`
   reaches the declines through `[mock-patch:unchanged|whole_page|miss|failed]` in the instruction,
   the way the adherence fake does.
+
+## Page seams
+
+- **A page is shown where the page before it ends, and a page drafted for an edit is repaired like
+  a generated one.** Every prior-page window (`compactPriorPages`) cut its excerpts from the *front*
+  of each page, so a page longer than the excerpt never showed the next page where it stopped. A
+  continuation's page 14 opened by re-narrating page 13's last beat (oil wiped from the brass, the
+  messenger carrying the answer), and its repair could not take it out: the reviser was told the
+  page was "a reader-requested edit of finished prose" and to keep every unnamed sentence byte for
+  byte, because a continuation passes its brief as `editInstruction` (2026-10-02). The nearest
+  prior page now carries `ending` (its last 500 characters, never overlapping the excerpt), and the
+  draft, revise and review prompts say what it is (`PRIOR_PAGE_ENDING_RULE`). Pages drafted for an
+  edit — a continuation's, an inserted one — pass `draftedForEdit`, which gives them the generation
+  rules instead of the finished-prose one, plus "a rejectedDraft that opens by re-narrating that
+  ending needs a new opening". A reader's edit of finished prose gets neither seam sentence, so it
+  still changes no opening nobody named. Replayed on the logged page-14 revision: the opening
+  repeated page 13's close in 3 of 3 samples as sent, 1 of 3 with the ending, 1 of 4 with the
+  reviser sentence too.
 
 ## Best-of candidate sampling
 
@@ -1090,8 +1118,15 @@ holds the event loop open and vitest will never exit.
   design word alone is a subject that only counts as a topic — else nothing, the plain sheet. Both
   compiles call it with the project row and the plan they compile, so they cannot disagree.
   `pdfStoryPages.test.ts` renders the longest scene each size accepts, prose and dialogue, in
-  every design and in none, and asserts one sheet each. An illustrated book keeps its layout on
-  every scene. **No margin box may name a face only the cards use**: the faces are
+  every design and in none, and asserts one sheet each. **A picture book is laid out the same way
+  around its pictures** (`PICTURE_STORY`): kept on the house layout, the 6-page illustrated bedtime
+  book of 2026-10-02 printed its two text-only sheets as two 11pt lines over a blank page and set
+  the words under each picture for an adult. Its text-only scenes now take the same sizes and
+  centring as a text-only book's (no design card — the designs stay a text-only book's), and a
+  picture scene caps its picture at `PICTURE_MAX_MM` and sizes its words to the space below
+  (`storySceneLength(..., { picture: true })`). A book whose scenes carry figures, tables or code
+  keeps the house layout throughout. The tier rules are one selector list per block; prefixing
+  each whole rule string twice once produced invalid CSS that silently dropped every size. **No margin box may name a face only the cards use**: the faces are
   `font-display: block` and loaded on use, so a Nunito footer on an illustrated children's book —
   where no card uses it — printed invisibly.
 - **The coverless title sheet is capped at exactly one page, and it clips from the tail.**

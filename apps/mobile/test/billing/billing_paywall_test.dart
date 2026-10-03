@@ -75,7 +75,7 @@ void main() {
     expect(
       find.descendant(
         of: successDialog,
-        matching: find.text('1000 credits added.'),
+        matching: find.text('1,000 credits added.'),
       ),
       findsOneWidget,
     );
@@ -87,7 +87,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('1000 credits added.'), findsNothing);
+    expect(find.text('1,000 credits added.'), findsNothing);
     await tester.scrollUntilVisible(
       find.textContaining('1,100 credits available'),
       -200,

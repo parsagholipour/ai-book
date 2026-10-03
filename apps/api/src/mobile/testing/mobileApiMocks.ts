@@ -450,6 +450,8 @@ export const mockPrisma = ({
     aggregate: vi.fn()
   },
   shareSlug: { create: vi.fn(), findUnique: vi.fn(noRow) },
+  // Push notifications (`src/push/`). `pushDevice.test.ts` asserts the writes.
+  pushDevice: { upsert: vi.fn(), deleteMany: vi.fn(rowsAffected(0)), findMany: vi.fn(noRows) },
   moderationReport: { create: vi.fn(), updateMany: vi.fn(rowsAffected(0)), findMany: vi.fn(noRows) },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: {
@@ -647,6 +649,7 @@ export const mockBilling = (() => {
     GenerationQuotaExceededError: MockGenerationQuotaExceededError,
     ensureDefaultProductCatalog: vi.fn(),
     getCreditBalance: vi.fn(),
+    getWelcomeCreditsGranted: vi.fn(async () => 1000),
     listActiveUserEntitlements: vi.fn(),
     reserveCredits: vi.fn(),
     commitReservedCredits: vi.fn(),
@@ -682,6 +685,9 @@ export const mockBilling = (() => {
     resetMessageAllowance: vi.fn(async () => {}),
     getMessageAllowance: vi.fn(async () => ({ tier: "free", used: 0, limit: 50, remaining: 50, creditsPerMessage: 0, resetEnabled: true, resetCredits: 50, resetsAt: "2026-09-11T00:00:00.000Z", resetToken: "2026-09-10:0:50" })),
     getImageQuota: vi.fn(async () => null),
+    // Null is "no free-tier length cap". Suites exercising the 30-page wall
+    // override it with a number.
+    getBookPageLimit: vi.fn(async (_userId?: string) => null as number | null),
     consumeIllustratedBookUse: vi.fn(async (_options?: unknown) => ({
       allowed: true,
       used: 1,

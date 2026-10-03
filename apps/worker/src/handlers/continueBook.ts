@@ -3,8 +3,11 @@ import {
   continuationContinuityNotes,
   continuationOutlineAiSchema,
   continuationPageIndexes,
+  continuationNextPages,
   continuationPreviousPages,
   continuationProseApproved,
+  acceptedContinuationSet,
+  continuationReviewTitle,
   continuationRepairReport,
   distributeContinuationPages,
   fallbackContinuationOutline,
@@ -72,7 +75,7 @@ import {
   type EditAdherenceVerdict,
   type TextModelAdapter
 } from "@book-maker/core";
-import { EDIT_ADHERENCE_FAILED, ReaderEditFailure } from "@book-maker/core/editFailure";
+import { NEW_PAGES_ADHERENCE_FAILED, ReaderEditFailure } from "@book-maker/core/editFailure";
 import { MANUSCRIPT_PUBLICATION_TRANSACTION_OPTIONS, pageScope, Prisma, prisma } from "@book-maker/db";
 import type { ContinueBookJob } from "../runtime/jobPayloads.js";
 import { randomUUID } from "node:crypto";
@@ -390,7 +393,7 @@ export async function continueBook(job: ContinueBookJob): Promise<JobCompletion>
           data: { editInstruction, adherenceAudit: audit as unknown as Prisma.InputJsonValue }
         });
       });
-      throw new ReaderEditFailure(EDIT_ADHERENCE_FAILED);
+      throw new ReaderEditFailure(NEW_PAGES_ADHERENCE_FAILED);
     }
     const preparedMemory = await prepareDeferredPageMemory({
       projectId,
@@ -757,6 +760,13 @@ async function reviewContinuationCandidates(options: {
   await options.assertLease();
   let attempts = 1;
   let proseApproved = continuationProseApproved(options.candidates);
+  // The last set the reviewer accepted. A round that only repairs page QA can
+  // still lose adherence — a repair told "this repeats a beat" drops the thing
+  // the reviewer had asked for — and the final verdict then refused, and
+  // refunded, a continuation it had already accepted (2026-10-02: satisfied at
+  // 0.93 in round one, refused in round three). Page QA is not this gate, so
+  // its repairs may improve the accepted set but never cost it.
+  let accepted = acceptedContinuationSet(verdict, options.candidates);
   while ((!verdict.satisfied || !proseApproved) && attempts < 3) {
     attempts += 1;
     // An unverified review never reached a content decision. Re-ask it after
@@ -775,6 +785,7 @@ async function reviewContinuationCandidates(options: {
       if (!flagged.has(candidate.pageIndex)) continue;
       await options.assertLease();
       const previousPages = continuationPreviousPages(candidate, options.candidates);
+      const nextPages = continuationNextPages(candidate, options.candidates);
       const pageContinuityNotes = continuationContinuityNotes(candidate, options.candidates);
       const revised = await revisePageDraftWithRestart({
         strategy: options.strategy,
@@ -788,9 +799,11 @@ async function reviewContinuationCandidates(options: {
           draft: candidate.draft,
           report: continuationRepairReport(candidate.qualityReport, adherenceRepair),
           editInstruction: options.editInstruction,
+          draftedForEdit: true,
           ...(options.characterContext ? { characterContext: options.characterContext } : {}),
           adherenceRepair,
           previousPages,
+          ...(nextPages.length ? { nextPages } : {}),
           continuityNotes: pageContinuityNotes,
           researchNotes: candidate.researchNotes,
           textModel: options.providers.text
@@ -807,6 +820,7 @@ async function reviewContinuationCandidates(options: {
         chapterId: candidate.chapterId,
         chapter: candidate.chapter,
         previousPages,
+        ...(nextPages.length ? { nextPages } : {}),
         generationJobId: options.generationJobId,
         illustrate: false,
         deferPublication: true,
@@ -830,6 +844,13 @@ async function reviewContinuationCandidates(options: {
     verdict = await continuationAdherenceVerdict(options);
     await options.assertLease();
     proseApproved = continuationProseApproved(options.candidates);
+    accepted = acceptedContinuationSet(verdict, options.candidates) ?? accepted;
+  }
+  if (!verdict.satisfied && accepted) {
+    options.candidates.clear();
+    for (const [pageIndex, candidate] of accepted.candidates) options.candidates.set(pageIndex, candidate);
+    verdict = accepted.verdict;
+    proseApproved = continuationProseApproved(options.candidates);
   }
   return {
     verdict,
@@ -850,9 +871,9 @@ function continuationAdherenceVerdict(options: {
     beforePages: [],
     afterPages: [...options.candidates.values()]
       .sort((left, right) => left.pageIndex - right.pageIndex)
-      .map((candidate) => ({
+      .map((candidate, _, ordered) => ({
         index: candidate.pageIndex,
-        title: candidate.draft.title,
+        title: continuationReviewTitle(candidate, ordered),
         markdown: candidate.draft.markdown,
         summary: candidate.draft.summary
       })),

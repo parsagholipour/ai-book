@@ -17,6 +17,7 @@ POSTGRES_PASSWORD=smoke-test-password
 WEB_PASSWORD=smoke-test-operator
 PUBLIC_API_URL=http://localhost
 MOCK_AI=true
+ALLOW_MOCK_AI_IN_PRODUCTION=true
 S3_BUCKET=book-maker-smoke
 S3_REGION=us-east-1
 S3_ENDPOINT=http://minio:9000

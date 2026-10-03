@@ -8,6 +8,7 @@ import '../../billing/presentation/message_allowance_banner.dart';
 import '../../projects/data/projects_repository.dart';
 import '../domain/assist_models.dart';
 import '../domain/studio_pricing.dart';
+import '../../billing/domain/billing_models.dart';
 
 /// The book's quality tier, which decides what its AI tools cost. Read off
 /// the project, the way the rest of the app quotes a book.
@@ -55,7 +56,7 @@ void retryStudioPrice(WidgetRef ref, String projectId) {
 
 /// "45 credits", "1 credit".
 String studioCredits(int credits) =>
-    credits == 1 ? '1 credit' : '$credits credits';
+    credits == 1 ? '1 credit' : '${formatCredits(credits)} credits';
 
 /// The app's existing answers to a refusal about money or allowance: the
 /// message-allowance sheet, the paywall. A seam so tests can stand in for the

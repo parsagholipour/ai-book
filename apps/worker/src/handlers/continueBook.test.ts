@@ -5,7 +5,7 @@ import {
   CONTINUATION_PUBLICATION_PROTOCOL_FIELD,
   PRE_EDIT_PROJECT_STATUS
 } from "@book-maker/core";
-import { EDIT_ADHERENCE_FAILED } from "@book-maker/core/editFailure";
+import { NEW_PAGES_ADHERENCE_FAILED } from "@book-maker/core/editFailure";
 
 vi.mock("@book-maker/db", async () => (await import("./testing/continueBookMocks.js")).dbModuleMock());
 vi.mock("../runtime/dispatch.js", async () => (await import("./testing/continueBookMocks.js")).dispatchModuleMock());
@@ -601,9 +601,16 @@ describe("continueBook instruction adherence", () => {
         context: "Continuation page 11",
         reviseOptions: expect.objectContaining({
           editInstruction: REQUEST,
-          adherenceRepair: ["Mara must refuse to use the key."]
+          adherenceRepair: ["Mara must refuse to use the key."],
+          // Drafted for this edit, so repaired like a generated page.
+          draftedForEdit: true,
+          // Page 12 already exists: the repaired page has to land into it.
+          nextPages: [expect.objectContaining({ index: 12 })]
         })
       })
+    );
+    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nextPages: [expect.objectContaining({ index: 12 })] })
     );
     expect(mocks.reviewAppliedBookEdit).toHaveBeenCalledTimes(2);
   });
@@ -657,6 +664,60 @@ describe("continueBook instruction adherence", () => {
     expect(appliedOperationUpdate()).toMatchObject({ adherenceAudit: { proseApproved: false } });
   });
 
+  it("publishes the set the reviewer accepted when a page-QA repair round loses adherence", async () => {
+    // Live, 2026-10-02: satisfied in round one, page QA failed one page, the
+    // repairs dropped what the reviewer wanted, and round three refused — the
+    // whole accepted continuation was rolled back and refunded.
+    mocks.reviewAndSaveGeneratedPage.mockImplementation(
+      async ({ draft }: { draft: { index: number; title: string; markdown: string; summary: string } }) => ({
+        page: { index: draft.index, title: `Page ${draft.index}`, markdown: "Saved.", summary: `Saved ${draft.index}.` },
+        candidate: {
+          draft: { ...draft, continuityNotes: [] },
+          qualityReport:
+            draft.index === 12 && draft.markdown === "Draft text."
+              ? { approved: false, score: 62, issues: ["Contradicts the chapter plan."], requiredRevisions: [], notes: "" }
+              : { approved: true, score: 90, issues: [], requiredRevisions: [], notes: "" }
+        }
+      })
+    );
+    mocks.reviewAppliedBookEdit
+      .mockResolvedValueOnce(adherenceVerdict())
+      .mockResolvedValue(
+        adherenceVerdict({
+          satisfied: false,
+          confidence: 0.89,
+          missingRequirements: ["The pages present three separately titled units."],
+          pageIndexesToRevise: [11, 12]
+        })
+      );
+
+    await continueBook(job());
+
+    expect(mocks.revisePageDraftWithRestart).toHaveBeenCalled();
+    const createdPages = mocks.tx.page.createMany.mock.calls[0]?.[0] as {
+      data: Array<{ index: number; status: string; markdown: string }>;
+    };
+    expect(createdPages.data.map((page) => [page.index, page.status, page.markdown])).toEqual([
+      [11, "COMPLETED", "Draft text."],
+      [12, "FAILED_QA", "Draft text."]
+    ]);
+    expect(appliedOperationUpdate()).toMatchObject({
+      adherenceAudit: { verdict: { satisfied: true }, proseApproved: false }
+    });
+  });
+
+  it("tells the adherence reviewer which chapter each page belongs to", async () => {
+    await continueBook(job());
+
+    const titles = (mocks.reviewAppliedBookEdit.mock.calls[0]![0] as { afterPages: Array<{ title: string }> }).afterPages.map(
+      (page) => page.title
+    );
+    expect(titles).toHaveLength(2);
+    for (const [position, title] of titles.entries()) {
+      expect(title).toMatch(new RegExp(`^Chapter \\d+ “[^”]+”, page ${position + 1} of 2: Draft$`));
+    }
+  });
+
   it("rolls the append back and never reaches APPLIED after three rejected candidates", async () => {
     mocks.reviewAppliedBookEdit.mockResolvedValue(adherenceVerdict({
       satisfied: false,
@@ -665,7 +726,7 @@ describe("continueBook instruction adherence", () => {
       pageIndexesToRevise: [11]
     }));
 
-    await expect(continueBook(job())).rejects.toThrow(EDIT_ADHERENCE_FAILED);
+    await expect(continueBook(job())).rejects.toThrow(NEW_PAGES_ADHERENCE_FAILED);
 
     expect(mocks.reviewAppliedBookEdit).toHaveBeenCalledTimes(3);
     expect(mocks.tx.page.deleteMany).not.toHaveBeenCalled();

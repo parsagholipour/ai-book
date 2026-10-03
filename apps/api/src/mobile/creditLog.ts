@@ -1,3 +1,4 @@
+import { chargeActionTitle, retriedOperationId } from "./creditLogActions.js";
 import { type MobileCreditLogDto, type MobileCreditLogEntryDto, type MobileCreditLogKind } from "./dto.js";
 import { prisma } from "@book-maker/db";
 
@@ -32,6 +33,10 @@ type CreditLogRow = {
   createdAt: Date;
   projectId: string | null;
   project: { title: string } | null;
+  /** What the charge recorded about itself; read for its label only (`creditLogActions.ts`). */
+  metadata?: unknown;
+  /** The charge a refund reverses, whose record names what was refunded. */
+  reversesEntry?: { metadata: unknown } | null;
 };
 
 /**
@@ -82,18 +87,43 @@ export async function serializeMobileCreditLog(
       amountCredits: true,
       createdAt: true,
       projectId: true,
-      project: { select: { title: true } }
+      project: { select: { title: true } },
+      metadata: true,
+      reversesEntry: { select: { metadata: true } }
     }
   });
 
   const page = rows.slice(0, limit);
+  const operationKinds = await retriedOperationKinds(page);
   return {
-    entries: page.map(serializeCreditLogEntry),
+    entries: page.map((row) => serializeCreditLogEntry(row, operationKinds)),
     nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null
   };
 }
 
-export function serializeCreditLogEntry(row: CreditLogRow): MobileCreditLogEntryDto {
+/** The kinds of the edit operations a page's retry-lane charges re-ran, in one read. */
+async function retriedOperationKinds(rows: CreditLogRow[]): Promise<Map<string, string>> {
+  const ids = [
+    ...new Set(
+      rows
+        .map((row) => retriedOperationId(row.reversesEntry?.metadata ?? row.metadata))
+        .filter((id): id is string => id !== null)
+    )
+  ];
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const operations = await prisma.bookEditOperation.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, kind: true }
+  });
+  return new Map(operations.map((operation) => [operation.id, operation.kind]));
+}
+
+export function serializeCreditLogEntry(
+  row: CreditLogRow,
+  operationKinds: ReadonlyMap<string, string> = new Map()
+): MobileCreditLogEntryDto {
   const kind = creditLogKind(row);
   return {
     id: row.id,
@@ -101,7 +131,7 @@ export function serializeCreditLogEntry(row: CreditLogRow): MobileCreditLogEntry
     direction: row.amountCredits < 0 ? "out" : "in",
     credits: Math.abs(row.amountCredits),
     kind,
-    title: creditLogTitle(row, kind),
+    title: creditLogTitle(row, kind, operationKinds),
     pending: row.status === "RESERVED",
     refunded: row.status === "REFUNDED",
     projectId: row.projectId,
@@ -133,8 +163,15 @@ function creditLogKind(row: CreditLogRow): MobileCreditLogKind {
   }
 }
 
-function creditLogTitle(row: CreditLogRow, kind: MobileCreditLogKind): string {
-  const operation = OPERATION_TITLES[row.operation] ?? sentenceCase(row.operation);
+function creditLogTitle(
+  row: CreditLogRow,
+  kind: MobileCreditLogKind,
+  operationKinds: ReadonlyMap<string, string>
+): string {
+  const operation =
+    chargeActionTitle(kind === "refund" ? row.reversesEntry?.metadata : row.metadata, operationKinds) ??
+    OPERATION_TITLES[row.operation] ??
+    sentenceCase(row.operation);
   switch (kind) {
     case "refund":
       return `${operation} refunded`;

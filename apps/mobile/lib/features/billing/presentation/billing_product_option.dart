@@ -78,15 +78,19 @@ class BillingProductOption extends StatelessWidget {
     final large = billingLargeText(context);
     final period = subscription ? '/ month' : 'one time';
 
+    // The name the row shows, and the one a screen reader says. A pack's
+    // catalog title ("One extra credit") dates from when one credit was one
+    // export, so read aloud it named a 1,000-credit pack a single credit.
+    final name = subscription
+        ? billingPlanName(product)
+        : '${formatCredits(product.creditAmount)} credits';
     final titleRow = Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: AppSpacing.xs,
       runSpacing: AppSpacing.xxs,
       children: [
         Text(
-          subscription
-              ? billingPlanName(product)
-              : '${formatCredits(product.creditAmount)} credits',
+          name,
           style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         if (badge != null)
@@ -155,8 +159,8 @@ class BillingProductOption extends StatelessWidget {
       inMutuallyExclusiveGroup: true,
       onTap: enabled ? onSelect : null,
       label:
-          '${product.title}, $price ${subscription ? 'per month' : 'one time'}, '
-          '${formatCredits(product.creditAmount)} credits'
+          '$name, $price ${subscription ? 'per month' : 'one time'}'
+          '${subscription ? ', ${formatCredits(product.creditAmount)} credits' : ''}'
           '${tagline == null ? '' : ', $tagline'}'
           '${savings == null ? '' : ', $savings'}'
           '${format == null ? '' : ', $format export included'}'

@@ -76,6 +76,44 @@ Mobile user auth is separate and database-backed under `/api/mobile/auth/*`:
 
 The mobile flow uses email/password accounts, short-lived bearer access tokens, and refresh tokens. Only token hashes are stored in `MobileSession`; logout revokes session state. No additional auth env vars are required for local development.
 
+## Welcome credits
+
+Open **Admin → Pricing → Welcome credits** to turn the one-time gift on/off and change its amount.
+Enable **Use country income groups** for separate **High-income countries** and
+**Low- and middle-income countries** amounts. India, Pakistan, Bangladesh, Indonesia, China,
+Brazil, and South Africa use the latter; the US, Canada, UK, Australia, Japan, South Korea,
+Singapore, and UAE use the former. Groups use the
+[World Bank FY2027 classification](https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups)
+(July 2026–June 2027), pinned in `packages/core/src/welcomeCredits.ts`; review the lists when the
+Bank publishes its next annual classification. EU/EEA members and EU outermost territories always
+share the high-income offer. The global amount also serves as the fallback for unknown or
+unclassified locations; zero disables a gift for that group. Regional amounts default to off,
+preserving the existing global setting. Earlier geographic settings are read into the new income
+fields without resetting saved amounts. Monthly free credits remain a separate setting.
+
+Signup stores an approximate country from an offline IP lookup, never from client-supplied country,
+language, or timezone fields. The grant settles once on the first balance read. Later logins or
+pricing changes do not re-grant it, and the app reports the actual awarded amount. Existing accounts
+without a welcome claim remain ineligible. **Accounts per IP — High-income countries** and
+**Accounts per IP — Low- and middle-income countries** set how many accounts from one IP can
+receive the gift within 30 days (defaults 2 and 1). Unknown locations use the latter cap; 0 disables
+the gift for that group. The caps apply even when regional amounts are off and are saved with the
+same pricing history. An untrusted/missing client IP receives no welcome grant. VPNs and inaccurate location data
+can affect country detection; offer corrections can be handled through support.
+
+Deploy migration `000085_regional_welcome_credits`, regenerate Prisma, and rebuild dependencies before
+running the updated API. No location-service key is needed. The bundled `geoip-lite` 1.x supports the
+production Node 22 runtime; maintain its data using the package's documented updater (which requires
+a MaxMind license key), or supply updated files through `GEODATADIR`. Lookup failure uses the fallback
+amount and logs `signup.country_lookup_failed`. This product includes GeoLite2 data created by
+[MaxMind](https://www.maxmind.com/), distributed under
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+[Google Play permits awarded credits](https://support.google.com/googleplay/android-developer/answer/10281818).
+Regional offers still need to comply with applicable consumer law; keeping the EU/EEA together reduces
+intra-market differences but is not a legal clearance. See the
+[European Commission's geo-blocking guidance](https://commission.europa.eu/topics/consumers/consumer-rights-and-complaints/enforcement-consumer-protection/coordinated-actions/market-places-and-digital-services_en).
+
 ## Ports
 
 Docker maps Postgres to host port `55432` to avoid colliding with existing local Postgres installs. Inside Docker, services still use `postgres:5432`.

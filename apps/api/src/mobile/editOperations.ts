@@ -18,6 +18,7 @@ import { billingOperationForIntent, bookEditCreditCost, operationKindForIntent }
 import { planExactReplacement } from "./exactReplacementPreview.js";
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { settledStatusBeforeEdit } from "./editProjectStatus.js";
+import { continuedBookPages, pageLimitChatMessage, pageLimitRefusal } from "./bookPageLimit.js";
 import { createAssistantChatMessage, insufficientCreditsChatMessage, type ProjectForChat } from "./projectChat.js";
 import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { fingerprintGenerationRequest, jsonInputValue } from "./support.js";
@@ -564,6 +565,24 @@ export async function queueChatContinueBook(options: QueuedChatEdit): Promise<{
   const chapterCount = Math.min(8, Math.max(1, intent.continuation?.chapterCount ?? 1));
   const newPageCount = continuationNewPageCount(intent, project);
   const cost = bookEditCreditCost(intent.kind, newPageCount, project);
+  const pageLimit = await pageLimitRefusal(userId, continuedBookPages(project, newPageCount));
+  if (pageLimit) {
+    const reply = await pageLimitChatMessage(
+      project.id,
+      userMessageId,
+      intent,
+      pageLimit,
+      creditsBlockedResume({
+        request: message,
+        scope: intent.scope,
+        intent,
+        affectedPageIndexes: [],
+        credits: cost,
+        ...(options.characterContext ? { characterContext: options.characterContext } : {})
+      }, numberingForProject(project))
+    );
+    return { reply, operation: null };
+  }
   if (options.quotedCredits !== undefined && cost > options.quotedCredits) {
     // Same contract as queueChatBookEdit: the shown quote is a ceiling, so a
     // book that grew since the card re-proposes at the current price.

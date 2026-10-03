@@ -417,7 +417,8 @@ void main() {
       expect(tester.widget<BillingProductOption>(current).isCurrent, isTrue);
       await tester.tap(current);
       await tester.pumpAndSettle();
-      expect(find.text('Choose Pro'), findsOneWidget);
+      // A Creator subscriber moving up is upgrading, not choosing a second plan.
+      expect(find.text('Upgrade to Pro'), findsOneWidget);
     },
   );
 }

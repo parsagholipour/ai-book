@@ -10,6 +10,8 @@ import '../../features/account/presentation/account_privacy_screen.dart';
 import '../../features/account/presentation/account_screen.dart';
 import '../../features/account/presentation/archived_chats_screen.dart';
 import '../../features/billing/presentation/credit_log_screen.dart';
+import '../../features/app_update/domain/app_update.dart';
+import '../../features/app_update/presentation/app_update_required_screen.dart';
 import '../../features/auth/domain/legal_gate.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
@@ -161,6 +163,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   ref.listen(legalGateDismissedProvider, (_, _) {
     authRefresh.value += 1;
   });
+  // A retired build is sent to the update screen the moment the check or any
+  // refused request says so, and released from it the same way.
+  ref.listen(appUpdateStatusProvider.select((status) => status.isRequired), (
+    _,
+    _,
+  ) {
+    authRefresh.value += 1;
+  });
   ref.onDispose(authRefresh.dispose);
 
   final router = GoRouter(
@@ -172,6 +182,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // redirect, where the rules below apply to it like any other location.
       final remixDeepLink = remixLocationForDeepLink(state.uri);
       if (remixDeepLink != null) return remixDeepLink;
+
+      // Ahead of everything else, signed in or not: the server refuses every
+      // mobile request from a build it requires to update.
+      final isUpdateRequired = state.uri.path == '/update-required';
+      if (ref.read(appUpdateStatusProvider).isRequired) {
+        return isUpdateRequired ? null : '/update-required';
+      }
+      if (isUpdateRequired) return '/home';
 
       final authState = ref.read(authControllerProvider);
       final path = state.uri.path;
@@ -257,6 +275,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             initialEmail: state.extra is String ? state.extra as String : null,
           ),
         ),
+      ),
+      GoRoute(
+        path: '/update-required',
+        pageBuilder: (context, state) =>
+            _rootPage(state, const AppUpdateRequiredScreen()),
       ),
       GoRoute(
         path: '/legal/acceptance',

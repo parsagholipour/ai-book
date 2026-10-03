@@ -3,6 +3,7 @@ import {
   storyPageDesignPreference,
   compilePublicationPolicyFromPayload,
   includeSourcesPreference,
+  isImportedManuscript,
   MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
   type CompilePublicationPolicy,
   type SettledProjectStatus
@@ -37,6 +38,9 @@ function compileRecoveryPolicyFromEdit(kind: BookEditOperationKind): CompilePubl
     case "CHAPTER_REGENERATE":
     case "MANUAL_EDIT":
     case "MANUSCRIPT_PUBLISH":
+    // A title change commits its compile beside it, so this is reached only if
+    // that row went missing; the manuscript did not move.
+    case "BOOK_TITLE":
       return compilePublicationPolicyFromPayload({ skipFinalReview: true });
     case "PLAN_REVISION":
     case "BOOK_REPLAN":
@@ -111,6 +115,22 @@ export function strandedCompileRecoveryPolicy(project: {
   const edit = project.editOperations[0];
   if (edit) {
     return edit.status === "APPLIED" ? compileRecoveryPolicyFromEdit(edit.kind) : null;
+  }
+
+  // An import stamps its book COMPLETE in the commit that writes its pages, so
+  // its own first compile — asked for by the import's tail, and again by the
+  // cover it waits for — arrives at a settled book with no compile on record
+  // and no edit to explain one. Refused here, no import ever compiled on its
+  // own: its PDF existed only once the reader's app happened to poll the status
+  // and the export repair stepped in, and an import nobody opened stayed
+  // without one (2026-10-02). The outcome compile publishes over COMPLETE and
+  // never runs the final review on an author's book (`compileExport.ts`).
+  if (
+    (project.status === "COMPLETE" || project.status === "REVIEW_REQUIRED") &&
+    isImportedManuscript(project.mediaSettings) &&
+    !project.jobs.some((job) => job.contentRevision === project.contentRevision)
+  ) {
+    return compilePublicationPolicyFromPayload({});
   }
 
   // Presentation preferences used to commit the EDITING transition and the

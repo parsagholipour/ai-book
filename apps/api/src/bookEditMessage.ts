@@ -17,9 +17,15 @@ import {
 import type {
   BookEditPageContext,
   BookEditReplacement,
-  BookEditScope,
   ShowContentTarget
 } from "./bookEditIntent.js";
+export {
+  bookEditScopeFromMessage,
+  hasAllPagesScope,
+  isBookEditScopeOnlyMessage,
+  messageWithFollowUp,
+  messageWithScope
+} from "./bookEditScopeText.js";
 
 /**
  * How a page number in the user's message is to be read.
@@ -33,6 +39,16 @@ import type {
  */
 export type ReaderPageNumberContext = {
   pdfPageMap?: BookPdfPageMap | undefined;
+  /**
+   * Read a spoken page as the model pages that *begin* on that sheet (or, on a
+   * sheet in the middle of one long page, that page) rather than every page
+   * touching it. Every model page begins on exactly one sheet, so this splits
+   * the book into printed pages with nothing counted twice. A text edit wants
+   * every page the reader sees there; a delete or a move does not — model pages
+   * rarely line up with sheets, so "delete pages 2, 4 and 6" took out six pages
+   * of a book whose pages each straddle two sheets (2026-10-02).
+   */
+  pagesBeginningOnSheet?: boolean | undefined;
 };
 
 /** Spoken printed page → physical PDF sheet, or the spoken number with no map. */
@@ -444,7 +460,14 @@ export const ORDINAL_PAGE_SOURCE = `(?:the\\s+)?(?:\\d{1,3}(?:st|nd|rd|th)|${ORD
  * single-valued, because past a couple of pages people write digits.
  */
 export const PAGE_LIST_SEPARATOR_SOURCE = String.raw`\s*(?:[,،؛;&+]|、|and|und|y|et|و|と|和)\s*`;
-export const DIGIT_PAGE_ELEMENT_SOURCE = String.raw`\d{1,3}(?:\s*[-–]\s*\d{1,3})?`;
+/**
+ * A range is written with a dash or a word — "pages 3 to 5", "pages 3 through
+ * 5" — the joiners core's structural grammar already reads. Read with the dash
+ * alone, "delete pages 3 to 5" named page 3, while the classifier priced it as
+ * the bare three-page delete it is.
+ */
+const PAGE_RANGE_JOINER_SOURCE = String.raw`\s*(?:[-–]|to|through|thru)\s*`;
+export const DIGIT_PAGE_ELEMENT_SOURCE = String.raw`\d{1,3}(?:${PAGE_RANGE_JOINER_SOURCE}\d{1,3})?`;
 const DIGIT_PAGE_LIST_SOURCE = `${DIGIT_PAGE_ELEMENT_SOURCE}(?:${PAGE_LIST_SEPARATOR_SOURCE}${DIGIT_PAGE_ELEMENT_SOURCE})*`;
 
 /**
@@ -474,7 +497,7 @@ const SCRIPT_NAMED_PAGE = new RegExp(
 /** Every page a matched list names, ranges expanded, in the order written. */
 function pageListValues(body: string): number[] {
   const values: number[] = [];
-  for (const element of body.matchAll(/(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/g)) {
+  for (const element of body.matchAll(new RegExp(String.raw`(\d{1,3})(?:${PAGE_RANGE_JOINER_SOURCE}(\d{1,3}))?`, "g"))) {
     values.push(...rangeValues(element[1] ?? "", element[2]));
   }
   return values;
@@ -689,7 +712,8 @@ export function pageAnchorFromMessage(
     // Every model page that sheet holds, never one of them: reading the anchor
     // as a single page is what let the two structural paths disagree, and
     // `anchorModelPageIndex` is the rule they now share.
-    const pageIndexes = anchorModelPagesForPdfPage(map, pdfPage);
+    const sheetPages = anchorModelPagesForPdfPage(map, pdfPage);
+    const pageIndexes = position === "before" ? beforeAnchorPages(map, sheetPages) : sheetPages;
     if (pageIndexes.length === 0) {
       continue;
     }
@@ -710,6 +734,31 @@ export function pageAnchorFromMessage(
  * `nearestModelPageForPdfPage` answers "outside" with nothing, and the caller
  * declines.
  */
+/**
+ * The pages a "before page N" anchor goes ahead of: the ones that begin on that
+ * sheet, never a page that began a sheet earlier and runs onto it.
+ *
+ * Read off every page touching the sheet, "put a new page before page 10" went
+ * ahead of a page that began on page 9 — a sheet early — and the card then had
+ * to say "before page 9". "After" needs no such rule: the last page touching a
+ * sheet always begins on it unless none does. A set that is not one sheet's,
+ * or a page that runs across the sheet with none beginning there, is kept whole.
+ */
+export function beforeAnchorPages(map: BookPdfPageMap | undefined, pageIndexes: number[]): number[] {
+  if (!map || pageIndexes.length < 2) {
+    return pageIndexes;
+  }
+  const ranges = pageIndexes.map((index) => map.pages.find((page) => page.index === index));
+  if (ranges.some((range) => range === undefined)) {
+    return pageIndexes;
+  }
+  const sheet = Math.max(...ranges.map((range) => range!.startPdfPage));
+  if (!ranges.every((range) => range!.endPdfPage >= sheet)) {
+    return pageIndexes;
+  }
+  return pageIndexes.filter((_, offset) => ranges[offset]!.startPdfPage === sheet);
+}
+
 function anchorModelPagesForPdfPage(map: BookPdfPageMap | undefined, pdfPage: number): number[] {
   if (!map) {
     return [pdfPage];
@@ -765,7 +814,10 @@ export function pageIndexesFromMessage(
     if (pdfPage === undefined) {
       return;
     }
-    for (const index of map ? modelPageIndexesForPdfPage(map, pdfPage) : [pdfPage]) {
+    const covering = map ? modelPageIndexesForPdfPage(map, pdfPage) : [pdfPage];
+    const beginning = map ? map.pages.filter((page) => page.startPdfPage === pdfPage).map((page) => page.index) : [];
+    const onSheet = map && context.pagesBeginningOnSheet && beginning.length > 0 ? beginning : covering;
+    for (const index of onSheet) {
       indexes.add(index);
     }
   };
@@ -819,61 +871,6 @@ function cleanReplacement(replacement: BookEditReplacement): BookEditReplacement
     return null;
   }
   return { from, to };
-}
-
-export function bookEditScopeFromMessage(message: string): BookEditScope {
-  return hasAllPagesScope(message) ? "all_pages" : "none";
-}
-
-export function isBookEditScopeOnlyMessage(message: string): boolean {
-  const normalized = normalizeScopeOnlyText(message);
-  if (!hasAllPagesScope(normalized)) {
-    return false;
-  }
-  const withoutScope = normalized
-    .replace(/\b(?:the\s+)?(?:whole|entire|full)\s+(?:book|story|manuscript)\b/g, "")
-    .replace(/\b(?:all|every)\s+(?:pages?|chapters?|book|story)\b/g, "")
-    .replace(/\b(?:everywhere|throughout|globally)\b/g, "")
-    .trim();
-  return withoutScope.length === 0;
-}
-
-export function messageWithScope(message: string, scope: BookEditScope): string {
-  if (scope === "all_pages") {
-    return `${message.trim().replace(/[.?!]+$/g, "")} throughout the whole book.`;
-  }
-  return message.trim();
-}
-
-/**
- * Re-attaches the request a clarification was asked about to the reply that did
- * not answer it, so the router, the heuristic hint, the resolved page targets
- * and the queued operation all see the real request rather than a fragment like
- * "just add" whose meaning lives entirely in the previous turn.
- */
-export function messageWithFollowUp(request: string, followUp: string): string {
-  const original = request.trim();
-  const reply = followUp.trim();
-  if (!original || original.toLowerCase() === reply.toLowerCase()) {
-    return reply;
-  }
-  return `${original}\n\nFollow-up from the user: ${reply}`;
-}
-
-export function hasAllPagesScope(message: string): boolean {
-  return /\b(?:whole|entire|full)\s+(?:book|story|manuscript)\b/i.test(message) ||
-    /\b(?:all|every)\s+(?:pages?|chapters?)\b/i.test(message) ||
-    /\b(?:everywhere|throughout|globally)\b/i.test(message) ||
-    /\bacross\s+(?:the\s+)?(?:book|story|all pages)\b/i.test(message);
-}
-
-function normalizeScopeOnlyText(message: string): string {
-  return message
-    .toLowerCase()
-    .replace(/[.!?]+$/g, "")
-    .replace(/^(?:i\s+(?:said|mean|meant|told\s+you)\s+|just\s+|please\s+|do\s+|make\s+it\s+|the\s+)/i, "")
-    .replace(/\s+please$/i, "")
-    .trim();
 }
 
 function cleanReplacementTerm(value: string): string {
