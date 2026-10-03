@@ -68,6 +68,7 @@ dependencies:
   firebase_core: ^4.15.0
   firebase_messaging: ^16.7.0
   flutter_local_notifications: ^22.3.1
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
@@ -93,6 +94,7 @@ flutter:
 
   assets:
     - assets/brand/tomeza-promptbook-symbol.png
+    - assets/brand/google-g.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

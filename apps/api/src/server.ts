@@ -20,6 +20,7 @@ import { createGooglePlayVerifierFromConfig } from "./googlePlayBilling.js";
 import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
 import { createMailerFromConfig } from "./mailer.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
+import { mobileGoogleAuthRoutes } from "./mobileGoogleAuth.js";
 import { mobileImportRoutes } from "./mobileImports.js";
 import { mobilePasswordResetRoutes } from "./mobilePasswordReset.js";
 import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
@@ -52,6 +53,7 @@ const app = Fastify({
       "body.newPassword",
       "body.code",
       "body.refreshToken",
+      "body.idToken",
       "body.purchaseToken",
       "body.comment",
       "body.reason",
@@ -284,6 +286,7 @@ await app.register(swagger, {
 });
 await app.register(swaggerUi, { routePrefix: "/docs" });
 await app.register(mobileAuthRoutes);
+await app.register(mobileGoogleAuthRoutes);
 const mailer = createMailerFromConfig(config, app.log);
 if (!mailer) {
   app.log.warn(

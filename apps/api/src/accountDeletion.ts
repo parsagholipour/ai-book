@@ -98,7 +98,7 @@ export async function executeAccountDeletion(userId: string, log: Logger): Promi
     prisma.legalAcceptance.deleteMany({ where: { userId } }),
     prisma.user.update({
       where: { id: userId },
-      data: { email: tombstone, displayName: null, status: "DISABLED", disabledAt: new Date() }
+      data: { email: tombstone, displayName: null, googleSubject: null, status: "DISABLED", disabledAt: new Date() }
     }),
     prisma.accountDeletionRequest.updateMany({
       where: { userId, status: "PENDING" },

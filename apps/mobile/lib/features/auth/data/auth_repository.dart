@@ -8,6 +8,12 @@ import '../domain/auth_models.dart';
 abstract interface class AuthRepository {
   Future<AuthSession?> restoreSession();
   Future<AuthSession> signIn({required String email, required String password});
+  Future<AuthSession> signInWithGoogle({
+    required String idToken,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
+    String? password,
+  });
   Future<AuthSession> signUp({
     required String email,
     required String password,
@@ -73,6 +79,24 @@ class MobileAuthRepository implements AuthRepository {
     return _createSession(
       '/api/mobile/auth/signin',
       data: {'email': email.trim(), 'password': password},
+    );
+  }
+
+  @override
+  Future<AuthSession> signInWithGoogle({
+    required String idToken,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
+    String? password,
+  }) {
+    return _createSession(
+      '/api/mobile/auth/google',
+      data: {
+        'idToken': idToken,
+        'termsAccepted': termsAccepted,
+        'ageGuardianAttested': ageGuardianAttested,
+        'password': ?password,
+      },
     );
   }
 

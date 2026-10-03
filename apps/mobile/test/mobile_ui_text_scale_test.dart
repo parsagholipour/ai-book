@@ -298,6 +298,14 @@ Widget _scaledApp({required Widget child}) {
 
 class _FakeAuthRepository implements AuthRepository {
   @override
+  Future<AuthSession> signInWithGoogle({
+    required String idToken,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
+    String? password,
+  }) async => _fakeSession();
+
+  @override
   Future<void> acceptCurrentLegalDocuments() async {}
 
   @override

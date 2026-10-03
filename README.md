@@ -70,11 +70,14 @@ Mobile user auth is separate and database-backed under `/api/mobile/auth/*`:
 
 - `POST /api/mobile/auth/signup`
 - `POST /api/mobile/auth/signin`
+- `POST /api/mobile/auth/google`
 - `POST /api/mobile/auth/refresh`
 - `POST /api/mobile/auth/logout`
 - `GET /api/mobile/auth/me`
 
 The mobile flow uses email/password accounts, short-lived bearer access tokens, and refresh tokens. Only token hashes are stored in `MobileSession`; logout revokes session state. No additional auth env vars are required for local development.
+
+The Flutter app also supports Google sign-in and account creation. Configure the Google OAuth client ID on the API and in the app build to show the button; see [Google sign-in setup](docs/google-sign-in.md).
 
 ## Welcome credits
 

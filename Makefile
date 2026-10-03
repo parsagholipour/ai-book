@@ -7,6 +7,8 @@ FLUTTER_APP_ENV ?= local
 # Android emulator: 10.0.2.2 reaches host localhost. Override for a physical device LAN IP.
 FLUTTER_API_BASE_URL ?= http://10.0.2.2:4001
 FLUTTER_DART_DEFINES := --dart-define=APP_ENV=$(FLUTTER_APP_ENV) --dart-define=API_BASE_URL=$(FLUTTER_API_BASE_URL)
+GOOGLE_DART_DEFINES := $(if $(GOOGLE_SIGN_IN_CLIENT_ID),--dart-define=GOOGLE_SIGN_IN_CLIENT_ID=$(GOOGLE_SIGN_IN_CLIENT_ID),) $(if $(GOOGLE_SIGN_IN_IOS_CLIENT_ID),--dart-define=GOOGLE_SIGN_IN_IOS_CLIENT_ID=$(GOOGLE_SIGN_IN_IOS_CLIENT_ID),)
+FLUTTER_DART_DEFINES += $(GOOGLE_DART_DEFINES)
 	
 # Snap Docker cannot read projects on /run/media until removable-media is connected.
 fix-docker-access:
@@ -61,4 +63,4 @@ mobile-build-apk-debug:
 # upload key in apps/mobile/android/key.properties (see docs/deployment.md).
 mobile-build-release:
 	cd $(MOBILE_DIR) && flutter build appbundle --release \
-		--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://tomeza.ravanix.app
+		--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://tomeza.ravanix.app $(GOOGLE_DART_DEFINES)

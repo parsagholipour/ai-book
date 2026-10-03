@@ -35,6 +35,8 @@ class AppConfig {
     required this.termsOfServiceUrl,
     required this.accountDeletionUrl,
     required this.supportEmail,
+    this.googleSignInServerClientId = '',
+    this.googleSignInIosClientId = '',
   });
 
   final AppEnvironment environment;
@@ -43,6 +45,8 @@ class AppConfig {
   final Uri termsOfServiceUrl;
   final Uri accountDeletionUrl;
   final String supportEmail;
+  final String googleSignInServerClientId;
+  final String googleSignInIosClientId;
 
   static AppConfig fromDartDefine() {
     const rawEnvironment = String.fromEnvironment(
@@ -103,6 +107,12 @@ class AppConfig {
       supportEmail: rawSupportEmail.trim().isEmpty
           ? 'support@ravanix.app'
           : rawSupportEmail.trim(),
+      googleSignInServerClientId: const String.fromEnvironment(
+        'GOOGLE_SIGN_IN_CLIENT_ID',
+      ).trim(),
+      googleSignInIosClientId: const String.fromEnvironment(
+        'GOOGLE_SIGN_IN_IOS_CLIENT_ID',
+      ).trim(),
     );
   }
 

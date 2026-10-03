@@ -11,6 +11,8 @@ import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import 'auth_controller.dart';
+import '../data/google_sign_in_client.dart';
+import 'google_auth_button.dart';
 import 'auth_legal_checks.dart';
 import 'auth_widgets.dart';
 import 'sample_book_screen.dart';
@@ -50,6 +52,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _passwordLeft = false;
   bool _submitted = false;
   String? _serverError;
+  bool _googleBusy = false;
 
   bool get _isSignUp => widget.mode == AuthScreenMode.signUp;
 
@@ -90,10 +93,28 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     if (_serverError != null) setState(() => _serverError = null);
   }
 
+  void _showServerError(String? message) {
+    setState(() => _serverError = message);
+    if (message == null) return;
+    AppHaptics.error();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final noticeContext = _noticeKey.currentContext;
+      if (noticeContext != null && noticeContext.mounted) {
+        Scrollable.ensureVisible(
+          noticeContext,
+          duration: AppMotion.reducedMotion(noticeContext)
+              ? Duration.zero
+              : AppMotion.medium,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
-    final isSubmitting = authState.isLoading;
+    final isSubmitting = authState.isLoading || _googleBusy;
 
     ref.listen(authControllerProvider, (previous, next) {
       final error = next.error;
@@ -104,20 +125,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           !(ModalRoute.of(context)?.isCurrent ?? true)) {
         return;
       }
-      AppHaptics.error();
-      setState(() => _serverError = userFacingError(error));
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final noticeContext = _noticeKey.currentContext;
-        if (noticeContext != null && noticeContext.mounted) {
-          Scrollable.ensureVisible(
-            noticeContext,
-            duration: AppMotion.reducedMotion(noticeContext)
-                ? Duration.zero
-                : AppMotion.medium,
-            alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-          );
-        }
-      });
+      _showServerError(userFacingError(error));
     });
 
     final text = Theme.of(context).textTheme;
@@ -180,12 +188,34 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   Widget _buildForm(bool isSubmitting) {
     final config = ref.read(appConfigProvider);
+    final googleAvailable = ref.watch(googleSignInClientProvider) != null;
     return Form(
       key: _formKey,
       child: AutofillGroup(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (googleAvailable) ...[
+              GoogleAuthButton(
+                disabled: isSubmitting,
+                termsAccepted: _termsAccepted,
+                ageGuardianAttested: _ageGuardianAttested,
+                onBusyChanged: (busy) => setState(() => _googleBusy = busy),
+                onError: _showServerError,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              const Row(
+                children: [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                    child: Text('or use email'),
+                  ),
+                  Expanded(child: Divider()),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
             if (_isSignUp) ...[
               TextFormField(
                 controller: _displayNameController,
@@ -317,7 +347,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ],
             AppButton.primary(
               onPressed: isSubmitting ? null : _submit,
-              loading: isSubmitting,
+              loading: isSubmitting && !_googleBusy,
               loadingLabel: _isSignUp ? 'Creating account' : 'Signing in',
               leading: Icon(_isSignUp ? Icons.person_add_alt_1 : Icons.login),
               label: _isSignUp ? 'Create account' : 'Sign in',
@@ -330,6 +360,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   Future<void> _submit() async {
+    if (_googleBusy || ref.read(authControllerProvider).isLoading) return;
     setState(() {
       _submitted = true;
       _serverError = null;

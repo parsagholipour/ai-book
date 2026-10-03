@@ -66,7 +66,7 @@ describe("carrying out an account deletion", () => {
     expect(storage.deletePrefix).toHaveBeenCalledWith("images/characters/user-1/");
     expect(db.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: expect.objectContaining({ email: deletedAccountEmail("user-1"), displayName: null, status: "DISABLED" })
+      data: expect.objectContaining({ email: deletedAccountEmail("user-1"), displayName: null, googleSubject: null, status: "DISABLED" })
     });
     expect(db.mobileSession.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
     // Financial records are kept with the tombstone, not deleted.

@@ -274,6 +274,14 @@ class _RenderScenario {
 
 class FakeAuthRepository implements AuthRepository {
   @override
+  Future<AuthSession> signInWithGoogle({
+    required String idToken,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
+    String? password,
+  }) async => fakeSession();
+
+  @override
   Future<void> acceptCurrentLegalDocuments() async {}
 
   @override
@@ -378,7 +386,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }

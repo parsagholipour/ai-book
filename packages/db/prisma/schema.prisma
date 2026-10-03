@@ -295,6 +295,7 @@ model Template {
 model User {
   id          String     @id @default(cuid())
   email       String     @unique
+  googleSubject String?  @unique
   displayName String?
   status      UserStatus @default(ACTIVE)
   disabledAt  DateTime?

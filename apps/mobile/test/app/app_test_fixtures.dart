@@ -118,6 +118,17 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<AuthSession> signInWithGoogle({
+    required String idToken,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
+    String? password,
+  }) async {
+    _session = fakeSession();
+    return _session!;
+  }
+
+  @override
   Future<void> acceptCurrentLegalDocuments() async {
     final current = _session;
     if (current != null) {
