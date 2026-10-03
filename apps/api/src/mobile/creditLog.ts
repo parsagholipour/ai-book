@@ -140,11 +140,11 @@ export function serializeCreditLogEntry(
 }
 
 function creditLogKind(row: CreditLogRow): MobileCreditLogKind {
+  if (isGooglePlayClawback(row)) return "spend";
   if (row.entryType === "REFUND") {
     return "refund";
   }
-  // The only negative adjustment the ledger writes is an allowance being written
-  // off at a period boundary. A positive one is an operator putting credits back.
+  // Other negative adjustments are unused allowances expiring at a period boundary.
   if (row.entryType === "ADJUSTMENT") {
     return row.amountCredits < 0 ? "expired" : "bonus";
   }
@@ -168,6 +168,7 @@ function creditLogTitle(
   kind: MobileCreditLogKind,
   operationKinds: ReadonlyMap<string, string>
 ): string {
+  if (isGooglePlayClawback(row)) return "Credits reversed after Google Play refund";
   const operation =
     chargeActionTitle(kind === "refund" ? row.reversesEntry?.metadata : row.metadata, operationKinds) ??
     OPERATION_TITLES[row.operation] ??
@@ -180,6 +181,12 @@ function creditLogTitle(
     default:
       return operation;
   }
+}
+
+function isGooglePlayClawback(row: CreditLogRow): boolean {
+  return row.entryType === "ADJUSTMENT" && row.amountCredits < 0 &&
+    (row.operation === "PURCHASE_CREDIT_GRANT" || row.operation === "SUBSCRIPTION_CREDIT_GRANT") &&
+    Boolean(row.reversesEntry);
 }
 
 function sentenceCase(value: string): string {

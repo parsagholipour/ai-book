@@ -23,6 +23,7 @@ import {
   type PlanTier,
   creditPricing,
   highestPlanTier,
+  jsonRecord,
   planTierForEntitlementType
 } from "@book-maker/core";
 import { prisma } from "./client.ts";
@@ -164,7 +165,7 @@ export async function ensureCurrentPlanPeriod(userId: string, now: Date = new Da
  * credits. Called from the Google Play verify and renewal paths, which supply
  * the period bounds Google reported.
  */
-export async function grantSubscriptionPlanPeriod(options: {
+type SubscriptionPlanPeriodOptions = {
   userId: string;
   productId: string;
   purchaseRecordId: string;
@@ -176,7 +177,13 @@ export async function grantSubscriptionPlanPeriod(options: {
   description: string;
   metadata: Record<string, unknown>;
   now?: Date | undefined;
-}): Promise<CreditLedgerEntryRecord | null> {
+};
+
+export async function grantSubscriptionPlanPeriod(options: SubscriptionPlanPeriodOptions): Promise<CreditLedgerEntryRecord | null> {
+  return runSerializable((tx) => grantSubscriptionPlanPeriodTx(tx, options));
+}
+
+export async function grantSubscriptionPlanPeriodTx(tx: BillingTx, options: SubscriptionPlanPeriodOptions): Promise<CreditLedgerEntryRecord | null> {
   const now = options.now ?? new Date();
   // Google says active but reported no expiry: give the allowance a month rather
   // than a period that has already elapsed, which would read as zero credits to
@@ -188,22 +195,20 @@ export async function grantSubscriptionPlanPeriod(options: {
     end: periodEnd
   };
 
-  return runSerializable(async (tx) => {
-    const account = await ensureCreditAccountRow(tx, options.userId);
-    const applied = await applyPlanPeriodTx(tx, {
-      userId: options.userId,
-      account,
-      period,
-      allowance: options.allowance,
-      operation: "SUBSCRIPTION_CREDIT_GRANT",
-      idempotencyKey: options.idempotencyKey,
-      description: options.description,
-      metadata: { ...options.metadata, planPeriodKey: period.key },
-      productId: options.productId,
-      purchaseRecordId: options.purchaseRecordId
-    });
-    return applied.entry;
+  const account = await ensureCreditAccountRow(tx, options.userId);
+  const applied = await applyPlanPeriodTx(tx, {
+    userId: options.userId,
+    account,
+    period,
+    allowance: options.allowance,
+    operation: "SUBSCRIPTION_CREDIT_GRANT",
+    idempotencyKey: options.idempotencyKey,
+    description: options.description,
+    metadata: { ...options.metadata, planPeriodKey: period.key },
+    productId: options.productId,
+    purchaseRecordId: options.purchaseRecordId
   });
+  return applied.entry;
 }
 
 export async function getPlanSummary(userId: string, now: Date = new Date()): Promise<PlanSummary> {
@@ -463,6 +468,12 @@ async function applyPlanPeriodTx(
           planPeriodKey: options.period.key
         },
         select: accountSelect
+      });
+      // Refunds later subtract unused allowance expired under this period key.
+      // Keep the original grant attached to corrected provider period bounds.
+      await tx.creditLedgerEntry.update({
+        where: { id: existing.id },
+        data: { metadata: jsonInput({ ...jsonRecord(existing.metadata), planPeriodKey: options.period.key }) }
       });
       return { account, entry: existing };
     }

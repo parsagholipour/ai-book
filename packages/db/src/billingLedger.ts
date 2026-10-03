@@ -40,47 +40,51 @@ export async function getCreditBalance(userId: string, now: Date = new Date()): 
   return serializeCreditBalance(account, now);
 }
 
-export async function grantCredits(options: LedgerContext & {
+type CreditGrantOptions = LedgerContext & {
   amountCredits: number;
   operation?: BillingOperation | undefined;
   idempotencyKey: string;
-}): Promise<CreditLedgerEntryRecord> {
+};
+
+export async function grantCredits(options: CreditGrantOptions): Promise<CreditLedgerEntryRecord> {
+  return runSerializable((tx) => grantCreditsTx(tx, options));
+}
+
+export async function grantCreditsTx(tx: BillingTx, options: CreditGrantOptions): Promise<CreditLedgerEntryRecord> {
   if (!Number.isInteger(options.amountCredits) || options.amountCredits <= 0) {
     throw new Error("Credit grants must be positive whole-credit amounts.");
   }
 
-  return runSerializable(async (tx) => {
-    const existing = await tx.creditLedgerEntry.findUnique({
-      where: { idempotencyKey: options.idempotencyKey },
-      select: ledgerSelect
-    });
-    if (existing) {
-      return existing;
+  const existing = await tx.creditLedgerEntry.findUnique({
+    where: { idempotencyKey: options.idempotencyKey },
+    select: ledgerSelect
+  });
+  if (existing) {
+    return existing;
+  }
+
+  // Grants land in the purchased pool: they are bought or awarded outright and
+  // must not evaporate at the next period boundary. Allowances are granted by
+  // `planPeriods.ts` instead, which owns the pool that resets.
+  const account = await ensureCreditAccountRow(tx, options.userId);
+  await tx.userCreditAccount.update({
+    where: { userId: options.userId },
+    data: {
+      availableCredits: { increment: options.amountCredits },
+      lifetimeCreditsGranted: { increment: options.amountCredits }
     }
+  });
 
-    // Grants land in the purchased pool: they are bought or awarded outright and
-    // must not evaporate at the next period boundary. Allowances are granted by
-    // `planPeriods.ts` instead, which owns the pool that resets.
-    const account = await ensureCreditAccountRow(tx, options.userId);
-    await tx.userCreditAccount.update({
-      where: { userId: options.userId },
-      data: {
-        availableCredits: { increment: options.amountCredits },
-        lifetimeCreditsGranted: { increment: options.amountCredits }
-      }
-    });
-
-    return tx.creditLedgerEntry.create({
-      data: ledgerData({
-        ...options,
-        operation: options.operation ?? "ADMIN_GRANT",
-        entryType: "GRANT",
-        status: "SETTLED",
-        amountCredits: options.amountCredits,
-        balanceAfterCredits: spendableCredits(account) + options.amountCredits
-      }),
-      select: ledgerSelect
-    });
+  return tx.creditLedgerEntry.create({
+    data: ledgerData({
+      ...options,
+      operation: options.operation ?? "ADMIN_GRANT",
+      entryType: "GRANT",
+      status: "SETTLED",
+      amountCredits: options.amountCredits,
+      balanceAfterCredits: spendableCredits(account) + options.amountCredits
+    }),
+    select: ledgerSelect
   });
 }
 
@@ -152,7 +156,7 @@ export async function reserveCreditsTx(
     where: {
       userId: options.userId,
       planCredits: { gte: fromPlan },
-      availableCredits: { gte: fromPurchased }
+      ...(fromPurchased > 0 ? { availableCredits: { gte: fromPurchased } } : {})
     },
     data: {
       planCredits: { decrement: fromPlan },

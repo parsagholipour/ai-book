@@ -113,6 +113,19 @@ describe("mobile credit log", () => {
     await app.close();
   });
 
+  it("shows a store refund as credits taken back instead of an expired allowance", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.creditLedgerEntry.findMany.mockResolvedValueOnce([
+      ledgerRow({ entryType: "ADJUSTMENT", operation: "PURCHASE_CREDIT_GRANT", amountCredits: -1000,
+        reversesEntry: { metadata: {} } })
+    ]);
+    const app = await buildMobileApp();
+    const response = await app.inject({ method: "GET", url: "/api/mobile/billing/credit-log", headers: bearer("token-a") });
+    expect(response.json().log.entries[0]).toMatchObject({ direction: "out", credits: 1000,
+      kind: "spend", title: "Credits reversed after Google Play refund" });
+    await app.close();
+  });
+
   it("names a per-page charge by what it bought, not by the rate it was billed at", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const insert = { intent: { kind: "restructure_pages", structuralEdit: { action: "insert" } }, pagesBilled: 1 };

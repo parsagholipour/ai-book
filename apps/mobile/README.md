@@ -12,6 +12,7 @@ The app reads build-time config through `--dart-define`:
 - `API_BASE_URL`: absolute API URL. Local Android emulator builds default to `http://10.0.2.2:4001`.
 - `GOOGLE_SIGN_IN_CLIENT_ID`: Web OAuth client ID, matching the API's environment variable. Enables Google sign-in on Android.
 - `GOOGLE_SIGN_IN_IOS_CLIENT_ID`: iOS OAuth client ID; iOS also requires its URL scheme in `Info.plist`. See [Google sign-in setup](../../docs/google-sign-in.md).
+- `CRASHLYTICS_ENABLED`: defaults to true in release builds and false in debug/profile builds. Set it to true for a diagnostic run. See [crash reporting](../../docs/crash-reporting.md) for the Firebase project and delivery verification.
 
 ## Run Locally
 

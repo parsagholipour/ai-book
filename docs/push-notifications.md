@@ -14,9 +14,15 @@ When the book finishes, that notification is replaced by "Your book is ready", o
 
 ## One-time setup (Firebase)
 
-Pushes go through Firebase Cloud Messaging. Until both halves below are done, the API logs
-`push.unconfigured` once at startup and sends nothing. The app also builds and runs as
-before, without notifications and without the Account row for them.
+The Android client is registered in **AI-Book-Maker** (`ai-book-maker-63317`), and
+its `google-services.json` is included in `apps/mobile/android/app/`. Steps 1–2
+below are complete. Crashlytics uses the same configuration; see
+[crash reporting](crash-reporting.md). The API sending key is still configured
+separately in steps 3–4.
+
+Pushes go through Firebase Cloud Messaging. Without a sending key, the API logs
+`push.unconfigured` once at startup and sends nothing. A mobile build made without
+the client config still runs, with notifications and their Account row disabled.
 
 1. **Create the Firebase project.** In the [Firebase console](https://console.firebase.google.com),
    add a project. Reusing the Google Cloud project that holds the Play service account is fine.

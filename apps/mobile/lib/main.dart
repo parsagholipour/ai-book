@@ -7,9 +7,13 @@ import 'app/app.dart';
 import 'features/app_update/data/app_update_repository.dart';
 import 'features/app_update/domain/app_update.dart';
 import 'features/notifications/data/push_messaging.dart';
+import 'shared/diagnostics/crash_reporting.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Install error handlers before the PDF/audio plugins or any other startup
+  // work can fail. Push notifications reuse the same default Firebase app.
+  await initializeCrashReporting();
   // Loads the PDF rendering engine the in-app book reader draws with.
   pdfrxFlutterInitialize();
   // Claims the media session up front so audiobook playback can survive the app

@@ -112,8 +112,12 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   server had granted the credits, and Play refunds anything unacknowledged after three days — an app
   killed in between kept the credits and lost the payment. The verify route now acknowledges a
   grantable purchase Google still reports pending (`purchaseNeedsAcknowledgement`), best-effort and
-  idempotent on Google's side; the app still consumes credit packs. Voided purchases and refunds are
-  still not clawed back: there is no RTDN endpoint yet.
+  idempotent on Google's side; the app still consumes credit packs. Refunds now arrive at
+  `POST /api/billing/google-play/rtdn`, authenticated with Google's Pub/Sub OIDC token. Full refunds
+  reverse the original grant; spent credits remain a negative purchased balance. Partial refunds use
+  Google's remaining quantity, and ordinary cancellation keeps the paid period. Refund markers and
+  purchase grants share serializable transactions so duplicates and late claims cannot restore credits.
+  Setup and retry behaviour: `docs/google-play-rtdn.md`.
 - **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat
   `add_image` Apply.** `POST /api/mobile/plans/:id/approve` claims the `UsageCounter` slot for a
   generation planned with images (403 `IMAGE_LIMIT_REACHED` when it is gone — never a silent

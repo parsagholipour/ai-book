@@ -13,11 +13,12 @@ import {
   type PlanEntitlementType,
   planEntitlementTypeForSubscriptionSku
 } from "@book-maker/core";
-import { createHash } from "node:crypto";
-import { Prisma, prisma } from "./client.ts";
-import { jsonInput, runSerializable } from "./billingInternals.ts";
-import { grantCredits } from "./billingLedger.ts";
-import { ensureCurrentPlanPeriodTx, grantSubscriptionPlanPeriod } from "./planPeriods.ts";
+import { prisma } from "./client.ts";
+import { type BillingTx, hashPurchaseToken, jsonInput, runSerializable } from "./billingInternals.ts";
+import { grantCreditsTx } from "./billingLedger.ts";
+import { ensureCurrentPlanPeriodTx, grantSubscriptionPlanPeriodTx } from "./planPeriods.ts";
+
+import { applyGooglePlayRefundTx, recordGooglePlayRefundTx, runGooglePlayTransaction } from "./googlePlayRefunds.ts";
 
 export type GooglePlayPurchaseKind = "one_time" | "subscription";
 
@@ -95,10 +96,17 @@ export async function recordVerifiedGooglePlayPurchase(options: {
   userId: string;
   verification: VerifiedGooglePlayPurchase;
 }): Promise<GooglePlayPurchaseRecordResult> {
+  return runGooglePlayTransaction((tx) => recordVerifiedGooglePlayPurchaseTx(tx, options));
+}
+
+async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
+  userId: string;
+  verification: VerifiedGooglePlayPurchase;
+}): Promise<GooglePlayPurchaseRecordResult> {
   const { userId, verification } = options;
   const tokenHash = hashPurchaseToken(verification.purchaseToken);
   const now = new Date();
-  const product = await prisma.productCatalog.findUnique({
+  const product = await tx.productCatalog.findUnique({
     where: { sku: verification.productSku },
     select: {
       id: true,
@@ -115,12 +123,34 @@ export async function recordVerifiedGooglePlayPurchase(options: {
     throw new Error(`Unknown or inactive Google Play product: ${verification.productSku}`);
   }
 
-  const existing = await prisma.purchaseRecord.findFirst({
+  const existing = await tx.purchaseRecord.findFirst({
     where: { provider: "GOOGLE_PLAY", purchaseTokenHash: tokenHash },
-    select: { id: true, userId: true, creditsGranted: true }
+    select: { id: true, userId: true, creditsGranted: true, status: true, externalPurchaseId: true }
   });
   if (existing && existing.userId !== userId) {
     throw new Error("This Google Play purchase is already linked to another account.");
+  }
+  // A cancellation learned during restore is the same terminal refund as RTDN.
+  if (verification.kind === "one_time" && verification.providerStatus === "CANCELED") {
+    await recordGooglePlayRefundTx(tx, {
+      purchaseToken: verification.purchaseToken,
+      orderId: verification.externalPurchaseId ?? "canceled",
+      productType: 2
+    });
+  }
+  const refund = await tx.googlePlayRefund.findFirst({
+    where: {
+      purchaseTokenHash: tokenHash,
+      // Without a paid order ID, a subscription cannot prove it is a newer
+      // renewal than an existing refund of this token.
+      ...(verification.kind === "subscription" && verification.externalPurchaseId
+        ? { orderId: verification.externalPurchaseId } : {})
+    },
+    orderBy: { refundableQuantity: "asc" }
+  });
+  if (existing && (refund?.refundableQuantity === 0 || (verification.kind === "one_time" && existing.status === "REVOKED"))) {
+    return { purchaseRecordId: existing.id, status: "REVOKED", creditsGranted: existing.creditsGranted,
+      ledgerEntryId: null, subscriptionStatus: null, entitlementType: null };
   }
   const purchaseStatus = purchaseRecordStatusForVerification(verification);
   const recordData = {
@@ -136,49 +166,29 @@ export async function recordVerifiedGooglePlayPurchase(options: {
   const recordSelect = { id: true, status: true, creditsGranted: true } as const;
   let purchaseRecord;
   if (existing) {
-    purchaseRecord = await prisma.purchaseRecord.update({
+    purchaseRecord = await tx.purchaseRecord.update({
       where: { id: existing.id },
       data: recordData,
       select: recordSelect
     });
   } else {
-    try {
-      purchaseRecord = await prisma.purchaseRecord.create({
-        data: { userId, provider: "GOOGLE_PLAY", purchaseTokenHash: tokenHash, ...recordData },
-        select: recordSelect
-      });
-    } catch (error) {
-      // The token's unique index turns a concurrent verification — the Play
-      // listener racing a restore — into a conflict instead of a duplicate
-      // row. The loser adopts the winner's record, and the cross-account
-      // guard runs again on the re-read: the first check raced too, and this
-      // is what stops one token being linked to two accounts.
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
-        throw error;
-      }
-      const winner = await prisma.purchaseRecord.findFirst({
-        where: { provider: "GOOGLE_PLAY", purchaseTokenHash: tokenHash },
-        select: { id: true, userId: true }
-      });
-      if (!winner) {
-        throw error;
-      }
-      if (winner.userId !== userId) {
-        throw new Error("This Google Play purchase is already linked to another account.");
-      }
-      purchaseRecord = await prisma.purchaseRecord.update({
-        where: { id: winner.id },
-        data: recordData,
-        select: recordSelect
-      });
-    }
+    purchaseRecord = await tx.purchaseRecord.create({
+      data: { userId, provider: "GOOGLE_PLAY", purchaseTokenHash: tokenHash, ...recordData },
+      select: recordSelect
+    });
+  }
+
+  if (refund?.refundableQuantity === 0 || (verification.kind === "one_time" && existing?.status === "REVOKED")) {
+    await tx.purchaseRecord.update({ where: { id: purchaseRecord.id }, data: { status: "REVOKED" } });
+    return { purchaseRecordId: purchaseRecord.id, status: "REVOKED", creditsGranted: purchaseRecord.creditsGranted,
+      ledgerEntryId: null, subscriptionStatus: null, entitlementType: null };
   }
 
   // Recorded whether or not this verification grants anything: an expired or
   // canceled subscription has to update its state row too, or the renewal sweep
   // keeps polling a subscription Google has already closed.
   if (verification.kind === "subscription" && verification.subscription) {
-    await upsertSubscriptionState({
+    await upsertSubscriptionState(tx, {
       userId,
       productId: product.id,
       tokenHash,
@@ -193,6 +203,17 @@ export async function recordVerifiedGooglePlayPurchase(options: {
   }
 
   if (!verification.grantable) {
+    if (verification.kind === "subscription") {
+      await tx.userEntitlement.updateMany({
+        where: { purchaseRecordId: purchaseRecord.id, status: "ACTIVE" },
+        data: { status: "EXPIRED", expiresAt: now }
+      });
+      const account = await tx.userCreditAccount.findUnique({ where: { userId } });
+      if (account?.planPeriodKey?.startsWith(`sub:${tokenHash}:`)) {
+        await tx.userCreditAccount.update({ where: { userId }, data: { planPeriodEnd: now } });
+        await ensureCurrentPlanPeriodTx(tx, userId, now);
+      }
+    }
     return {
       purchaseRecordId: purchaseRecord.id,
       status: purchaseRecord.status,
@@ -222,7 +243,7 @@ export async function recordVerifiedGooglePlayPurchase(options: {
     // Entitlement before credits: if the grant fails and the app retries, a user
     // who has already paid is at least on the right plan in the meantime.
     if (entitlementType && subscriptionEntitlementIsActive(verification.subscription.status)) {
-      await upsertSubscriptionEntitlement({
+      await upsertSubscriptionEntitlement(tx, {
         userId,
         type: entitlementType,
         source: "google_play_subscription",
@@ -240,7 +261,7 @@ export async function recordVerifiedGooglePlayPurchase(options: {
     amountCredits <= 0
       ? null
       : verification.kind === "subscription"
-        ? await grantSubscriptionPlanPeriod({
+        ? await grantSubscriptionPlanPeriodTx(tx, {
             userId,
             productId: product.id,
             purchaseRecordId: purchaseRecord.id,
@@ -253,7 +274,7 @@ export async function recordVerifiedGooglePlayPurchase(options: {
             metadata: grantMetadata,
             now
           })
-        : await grantCredits({
+        : await grantCreditsTx(tx, {
             userId,
             productId: product.id,
             purchaseRecordId: purchaseRecord.id,
@@ -268,7 +289,7 @@ export async function recordVerifiedGooglePlayPurchase(options: {
   // period that was adopted rather than re-granted deposits nothing
   // (`entry: null`), and stamping the full allowance onto it would overstate
   // delivered credits everywhere the record is read back.
-  const updatedPurchase = await prisma.purchaseRecord.update({
+  const updatedPurchase = await tx.purchaseRecord.update({
     where: { id: purchaseRecord.id },
     data: {
       status: "GRANTED",
@@ -276,6 +297,8 @@ export async function recordVerifiedGooglePlayPurchase(options: {
     },
     select: { id: true, status: true, creditsGranted: true }
   });
+
+  if (refund) await applyGooglePlayRefundTx(tx, refund);
 
   return {
     purchaseRecordId: updatedPurchase.id,
@@ -350,9 +373,7 @@ export async function endSubscriptionNow(userId: string, now: Date = new Date())
   });
 }
 
-export function hashPurchaseToken(purchaseToken: string): string {
-  return createHash("sha256").update(purchaseToken, "utf8").digest("hex");
-}
+export { hashPurchaseToken } from "./billingInternals.ts";
 
 function purchaseRecordStatusForVerification(verification: VerifiedGooglePlayPurchase): "PENDING" | "VERIFIED" | "FAILED" {
   if (verification.grantable) {
@@ -379,7 +400,7 @@ function subscriptionEntitlementIsActive(status: GooglePlaySubscriptionGrantStat
   return status === "ACTIVE" || status === "GRACE_PERIOD" || status === "CANCELED";
 }
 
-async function upsertSubscriptionState(options: {
+async function upsertSubscriptionState(tx: BillingTx, options: {
   userId: string;
   productId: string;
   tokenHash: string;
@@ -391,7 +412,7 @@ async function upsertSubscriptionState(options: {
   autoRenewing: boolean | null;
   metadata: Record<string, unknown>;
 }): Promise<void> {
-  const existing = await prisma.subscriptionState.findFirst({
+  const existing = await tx.subscriptionState.findFirst({
     where: {
       provider: "GOOGLE_PLAY",
       externalSubscriptionId: options.tokenHash
@@ -428,7 +449,7 @@ async function upsertSubscriptionState(options: {
   // concurrent verifications used to findFirst-nothing and create twice, after
   // which every later update maintained one row while the renewal sweep polled
   // the other — re-verifying a closed subscription forever.
-  await prisma.subscriptionState.upsert({
+  await tx.subscriptionState.upsert({
     where: {
       provider_externalSubscriptionId: {
         provider: "GOOGLE_PLAY",
@@ -440,7 +461,7 @@ async function upsertSubscriptionState(options: {
   });
 }
 
-async function upsertSubscriptionEntitlement(options: {
+async function upsertSubscriptionEntitlement(tx: BillingTx, options: {
   userId: string;
   type: PlanEntitlementType;
   source: string;
@@ -448,7 +469,7 @@ async function upsertSubscriptionEntitlement(options: {
   expiresAt: Date | null;
   metadata: Record<string, unknown>;
 }): Promise<void> {
-  const existing = await prisma.userEntitlement.findFirst({
+  const existing = await tx.userEntitlement.findFirst({
     where: {
       userId: options.userId,
       type: options.type,
@@ -463,13 +484,13 @@ async function upsertSubscriptionEntitlement(options: {
     metadata: jsonInput(options.metadata)
   };
   if (existing) {
-    await prisma.userEntitlement.update({
+    await tx.userEntitlement.update({
       where: { id: existing.id },
       data
     });
     return;
   }
-  await prisma.userEntitlement.create({
+  await tx.userEntitlement.create({
     data: {
       userId: options.userId,
       type: options.type,

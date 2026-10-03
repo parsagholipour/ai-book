@@ -17,6 +17,7 @@ import { appUpdateRoutes, registerAppUpdateGate } from "./appUpdates.js";
 import { registerAuth } from "./auth.js";
 import { corsOptionsFor } from "./cors.js";
 import { createGooglePlayVerifierFromConfig } from "./googlePlayBilling.js";
+import { googlePlayRtdnRoutes } from "./googlePlayRtdn.js";
 import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
 import { createMailerFromConfig } from "./mailer.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
@@ -296,6 +297,7 @@ if (!mailer) {
 }
 await app.register(mobilePasswordResetRoutes, { mailer });
 await app.register(mobileProjectRoutes);
+await app.register(googlePlayRtdnRoutes, { config });
 await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);
 await app.register(appUpdateRoutes);

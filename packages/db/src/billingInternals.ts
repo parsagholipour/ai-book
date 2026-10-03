@@ -5,6 +5,7 @@
  *
  * Nothing here is part of the public surface — import from `./billing.ts`.
  */
+import { createHash } from "node:crypto";
 import type { BillingOperation } from "@book-maker/core";
 import { Prisma, prisma } from "./client.ts";
 import type { CreditOperation } from "./generated/prisma/enums.ts";
@@ -49,7 +50,7 @@ export type CreditBalance = {
    * from under them would under-report what they can afford.
    */
   availableCredits: number;
-  /** Bought outright, never expires. */
+  /** Bought outright, never expires. Negative means debt from a store refund. */
   purchasedCredits: number;
   /** This period's allowance, already zeroed if the period has run out. */
   planCredits: number;
@@ -209,7 +210,12 @@ export async function runSerializable<T>(callback: (tx: BillingTx) => Promise<T>
     } catch (error) {
       // P2034 is a serializable conflict. P2002 is a unique clash — do not retry it here.
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
-      if (attempt >= 4 || code !== "P2034") throw error;
+      // The pg adapter can surface a COMMIT-time serialization failure directly,
+      // before Prisma wraps it in P2034. It is the same aborted transaction.
+      const adapterConflict = error instanceof Error && error.name === "DriverAdapterError" &&
+        error.cause && typeof error.cause === "object" && "kind" in error.cause &&
+        error.cause.kind === "TransactionWriteConflict";
+      if (attempt >= 4 || (code !== "P2034" && !adapterConflict)) throw error;
     }
   }
 }
@@ -267,3 +273,7 @@ export const entitlementSelect = {
   startsAt: true,
   expiresAt: true
 } as const;
+
+export function hashPurchaseToken(purchaseToken: string): string {
+  return createHash("sha256").update(purchaseToken, "utf8").digest("hex");
+}

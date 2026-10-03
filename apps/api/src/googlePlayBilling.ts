@@ -24,6 +24,8 @@ export type GooglePlayVerificationRequest = {
 
 export interface GooglePlayVerifier {
   verifyPurchase(request: GooglePlayVerificationRequest): Promise<VerifiedGooglePlayPurchase>;
+  readRefundableQuantity?(request: { packageName: string; purchaseToken: string; orderId: string }):
+    Promise<{ quantity: number; refundableQuantity: number }>;
   /**
    * Acknowledges a purchase with Google. Play refunds anything unacknowledged
    * after three days, and only the app used to do it — after the server had
@@ -225,6 +227,22 @@ export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): Go
   }
 
   return {
+    async readRefundableQuantity(request) {
+      const purchase = await googleJson<{
+        orderId?: string;
+        productLineItem?: Array<{ productOfferDetails?: { quantity?: number; refundableQuantity?: number } }>;
+      }>(androidPublisherUrl(request.packageName,
+        `/purchases/productsv2/tokens/${encodeURIComponent(request.purchaseToken)}`));
+      const details = purchase.productLineItem?.[0]?.productOfferDetails;
+      const quantity = details?.quantity;
+      const refundableQuantity = details?.refundableQuantity;
+      if (purchase.orderId !== request.orderId || purchase.productLineItem?.length !== 1 ||
+        !Number.isSafeInteger(quantity) || !Number.isSafeInteger(refundableQuantity) ||
+        quantity! < 1 || refundableQuantity! < 0 || refundableQuantity! >= quantity!) {
+        throw new GooglePlayVerificationError("Google Play refund quantity is unavailable or inconsistent.", 502);
+      }
+      return { quantity: quantity!, refundableQuantity: refundableQuantity! };
+    },
     async verifyPurchase(request) {
       const packageName = request.packageName || options.packageName;
       if (!packageName) {
@@ -282,6 +300,7 @@ type GooglePlaySubscriptionPurchaseV2 = {
   lineItems?: Array<{
     productId?: string;
     expiryTime?: string;
+    latestSuccessfulOrderId?: string;
     autoRenewingPlan?: {
       autoRenewEnabled?: boolean;
     };
@@ -294,7 +313,7 @@ function mapOneTimePurchase(
   purchase: GooglePlayProductPurchase
 ): VerifiedGooglePlayPurchase {
   const purchaseState = purchase.purchaseState ?? -1;
-  const providerStatus = purchaseState === 0 ? "PURCHASED" : purchaseState === 2 ? "PENDING" : "CANCELED";
+  const providerStatus = purchaseState === 0 ? "PURCHASED" : purchaseState === 2 ? "PENDING" : purchaseState === 1 ? "CANCELED" : "UNKNOWN";
   return {
     productSku,
     purchaseToken,
@@ -328,7 +347,9 @@ function mapSubscriptionPurchase(
     kind: "subscription",
     grantable: subscriptionCanGrantCredits(status, matchingLineItem?.expiryTime),
     providerStatus: purchase.subscriptionState ?? "SUBSCRIPTION_STATE_UNSPECIFIED",
-    externalPurchaseId: purchase.latestOrderId ?? null,
+    // Refund RTDN identifies the paid order; the deprecated top-level field
+    // can instead name a pending or failed renewal.
+    externalPurchaseId: matchingLineItem.latestSuccessfulOrderId ?? purchase.latestOrderId ?? null,
     purchasedAt: dateValue(purchase.startTime),
     subscription: {
       status,

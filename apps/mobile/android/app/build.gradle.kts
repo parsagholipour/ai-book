@@ -6,14 +6,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Firebase Cloud Messaging (book-progress and book-ready notifications) reads
-// its project from android/app/google-services.json, downloaded from the
-// Firebase console for com.tomeza.tomeza; see docs/push-notifications.md.
-// Without the file the build still succeeds and the app runs with
-// notifications off: `Firebase.initializeApp` fails and
-// `PushNotifications` treats that as "not configured".
+// Messaging and crash reporting share the Firebase project config. Builds
+// without it still work, with both services off; see docs/crash-reporting.md.
 if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
 }
 
 // The upload key Google Play receives. `android/key.properties` (gitignored, with
@@ -49,6 +46,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["crashlyticsCollectionEnabled"] = "false"
     }
 
     signingConfigs {
@@ -65,6 +63,7 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName(if (hasUploadKey) "release" else "debug")
+            manifestPlaceholders["crashlyticsCollectionEnabled"] = "true"
         }
     }
 }

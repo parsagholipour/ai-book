@@ -103,7 +103,7 @@ class FirebasePushMessaging implements PushMessaging {
   static Future<FirebasePushMessaging?> initialize() async {
     if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) return null;
     try {
-      await Firebase.initializeApp();
+      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
     } catch (error) {
       debugPrint('Push notifications are off: $error');
       return null;

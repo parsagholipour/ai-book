@@ -77,6 +77,8 @@ export {
   recordVerifiedGooglePlayPurchase
 } from "./billingSubscriptions.ts";
 
+export { recordGooglePlayRefund, type GooglePlayRefundNotice } from "./googlePlayRefunds.ts";
+
 export {
   GenerationAttemptConflictError,
   GenerationAttemptJobClaimError,

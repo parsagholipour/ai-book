@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "295152663457",
+    "project_id": "ai-book-maker-63317",
+    "storage_bucket": "ai-book-maker-63317.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:295152663457:android:2a520377328fa51b13a9e0",
+        "android_client_info": {
+          "package_name": "com.tomeza.tomeza"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDeldFAd-uPdDvOUSgnVpCEMwYhLZXOqeA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -9,6 +9,46 @@ import {
 } from "./googlePlayBilling.js";
 
 describe("Google Play billing verifier", () => {
+  it("records the successful subscription order that refund notices identify", async () => {
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse({
+      latestOrderId: "GPA.pending-renewal", subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [{ productId: "creator", expiryTime: "2030-01-01T00:00:00Z", latestSuccessfulOrderId: "GPA.paid" }]
+    })) });
+    expect(await verifier.verifyPurchase({ packageName: "com.tomeza.tomeza", purchaseToken: "token",
+      productType: "SUBSCRIPTION", productId: "creator" })).toMatchObject({ externalPurchaseId: "GPA.paid", grantable: true });
+  });
+
+  it("fetches authoritative remaining quantities for a partially refunded order", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ orderId: "GPA.partial",
+      productLineItem: [{ productOfferDetails: { quantity: 5, refundableQuantity: 3 } }] }));
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: fetchMock });
+    expect(await verifier.readRefundableQuantity!({ packageName: "com.tomeza.tomeza", purchaseToken: "token/with slash", orderId: "GPA.partial" }))
+      .toEqual({ quantity: 5, refundableQuantity: 3 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.tomeza.tomeza/purchases/productsv2/tokens/token%2Fwith%20slash",
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer test-token" }) })
+    );
+  });
+
+  it.each([
+    { orderId: "another-order", quantity: 5, refundableQuantity: 3 },
+    { orderId: "GPA.partial", quantity: 5 },
+    { orderId: "GPA.partial", quantity: 5, refundableQuantity: 5 },
+    { orderId: "GPA.partial", quantity: 5, refundableQuantity: -1 }
+  ])("refuses missing or inconsistent refund quantities", async ({ orderId, ...details }) => {
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse({
+      orderId, productLineItem: [{ productOfferDetails: details }]
+    })) });
+    await expect(verifier.readRefundableQuantity!({ packageName: "com.tomeza.tomeza", purchaseToken: "token", orderId: "GPA.partial" }))
+      .rejects.toThrow("refund quantity is unavailable or inconsistent");
+  });
+
+  it("does not turn an unspecified purchase state into a cancellation", async () => {
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse({})) });
+    expect(await verifier.verifyPurchase({ packageName: "com.tomeza.tomeza", purchaseToken: "token",
+      productType: "CREDIT_PACK", productId: "pack" })).toMatchObject({ grantable: false, providerStatus: "UNKNOWN" });
+  });
+
   it("verifies one-time purchases with mocked Google responses", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

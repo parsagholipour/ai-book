@@ -534,7 +534,7 @@ model CreditPricingRevision {
 }
 
 /// Two pools, spent plan-first. `availableCredits` is what the user bought and
-/// never expires; `planCredits` is the monthly allowance (free tier or
+/// never expires (negative after a spent purchase is refunded); `planCredits` is the monthly allowance (free tier or
 /// subscription period) and is reset — not topped up — at each period boundary,
 /// so it cannot accumulate. An allowance past `planPeriodEnd` is unspendable
 /// even before the reset lands. See `planPeriods.ts`.
@@ -661,6 +661,21 @@ model CreditLedgerEntry {
   @@index([projectId, operation])
   @@index([generationJobId])
   @@index([purchaseRecordId])
+}
+
+/// Durable refund marker, including notices delivered before the app claims a purchase.
+/// Remaining quantity only decreases; a full refund is zero. Subscription orders
+/// are separate because one token spans multiple paid renewals.
+model GooglePlayRefund {
+  purchaseTokenHash  String
+  orderId            String
+  productType        Int
+  refundableQuantity Int      @default(0)
+  quantity           Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@id([purchaseTokenHash, orderId])
 }
 
 model PurchaseRecord {

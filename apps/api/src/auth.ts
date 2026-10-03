@@ -134,6 +134,8 @@ function isAuthEnabled(config: AppConfig): config is AppConfig & { WEB_PASSWORD:
 function shouldProtectPath(path: string): boolean {
   if (
     path === "/api/health" ||
+    // Authenticated independently with Google's Pub/Sub OIDC token.
+    path === "/api/billing/google-play/rtdn" ||
     path === "/api/mobile/legal" ||
     path === "/api/mobile/sample-book" ||
     path === "/api/mobile/app-update" ||

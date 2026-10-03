@@ -30,6 +30,8 @@ export type Ledger = {
   id: string;
   userId: string;
   projectId: string | null;
+  purchaseRecordId?: string | null;
+  productId?: string | null;
   operation: string;
   amountCredits: number;
   planCreditsDelta: number;
@@ -162,6 +164,7 @@ export function createBillingTestDb() {
     entitlements: new Map<string, Entitlement>(),
     products: new Map<string, Product>(),
     purchases: new Map<string, Purchase>(),
+    googlePlayRefunds: new Map<string, Record<string, any>>(),
     subscriptions: new Map<string, Subscription>(),
     usage: new Map<string, Usage>(),
     welcomeGrants: new Map<string, WelcomeGrant>(),
@@ -205,6 +208,7 @@ export function createBillingTestDb() {
         if (typeof mutation.decrement === "number") {
           target[key] -= mutation.decrement;
         }
+        if (typeof mutation.increment !== "number" && typeof mutation.decrement !== "number") target[key] = mutation;
         continue;
       }
       target[key] = mutation;
@@ -233,6 +237,12 @@ export function createBillingTestDb() {
   function ledgerMatchesWhere(row: Ledger, where: Record<string, any>) {
     if (where.id?.in && !where.id.in.includes(row.id)) {
       return false;
+    }
+    if (where.purchaseRecordId !== undefined && row.purchaseRecordId !== where.purchaseRecordId) return false;
+    if (where.entryType !== undefined && row.entryType !== where.entryType) return false;
+    if (where.metadata?.path) {
+      const metadata = row.metadata as Record<string, unknown>;
+      if (metadata?.[where.metadata.path[0]] !== where.metadata.equals) return false;
     }
     if (where.projectId !== undefined && row.projectId !== where.projectId) {
       return false;
@@ -335,6 +345,24 @@ export function createBillingTestDb() {
       txTail = run.then(() => undefined, () => undefined);
       return run;
     }),
+    googlePlayRefund: {
+      findUnique: vi.fn(async ({ where }: any) => {
+        const key = where.purchaseTokenHash_orderId;
+        return state.googlePlayRefunds.get(`${key.purchaseTokenHash}:${key.orderId}`) ?? null;
+      }),
+      findFirst: vi.fn(async ({ where }: any) => [...state.googlePlayRefunds.values()]
+        .filter((row) => row.purchaseTokenHash === where.purchaseTokenHash &&
+          (where.orderId === undefined || row.orderId === where.orderId))
+        .sort((a, b) => a.refundableQuantity - b.refundableQuantity)[0] ?? null),
+      upsert: vi.fn(async ({ where, create, update }: any) => {
+        const key = `${where.purchaseTokenHash_orderId.purchaseTokenHash}:${where.purchaseTokenHash_orderId.orderId}`;
+        const row = state.googlePlayRefunds.get(key);
+        if (row) { Object.assign(row, update); return row; }
+        const created = { ...create, createdAt: new Date(), updatedAt: new Date() };
+        state.googlePlayRefunds.set(key, created);
+        return created;
+      })
+    },
     productCatalog: {
       upsert: vi.fn(),
       findUnique: vi.fn(async ({ where }: any) => state.products.get(where.sku) ?? null)
@@ -653,6 +681,8 @@ export function createBillingTestDb() {
       create: vi.fn(async ({ data }: any) => {
         const row: Ledger = {
           id: `ledger-${++state.ledgerSeq}`,
+          purchaseRecordId: data.purchaseRecordId ?? null,
+          productId: data.productId ?? null,
           userId: data.userId,
           projectId: data.projectId ?? null,
           operation: data.operation,
@@ -675,7 +705,7 @@ export function createBillingTestDb() {
         if (!row) {
           throw new Error("Ledger entry missing");
         }
-        Object.assign(row, data);
+        applyMutation(row, data);
         return row;
       })
     },
@@ -732,6 +762,7 @@ export function createBillingTestDb() {
     state.entitlements.clear();
     state.products.clear();
     state.purchases.clear();
+    state.googlePlayRefunds.clear();
     state.subscriptions.clear();
     state.usage.clear();
     state.welcomeGrants.clear();

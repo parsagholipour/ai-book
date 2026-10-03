@@ -139,6 +139,8 @@ const envSchema = z.object({
     .optional()
     .transform(booleanEnv("MOCK_EMAIL")),
   GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
+  GOOGLE_PLAY_RTDN_AUDIENCE: z.string().optional(),
+  GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   GOOGLE_PLAY_ACCESS_TOKEN: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT_FILE: z.string().optional(),
