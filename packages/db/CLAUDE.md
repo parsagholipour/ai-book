@@ -674,7 +674,7 @@ diff rather than by silently reordering rows.
 ## Balances and plan periods
 
 - **A balance is two pools, and spending draws the expiring one first.** `planCredits` is the
-  monthly allowance — free tier or subscription period — and it *resets* at each period boundary
+  paid subscription allowance and it *resets* at each period boundary
   rather than accumulating; `availableCredits` is what was bought outright and never expires.
   `CreditBalance.availableCredits` is deliberately still the *total* of both, because shipped
   clients compare it against a quote. Each ledger entry records how much of itself came from the
@@ -690,20 +690,18 @@ diff rather than by silently reordering rows.
   Caps apply inside 30 days even with regional amounts disabled, and all successful same-IP
   grants count toward the quota. Further claims settle silent
   RECENT_IP; a missing IP settles silent NO_IP — neither writes a ledger GRANT.
-  A user with no row is never welcomed. Credits land in the purchased pool;
-  the free monthly allowance is a separate expiring grant (see below).
-- **The free month is granted lazily, not by a cron.** `ensureCurrentPlanPeriod` runs at the top of
-  `reserveCredits` and before `serializeMobileBilling`, so anyone who can spend or look has already
-  been granted. It never overwrites a plan period that is still live, which is what stops it
-  clobbering a subscription's allowance. Subscription periods are granted only by the Google Play
-  verify path and the hourly renewal sweep in `apps/api/src/subscriptionRenewal.ts`, which is why
-  `SubscriptionState.purchaseToken` keeps the raw token.
+  A user with no row is never welcomed. Credits land in the purchased pool.
+- **Free accounts spend welcome or purchased credits; only paid plans receive recurring grants.**
+  Free calendar periods carry zero allowance. `ensureCurrentPlanPeriod` retires unused legacy
+  `free:` balances with a ledger adjustment before a balance read or reservation, preserving
+  welcome/purchased balances and live paid periods. Every free-plan chat message costs at least
+  one credit; the daily message ceiling limits abuse and never grants credits. Google Play
+  verification and `apps/api/src/subscriptionRenewal.ts` own paid recurring grants.
 - **A plan period cut short is *adopted*, not re-granted.** `applyPlanPeriodTx` used to return early
   on a duplicate idempotency key, which is right for the concurrent-grant race but wrong for a
-  cancellation: someone who took their free month on the 1st, subscribed on the 5th and cancelled on
+  cancellation: someone who entered a free period on the 1st, subscribed on the 5th and cancelled on
   the 20th already owns `plan-period:{userId}:free:{month}`, and returning early left them holding
   the *subscription's* allowance on the free tier. It now moves the account onto the period with a
   granted amount of 0 whenever `account.planPeriodKey !== period.key` — that guard is the safety
   property, because the race it must not disturb runs under `runSerializable` and re-reads the
-  winner's key. `planCreditsPerPeriod` still gets the period's full size, so the app reads
-  "0 of 1,000 monthly credits left" rather than a plan with no allowance at all.
+  winner's key. Both `planCredits` and `planCreditsPerPeriod` are zero on the free period.

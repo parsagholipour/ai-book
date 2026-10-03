@@ -109,6 +109,21 @@ afterEach(() => {
 });
 
 describe("loadCreditPricing", () => {
+  it("cannot restore free allowances by loading or reverting a legacy revision", async () => {
+    fakeDb.state.rows.push({
+      id: "legacy-free", version: 1,
+      values: { ...DEFAULT_CREDIT_COSTS, freeMonthlyCredits: 1000, messageCreditsFree: 0, imageGeneration: 90 },
+      changed: {}, note: null, updatedBy: null, createdAt: new Date()
+    } satisfies Row);
+
+    const loaded = await loadCreditPricing();
+    expect(loaded.values).toMatchObject({ freeMonthlyCredits: 0, messageCreditsFree: 1, imageGeneration: 90 });
+    await saveCreditPricing({ values: { ...loaded.values, imageGeneration: 100, messageCreditsFree: 7 } });
+    const restored = await revertCreditPricing({ version: 1 });
+    expect(restored.values).toMatchObject({ freeMonthlyCredits: 0, messageCreditsFree: 1, imageGeneration: 90 });
+    expect(creditPricing()).toMatchObject({ freeMonthlyCredits: 0, messageCreditsFree: 1, welcomeCredits: 1000, messageCreditsCreator: 0 });
+  });
+
   it("uses the compiled defaults when nothing has ever been saved", async () => {
     const state = await loadCreditPricing();
     expect(state.version).toBe(0);

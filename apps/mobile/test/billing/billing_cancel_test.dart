@@ -27,9 +27,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Every book you have made stays yours'), findsOneWidget);
-    expect(find.text('1,000 credits every month'), findsOneWidget);
-    expect(find.text('1,000 welcome credits'), findsOneWidget);
-    expect(find.text('3 illustrated books a month'), findsOneWidget);
+    expect(find.text('1,000 credits every month'), findsNothing);
+    expect(find.text('No monthly credit refill'), findsOneWidget);
+    expect(find.text('1,000 one-time welcome credits'), findsOneWidget);
+    expect(find.text('Up to 3 illustrated books a month using credits'), findsOneWidget);
     // Nothing has happened yet — the sheet is the explanation, not the action.
     expect(repository.cancelCalls, 0);
   });

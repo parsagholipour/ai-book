@@ -248,6 +248,7 @@ code in that area, however obvious the rule looks.
 - **A paid attempt may only be parented onto the job its own `create` callback wrote.** → packages/db/CLAUDE.md
 - **A balance is two pools, and spending draws the expiring one first.** → packages/db/CLAUDE.md
 - **Welcome credits are granted lazily, once, not by a cron.** → packages/db/CLAUDE.md
+- **Free accounts spend welcome or purchased credits; only paid plans receive recurring grants.** → packages/db/CLAUDE.md
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
 - **A plan period cut short is *adopted*, not re-granted.** → packages/db/CLAUDE.md
 - **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat `add_image` Apply.** → apps/api/src/mobile/CLAUDE.md

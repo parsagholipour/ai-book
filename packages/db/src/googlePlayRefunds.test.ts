@@ -101,20 +101,18 @@ describe("Google Play refund clawback", () => {
     expect(db.state.accounts.get("user-a")?.availableCredits).toBe(1000);
   });
 
-  it("keeps spent purchase debt when monthly credits reset and offsets it with a new pack", async () => {
+  it("keeps spent purchase debt across a free month and offsets it with a new pack", async () => {
     await billing.recordVerifiedGooglePlayPurchase({ userId: "user-a", verification });
     await billing.spendCredits({ userId: "user-a", amountCredits: 800,
       operation: "FULL_BOOK_GENERATION", idempotencyKey: "finished-book" });
     await billing.recordGooglePlayRefund(notice);
     setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsEnabled: 0, freeMonthlyCredits: 1000 });
     expect(await billing.getCreditBalance("user-a", new Date("2027-01-01"))).toMatchObject({
-      purchasedCredits: -800, planCredits: 1000, availableCredits: 200
+      purchasedCredits: -800, planCredits: 0, availableCredits: -800
     });
-    await billing.spendCredits({ userId: "user-a", amountCredits: 200,
-      operation: "FULL_BOOK_GENERATION", idempotencyKey: "allowance-book", now: new Date("2027-01-01") });
-    expect(await billing.getCreditBalance("user-a", new Date("2027-01-01"))).toMatchObject({
-      purchasedCredits: -800, planCredits: 800, availableCredits: 0
-    });
+    await expect(billing.spendCredits({ userId: "user-a", amountCredits: 200,
+      operation: "FULL_BOOK_GENERATION", idempotencyKey: "allowance-book", now: new Date("2027-01-01") }))
+      .rejects.toMatchObject({ code: "INSUFFICIENT_CREDITS" });
     await billing.recordVerifiedGooglePlayPurchase({ userId: "user-a", verification: {
       ...verification, purchaseToken: "paid-again", externalPurchaseId: "GPA.paid-again"
     } });

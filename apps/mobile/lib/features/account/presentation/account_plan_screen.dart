@@ -209,8 +209,7 @@ class AccountPlanCard extends StatelessWidget {
                 ],
                 if (!paid && value != null) ...[
                   const SizedBox(height: AppSpacing.sm),
-                  // What free grants each month, so the card describes the plan
-                  // and not only what is left of it.
+                  // The welcome gift is one-time; usage spends the balance.
                   Text(
                     freeTierGrantLine(
                       value.freeTier,

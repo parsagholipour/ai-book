@@ -43,6 +43,30 @@ function price(values: Partial<typeof DEFAULT_CREDIT_COSTS> | Record<string, num
 }
 
 describe("ordinary message allowance", () => {
+  it("uses welcome credits and never renews them into free messages at midnight or month rollover", async () => {
+    db.state.accounts.delete(userId);
+    price({ welcomeCreditsEnabled: 1, welcomeCredits: 2 });
+    db.state.welcomeGrants.set(userId, {
+      userId, ipHash: "welcome-ip", countryCode: null, outcome: "PENDING", amountCredits: 0,
+      ledgerEntryId: null, createdAt: now, settledAt: null
+    });
+    for (const request of ["first", "second"]) {
+      await send(request);
+      await settleMessageUsage(userId, request, true);
+    }
+    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 0, lifetimeCreditsSpent: 2 });
+    for (const date of [now, new Date("2026-09-11T00:00:01Z"), new Date("2026-10-01T00:00:01Z")]) {
+      await expect(reserveMessageUsage({ userId, requestKey: `blocked:${date.toISOString()}`, now: date }))
+        .rejects.toMatchObject({ code: "INSUFFICIENT_CREDITS" });
+    }
+    // A second account refused the welcome grant has no free sends either.
+    db.state.welcomeGrants.set("user-b", {
+      userId: "user-b", ipHash: "welcome-ip", countryCode: null, outcome: "PENDING", amountCredits: 0,
+      ledgerEntryId: null, createdAt: now, settledAt: null
+    });
+    await expect(reserveMessageUsage({ userId: "user-b", requestKey: "no-gift", now }))
+      .rejects.toMatchObject({ code: "INSUFFICIENT_CREDITS" });
+  });
   it("returns an abandoned send's slot and credits without requiring its client to retry", async () => {
     price({ messageCreditsFree: 7 });
     await send("advisor:abandoned");
@@ -127,17 +151,17 @@ describe("ordinary message allowance", () => {
   });
 
   it.each([
-    ["free", 50, 50], ["creator", 150, 100], ["pro", 300, 150], ["max", 600, 200]
-  ] as const)("defaults %s to %i messages and a %i credit reset", (tier, dailyLimit, resetCredits) => {
-    expect(messagePolicy(tier)).toMatchObject({ dailyLimit, resetCredits, creditsPerMessage: 0, resetEnabled: true });
+    ["free", 50, 50, 1], ["creator", 150, 100, 0], ["pro", 300, 150, 0], ["max", 600, 200, 0]
+  ] as const)("defaults %s to %i messages and a %i credit reset", (tier, dailyLimit, resetCredits, creditsPerMessage) => {
+    expect(messagePolicy(tier)).toMatchObject({ dailyLimit, resetCredits, creditsPerMessage, resetEnabled: true });
   });
 
-  it("counts free messages across chats and prevents a second claim of the same request", async () => {
+  it("charges free-plan messages across chats and prevents a second claim of the same request", async () => {
     await send("creation:draft-a:request-1");
     await send("project:book-b:request-2");
     await expect(send("creation:draft-a:request-1")).rejects.toMatchObject({ code: "REQUEST_IN_PROGRESS" });
     expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 2, remaining: 48, resetsAt: "2026-09-11T00:00:00.000Z" });
-    expect(db.state.ledger.size).toBe(0);
+    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 998, reservedCredits: 2 });
     expect(await getMessageAllowance("user-b", now)).toMatchObject({ used: 0, remaining: 50 });
   });
 
@@ -180,7 +204,7 @@ describe("ordinary message allowance", () => {
     await send("second");
     await resetMessageAllowance(request); // Late retry after the replacement allowance was spent.
     expect(await getMessageAllowance(userId, now)).toMatchObject({ remaining: 0, resetToken: "2026-09-10:1:1", resetsAt: before.resetsAt });
-    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 950, lifetimeCreditsSpent: 50 });
+    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 948, reservedCredits: 2, lifetimeCreditsSpent: 50 });
     await reset();
     expect(await getMessageAllowance(userId, now)).toMatchObject({ remaining: 1, resetToken: "2026-09-10:2:1" });
   });
@@ -218,7 +242,7 @@ describe("ordinary message allowance", () => {
     await send("first");
     await reset(0);
     expect(await getMessageAllowance(userId, now)).toMatchObject({ remaining: 1 });
-    expect(db.state.ledger.size).toBe(0);
+    expect([...db.state.ledger.values()].filter((entry) => entry.operation === "MESSAGE_LIMIT_RESET")).toHaveLength(0);
     price({ messageDailyLimitFree: 0 });
     await expect(send("disabled")).rejects.toMatchObject({ code: "MESSAGE_LIMIT_REACHED" });
     await expect(reset()).rejects.toMatchObject({ code: "MESSAGE_RESET_UNAVAILABLE" });

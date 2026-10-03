@@ -64,7 +64,7 @@ export function PricingScreen() {
                         ) : (
                           <input
                             type="number"
-                            min={0}
+                            min={field.key === "messageCreditsFree" ? 1 : 0}
                             max={pricing.state!.limits[field.key]}
                             step={1}
                             value={pricing.draft![field.key]}

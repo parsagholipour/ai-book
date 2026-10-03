@@ -9,9 +9,8 @@ import 'billing_tier_style.dart';
 ///
 /// Free is not a product, so it has no card of its own from the catalogue — and
 /// without one the paywall only ever said what a free reader had *left*, never
-/// what the tier grants. It says both things a decision needs: what free
-/// includes every month, and — for someone on a paid plan — that this is where
-/// cancelling lands them.
+/// what the tier grants. Welcome credits are one-time; usage spends credits.
+/// Paid readers can also see where cancelling lands them.
 class BillingFreePlanCard extends StatelessWidget {
   const BillingFreePlanCard({
     required this.freeTier,
@@ -103,18 +102,14 @@ class BillingFreePlanCard extends StatelessWidget {
   }
 }
 
-/// What the free tier grants, in the same shape as [planBenefits].
-///
-/// Stated as an entitlement rather than as a remainder: "3 illustrated books a
-/// month" is the fact someone weighing a plan — or a cancellation — needs, and
-/// it is true whether or not they have used any yet.
+/// The one-time gift and the limits on credit-funded usage.
 List<String> freePlanBenefits(MobileFreeTier freeTier) {
   return <String>[
-    if (freeTier.monthlyCredits > 0)
-      '${formatCredits(freeTier.monthlyCredits)} credits every month',
     if (freeTier.welcomeCredits > 0)
-      '${formatCredits(freeTier.welcomeCredits)} welcome credits',
-    '${freeTier.illustratedBooksPerMonth} illustrated books a month',
+      '${formatCredits(freeTier.welcomeCredits)} one-time welcome credits',
+    'Messages and generation spend credits',
+    'No monthly credit refill',
+    'Up to ${freeTier.illustratedBooksPerMonth} illustrated books a month using credits',
     'Books up to ${freeTier.maxBookPages} pages',
     'Books you have already made stay yours',
   ];

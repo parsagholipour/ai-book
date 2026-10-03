@@ -1,22 +1,14 @@
 /**
- * Monthly allowances and the limits that ride on them.
+ * Paid monthly allowances and calendar usage limits.
  *
- * Every user is on a plan period: free users get a calendar month of credits,
- * subscribers get their Google Play billing period. The allowance is a *reset*,
- * not a top-up — an unused month does not accumulate — and it lives in its own
- * pool so purchased credits, which never expire, cannot be spent by it or lost
- * with it.
+ * Free periods carry zero credits; free accounts spend their one-time welcome
+ * gift or purchases. Calendar periods still anchor usage ceilings. Before a
+ * balance read or reservation, retire legacy free allowances and expire lapsed
+ * paid allowances without touching the non-expiring purchased/welcome pool.
  *
- * Free periods are adopted lazily rather than by a cron: `ensureCurrentPlanPeriod`
- * runs at the top of every reservation and before the billing payload is
- * serialized, so a lapsed subscription's leftover allowance is written off
- * before anyone spends. Welcome credits are an extra one-time grant into the
- * purchased pool, not a replacement for this monthly allowance. The
- * period-keyed ledger idempotency key makes concurrent API instances safe.
- *
- * Subscription periods are *not* granted here — the Google Play verify and
- * renewal paths own them, because only they know the real period bounds. This
- * module will never overwrite a plan period that is still live.
+ * Google Play verification and renewal grant paid subscription periods. Live
+ * paid periods stay intact. Period adoption and legacy retirement run inside
+ * the caller's serializable transaction.
  */
 import {
   PLAN_ENTITLEMENT_TYPES,
@@ -41,6 +33,7 @@ import {
 } from "./billingInternals.ts";
 import { activeCreditPricingVersion } from "./creditPricing.ts";
 import { ensureWelcomeCreditsTx } from "./welcomeCredits.ts";
+import { retireFreePlanCreditsTx } from "./freePlanCredits.ts";
 
 /** Monthly usage counters. See `UsageCounter` in the schema. */
 export const ILLUSTRATED_BOOK_COUNTER = "illustrated_books";
@@ -77,7 +70,7 @@ export type ImageQuota = MonthlyQuota;
 export type { PlanAccountRow };
 export { effectivePlanCredits };
 
-/** UTC calendar month, the anchor for free allowances and every usage counter. */
+/** UTC calendar month, the anchor for free periods and monthly usage counters. */
 export function calendarPeriodKey(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
@@ -127,9 +120,10 @@ export async function ensureCurrentPlanPeriodTx(
   now: Date = new Date()
 ): Promise<PlanAccountRow> {
   const account = await ensureCreditAccountRow(tx, userId);
-  const settled = await ensureWelcomeCreditsTx(tx, account, now);
+  const welcomed = await ensureWelcomeCreditsTx(tx, account, now);
+  const settled = await retireFreePlanCreditsTx(tx, welcomed);
   // A period that has not run out is owned by whoever granted it. That covers
-  // paid periods mid-month and this month's free grant alike, and it is what
+  // paid periods mid-month and this month's zero-credit free period, and it
   // stops a subscription's allowance being overwritten in the window between
   // the credit grant and the entitlement row that proves it is paid.
   if (settled.planPeriodEnd && settled.planPeriodEnd > now) {
@@ -147,10 +141,10 @@ export async function ensureCurrentPlanPeriodTx(
     userId,
     account: settled,
     period,
-    allowance: creditPricing().freeMonthlyCredits,
+    allowance: 0,
     operation: "PLAN_ALLOWANCE_GRANT",
     idempotencyKey: `plan-period:${userId}:${period.key}`,
-    description: "Free monthly allowance",
+    description: "Free plan period (no credit allowance)",
     metadata: { planTier: "free", planPeriodKey: period.key }
   });
   return applied.account;
@@ -410,11 +404,11 @@ const FALLBACK_PERIOD_MS = 31 * 24 * 60 * 60 * 1000;
  *
  * A period whose grant already happened is still *adopted* when the account is
  * sitting on a different one. That is the case a cancellation makes reachable:
- * someone who took their free month on the 1st, subscribed on the 5th and
+ * someone who entered a free period on the 1st, subscribed on the 5th and
  * cancelled on the 20th already owns this month's free key, and returning early
  * would leave them holding the subscription's allowance on the free tier. The
- * allowance is not granted twice — they move onto the period with nothing left
- * of it, which is exactly what "you already had your free month" means.
+ * allowance is not granted twice. Free periods always have zero allowance,
+ * including when adopting a period granted before free credits were disabled.
  */
 async function applyPlanPeriodTx(
   tx: BillingTx,
@@ -514,8 +508,7 @@ async function applyPlanPeriodTx(
     where: { userId: options.userId },
     data: {
       planCredits: granted,
-      // The period's size, not what is left of it. The app reads
-      // "0 of 1,000 monthly credits left" from this, not from the leftover.
+      // The period's size, not what is left of it. Zero for free periods.
       planCreditsPerPeriod: allowance,
       planPeriodStart: options.period.start,
       planPeriodEnd: options.period.end,

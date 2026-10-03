@@ -43,7 +43,7 @@ MobileBilling _billing({
   return MobileBilling(
     credits: CreditBalance(
       available: planCredits,
-      purchased: 0,
+      purchased: tier == 'free' ? planCredits : 0,
       reserved: 0,
       lifetimeGranted: monthlyCredits,
       lifetimeSpent: monthlyCredits - planCredits,
@@ -63,8 +63,8 @@ MobileBilling _billing({
       productSku: productSku,
     ),
     allowance: MobileAllowance(
-      monthlyCredits: monthlyCredits,
-      planCredits: planCredits,
+      monthlyCredits: tier == 'free' ? 0 : monthlyCredits,
+      planCredits: tier == 'free' ? 0 : planCredits,
       resetsAt: DateTime.utc(2026, 7, 1),
     ),
     imageQuota: imageQuota,
@@ -260,7 +260,7 @@ void main() {
   });
 
   group('plan banner', () {
-    testWidgets('shows what is left of the allowance and the image budget', (
+    testWidgets('shows the free balance and image cap without a monthly allowance', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -280,14 +280,12 @@ void main() {
 
       expect(find.text('600'), findsOneWidget);
       expect(find.text('credits available'), findsOneWidget);
-      expect(find.textContaining('600 of 1,000 monthly credits left'), findsOneWidget);
+      expect(find.textContaining('monthly credits left'), findsNothing);
       expect(find.textContaining('2 of 3 illustrated books left'), findsOneWidget);
-      // And what free grants, so the reader is not left inferring the month's
-      // size from what happens to be left of it.
+      // The welcome gift is one-time; the monthly image cap is not a credit grant.
       expect(
         find.text(
-          'Free includes 1,000 welcome credits, 1,000 credits every month, '
-          'and 3 illustrated books each month',
+          '1,000 one-time welcome credits · usage spends credits · no monthly refill',
         ),
         findsOneWidget,
       );
@@ -307,7 +305,7 @@ void main() {
 
       expect(
         find.text(
-          'Free includes 1,000 credits and 3 illustrated books each month',
+          'Usage spends credits · no monthly refill',
         ),
         findsOneWidget,
       );
@@ -384,8 +382,7 @@ void main() {
       expect(find.text('3 of 3 illustrated books used this month'), findsOneWidget);
       expect(
         find.text(
-          'Free includes 1,000 welcome credits, 1,000 credits every month, '
-          'and 3 illustrated books each month',
+          '1,000 one-time welcome credits · usage spends credits · no monthly refill',
         ),
         findsOneWidget,
       );
@@ -529,9 +526,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('1,000 credits every month'), findsOneWidget);
-      expect(find.text('1,000 welcome credits'), findsOneWidget);
-      expect(find.text('3 illustrated books a month'), findsOneWidget);
+      expect(find.text('1,000 credits every month'), findsNothing);
+      expect(find.text('No monthly credit refill'), findsOneWidget);
+      expect(find.text('1,000 one-time welcome credits'), findsOneWidget);
+      expect(find.text('Up to 3 illustrated books a month using credits'), findsOneWidget);
       expect(find.text('YOUR PLAN'), findsOneWidget);
       // No way down from the bottom rung.
       expect(find.byKey(const ValueKey('paywall-switch-to-free')), findsNothing);
@@ -554,9 +552,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // The operator's numbers, not the client's defaults.
-      expect(find.text('1,000 credits every month'), findsOneWidget);
-      expect(find.text('1,500 welcome credits'), findsOneWidget);
-      expect(find.text('2 illustrated books a month'), findsOneWidget);
+      expect(find.text('1,000 credits every month'), findsNothing);
+      expect(find.text('No monthly credit refill'), findsOneWidget);
+      expect(find.text('1,500 one-time welcome credits'), findsOneWidget);
+      expect(find.text('Up to 2 illustrated books a month using credits'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('paywall-switch-to-free')));
       expect(taps, 1);
     });
@@ -581,7 +580,7 @@ void main() {
       // No quota is not the same as an exhausted one — it must not block anyone.
       expect(billing.isImageQuotaExhausted, isFalse);
       expect(billing.credits.purchased, 0);
-      expect(billing.freeTier.monthlyCredits, 1000);
+      expect(billing.freeTier.monthlyCredits, 0);
       expect(billing.freeTier.welcomeCredits, 0);
     });
 

@@ -126,12 +126,12 @@ class MobileBilling {
   bool get isImageQuotaExhausted => imageQuota?.isExhausted ?? false;
 }
 
-/// The free tier's grant: a monthly allowance plus an optional one-time
-/// welcome. The numbers describe the offer, not whether this reader has
-/// already received it.
+/// The free tier's one-time welcome grant and usage ceilings.
+/// [monthlyCredits] remains in the wire format for older servers; free accounts
+/// have no recurring credit grant.
 class MobileFreeTier {
   const MobileFreeTier({
-    this.monthlyCredits = 1000,
+    this.monthlyCredits = 0,
     this.welcomeCredits = 0,
     this.illustratedBooksPerMonth = 3,
     this.maxBookPages = 30,
@@ -146,7 +146,7 @@ class MobileFreeTier {
 
   factory MobileFreeTier.fromJson(Map<String, dynamic> json) {
     return MobileFreeTier(
-      monthlyCredits: json['monthlyCredits'] as int? ?? 1000,
+      monthlyCredits: json['monthlyCredits'] as int? ?? 0,
       welcomeCredits: json['welcomeCredits'] as int? ?? 0,
       illustratedBooksPerMonth: json['illustratedBooksPerMonth'] as int? ?? 3,
       maxBookPages: json['maxBookPages'] as int? ?? 30,

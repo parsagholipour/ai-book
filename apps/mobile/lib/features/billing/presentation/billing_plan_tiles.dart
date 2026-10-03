@@ -107,11 +107,7 @@ class BillingPlanBanner extends StatelessWidget {
               ),
             ),
           ),
-          // What the tier *grants*, not what is left of it. The progress line
-          // below only ever counted down; on free nothing said the month starts
-          // over with this much, and on a cancelled plan nothing said when.
-          // Held back until the plan is known, so a subscriber never reads a
-          // line about the free tier on the way in.
+          // Explain the one-time free gift or paid renewal after the plan loads.
           if (billing != null) ...[
             const SizedBox(height: 6),
             Text(

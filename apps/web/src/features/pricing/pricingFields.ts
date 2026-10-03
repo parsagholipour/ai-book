@@ -21,7 +21,7 @@ export type PricingFieldGroup = {
 export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
   {
     title: "Welcome credits",
-    blurb: "A one-time gift for new accounts, separate from monthly credits. Set how many accounts from the same IP can receive it within 30 days. Changes affect grants that have not settled yet; existing balances stay the same.",
+    blurb: "The free plan's only credit grant is this one-time gift. Set how many accounts from the same IP can receive it within 30 days. Changes affect grants that have not settled yet; existing welcome balances stay the same.",
     fields: [
       { key: "welcomeCreditsEnabled", label: "Give welcome credits", toggle: true, help: "Turn the welcome gift on or off for all new accounts." },
       { key: "welcomeCreditsRegionalEnabled", label: "Use country income groups", toggle: true, help: "Use the signup country's World Bank FY2027 income group. All EU/EEA countries receive the same offer." },
@@ -34,9 +34,11 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
   },
   ...(["Free", "Creator", "Pro", "Max"] as const).map((plan): PricingFieldGroup => ({
     title: `Ordinary messages — ${plan}`,
-    blurb: "Shared across creation and book chats. The allowance renews at midnight UTC. A reset restores the full allowance until that same midnight.",
+    blurb: plan === "Free"
+      ? "Every message spends welcome or purchased credits. The daily ceiling limits abuse; its midnight reset does not grant credits or free messages."
+      : "Shared across creation and book chats. The allowance renews at midnight UTC. A reset restores the full allowance until that same midnight.",
     fields: [
-      { key: `messageCredits${plan}`, label: "Credits per message", help: "0 makes ordinary messages free. Generation and edit charges still apply separately." },
+      { key: `messageCredits${plan}`, label: "Credits per message", help: plan === "Free" ? "Minimum 1 credit. Charged from welcome or purchased credits on every message." : "0 makes ordinary messages free. Generation and edit charges still apply separately." },
       { key: `messageDailyLimit${plan}`, label: "Daily messages", help: "Total user sends across all chats, including edited messages. 0 disables messaging." },
       { key: `messageResetEnabled${plan}`, label: "Allow credit resets", help: "1 enables the reset option at the cap; 0 disables it." },
       { key: `messageResetCredits${plan}`, label: "Credits per reset", help: "Charged only after the reader confirms. 0 offers a free reset when enabled." }
@@ -133,13 +135,8 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
   },
   {
     title: "Free plan limits",
-    blurb: "What a reader gets without paying. Paid tiers take their allowance from the product catalog instead, because those numbers are pinned to a Play price.",
+    blurb: "Usage ceilings for accounts without a subscription. Generation still spends credits; there is no monthly free credit refill. Paid tiers take their allowance from the product catalog.",
     fields: [
-      {
-        key: "freeMonthlyCredits",
-        label: "Monthly credits",
-        help: "Credits a free reader gets each calendar month. Unused credits do not carry over."
-      },
       {
         key: "freeIllustratedBooksPerMonth",
         label: "Illustrated books a month",

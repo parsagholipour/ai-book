@@ -27,7 +27,9 @@ import { z } from "zod";
 
 export const DEFAULT_CREDIT_COSTS = {
   // Ordinary chat is priced by subscription plan, independently of book effort.
-  messageCreditsFree: 0,
+  // Free accounts spend their welcome/purchased balance on every message.
+  // The daily limit is an abuse ceiling, not an included message allowance.
+  messageCreditsFree: 1,
   messageDailyLimitFree: 50,
   messageResetCreditsFree: 50,
   messageResetEnabledFree: 1,
@@ -110,7 +112,8 @@ export const DEFAULT_CREDIT_COSTS = {
   // abuse without a deploy, with the same audit trail behind it. Paid tiers take
   // their allowance from the product catalog instead, since those numbers are
   // pinned to a Play price point that cannot change without one.
-  freeMonthlyCredits: 1_000,
+  // Retained for older clients and pricing revisions; recurring free grants are disabled.
+  freeMonthlyCredits: 0,
   welcomeCredits: 1_000,
   welcomeCreditsEnabled: 1,
   welcomeCreditsRegionalEnabled: 0,
@@ -243,7 +246,7 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   characterPortraitGeneration: 5_000,
   // Generous ceilings: the failure mode for an allowance is giving too much
   // away, which is bounded and reversible, not an instant charge.
-  freeMonthlyCredits: 100_000,
+  freeMonthlyCredits: 0,
   welcomeCredits: 100_000,
   welcomeCreditsEnabled: 1,
   welcomeCreditsRegionalEnabled: 1,
@@ -261,12 +264,13 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
  *
  * Unknown keys are rejected rather than dropped: a dashboard sending a key this
  * build does not know about is a version mismatch worth surfacing, not something
- * to swallow. Zero is legal everywhere — two operations are free today.
+ * to swallow. Free-plan messages must cost credits, and free monthly grants
+ * cannot be re-enabled by an old dashboard or a pricing-history revert.
  */
 export const creditPricingInputSchema = z
   .object(
     Object.fromEntries(
-      CREDIT_PRICING_KEYS.map((key) => [key, z.number().int().min(0).max(CREDIT_PRICING_LIMITS[key])])
+      CREDIT_PRICING_KEYS.map((key) => [key, z.number().int().min(key === "messageCreditsFree" ? 1 : 0).max(CREDIT_PRICING_LIMITS[key])])
     ) as { [K in CreditPricingKey]: z.ZodNumber }
   )
   .strict();
@@ -294,7 +298,7 @@ export function creditPricing(): CreditPricing {
  * place a gap is allowed to be filled.
  */
 export function setCreditPricing(values: CreditPricing): CreditPricing {
-  activePricing = Object.freeze({ ...values });
+  activePricing = Object.freeze(normalizeCreditPricing(values));
   return activePricing;
 }
 
@@ -338,7 +342,7 @@ function isChargeableInteger(candidate: unknown, key: CreditPricingKey): candida
   return (
     typeof candidate === "number" &&
     Number.isInteger(candidate) &&
-    candidate >= 0 &&
+    candidate >= (key === "messageCreditsFree" ? 1 : 0) &&
     candidate <= CREDIT_PRICING_LIMITS[key]
   );
 }

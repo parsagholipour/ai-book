@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe("messagePolicy", () => {
   it.each([
-    ["free", 0, 50, 50, "messageCreditsFree", "messageResetCreditsFree"],
+    ["free", 1, 50, 50, "messageCreditsFree", "messageResetCreditsFree"],
     ["creator", 0, 150, 100, "messageCreditsCreator", "messageResetCreditsCreator"],
     ["pro", 0, 300, 150, "messageCreditsPro", "messageResetCreditsPro"],
     ["max", 0, 600, 200, "messageCreditsMax", "messageResetCreditsMax"]

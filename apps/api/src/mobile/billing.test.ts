@@ -87,14 +87,14 @@ describe("mobile billing and Google Play", () => {
     await app.close();
   });
 
-  it("reports the plan, its allowance, and the free tier's image budget", async () => {
+  it("reports zero free monthly credits and the free tier's image cap", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     vi.mocked(getCreditBalance).mockResolvedValue(
       creditBalance({
-        availableCredits: 1400,
+        availableCredits: 500,
         purchasedCredits: 500,
-        planCredits: 900,
-        planCreditsPerPeriod: 1000,
+        planCredits: 0,
+        planCreditsPerPeriod: 0,
         planPeriodEnd: new Date("2026-07-01T00:00:00.000Z"),
         planPeriodKey: "free:2026-06"
       })
@@ -124,14 +124,13 @@ describe("mobile billing and Google Play", () => {
       productSku: null
     });
     expect(body.billing.allowance).toEqual({
-      monthlyCredits: 1000,
-      planCredits: 900,
+      monthlyCredits: 0,
+      planCredits: 0,
       resetsAt: "2026-07-01T00:00:00.000Z"
     });
-    // What free *grants*, not what is left of it: the app describes the tier
-    // from this whether or not the reader is on it.
+    // Only the one-time welcome gift; the image cap does not fund generation.
     expect(body.billing.freeTier).toEqual({
-      monthlyCredits: 1000,
+      monthlyCredits: 0,
       welcomeCredits: 1000,
       illustratedBooksPerMonth: 3,
       maxBookPages: 30
@@ -139,8 +138,7 @@ describe("mobile billing and Google Play", () => {
     // The reader's own cap: a free reader is held to the free tier's length.
     expect(body.billing.maxBookPages).toBe(30);
     expect(body.billing.imageQuota).toEqual({ used: 2, limit: 3, resetsAt: "2026-07-01T00:00:00.000Z" });
-    // The app reads `available` as everything spendable, allowance included.
-    expect(body.billing.credits).toMatchObject({ available: 1400, purchased: 500 });
+    expect(body.billing.credits).toMatchObject({ available: 500, purchased: 500 });
 
     const subscriptions = body.billing.products.filter(
       (product: { productType: string }) => product.productType === "SUBSCRIPTION"
@@ -178,7 +176,7 @@ describe("mobile billing and Google Play", () => {
     // The limit still ships on a paid plan — the paywall's free rung describes
     // what cancelling would drop you to.
     expect(paid.billing.freeTier).toEqual({
-      monthlyCredits: 1000,
+      monthlyCredits: 0,
       welcomeCredits: 1000,
       illustratedBooksPerMonth: 3,
       maxBookPages: 30

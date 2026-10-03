@@ -33,6 +33,14 @@ const sampleInput = createProjectSchema.parse({
 });
 
 describe("normalizeCreditPricing", () => {
+  it("cannot restore recurring free grants or zero-price free messages from old revisions", () => {
+    const legacy = { ...DEFAULT_CREDIT_COSTS, freeMonthlyCredits: 1000, messageCreditsFree: 0 };
+    expect(normalizeCreditPricing(legacy)).toMatchObject({ freeMonthlyCredits: 0, messageCreditsFree: 1 });
+    expect(setCreditPricing(legacy)).toMatchObject({ freeMonthlyCredits: 0, messageCreditsFree: 1 });
+    expect(normalizeCreditPricing({ messageCreditsFree: 7, messageCreditsPro: 0 })).toMatchObject({
+      messageCreditsFree: 7, messageCreditsPro: 0
+    });
+  });
   it("fills every key from the defaults when nothing is stored", () => {
     expect(normalizeCreditPricing(undefined)).toEqual({ ...DEFAULT_CREDIT_COSTS });
     expect(normalizeCreditPricing({})).toEqual({ ...DEFAULT_CREDIT_COSTS });
@@ -83,6 +91,8 @@ describe("creditPricingInputSchema", () => {
     expect(strict({ fullBookPerPage: 8.5 })).toBe(false);
     expect(strict({ fullBookPerPage: CREDIT_PRICING_LIMITS.fullBookPerPage + 1 })).toBe(false);
     expect(strict({ somethingNew: 12 })).toBe(false);
+    expect(strict({ freeMonthlyCredits: 1000 })).toBe(false);
+    expect(strict({ messageCreditsFree: 0 })).toBe(false);
   });
 
   it("rejects a partial body so a half-filled form cannot zero the rest", () => {

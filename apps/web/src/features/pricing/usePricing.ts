@@ -165,7 +165,7 @@ function parseDraft(draft: Record<CreditPricingKey, string>): {
   for (const [key, raw] of Object.entries(draft) as Array<[CreditPricingKey, string]>) {
     const trimmed = raw.trim();
     const parsedValue = Number(trimmed);
-    if (trimmed === "" || !Number.isInteger(parsedValue) || parsedValue < 0) {
+    if (trimmed === "" || !Number.isInteger(parsedValue) || parsedValue < (key === "messageCreditsFree" ? 1 : 0)) {
       invalidKeys.push(key);
       values[key] = Number.NaN;
       continue;

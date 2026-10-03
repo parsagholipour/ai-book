@@ -20,21 +20,10 @@ String freeTierGrantLine(
   String Function(int value)? formatCredits,
 }) {
   String credits(int value) => formatCredits?.call(value) ?? '$value';
-  final books =
-      '${freeTier.illustratedBooksPerMonth} illustrated books each month';
   final welcome = freeTier.welcomeCredits;
-  final monthly = freeTier.monthlyCredits;
-  if (welcome <= 0 && monthly <= 0) {
-    return 'Free includes $books';
-  }
-  if (welcome <= 0 && monthly > 0) {
-    return 'Free includes ${credits(monthly)} credits and $books';
-  }
-  if (welcome > 0 && monthly <= 0) {
-    return 'Free includes ${credits(welcome)} welcome credits and $books';
-  }
-  return 'Free includes ${credits(welcome)} welcome credits, '
-      '${credits(monthly)} credits every month, and $books';
+  return welcome > 0
+      ? '${credits(welcome)} one-time welcome credits · usage spends credits · no monthly refill'
+      : 'Usage spends credits · no monthly refill';
 }
 
 String renewsLine(BuildContext context, DateTime renewsAt) {
