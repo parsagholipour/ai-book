@@ -1,3 +1,4 @@
+import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
 import { sentenceLengthRepairFor, type SentenceLengthRepair } from "@book-maker/core";
 import { changedCandidateGrounding } from "./changedCandidateGrounding.js";
 import { formatQualityFailure, styleExcerptsForPage } from "./bookHelpers.js";
@@ -580,7 +581,7 @@ export async function reviewAndSaveGeneratedPage(options: {
   // passes `nextPages`) must be checked against what comes after it too.
   const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, options.chapter);
-  const quality = await loadQualityContext(options.input);
+  const quality = quickDraftPageQuality(options.input, await loadQualityContext(options.input), options.editInstruction);
   const precomputed = matchingPrecomputedReview({ precomputed: options.precomputedReview, draft: options.draft,
     previousPages: options.previousPages, nextPages: options.nextPages, quality });
   // The book's own opening voice, not whatever the caller's window happens to

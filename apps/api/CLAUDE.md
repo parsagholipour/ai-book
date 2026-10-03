@@ -27,6 +27,12 @@ than through `fastify.register`, so they share one encapsulation context — the
 `register` would break that. Everything `mobileProjects.ts` re-exports is public API consumed by
 `server.ts`, `mobileImports.ts` or tests; don't narrow those exports without checking callers.
 
+## Project costs
+
+Project cost summaries retain settled calls with unknown usage in `unpricedTextCalls`.
+Their estimated token counts contribute no dollars; `projectCosts.ts` filters in-flight calls,
+and the core cost summary preserves the recorded unknown status.
+
 ## Private durable objects
 
 Every generated book, illustration, voice clip, narration, uploaded original and run artifact

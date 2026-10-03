@@ -254,28 +254,28 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "pageModelReview",
     label: "Model page review",
-    summary: "Reviews each drafted page with the editor model after any enabled local checks.",
+    summary: "Reviews each drafted page with the editor model. Quick Draft defers this to its focused whole-book review.",
     pipelines: ["per-page"],
     stage: "Page review"
   },
   {
     id: "pageQaRewrite",
     label: "Page QA rewrites",
-    summary: "Revises and re-reviews pages that fail enabled page checks. Off keeps the first reviewed draft.",
+    summary: "Revises failing pages. Quick Draft repairs at most three pages once each after its whole-book review. Off keeps the reviewed draft.",
     pipelines: ["per-page", "composed"],
     stage: "Page review"
   },
   {
     id: "finalBookQa",
     label: "Final book QA",
-    summary: "Optional chapter transitions, the final book review, and targeted repair before export. Deterministic manuscript audit and targeted structural review are mandatory integrity and are not this checkbox.",
-    pipelines: ["per-page"],
+    summary: "Final book review and targeted repair before export. Quick Draft runs one concrete-defect screen and one verification if repaired, including composed books. Deterministic manuscript checks remain active.",
+    pipelines: ["per-page", "composed"],
     stage: "Compile"
   },
   {
     id: "storyExtractAudit",
     label: "Story extract + audit",
-    summary: "One cheap mechanical call per page to track promises, facts, and contradictions.",
+    summary: "Tracks promises, facts, and contradictions per page. Quick Draft defers this audit to its whole-book screen.",
     pipelines: ["per-page", "composed"],
     stage: "Page save"
   },

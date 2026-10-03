@@ -56,7 +56,10 @@ describe("arithmetic in the prose", () => {
     expect(seen).toHaveLength(0);
     const findings = await proseArithmeticFindings({ markdown: workbook, textModel: model });
     expect(seen[0]!.purpose).toBe("check-chapter-arithmetic");
-    expect(findings).toEqual([{ quote: "only $290 remains on April 5", reason: "800 - 1200 - 110 = -510, not 290." }]);
+    expect(findings).toEqual([
+      { quote: "only $290 remains on April 5", reason: "800 - 1200 - 110 = -510, not 290." },
+      expect.objectContaining({ quote: "After paying rent of $1,200 and electricity", reviewOnly: true })
+    ]);
     // One check, and one confirmation per proposal that code agreed was wrong.
     expect(seen).toHaveLength(3);
   });

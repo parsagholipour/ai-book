@@ -200,6 +200,13 @@ export function reviewPageDraftLocally(options: LocalPageReviewOptions): PageQua
   return runLocalPageQualityChecks({ ...options, textModel: undefined as unknown as TextModelAdapter });
 }
 
+/** Quick Draft defers editorial judgement; only concrete integrity findings target repairs. */
+export function reviewQuickDraftPageLocally(options: ReviewPageOptions): PageQualityReport {
+  return pageQualityReportForRules(options, LOCAL_PAGE_QUALITY_RULES.map((rule) => (context) =>
+    rule(context)?.filter((finding) => finding.failedChecks.some((check) =>
+      check === "placeholderFree" || check === "promptLeakFree" || (check === "repetitionOk" && !finding.failedChecks.includes("titleClean"))))));
+}
+
 export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityReport {
   return pageQualityReportForRules(options, LOCAL_PAGE_QUALITY_RULES);
 }

@@ -1,3 +1,4 @@
+import { usesQuickDraftReview } from "./quickDraftReviewPolicy.js";
 import { savedPictureBookReviewSchema, shortPictureBookChecks } from "./shortPictureBookReviewCache.js";
 import { prisma, type Prisma } from "@book-maker/db";
 import { z } from "zod";
@@ -40,6 +41,7 @@ export async function prepareShortPictureBookReview(options: {
   pages: readonly PriorPageContext[]; chapterBriefs: readonly ChapterBrief[];
   quality: QualityGateContext; textModel: TextModelAdapter;
 }): Promise<Map<number, PictureBookDeliveryReview>> {
+  if (usesQuickDraftReview(options.input)) return new Map();
   const checks = shortPictureBookChecks(options.quality);
   if (!Object.values(checks).some(Boolean)) return new Map();
   await assertJobNotStopped(options.generationJobId);

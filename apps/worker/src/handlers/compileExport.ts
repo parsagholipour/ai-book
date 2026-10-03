@@ -1,3 +1,4 @@
+import { quickDraftPageQuality, quickDraftQaTargets, quickDraftRepairTargets, usesQuickDraftReview } from "../generation/quickDraftReviewPolicy.js";
 import { chapterTransitionRepairIssues } from "../generation/chapterTransitionRepairs.js";
 import { qualityIssuesFromFinalQa } from "../generation/exportQualityProvenance.js";
 import { pageQualityAdvisoryIssues } from "../generation/pageQualityAdvisories.js";
@@ -220,17 +221,15 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // the automatic continuity review added for parallel-wave drafting.
   // `skipFinalReview` still prevents unexpected edit/presentation recompile charges and rewrites.
   const automaticFinalReview = quality.enabled("finalBookQa") &&
-    strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1;
+    (usesQuickDraftReview(input) || (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1));
   // `detachedRepair` is belt and braces here — every repair is queued with
   // `skipFinalReview` — but it is the signal that actually means "uncharged", and
   // a repair's verdict is discarded anyway: `ownsProjectStatus` is false, so it
   // writes no status, and its row was created with `ownsQualityVerdict` false —
   // which is the column the API reads the book's verdict off — so the report
   // below stays on this job for an operator and never reaches the app.
-  // A composed book was read whole and line-edited chapter by chapter before it
-  // reached this compile; the per-page repair loop would re-template pages the
-  // editor deliberately left ending mid-argument. The deterministic manuscript
-  // audit and the targeted structural review below still run for it.
+  // Quick Draft screens composed prose too, with minimal repairs and no page templates.
+  // Other tiers retain their chapter editor and skip the page-based final repair pass.
   const finalizationIdentity = { projectId, planId, contentRevision: queuedContentRevision,
     operationIdentity: { attemptId: generationAttemptId, editOperationId, policy } };
   // Never over an author's book: its repair pass redrafts the pages it flags, and
@@ -240,7 +239,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     !skipFinalReview &&
     !detachedRepair &&
     !presentationOnly &&
-    !strategyComposesChapters(strategy) &&
+    (!strategyComposesChapters(strategy) || usesQuickDraftReview(input)) &&
     (input.mediaSettings.finalReview || automaticFinalReview || await hasCompileFinalization(finalizationIdentity));
   const finalization = runFinalReview ? await openCompileFinalization({
     ...finalizationIdentity, generationJobId,
@@ -262,7 +261,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     failedQaPageIndexes = failedQaPageIndexesForCompile(pages, citeableResearchNotes, { input, plan, strategy });
     if (await exportPublicationSuperseded(projectId, queuedContentRevision)) return {};
   }
-  const overlapCoverage = finalization && ownsOutcome && !skipFinalReview && shortPictureBookReaderChapters({ input, plan, strategy, pages });
+  const overlapCoverage = finalization && !usesQuickDraftReview(input) && ownsOutcome && !skipFinalReview && shortPictureBookReaderChapters({ input, plan, strategy, pages });
   if (overlapCoverage) inventoryWork = prepareFinalizationCoverageInventory(finalization!, input.prompt, providers.text, plan.requirementInventory)
     .then((value) => ({ status: "fulfilled" as const, value }), (reason: unknown) => ({ status: "rejected" as const, reason }));
   if (runFinalReview) {
@@ -276,13 +275,15 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     finalQa = review.finalQa;
     const chapterRepairs = chapterTransitionRepairIssues(modelQualityIssues, pages);
     const chapterRepairIndexes = chapterRepairs.flatMap((issue) => issue.affectedPageIndexes);
-    if ((!finalQa.approved || failedQaPageIndexes.length > 0 || chapterRepairs.length > 0) && !finalization!.state.repairPassCompleted) {
+    if ((!finalQa.approved || failedQaPageIndexes.length > 0 || chapterRepairs.length > 0 ||
+      (usesQuickDraftReview(input) && initialIntegrityIssues().some((issue) => issue.severity === "error"))) &&
+      (!usesQuickDraftReview(input) || quality.enabled("pageQaRewrite")) && !finalization!.state.repairPassCompleted) {
       const targets = new Set([
-        ...failedQaPageIndexes, ...chapterRepairIndexes, ...extractRepairPageIndexes(finalQa, lastPageIndex(pages)),
+        ...failedQaPageIndexes, ...chapterRepairIndexes, ...(usesQuickDraftReview(input) ? quickDraftQaTargets(finalQa) : extractRepairPageIndexes(finalQa, lastPageIndex(pages))),
         ...initialIntegrityIssues().filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION")
           .flatMap((issue) => issue.affectedPageIndexes)
       ]);
-      await finalization!.beginRepair(pages.filter((page) => targets.has(page.index)).map((page) => page.id));
+      await finalization!.beginRepair((usesQuickDraftReview(input) ? quickDraftRepairTargets(pages, targets, finalQa) : pages.filter((page) => targets.has(page.index))).map((page) => page.id));
       const revisionFence = exportRepairOwnershipFence(projectId, queuedContentRevision);
       const repairOwnershipFence = revisionFence ? async (client?: FinalQaOwnershipClient) => {
         await revisionFence(client);
@@ -297,10 +298,10 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           plan,
           providers,
           strategy,
-          quality,
+          quality: quickDraftPageQuality(input, quality),
           pages,
           finalQa,
-          additionalRepairIssues: chapterRepairs,
+          additionalRepairIssues: usesQuickDraftReview(input) ? [...chapterRepairs, ...initialIntegrityIssues().filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION")] : chapterRepairs,
           shouldRepairPage: (id) => !finalization!.state.startedPageIds.includes(id),
           onRepairPageStarted: (id, index) => finalization!.claimPage(id, index),
           onRepairGroupStarted: (targets) => finalization!.claimPages(targets),
@@ -569,11 +570,10 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     affectedPageIndexes: pages.filter((page) => interruptedRepairIds.includes(page.id)).map((page) => page.index)
   });
   await finalization?.phase("coverage", pendingFinalizationImages);
-  // A composed book on a tier without `briefCoverageReview` (Quick Draft) skips the brief-coverage
-  // read on every compile: no verdict, no BRIEF_COVERAGE_UNVERIFIED, and no continuity fallback
-  // standing in for it. The brief's asks already reached the form plan while the chapters were written.
-  const coverageSkipped = !authorManuscript && !overlapCoverage && strategyComposesChapters(strategy) &&
-    !quality.enabled("briefCoverageReview");
+  // Quick Draft's single screen already reads the request and actual manuscript.
+  // Composed tiers without brief coverage retain their established opt-out.
+  const coverageSkipped = !authorManuscript && !overlapCoverage && (usesQuickDraftReview(input) ||
+    (strategyComposesChapters(strategy) && !quality.enabled("briefCoverageReview")));
   if (!coverageSkipped) await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
   const inventory = await inventoryWork;
   if (inventory?.status === "rejected") throw inventory.reason;
@@ -622,11 +622,9 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     // entries are unverified candidates, never proof that a passage is absent.
     ...(coverage || coverageSkipped ? [] : unpaidPromiseQualityIssues({ quality, targetPages: input.targetPages, storyState: () => storyState }))
   ];
-  // Integrity is not optional polish: an outcome compile that still owns the
-  // book adjudicates deterministic structural clusters even when final-book QA
-  // was not requested. Edits, repairs, and presentation reprints skip it so
-  // they cannot re-grade prose they did not write.
-  if (ownsOutcome && !skipFinalReview) {
+  // Quick Draft already screens duplication in its one manuscript read. Other tiers
+  // adjudicate structural clusters separately; unpaid reprints never re-grade prose.
+  if (ownsOutcome && !skipFinalReview && !usesQuickDraftReview(input)) {
     modelQualityIssues.push(
       ...await reviewManuscriptStructure({
         pages,

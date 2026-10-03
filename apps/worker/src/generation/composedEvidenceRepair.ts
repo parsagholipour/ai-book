@@ -1,7 +1,7 @@
 import type { ChapterCaseEvidenceReview, SourceClaimCoverage } from "@book-maker/core";
 
 /** A prose-review finding: the exact chapter span and why its evidence does not carry it. */
-export type EvidenceResidual = { quote: string; reason: string };
+export type EvidenceResidual = { quote: string; reason: string; reviewOnly?: true };
 
 export type ChapterEvidenceRepair = {
   markdown: string;

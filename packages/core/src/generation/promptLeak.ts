@@ -183,6 +183,13 @@ const MODEL_SELF_REFERENCE_PATTERNS = [
  * Page QA's table: our own drafting instructions printed as prose — schema
  * names, image directions, production notes.
  */
+const DRAFTING_NOTE_PATTERNS = [
+  /\(\s*the final sentence is the chapter end;?\s*no extra material\.?\s*\)/i,
+  /\b(?:we need|need to) output only (?:prose|the chapter),?\s*no meta\b/i,
+  /\bwait[, .:;-]*target\s+\d{3,5}\s*[-–]\s*\d{3,5},?\s*this is\s*[~≈]?\d/i,
+  /\bneed (?:to )?expand to \d{3,5}\s*(?:min|minimum)\b/i
+];
+
 export const PAGE_PROMPT_LEAK_PATTERNS: readonly RegExp[] = [
   /global visual style/i,
   /continuity rules:/i,
@@ -197,11 +204,14 @@ export const PAGE_PROMPT_LEAK_PATTERNS: readonly RegExp[] = [
   // Source-packet language: a writer given research notes wrote "according
   // to the research brief", "the figures supplied for this period" and "as
   // preserved in the material for this discussion" (composed-22/23).
-  /\b(?:the )?research (?:brief|record|notes|dossier|packet)\b/i,
+  /\b(?:the )?research (?:brief|record|dossier|packet)\b/i,
+  /\b(?:according to|in|from) the (?:provided |supplied )?research notes\b/i,
+  /\b(?:provided|supplied) research notes\b/i,
   /\b(?:the )?(?:supplied|provided) (?:evidence|record|material|estimate|figures?|notes|sources?)\b/i,
   /\b(?:evidence|record|material|estimates?|figures?) (?:supplied|provided) for\b/i,
   /\bmaterial for this (?:discussion|chapter|book)\b/i,
-  ...MODEL_SELF_REFERENCE_PATTERNS
+  ...MODEL_SELF_REFERENCE_PATTERNS,
+  ...DRAFTING_NOTE_PATTERNS
 ].map(folded);
 
 /**
@@ -214,7 +224,8 @@ export const MANUSCRIPT_PROMPT_LEAK_PATTERNS: readonly RegExp[] = [
   /ignore\s+(?:all\s+)?previous\s+instructions/i,
   /chain[- ]of[- ]thought/i,
   /private\s+source\s+material\s+from\s+the\s+user/i,
-  ...MODEL_SELF_REFERENCE_PATTERNS
+  ...MODEL_SELF_REFERENCE_PATTERNS,
+  ...DRAFTING_NOTE_PATTERNS
 ].map(folded);
 
 /** Whether any of `patterns` matches `value` once it is folded. */

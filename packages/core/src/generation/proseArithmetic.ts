@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
+import { isCancellationError } from "../adapters/retry.js";
 import { targetLanguageGenerationGuidance } from "../prompting/language.js";
 import type { ArithmeticFinding } from "./arithmeticCheck.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
@@ -15,8 +16,8 @@ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
  * A model proposes and code decides: every proposed error carries the exact
  * computation from the chapter's own numbers, and it is kept only when its
  * quote is in the chapter, carries the stated number, and the computation,
- * evaluated here, disagrees with it beyond rounding. So the check may miss an
- * error, and cannot talk the editor into "correcting" a right number. Only the
+ * evaluated here, disagrees with it beyond rounding. Unconfirmed intent remains
+ * review-only evidence and cannot authorize a numeric replacement. Only the
  * obvious kind is asked for: no assumptions, estimates or outside facts.
  */
 export const CHECK_CHAPTER_ARITHMETIC_PURPOSE = "check-chapter-arithmetic";
@@ -60,7 +61,14 @@ export async function proseArithmeticFindings(options: { markdown: string; textM
     if (!finding || findings.some((kept) => kept.quote === finding.quote)) continue;
     // Code can check the arithmetic and not whether the expression is what the sentence computes:
     // replayed over 32 stored chapters, one proposal paired "$300 left" with the wrong subtraction.
-    if (await sentenceStatesComputation(options, finding.quote, proposal.expression)) findings.push(finding);
+    let confirmed = false;
+    try { confirmed = await sentenceStatesComputation(options, finding.quote, proposal.expression); }
+    catch (error) { if (isCancellationError(error)) throw error; }
+    findings.push(confirmed ? finding : {
+      ...finding,
+      reason: `Check whether this statement uses the proposed calculation: ${finding.reason} The intent check did not confirm the connection; do not automatically replace the number.`,
+      reviewOnly: true
+    });
     if (findings.length === MAX_ERRORS) break;
   }
   return findings;

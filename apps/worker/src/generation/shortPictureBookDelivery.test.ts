@@ -35,7 +35,7 @@ it("does not restart exhausted story and style checks during page publication", 
   ] });
 });
 
-it("delivers all thirty captured Quick pages when a reviewer repeats an invalid requirement citation", async () => {
+it("retains the full-review tier fallback for captured pages with invalid requirement citations", async () => {
   const model = new FakeTextModelAdapter();
   let calls = 0;
   const purposes: string[] = [];
@@ -48,7 +48,7 @@ it("delivers all thirty captured Quick pages when a reviewer repeats an invalid 
     if (!raw) throw new Error("Unexpected extra provider request");
     return { data: request.schema.parse(raw), text: JSON.stringify(raw), provider: "captured", model: "captured" };
   };
-  const request = { projectId: "quick", generationJobId: "quick-generation", input: createProjectSchema.parse(captured.input),
+  const request = { projectId: "quick", generationJobId: "quick-generation", input: createProjectSchema.parse({ ...captured.input, mediaSettings: { ...captured.input.mediaSettings, modelTier: "balanced" } }),
     plan: bookPlanSchema.parse(captured.plan), pages: captured.pages, chapterBriefs: [], textModel: model,
     quality: { enabled: (feature: string) => feature === "pageModelReview" || feature === "storyExtractAudit" } };
   const reviews = await prepareShortPictureBookReview(request);
@@ -68,7 +68,7 @@ it("delivers all thirty captured Quick pages when a reviewer repeats an invalid 
 it("delivers a complete unverified manuscript when the review provider is unavailable", async () => {
   const model = new FakeTextModelAdapter();
   model.generateJson = vi.fn(async () => { throw new Error("Review provider unavailable"); });
-  const request = { projectId: "quick", generationJobId: "outage", input: createProjectSchema.parse(captured.input),
+  const request = { projectId: "quick", generationJobId: "outage", input: createProjectSchema.parse({ ...captured.input, mediaSettings: { ...captured.input.mediaSettings, modelTier: "balanced" } }),
     plan: bookPlanSchema.parse(captured.plan), pages: captured.pages, chapterBriefs: [], textModel: model,
     quality: { enabled: (feature: string) => feature === "pageModelReview" || feature === "storyExtractAudit" } };
   const reviews = await prepareShortPictureBookReview(request);
@@ -189,4 +189,16 @@ it("quarantines contradicted dialogue claims while retaining independent repair 
     checkpoint: { ...checkpoint, editorialRows: [{ pageIndex: 24, score: 84, findings: [challenged] }] } });
   expect(onlyChallenge).toMatchObject({ reviewUnavailable: true, findings: [], unverifiedFindings: [challenged],
     report: { approved: false, requiredRevisions: [], issues: [], scoreBasis: "screened_unscored" } });
+});
+
+
+it("defers the Quick Draft picture-book model review without creating unavailable page verdicts", async () => {
+  const textModel = new FakeTextModelAdapter();
+  const generate = vi.spyOn(textModel, "generateJson");
+  const reviews = await prepareShortPictureBookReview({ projectId: "quick", generationJobId: "quick-generation",
+    input: createProjectSchema.parse(captured.input), plan: bookPlanSchema.parse(captured.plan),
+    pages: captured.pages, chapterBriefs: [], textModel, quality: { enabled: () => true } });
+  expect(reviews.size).toBe(0);
+  expect(generate).not.toHaveBeenCalled();
+  expect(mocks.payload).toEqual({});
 });

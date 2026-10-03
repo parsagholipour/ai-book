@@ -2,6 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 // The claim review is off in production (`SOURCE_CLAIM_REVIEW`); these tests keep its dormant path working.
 vi.mock("./sourceClaimState.js", async (original) => ({ ...await original<object>(), SOURCE_CLAIM_REVIEW: true }));
 import { arithmeticErrorIssues, storedEvidenceResiduals, unsupportedCaseClaimIssues } from "./composedEvidenceResiduals.js";
+
+it("surfaces an unconfirmed computation as review required, without instructing a numeric replacement", () => {
+  const quote = "Send six pumps might produce 5";
+  const productionBrief = { report: { arithmetic: { unresolved: [{ quote, reason: "Intent unconfirmed", reviewOnly: true }] } } };
+  expect(arithmeticErrorIssues([{ index: 42, markdown: quote, chapter: { productionBrief } }])).toEqual([
+    expect.objectContaining({ code: "ARITHMETIC_REVIEW_REQUIRED", severity: "error", affectedPageIndexes: [42],
+      guidance: expect.stringContaining("before changing") })
+  ]);
+  expect(arithmeticErrorIssues([{ index: 42, markdown: "A corrected example.", chapter: { productionBrief } }])).toEqual([]);
+});
 import { sourceClaimDigest } from "./sourceClaimState.js";
 
 const brief = { composition: {}, report: { evidence: { findings: 2, repairs: 2, dropped: 0, unresolved: [{ quote: "in 1085–1086", reason: "The passage dates only the order." }, { quote: "eldest sons", reason: "Not in the passage." }] } } };

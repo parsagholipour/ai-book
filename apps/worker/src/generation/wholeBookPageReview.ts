@@ -1,3 +1,4 @@
+import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import type { IndexedPageDraft } from "../runtime/jobTypes.js";
 import { reviewPageWithQualityGates } from "./pageReview.js";
@@ -33,7 +34,7 @@ export async function reviewWholeBookDraftPages(options: {
   pages: IndexedPageDraft[];
   generationJobId?: string | undefined;
 }): Promise<ReviewedWholeBookPage[]> {
-  const quality = await loadQualityContext(options.input);
+  const quality = quickDraftPageQuality(options.input, await loadQualityContext(options.input));
   const reviewed: ReviewedWholeBookPage[] = [];
   const previousPages: PriorPageContext[] = [];
   // Composed finalize never rewrites for Smart Unslop, so Jev confirmation is inert.

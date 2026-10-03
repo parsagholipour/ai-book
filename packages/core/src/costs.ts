@@ -106,6 +106,14 @@ export function calculateTextGenerationCost(log: ProviderCostLog): number | null
     return roundCost(hintedCost);
   }
 
+  // A persisted unknown is not a request to price character-count estimates.
+  // Standalone rate-card calculations without settlement metadata still work.
+  const metadata = log.metadata && typeof log.metadata === "object" && !Array.isArray(log.metadata)
+    ? log.metadata as Record<string, unknown> : {};
+  if (metadata.provisional === true || metadata.promptTokensEstimated === true || metadata.outputTokensEstimated === true
+    || metadata.liveStatus === "in_progress" || metadata.liveStatus === "failed"
+    || (typeof metadata.costStatus === "string" && metadata.costStatus.startsWith("unknown_"))) return null;
+
   // Decision rows are settled by the attempt logger. Missing usage and failed
   // requests must stay unpriced when a project summary replays the rate card.
   if (metadataString(log.metadata, "operation") === "decision.choose" &&

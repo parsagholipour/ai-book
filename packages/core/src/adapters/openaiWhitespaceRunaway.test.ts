@@ -29,6 +29,8 @@ describe("a streamed reply that runs into blank lines", () => {
     const test = setup(runaway, chunkSize);
     const result = await test.adapter.generateText({ purpose: "compose-chapter", messages: [], maxTokens: 10_608, onOutputTextChunk: () => {} });
     expect(result.text.trim()).toBe(chapter);
+    expect(result).toMatchObject({ usageUnavailableReason: "whitespace_runaway" });
+    expect(result.usage).toBeUndefined();
     expect(test.consumed()).toBeLessThan(chapter.length + WHITESPACE_RUNAWAY_NEWLINES * 2 + chunkSize + 1);
     expect(test.closed()).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ event: "text.whitespace_runaway", purpose: "compose-chapter" }));

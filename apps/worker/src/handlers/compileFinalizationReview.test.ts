@@ -1,3 +1,4 @@
+import { FakeTextModelAdapter, createProjectSchema, makeFallbackPlan } from "@book-maker/core";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ chapter: vi.fn() }));
 vi.mock("./compileExportChapterReview.js", () => ({ runBoundedChapterQualityReview: mocks.chapter }));
@@ -22,4 +23,21 @@ it("retains the book verdict when chapter review fails and propagates cancellati
   expect((await reviewFinalizationManuscript(options)).finalQa).toEqual(verdict);
   mocks.chapter.mockRejectedValue(Object.assign(new Error("stopped"), { name: "StopRequestedError" }));
   await expect(reviewFinalizationManuscript(options)).rejects.toMatchObject({ name: "StopRequestedError" });
+});
+
+
+it("reports a failed Quick Draft screen honestly and propagates cancellation", async () => {
+  const input = createProjectSchema.parse({ prompt: "A story about home.", category: "STORY", targetPages: 6,
+    mediaSettings: { modelTier: "fast" } });
+  const textModel = new FakeTextModelAdapter();
+  const generate = vi.spyOn(textModel, "generateJson").mockRejectedValue(new Error("provider unavailable"));
+  const quickOptions = { ...options, input, plan: makeFallbackPlan(input), textModel };
+  const result = await reviewFinalizationManuscript(quickOptions);
+  expect(result.issues.map((issue) => issue.code)).toEqual(["FINAL_REVIEW_UNAVAILABLE"]);
+  expect(result.finalQa.approved).toBe(false);
+  expect(generate).toHaveBeenCalledTimes(1);
+  expect(mocks.chapter).not.toHaveBeenCalled();
+  expect(options.strategy.runFinalBookQa).not.toHaveBeenCalled();
+  generate.mockRejectedValue(Object.assign(new Error("stopped"), { name: "StopRequestedError" }));
+  await expect(reviewFinalizationManuscript(quickOptions)).rejects.toMatchObject({ name: "StopRequestedError" });
 });

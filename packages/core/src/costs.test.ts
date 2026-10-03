@@ -9,6 +9,23 @@ import {
 } from "./costs.js";
 
 describe("provider cost calculation", () => {
+  it.each([
+    { liveStatus: "settled", provisional: true, promptTokensEstimated: true, outputTokensEstimated: true },
+    { liveStatus: "in_progress", provisional: true },
+    { liveStatus: "failed", provisional: true },
+    { liveStatus: "settled", costStatus: "unknown_usage" }
+  ])("keeps unpriced text usage out of project dollar totals: %j", metadata => {
+    const log = { provider: "openai", model: "gpt-6-luna", purpose: "extract-excerpts", costHint: null,
+      promptTokens: 14421, outputTokens: 735, metadata: { operation: "text.generateJson", ...metadata } };
+    expect(calculateTextGenerationCost(log)).toBeNull();
+    expect(calculateProjectCostSummary([log], [])).toMatchObject({ totalUsd: 0, unpricedTextCalls: 1 });
+  });
+
+  it("counts a logged text call without any usage as unpriced, not free", () => {
+    expect(calculateProjectCostSummary([{ provider: "openai", model: "gpt-6-luna", costHint: null,
+      metadata: { operation: "text.generateJson", costStatus: "unknown_usage" } }], [])).toMatchObject({ totalUsd: 0, unpricedTextCalls: 1 });
+  });
+
   it("accounts for OpenAI narration at $0.00025 per audio second", () => {
     expect(estimateSpeechCostUsd({ provider: "openai_tts", audioMs: 60_000 })).toBe(0.015);
   });

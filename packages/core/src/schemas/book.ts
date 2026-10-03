@@ -267,7 +267,8 @@ function normalizeFinalBookQa(value: unknown): unknown {
     score,
     issues,
     requiredFixes,
-    notes
+    notes,
+    ...(unwrapped.focusedReview === undefined ? {} : { focusedReview: unwrapped.focusedReview })
   };
 }
 
@@ -368,7 +369,12 @@ export const finalBookQaSchema = z.preprocess(
     score: z.number().int().min(0).max(100),
     issues: z.array(z.string()).default([]),
     requiredFixes: z.array(z.string()).default([]),
-    notes: z.string().default("")
+    notes: z.string().default(""),
+    focusedReview: z.object({
+      rejectedFindings: z.number().int().nonnegative(),
+      repairGroups: z.array(z.array(z.number().int().positive()).min(1).max(3)).max(8),
+      unverifiedRepairPageIndexes: z.array(z.number().int().positive()).optional()
+    }).optional()
   })
 );
 

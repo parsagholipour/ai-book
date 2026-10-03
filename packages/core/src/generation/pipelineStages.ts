@@ -58,19 +58,19 @@ export const PER_PAGE_STAGES: readonly PipelineStage[] = [
   {
     id: "page-review",
     label: "Page review and rewrite",
-    summary: "Local checks, model review and bounded rewrites. Short picture books also receive a focused continuity check before clean approval or repair acceptance.",
+    summary: "Local checks, model review and bounded rewrites. Quick Draft keeps concrete local checks here and defers model review and repairs to compile.",
     purposes: ["review-page", "review-picture-book-continuity", "revise-page", "repair-page-brief", "verify-page-claims", "screen-changed-page-grounding", "audit-page-style"],
     lane: "mixed",
-    calls: "1 review per page, plus 2 to 10 rewrites per failing page by tier",
+    calls: "Quick Draft: local checks only; other tiers: 1 review per page plus bounded rewrites",
     gates: ["pageLocalQa", "smartUnslop", "pageModelReview", "pageQaRewrite", "claimVerifier", "changedCandidateGrounding", "styleAuditor", "claimRetrieve", "storyExtractAudit"]
   },
   {
     id: "compile",
     label: "Compile and final QA",
-    summary: "Whole-book QA, chapter-transition review, page repair loop, deterministic manuscript audit and evidence-backed brief coverage, then render.",
-    purposes: ["final-book-qa", "book.final_qa.chapter_transitions", "review-manuscript-structure", "inventory-brief-requirements", "read-manuscript", "chapterize-export"],
+    summary: "Quick Draft: one focused manuscript review, up to three single page repairs, and verification if repaired. Other tiers keep chapter review and brief coverage. All run deterministic integrity checks.",
+    purposes: ["final-book-qa", "patch-page", "book.final_qa.chapter_transitions", "review-manuscript-structure", "inventory-brief-requirements", "read-manuscript", "chapterize-export"],
     lane: "mechanical",
-    calls: "1 to 3 reviews, plus rewrites for flagged pages and 2 brief-coverage calls on initial publication",
+    calls: "Quick Draft: 1 screen, at most 3 patches and 1 verification; other tiers: full reviews and brief coverage",
     gates: ["finalBookQa"]
   }
 ];
@@ -142,11 +142,11 @@ export const COMPOSED_STAGES: readonly PipelineStage[] = [
   {
     id: "compile",
     label: "Compile",
-    summary: "Deterministic manuscript audit, targeted structural review and evidence-backed brief coverage, then render. The per-page final-QA repair loop is skipped.",
-    purposes: ["review-manuscript-structure", "inventory-brief-requirements", "read-manuscript", "chapterize-export"],
+    summary: "Quick Draft: focused whole-book review with at most three single page repairs and verification if repaired. Other tiers: structural review and brief coverage. All run deterministic integrity checks.",
+    purposes: ["final-book-qa", "patch-page", "review-manuscript-structure", "inventory-brief-requirements", "read-manuscript", "chapterize-export"],
     lane: "mechanical",
-    calls: "0 or 1 structural review, plus 1 brief-coverage read on initial publication when enabled; unchanged recompiles reuse coverage",
-    gates: ["briefCoverageReview"]
+    calls: "Quick Draft: 1 screen, at most 3 patches and 1 verification; other tiers: structural review and enabled brief coverage",
+    gates: ["briefCoverageReview", "finalBookQa"]
   }
 ];
 

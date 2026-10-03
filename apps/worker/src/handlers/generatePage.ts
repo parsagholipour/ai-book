@@ -1,3 +1,4 @@
+import { quickDraftPageQuality } from "../generation/quickDraftReviewPolicy.js";
 import {
   formatQualityFailure,
   getProjectOrThrow,
@@ -168,7 +169,7 @@ export async function generatePage(job: GeneratePageJob) {
       // string.
       embedSemanticQuery(providers.embedding, semanticQueryText, projectId),
       loadEntityStateLines(projectId, plan),
-      loadQualityContext(input),
+      loadQualityContext(input).then((context) => quickDraftPageQuality(input, context)),
       loadProjectStoryState(projectId, plan.promises ?? [])
     ]);
   const orderedPreviousPages = previousPages.reverse();

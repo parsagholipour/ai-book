@@ -29,6 +29,8 @@ export type ArithmeticFinding = {
   quote: string;
   /** What the statement claims, what it evaluates to, and the value that would make it true. */
   reason: string;
+  /** The calculation disagrees, but its connection to the prose is unconfirmed. Never auto-edit. */
+  reviewOnly?: true;
 };
 
 /** A safe exact-power ceiling: `a^b` is evaluated exactly only while it fits in this many bits. */

@@ -306,7 +306,7 @@ describe("generateBookDraftThenPolish", () => {
     expect(mocks.reviewAndSaveGeneratedPage.mock.calls[15]![0].draft.markdown).toBe(pageDraft(16).markdown);
   });
 
-  it.each(["fast", "balanced", "premium"] as const)("uses one complete prose review for a %s text-only story and retains genuine defects", async (modelTier) => {
+  it.each(["balanced", "premium"] as const)("uses one complete prose review for a %s text-only story and retains genuine defects", async (modelTier) => {
     const { options, strategy } = pictureBookOptions();
     Object.assign(options.input.mediaSettings, { modelTier, fullIllustrations: false, illustrationCadence: "manual", includeCover: false, coverArtSource: "none" });
     strategy.shouldIllustratePage.mockImplementation(shouldIllustratePage);
@@ -406,7 +406,7 @@ describe("generateBookDraftThenPolish", () => {
     }
   });
 
-  it("delivers and queues export for all thirty captured Quick pages after its actual review failure", async () => {
+  it("preserves all thirty captured Quick pages and defers their model review to compile", async () => {
     const captured = (await import("./testing/quickReviewFailure0338.json", { with: { type: "json" } })).default;
     const { options, strategy } = pictureBookOptions();
     const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
@@ -426,15 +426,14 @@ describe("generateBookDraftThenPolish", () => {
     };
     mocks.groupReview.mockImplementation(request => core.reviewPictureBookManuscript({ ...request, textModel, continuityReview: false }));
     await generateBookDraftThenPolish(options);
-    expect(calls).toBe(2);
+    expect(calls).toBe(0);
     expect(strategy.polishPageDraft).not.toHaveBeenCalled();
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(30);
     for (const [index, [request]] of mocks.reviewAndSaveGeneratedPage.mock.calls.entries()) {
       expect(request.draft.markdown).toBe(captured.pages[index]!.markdown);
-      expect(request.precomputedReview).toBeDefined();
-      expect(request.deferRepairsUntilFinalization).toBe(true);
+      expect(request.precomputedReview).toBeUndefined();
     }
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[2]![0].precomputedReview).toMatchObject({ reviewUnavailable: true, report: { approved: false } });
+    expect(mocks.groupReview).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 

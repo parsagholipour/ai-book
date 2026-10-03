@@ -21,20 +21,28 @@ export function storedEvidenceResiduals(brief: unknown, review: "evidence" | "ar
 export function arithmeticErrorIssues(
   pages: ReadonlyArray<{ index: number; markdown: string; chapter?: { productionBrief: unknown } | null | undefined }>
 ): ManuscriptQualityIssue[] {
+  return [false, true].flatMap(reviewOnly => arithmeticIssuesByKind(pages, reviewOnly));
+}
+
+function arithmeticIssuesByKind(
+  pages: ReadonlyArray<{ index: number; markdown: string; chapter?: { productionBrief: unknown } | null | undefined }>,
+  reviewOnly: boolean
+): ManuscriptQualityIssue[] {
   const hits: Array<{ index: number; findings: string[] }> = [];
   for (const page of pages) {
-    const residuals = storedEvidenceResiduals(page.chapter?.productionBrief, "arithmetic");
+    const residuals = storedEvidenceResiduals(page.chapter?.productionBrief, "arithmetic")
+      .filter(finding => (finding.reviewOnly === true) === reviewOnly);
     const findings = residuals.filter((residual) => page.markdown.includes(residual.quote)).map((residual) => `“${residual.quote}”: ${residual.reason}`);
     if (findings.length) hits.push({ index: page.index, findings });
   }
   if (!hits.length) return [];
   const findings = [...new Set(hits.flatMap((hit) => hit.findings))];
   return [{
-    code: "ARITHMETIC_ERRORS",
+    code: reviewOnly ? "ARITHMETIC_REVIEW_REQUIRED" : "ARITHMETIC_ERRORS",
     severity: "error",
-    source: "deterministic",
-    message: `${findings.length} numeric statement${findings.length === 1 ? "" : "s"} the arithmetic check found wrong survived the chapter repair: ${findings.slice(0, 2).join(" | ")}${findings.length > 2 ? " | …" : ""}`,
-    guidance: "Correct the quoted numbers in Edit Mode to the values given, or remove the intermediate steps and keep the correct result.",
+    source: reviewOnly ? "model" : "deterministic",
+    message: `${findings.length} numeric statement${findings.length === 1 ? "" : "s"} ${reviewOnly ? "need verification because the calculation and intent checks disagreed" : "the arithmetic check found wrong survived the chapter repair"}: ${findings.slice(0, 2).join(" | ")}${findings.length > 2 ? " | …" : ""}`,
+    guidance: reviewOnly ? "Check the stated rule, inputs and calculation before changing the quoted number. The proposed correction is unconfirmed." : "Correct the quoted numbers in Edit Mode to the values given, or remove the intermediate steps and keep the correct result.",
     affectedPageIndexes: hits.map((hit) => hit.index).sort((a, b) => a - b)
   }];
 }

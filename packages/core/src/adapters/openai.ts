@@ -48,6 +48,7 @@ export type OpenAITextAdapterOptions = {
 };
 
 type ResponseRecord = {
+  usageUnavailableReason?: TextResult["usageUnavailableReason"];
   id?: string;
   model?: string;
   output_text?: string;
@@ -82,7 +83,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
     const input = responseInput(options.messages, this.toolTurns);
     if (options.onOutputTextChunk) {
       const streamed = await this.collectStream(options, input);
-      return this.textResult(streamed.text, streamed.usage, streamed.model);
+      return this.textResult(streamed.text, streamed.usage, streamed.model, streamed.usageUnavailableReason);
     }
     const response = await this.createResponse(options, input);
     return this.textResult(
@@ -96,7 +97,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
     const input = responseInput([JSON_SYSTEM_MESSAGE, ...options.messages], this.toolTurns);
     if (options.onOutputTextChunk) {
       const streamed = await this.collectStream(options, input, jsonTextFormat());
-      return this.parseJsonResult(options, streamed.text || "{}", streamed.usage, streamed.model);
+      return this.parseJsonResult(options, streamed.text || "{}", streamed.usage, streamed.model, streamed.usageUnavailableReason);
     }
     const response = await this.createResponse(options, input, { text: jsonTextFormat() });
     const text = (response.output_text ?? responseText(response)) || "{}";
@@ -160,7 +161,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
     options: GenerateTextOptions,
     input: unknown[],
     text?: Record<string, unknown>
-  ): Promise<{ text: string; usage: Usage | undefined; model: string | undefined }> {
+  ): Promise<{ text: string; usage: Usage | undefined; model: string | undefined; usageUnavailableReason: TextResult["usageUnavailableReason"] }> {
     let textOutput = "";
     const stream = this.responseStream(options, input, text ? { text } : {}, text ? new JsonOutputRepetitionGuard() : undefined);
     let completed: ResponseRecord;
@@ -177,6 +178,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
     return {
       text: textOutput || completed.output_text || responseText(completed),
       usage: usageFromOpenAIResponse(completed.usage),
+      usageUnavailableReason: completed.usageUnavailableReason,
       model: completed.model
     };
   }
@@ -207,7 +209,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
             // SDK iterator, which aborts the request; the text so far is the answer.
             console.warn("OpenAI reply ran into blank lines; ending it there", {
               event: "text.whitespace_runaway", purpose: options.purpose, model, characters: partialOutput.snapshot().characters });
-            return { status: "completed", model };
+            return { status: "completed", model, usageUnavailableReason: "whitespace_runaway" };
           }
           partialOutput.append(event.delta);
           jsonGuard?.append(event.delta);
@@ -289,12 +291,13 @@ export class OpenAITextAdapter implements TextModelAdapter {
     }
   }
 
-  private textResult(text: string, usage: Usage | undefined, responseModel?: string): TextResult {
+  private textResult(text: string, usage: Usage | undefined, responseModel?: string, usageUnavailableReason?: TextResult["usageUnavailableReason"]): TextResult {
     return {
       text,
       model: responseModel || this.model,
       provider: PROVIDER_ID,
-      ...(usage ? { usage } : {})
+      ...(usage ? { usage } : {}),
+      ...(!usage && usageUnavailableReason ? { usageUnavailableReason } : {})
     };
   }
 
@@ -302,7 +305,8 @@ export class OpenAITextAdapter implements TextModelAdapter {
     options: GenerateJsonOptions<T>,
     text: string,
     usage: Usage | undefined,
-    responseModel?: string
+    responseModel?: string,
+    usageUnavailableReason?: TextResult["usageUnavailableReason"]
   ): JsonResult<T> {
     let parsedObject: unknown;
     try {
@@ -312,7 +316,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
     }
     try {
       return {
-        ...this.textResult(text, usage, responseModel),
+        ...this.textResult(text, usage, responseModel, usageUnavailableReason),
         data: parseSchemaWithContext(PROVIDER_LABEL, options.schema, parsedObject, options.purpose, text)
       };
     } catch (error) {

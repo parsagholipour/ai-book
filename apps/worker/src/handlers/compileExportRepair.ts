@@ -1,3 +1,5 @@
+import { repairQuickDraftFromFinalQa } from "./compileQuickDraftRepair.js";
+import { quickDraftQaTargets, quickDraftRepairTargets } from "../generation/quickDraftReviewPolicy.js";
 import { sentenceLengthRepairFor } from "@book-maker/core";
 import { repairShortBookFromFinalQa, usesCoordinatedShortBookRepair } from "./compileExportShortBookRepair.js";
 import {
@@ -30,6 +32,7 @@ import {
 } from "./compileExportFence.js";
 import {
   persistFinalQaPageSemantics,
+  publishFinalQaPageAndBrief,
   type FinalQaOwnershipClaim,
   type FinalQaOwnershipClient
 } from "./compileExportRepairSemantics.js";
@@ -164,8 +167,12 @@ export async function repairPagesFromFinalQa(options: {
   // is answering, so both halves read one number.
   const lastPage = lastPageIndex(options.pages);
   const repairPageIndexes = [
-    ...new Set([...(options.extraPageIndexes ?? []), ...extractRepairPageIndexes(options.finalQa, lastPage)])
+    ...new Set([...(options.extraPageIndexes ?? []), ...(options.quality.lightweight ? quickDraftQaTargets(options.finalQa) : extractRepairPageIndexes(options.finalQa, lastPage))])
   ].sort((first, second) => first - second);
+  if (options.quality.lightweight) {
+    const targets = quickDraftRepairTargets(options.pages, new Set(repairPageIndexes), options.finalQa);
+    return targets.length ? repairQuickDraftFromFinalQa(options, targets) : undefined;
+  }
   if (usesCoordinatedShortBookRepair(options)) {
     const targets = options.pages.filter((page) => repairPageIndexes.includes(page.index));
     return targets.length ? repairShortBookFromFinalQa(options, targets) : undefined;
@@ -188,7 +195,9 @@ export async function repairPagesFromFinalQa(options: {
   // Resolvable here rather than per iteration because each index is visited
   // once, in ascending order, and the only row this loop replaces is the one it
   // has just repaired: the row for index *i* is untouched until *i* comes up.
-  const targetPages = repairPageIndexes.flatMap((pageIndex) => {
+  const boundedIndexes = options.quality.lightweight
+    ? quickDraftRepairTargets(options.pages, new Set(repairPageIndexes)).map((page) => page.index) : repairPageIndexes;
+  const targetPages = boundedIndexes.flatMap((pageIndex) => {
     const page = options.pages.find((candidate) => candidate.index === pageIndex);
     return page && options.shouldRepairPage?.(page.id) !== false ? [page] : [];
   });
@@ -371,7 +380,8 @@ export async function repairPagesFromFinalQa(options: {
     }
     finalQaReport.issues = uniqueStrings(finalQaReport.issues);
     finalQaReport.requiredRevisions = uniqueStrings(finalQaReport.requiredRevisions);
-    const repairInstruction = uniqueStrings([...finalQaReport.issues, ...finalQaReport.requiredRevisions]).join("\n");
+    const repairInstruction = uniqueStrings([...finalQaReport.issues, ...finalQaReport.requiredRevisions,
+      ...(options.quality.lightweight ? ["Make only the smallest correction for the concrete defects listed. Preserve all other prose, figures, facts, voice and page boundaries. This page may be a slice of a chapter: do not add a new hook, recap, conclusion or page template."] : [])]).join("\n");
     // A composed page's figure is held aside so this rewrite, the loop's
     // rewrites and reviews, and the story extract never see the JSON: the
     // first revise is handed stand-in prose, `figures: "hold"` keeps those
@@ -480,7 +490,7 @@ export async function repairPagesFromFinalQa(options: {
       researchNotes: options.researchNotes,
       textModel: options.providers.text,
       generationJobId: options.generationJobId,
-      maxCandidates: finalQaRevisionsFor(options.input),
+      maxCandidates: options.quality.lightweight ? 1 : finalQaRevisionsFor(options.input),
       // This loop counts attempts from the first rewrite; the page loops
       // count candidates from the original draft, one earlier. Both enter
       // recovery mode at the third rewrite (clamped to the tier's budget).
@@ -493,7 +503,7 @@ export async function repairPagesFromFinalQa(options: {
       // "one" is literal: the loop latches it to a single repair per page, so
       // this tier's ten attempts buy one planner call and one chapter write
       // rather than one of each per rewrite from the recovery candidate on.
-      repairBrief: true,
+      repairBrief: !options.quality.lightweight,
       // This pass owns the page update below. A kept chapter repair stays in
       // memory until that update, so one ownership barrier and one transaction
       // publish both or neither.
@@ -536,6 +546,11 @@ export async function repairPagesFromFinalQa(options: {
     // hands under a half-published page is a few statements rather than two
     // provider round trips.
     const proseUnchanged = draft.title === page.title && draft.markdown === (heldFigures?.prose ?? page.markdown) && draft.summary === page.summary;
+    if (options.quality.lightweight && proseUnchanged) {
+      await assertOwnership?.();
+      await options.onRepairPageCompleted?.(page.id);
+      continue;
+    }
     const priorDelta = proseUnchanged ? parseStoryDelta(page.storyDelta) : null;
     const keeperExtract = await keeperStoryExtractForSave({
       projectId: options.projectId,
@@ -761,25 +776,6 @@ export async function repairPagesFromFinalQa(options: {
   }
 
   return loadPagesForExport(options.projectId);
-}
-
-type FinalQaPageWriteClient = Pick<
-  Prisma.TransactionClient,
-  "page" | "imageAsset" | "generationJob"
->;
-
-/** Publishes the page, generated-asset/job transition and repaired brief atomically. */
-async function publishFinalQaPageAndBrief<T>(
-  assertOwnership: FinalQaOwnershipClaim | undefined,
-  pendingBriefRepair: PageQualityLoopOutcome["pendingBriefRepair"],
-  writePage: (client: FinalQaPageWriteClient) => Promise<T>
-): Promise<T> {
-  return prisma.$transaction(async (tx) => {
-    await assertOwnership?.(tx);
-    const page = await writePage(tx);
-    await pendingBriefRepair?.(tx);
-    return page;
-  });
 }
 
 function pageVersion(page: ExportPageForRepair): Date {

@@ -194,7 +194,7 @@ export type ComposedChapterReport = {
   /** Whether an epigraph from the dossier was set at the chapter's head. */
   epigraph?: boolean | undefined;
   /** The arithmetic check: wrong numeric statements found, repair edits spent, and the statements still wrong. */
-  arithmetic?: { findings: number; repairs: number; unresolved: Array<{ quote: string; reason: string }> } | undefined;
+  arithmetic?: { findings: number; repairs: number; unresolved: Array<{ quote: string; reason: string; reviewOnly?: true }> } | undefined;
   /** The continuity ledger's facts read off this chapter's draft (core `chapterFacts.ts`); a resumed run seeds its ledger from them. */
   facts?: ChapterFact[] | undefined;
   /** The prose-evidence review: findings on the composed chapter, targeted repairs spent, what still stands, and findings dropped as unlocatable. */

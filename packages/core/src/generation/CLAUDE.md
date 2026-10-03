@@ -236,9 +236,12 @@ holds the event loop open and vitest will never exit.
   `check-chapter-arithmetic`, gate `proseArithmeticCheck`) asks for plainly wrong results with the
   computation from the chapter's own numbers, and `verifiedFinding` keeps one only when its quote
   is in the chapter, carries the stated number, and `evaluateExpression` (`+ - * /`, parentheses,
-  decimals, nothing else) disagrees beyond rounding — two percent where the quote says "about" — and
-  a second short call, shown the quote's paragraph and the two before it, agrees the number is
-  *meant* as that computation. Code checks the arithmetic, never the pairing: replayed over 32
+  decimals, nothing else) disagrees beyond rounding — two percent where the quote says "about".
+  A second short call, shown the quote's paragraph and the two before it, checks whether the number is
+  *meant* as that computation. Only confirmed findings authorize automatic edits. A false or failed
+  intent check retains the finding as `reviewOnly`; cancellation still escapes. The 100-page
+  Balanced test found two real toy-hash errors which a false intent vote silently discarded.
+  Code checks the arithmetic, never the pairing: replayed over 32
   stored chapters, one proposal paired "$300 left" with the wrong subtraction, and a result spelled
   in words used to read as 0. That confirmation is told to ignore whether the arithmetic is right,
   because asked about both it reasoned "−510 is not 290, so the sentence cannot mean that" and

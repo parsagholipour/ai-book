@@ -29,6 +29,7 @@ export async function repairChapterArithmetic(options: {
   /** The prose's arithmetic (`proseArithmeticFindings`): a failure there is no findings, never a failed chapter. */
   proseFindings?: ((markdown: string) => Promise<ArithmeticFinding[]>) | undefined;
 }): Promise<ChapterEvidenceRepair | undefined> {
+  const disputed = new Map<string, ArithmeticFinding>();
   const findingsOf = async (markdown: string): Promise<ArithmeticFinding[]> => {
     let prose: ArithmeticFinding[] = [];
     try {
@@ -36,14 +37,21 @@ export async function repairChapterArithmetic(options: {
     } catch (error) {
       if (isStopRequestedError(error)) throw error;
     }
-    return [...arithmeticFindings(markdown), ...prose];
+    for (const finding of prose) {
+      if (finding.reviewOnly) disputed.set(finding.quote, finding);
+    }
+    return [...arithmeticFindings(markdown), ...prose.filter(finding => !finding.reviewOnly)];
   };
   const first = await findingsOf(options.markdown);
-  if (first.length === 0) return undefined;
+  const initialDisputes = disputed.size;
+  if (first.length === 0) return disputed.size ? {
+    markdown: options.markdown, findings: disputed.size, repairs: 0,
+    unresolved: [...disputed.values()], dropped: 0
+  } : undefined;
   // The first review is the check just made; every later one reads the edited text.
   let latest = first;
   let reviewed: string | undefined = options.markdown;
-  return repairChapterEvidence({
+  const repair = await repairChapterEvidence({
     markdown: options.markdown,
     review: async (markdown) => {
       latest = markdown === reviewed ? latest : await findingsOf(markdown);
@@ -54,6 +62,9 @@ export async function repairChapterArithmetic(options: {
     degenerate: options.degenerate,
     notes: arithmeticRepairNotes
   });
+  const remaining = [...disputed.values()].filter(finding => repair.markdown.includes(finding.quote)
+    && !repair.unresolved.some(unresolved => unresolved.quote === finding.quote));
+  return { ...repair, findings: repair.findings + initialDisputes, unresolved: [...repair.unresolved, ...remaining] };
 }
 
 /**

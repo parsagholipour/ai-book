@@ -1,3 +1,5 @@
+import { quickDraftReviewSchema } from "../generation/quickDraftReview.js";
+import { quickDraftPatchesSchema, quickDraftRepairAcceptanceSchema } from "../generation/quickDraftRepair.js";
 import { z } from "zod";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import {
@@ -272,6 +274,9 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       return fakeEditAdherence(options);
     }
 
+    // Grouped repair shares patch-page with the single-page editor. Match its schema first.
+    if (schema === quickDraftPatchesSchema) return { pages: [] };
+
     if (options.purpose === PAGE_PATCH_PURPOSE) {
       return fakePagePatch(options);
     }
@@ -389,6 +394,12 @@ export class FakeTextModelAdapter implements TextModelAdapter {
           styleNatural: true
         }
       };
+    }
+
+    if (schema === quickDraftReviewSchema) return { findings: [] };
+    if (schema === quickDraftRepairAcceptanceSchema) {
+      const payload = JSON.parse(options.messages.at(-1)?.content ?? "{}");
+      return { targetChecks: (payload.targetPageIndexes ?? []).map((pageIndex: number) => ({ pageIndex, resolved: true })), regressions: [] };
     }
 
     if (schema === finalBookQaSchema) {

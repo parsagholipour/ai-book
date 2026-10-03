@@ -55,6 +55,11 @@ Handlers never construct adapters. `createLoggedProviders(job, providers, input)
 If you add a provider call, route it through this wrapper or it will be invisible to both the
 cost accounting and the progress UI.
 
+Text settlement merges exact result usage with usage observed on the same physical request.
+Missing counts remain unpriced, with `costStatus: unknown_usage`; a blank-line early stop records
+`usageUnavailableReason: whitespace_runaway`. Project summaries preserve that unknown status.
+Character-count estimates are diagnostic counts, never a substitute for missing billing usage.
+
 Note that `providers/` holds **no model adapters** — only these logging and accounting wrappers.
 The adapters themselves are in `packages/core/src/adapters/`.
 

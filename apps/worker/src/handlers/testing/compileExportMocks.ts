@@ -144,6 +144,7 @@ export const mocks = {
   maybeEnqueueCompile: vi.fn(),
   parallelPageWaveSize: vi.fn(() => 1),
   runDeterministicManuscriptChecks: vi.fn(),
+  reviewQuickDraftManuscript: vi.fn(async (_options: unknown) => ({ approved: true, score: 100, issues: [] as string[], requiredFixes: [] as string[], notes: "Focused screen." })),
   generateJsonWithRetry: vi.fn(
     async (_model: unknown, options?: { purpose?: string }): Promise<{ data: Record<string, unknown> }> => {
       if (options?.purpose === "review-manuscript-structure") {
@@ -229,6 +230,7 @@ export const dbModuleMock = () => ({
   prisma: mocks.prisma,
   Prisma: { DbNull: DB_NULL },
   researchCitationsForExport: async () => [],
+  deletePageEmbeddings: async () => undefined,
   ...dbScopeMocks()
 });
 
@@ -398,6 +400,7 @@ export const pageReviewModuleMock = (actual: typeof import("../../generation/pag
 export const coreModuleMock = (actual: typeof import("@book-maker/core")) => ({
   ...actual,
   generateJsonWithRetry: mocks.generateJsonWithRetry,
+  reviewQuickDraftManuscript: mocks.reviewQuickDraftManuscript,
   reviewManuscriptCoverage: vi.fn(async (options: { promises: readonly string[] }) => ({
     status: "reviewed", requirements: [],
     issues: options.promises.map((text) => ({ code: "UNPAID_PROMISE", severity: "warning", source: "model",

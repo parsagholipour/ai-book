@@ -1,3 +1,4 @@
+import type { PageQualityLoopOutcome } from "../generation/pageReview.js";
 import { writePreparedEmbedding, type PreparedEmbedding } from "../generation/embeddingWrites.js";
 import { updateEntityStateFromPage } from "../generation/entityState.js";
 import { persistStoryExtract } from "../generation/qualityEnrichment.js";
@@ -122,4 +123,23 @@ export async function persistFinalQaPageSemantics(options: {
     });
     return null;
   }
+}
+
+type FinalQaPageWriteClient = Pick<
+  Prisma.TransactionClient,
+  "page" | "imageAsset" | "generationJob"
+>;
+
+/** Publishes the page, generated-asset/job transition and repaired brief atomically. */
+export async function publishFinalQaPageAndBrief<T>(
+  assertOwnership: FinalQaOwnershipClaim | undefined,
+  pendingBriefRepair: PageQualityLoopOutcome["pendingBriefRepair"],
+  writePage: (client: FinalQaPageWriteClient) => Promise<T>
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await assertOwnership?.(tx);
+    const page = await writePage(tx);
+    await pendingBriefRepair?.(tx);
+    return page;
+  });
 }

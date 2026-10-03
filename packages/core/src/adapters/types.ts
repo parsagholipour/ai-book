@@ -178,6 +178,8 @@ export type TextResult = {
   model: string;
   provider: string;
   usage?: Usage;
+  /** A successful early stop can yield usable text without terminal billing usage. */
+  usageUnavailableReason?: "whitespace_runaway";
 };
 
 export type JsonResult<T> = TextResult & {

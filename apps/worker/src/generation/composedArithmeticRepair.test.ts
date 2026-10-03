@@ -69,6 +69,26 @@ describe("the prose's arithmetic beside the math's", () => {
   const fixedProse = prose.replace("only $290 remains", "the month is $510 short");
   const finding = { quote: "only $290 remains", reason: "800 - 1200 - 110 = -510, not 290." };
 
+  it("retains disputed calculations for review without authorizing an automatic edit", async () => {
+    const disputed = { ...finding, reviewOnly: true as const };
+    const edit = vi.fn<Edit>();
+    expect(await repairChapterArithmetic({ markdown: prose, edit, degenerate: () => false,
+      proseFindings: async () => [disputed] })).toMatchObject({
+      markdown: prose, findings: 1, repairs: 0, unresolved: [disputed]
+    });
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it("repairs confirmed math while retaining disputed prose omitted by a later check", async () => {
+    const disputed = { ...finding, reviewOnly: true as const };
+    const edit = vi.fn<Edit>(async () => right + prose);
+    let checks = 0;
+    const result = await repairChapterArithmetic({ markdown: wrong + prose, edit, degenerate: () => false,
+      proseFindings: async () => ++checks === 1 ? [disputed] : [] });
+    expect(result).toMatchObject({ markdown: right + prose, repairs: 1, unresolved: [disputed] });
+    expect(edit.mock.calls[0]![1].instructions.join(" ")).not.toContain(finding.quote);
+  });
+
   it("repairs a verified prose error, asks once for the first review and again only for the edited text", async () => {
     const proseFindings = vi.fn(async (markdown: string) => (markdown.includes("$290") ? [finding] : []));
     const edit = vi.fn<Edit>(async () => fixedProse);

@@ -58,6 +58,7 @@ export async function recordProviderUsage(options: {
   callId: string;
   durationMs: number | null;
   usage: Usage | undefined;
+  usageUnavailableReason?: "whitespace_runaway" | undefined;
   liveUsageId?: string | undefined;
   fallbackPromptTokens?: number | null | undefined;
   fallbackOutputTokens?: number | null | undefined;
@@ -80,26 +81,9 @@ export async function recordProviderUsage(options: {
   const reasoningTokens = finiteTokenCount(options.usage?.reasoningTokens);
   const promptTokens = exactPromptTokens ?? finiteTokenCount(options.fallbackPromptTokens ?? undefined);
   const outputTokens = exactOutputTokens ?? finiteTokenCount(options.fallbackOutputTokens ?? undefined);
-  if (
-    promptTokens === null &&
-    outputTokens === null &&
-    cacheHitTokens === null &&
-    cacheWriteTokens === null &&
-    reasoningTokens === null
-  ) {
-    if (options.liveUsageId) {
-      await markLiveTextUsageFailed(options.liveUsageId, {
-        durationMs: options.durationMs,
-        ...(options.decisionMetadata ? { decisionMetadata: options.decisionMetadata } : {}),
-        ...(options.providerCallError !== undefined ? { error: options.providerCallError } : {}),
-        ...optionalProviderCallMetadata(options.providerCallMetadata)
-      });
-    }
-    return;
-  }
   const promptTokensEstimated = exactPromptTokens === null && promptTokens !== null;
   const outputTokensEstimated = exactOutputTokens === null && outputTokens !== null;
-  const provisional = promptTokensEstimated || outputTokensEstimated || Boolean(options.decisionMetadata && exactPromptTokens === null);
+  const provisional = exactPromptTokens === null || exactOutputTokens === null;
   // reasoningTokens are already inside outputTokens for billing — do not add them again.
   const tokenCost = provisional
     ? null
@@ -120,11 +104,12 @@ export async function recordProviderUsage(options: {
   const metadata = {
     operation: options.operation,
     callId: options.callId,
-    liveStatus: "settled",
+    liveStatus: options.providerCallError !== undefined && provisional ? "failed" : "settled",
     ...(options.decisionMetadata ? { decision: options.decisionMetadata } : {}),
     provisional,
     promptTokensEstimated,
     outputTokensEstimated,
+    ...(options.providerCallError !== undefined ? { error: jsonInputValue(serializeError(options.providerCallError)) } : {}),
     ...boundedProviderCallMetadata(
       options.providerCallMetadata,
       options.providerCallError === undefined ? "success" : { error: options.providerCallError }
@@ -136,10 +121,13 @@ export async function recordProviderUsage(options: {
     const fee = groundingFee && groundingClaim && countAfter !== null
       ? applySearchGroundingAllowance(groundingFee, groundingClaim, countAfter)
       : groundingFee;
-    return {
-      costHint: fee ? searchCallCostHint(tokenCost, fee) : tokenCost,
-      metadata: options.searchGrounding && fee ? { ...metadata, ...searchGroundingMetadata(options.searchGrounding, fee) } : metadata
-    };
+    const costHint = fee ? searchCallCostHint(tokenCost, fee) : tokenCost;
+    return { costHint, metadata: {
+      ...metadata,
+      ...(options.searchGrounding && fee ? searchGroundingMetadata(options.searchGrounding, fee) : {}),
+      costStatus: costHint !== null ? "priced" : provisional ? "unknown_usage" : fee?.usd === null ? "unknown_grounding" : "unknown_rate",
+      ...(provisional ? { usageUnavailableReason: options.usageUnavailableReason ?? "provider_omitted_usage" } : {})
+    } };
   };
 
   try {
@@ -233,6 +221,7 @@ export async function beginLiveTextUsage(options: {
           operation: options.operation,
           callId: options.callId,
           liveStatus: "in_progress",
+          costStatus: "pending",
           provisional: true,
           promptTokensEstimated: true,
           outputTokensEstimated: true,
@@ -436,6 +425,8 @@ export async function settleLiveTextUsageEstimate(
         metadata: jsonInputValue({
           ...jsonPayloadToRecord(current?.metadata),
           liveStatus: "settled",
+          costStatus: "unknown_usage",
+          usageUnavailableReason: "provider_omitted_usage",
           provisional: true,
           outputTokensEstimated: true
         })
@@ -471,6 +462,7 @@ export async function markLiveTextUsageFailed(
         metadata: jsonInputValue({
           ...jsonPayloadToRecord(current?.metadata),
           liveStatus: "failed",
+          costStatus: "unknown_usage",
           ...(options.decisionMetadata ? { decision: options.decisionMetadata } : {}),
           provisional: true,
           ...boundedProviderCallMetadata(

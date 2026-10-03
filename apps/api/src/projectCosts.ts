@@ -103,9 +103,8 @@ function groupByProjectId<T extends ProviderCostRow | ImageCostRow>(rows: T[]): 
 
 function isSettledCostLog(log: ProviderCostRow): boolean {
   const metadata = jsonPayloadToRecord(log.metadata);
-  if (metadata.provisional === true) {
-    return false;
-  }
+  // Settled estimates belong in the unpriced count; the core summary keeps
+  // them out of dollars. Filtering them out here concealed incomplete totals.
   const liveStatus = typeof metadata.liveStatus === "string" ? metadata.liveStatus : null;
   return liveStatus !== "in_progress" && liveStatus !== "failed";
 }

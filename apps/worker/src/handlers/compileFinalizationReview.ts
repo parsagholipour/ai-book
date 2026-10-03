@@ -1,4 +1,5 @@
-import { isStopOrAbortError, type BookGenerationStrategy, type BookPlan, type CreateProjectInput, type FinalBookQa, type ManuscriptQualityIssue, type TextModelAdapter } from "@book-maker/core";
+import { isStopOrAbortError, reviewQuickDraftManuscript, type BookGenerationStrategy, type BookPlan, type CreateProjectInput, type FinalBookQa, type ManuscriptQualityIssue, type TextModelAdapter } from "@book-maker/core";
+import { usesQuickDraftReview } from "../generation/quickDraftReviewPolicy.js";
 import { toFinalQaPage } from "../generation/bookHelpers.js";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 import { runBoundedChapterQualityReview } from "./compileExportChapterReview.js";
@@ -12,6 +13,19 @@ export async function reviewFinalizationManuscript(options: {
   researchNotes: string[]; skipLocalChecks: boolean;
   shortBookReview?: { generationJobId?: string | undefined; planId?: string | undefined; quality: QualityGateContext };
 }) {
+  if (usesQuickDraftReview(options.input)) {
+    try {
+      const finalQa = await reviewQuickDraftManuscript(options);
+      const rejected = finalQa.focusedReview?.rejectedFindings ?? 0;
+      return { issues: rejected ? [{ ...unavailable("Focused"),
+        message: `Focused review could not validate ${rejected} finding(s). Grounded findings were retained; the review is incomplete.` }] : [], finalQa };
+    } catch (error) {
+      if (isStopOrAbortError(error)) throw error;
+      return { issues: [unavailable("Quick Draft")], finalQa: {
+        approved: false, score: 0, issues: [], requiredFixes: [], notes: "Quick Draft review unavailable."
+      } };
+    }
+  }
   if (options.shortBookReview) {
     const reused = await reuseShortPictureBookFinalReview(options, options.shortBookReview);
     if (reused) return reused;

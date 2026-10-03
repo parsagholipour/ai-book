@@ -1,6 +1,7 @@
 import type { QualityGateContext } from "./qualityEnrichment.js";
 import {
   reviewPageDraftLocally,
+  reviewQuickDraftPageLocally,
   reviewPageDraftForSmartUnslop,
   scanSmartUnslopCandidates,
   confirmSmartUnslopCandidates,
@@ -54,6 +55,10 @@ export async function reviewPageWithQualityGates(options: {
   /** Caller has bound this completed manuscript verdict to the current prose. */
   precomputedReport?: PageQualityReport | undefined;
 }): Promise<PageQualityReport> {
+  if (options.quality.lightweight) {
+    options.signal?.throwIfAborted();
+    return reviewQuickDraftPageLocally(options.reviewOptions);
+  }
   const { localEnabled, smartUnslopEnabled, modelEnabled } = pageReviewPassesFor(options);
   options.signal?.throwIfAborted();
   const scan = smartUnslopEnabled ? scanSmartUnslopCandidates(options.reviewOptions.draft.markdown) : undefined;

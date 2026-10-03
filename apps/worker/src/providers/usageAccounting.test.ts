@@ -332,9 +332,10 @@ describe("recordProviderUsage", () => {
     );
   });
 
-  it("writes nothing without any token counts, but fails an open live row", async () => {
+  it("records a successful call with unknown usage, including when there is no live row", async () => {
     await recordProviderUsage({ ...baseCall, usage: undefined });
-    expect(mocks.prisma.providerCallLog.create).not.toHaveBeenCalled();
+    expect(createdData()).toMatchObject({ costHint: null, promptTokens: null, outputTokens: null,
+      metadata: { costStatus: "unknown_usage", usageUnavailableReason: "provider_omitted_usage" } });
 
     await recordProviderUsage({ ...baseCall, usage: undefined, liveUsageId: "live-1" });
     expect(mocks.prisma.providerCallLog.update).toHaveBeenCalledWith(
@@ -342,10 +343,22 @@ describe("recordProviderUsage", () => {
         where: { id: "live-1" },
         data: expect.objectContaining({
           costHint: null,
-          metadata: expect.objectContaining({ liveStatus: "failed", provisional: true })
+          metadata: expect.objectContaining({ liveStatus: "settled", provisional: true, costStatus: "unknown_usage" })
         })
       })
     );
+  });
+
+  it("never prices a partial usage report by assuming the missing half is zero", async () => {
+    await recordProviderUsage({ ...baseCall, usage: { promptTokens: 1000 } });
+    expect(createdData()).toMatchObject({ costHint: null, outputTokens: null,
+      metadata: { provisional: true, costStatus: "unknown_usage" } });
+  });
+
+  it("distinguishes explicitly reported zero usage from missing usage", async () => {
+    await recordProviderUsage({ ...baseCall, usage: { promptTokens: 0, outputTokens: 0 } });
+    expect(createdData()).toMatchObject({ costHint: 0,
+      metadata: { provisional: false, costStatus: "priced" } });
   });
 
   it("swallows database failures rather than failing the provider call", async () => {

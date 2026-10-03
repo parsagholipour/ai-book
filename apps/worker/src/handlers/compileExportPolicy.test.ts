@@ -203,6 +203,25 @@ describe("compileExport publication policy", () => {
     );
   });
 
+  it.each(["whole-book", "composed-chapters"])("runs one focused Quick Draft screen for %s without optional final review", async (executionMode) => {
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: { modelTier: "fast", finalReview: false } });
+    mocks.strategy.executionMode = executionMode;
+    await compileExport(job({ contentRevision: 4 }));
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledTimes(1);
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledWith(expect.objectContaining({ pages }));
+    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
+    expect(mocks.publishCompiledExports).toHaveBeenCalled();
+  });
+
+  it("does not charge a Quick Draft skip-review recompile for a manuscript review", async () => {
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: { modelTier: "fast", finalReview: true } });
+    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
+    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
+  });
+
   it("passes the local-page gate through to final book QA", async () => {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},

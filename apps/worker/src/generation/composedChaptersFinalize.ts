@@ -1,3 +1,4 @@
+import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
 import {
   type BookGenerationStrategy,
   type BookPlan,
@@ -195,7 +196,7 @@ export async function persistChapterStoryDeltas(options: {
   chapterIdByIndex: ReadonlyMap<number, string>;
 }): Promise<void> {
   const { projectId, input, plan, keepers } = options;
-  const quality = await loadQualityContext(input);
+  const quality = quickDraftPageQuality(input, await loadQualityContext(input));
   if (keepers.length === 0 || !quality.enabled("storyExtractAudit")) return;
   // `storyNotesTogether` (Quick Draft): one window for the whole book, so
   // every page is extracted at once against the state the book opened with.

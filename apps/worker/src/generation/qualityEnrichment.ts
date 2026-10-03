@@ -44,6 +44,7 @@ export type EnrichedPageReview = {
 
 export type QualityGateContext = {
   enabled: (feature: QualityFeatureId) => boolean;
+  lightweight?: boolean;
 };
 
 function withUnavailableQualityCheck(report: PageQualityReport, check: "story_continuity" | "style"): PageQualityReport {

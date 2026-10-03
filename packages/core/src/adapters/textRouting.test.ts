@@ -42,6 +42,7 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "write-page-with-tools",
   "polish-page",
   "revise-page",
+  "patch-page", // Writes replacement prose; keeps the existing edit-model route.
   "plan-book",
   "revise-plan",
   "build-voice-character-persona",

@@ -1,3 +1,4 @@
+import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
 import {
   checkpointWholeBookDraftPages,
   directResumeStateForContext,
@@ -156,7 +157,7 @@ export async function generateBookChapterWholePass(options: {
     generationJobId: options.generationJobId
   });
   await maybeEnqueueCover(options.projectId, options.planId, options.input);
-  const quality = await loadQualityContext(options.input);
+  const quality = quickDraftPageQuality(options.input, await loadQualityContext(options.input));
 
   for (const [chapterIndex, setup] of chapterSetups.entries()) {
     if (setup.endPage < resumeFromPage) {
@@ -292,7 +293,7 @@ export async function generateBookBatchWindow(options: {
     generationJobId: options.generationJobId
   });
   await maybeEnqueueCover(options.projectId, options.planId, options.input);
-  const quality = await loadQualityContext(options.input);
+  const quality = quickDraftPageQuality(options.input, await loadQualityContext(options.input));
   const totalBatches = Math.ceil(options.input.targetPages / batchSize);
 
   for (
@@ -849,6 +850,7 @@ export async function generateBookWholePass(options: {
     }
   }
 
+  const saveQuality = quickDraftPageQuality(effective.input, await loadQualityContext(effective.input));
   let currentState = seedStoryStateFromPromises(effective.plan.promises ?? []);
   for (const reviewedPage of reviewedPages) {
     const nextState = await persistKeeperStoryDelta({
@@ -860,6 +862,7 @@ export async function generateBookWholePass(options: {
       input: effective.input,
       previousExtract: null,
       keeperWasRevised: true,
+      quality: saveQuality,
       currentState
     });
     if (nextState) {

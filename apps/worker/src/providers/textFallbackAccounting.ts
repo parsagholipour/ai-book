@@ -83,6 +83,19 @@ export class TextFallbackCallAccounting {
     return this.liveUsage?.promptTokens ?? this.estimatedPromptTokens;
   }
 
+  /** Only the current physical request may supply missing result usage. */
+  usageForResult(result: { provider: string; model: string; usage?: Usage }): Usage | undefined {
+    const request = this.providerRequest ?? this.context.primary;
+    if (request.provider !== result.provider || request.model !== result.model) return result.usage;
+    if (!this.providerUsage) return result.usage;
+    const merged = { ...this.providerUsage };
+    for (const key of ["promptTokens", "outputTokens", "cacheHitTokens", "cacheWriteTokens", "reasoningTokens"] as const) {
+      const value = result.usage?.[key];
+      if (value !== undefined) merged[key] = value;
+    }
+    return merged;
+  }
+
   get startedAt(): string {
     return this.attemptStartedAt;
   }

@@ -91,6 +91,9 @@ may have been edited in the meantime.
   error-severity `ARITHMETIC_ERRORS` issue, so the book publishes as REVIEW_REQUIRED with the
   statements on the card and a page edited past the statement clears itself. A chapter whose
   arithmetic holds spends no edit at all.
+  Findings marked `reviewOnly` bypass automatic edits and survive as chapter residuals. At compile
+  time they produce `ARITHMETIC_REVIEW_REQUIRED`, asking to verify the rule and inputs before
+  replacing a number. An independent confirmed repair cannot erase a disputed statement it retains.
 
 - **No claim or source is verified on any tier; the review is dormant behind one switch, and
   finalize and compile read the same switch.** Parsa, 2026-09-30: "we want best looking results,
