@@ -55,6 +55,7 @@ import 'chat_thinking_bubble.dart';
 import 'creation_chat_controller.dart';
 import 'creation_chat_helpers.dart';
 import 'creation_cover_glimpse.dart';
+import 'creation_credit_warning.dart';
 import 'creation_labels.dart';
 import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
@@ -161,6 +162,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   Object? _lastScrollTrigger;
   bool _stickToBottom = true;
   bool _restoring = false;
+  bool _buildInProgress = false;
   bool _projectChatBranchSwitching = false;
   final Set<String> _requestedReplanCopyOutputSyncs = <String>{};
 

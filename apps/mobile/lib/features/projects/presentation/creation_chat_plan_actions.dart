@@ -6,6 +6,8 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
   /// [retried] is set on the one rebuild a `PAGE_LIMIT_EXCEEDED` refusal may
   /// trigger, so a server that keeps refusing cannot loop the offer.
   Future<void> _build({bool retried = false}) async {
+    if (_buildInProgress && !retried) return;
+    _buildInProgress = true;
     try {
       final controller = ref.read(creationChatControllerProvider.notifier);
       final preflight = await controller.preflightBuildPlan();
@@ -55,6 +57,19 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
           return;
         }
         if (!mounted) return;
+        final affordableSelection = await confirmCreationCredits(
+          context,
+          ref,
+          presets: ref.read(creationChatControllerProvider).presets,
+          targetPages: targetPages,
+        );
+        if (affordableSelection == null || !mounted) return;
+        if (affordableSelection != targetPages) {
+          selection = _PageCountSelection(
+            targetPages: affordableSelection,
+            source: 'settings',
+          );
+        }
       }
       // Committed only once every popup has answered: a committed page count
       // makes the next preflight skip the sheet, so writing it earlier turned
@@ -115,6 +130,8 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
           context,
         ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
       }
+    } finally {
+      _buildInProgress = false;
     }
   }
 

@@ -5,7 +5,10 @@
 /// are about the person making it: they outlive any one draft and mean nothing
 /// on another device.
 class CreationPrefs {
-  const CreationPrefs({this.visualsPromptSuppressed = false});
+  const CreationPrefs({
+    this.visualsPromptSuppressed = false,
+    this.creditWarningSuppressed = false,
+  });
 
   /// Whether the user ticked "Don't ask again" on the book-images dialog.
   ///
@@ -14,10 +17,18 @@ class CreationPrefs {
   /// switches in Advanced settings remain authoritative.
   final bool visualsPromptSuppressed;
 
-  CreationPrefs copyWith({bool? visualsPromptSuppressed}) {
+  /// Hides the warning only; future builds keep their requested page count.
+  final bool creditWarningSuppressed;
+
+  CreationPrefs copyWith({
+    bool? visualsPromptSuppressed,
+    bool? creditWarningSuppressed,
+  }) {
     return CreationPrefs(
       visualsPromptSuppressed:
           visualsPromptSuppressed ?? this.visualsPromptSuppressed,
+      creditWarningSuppressed:
+          creditWarningSuppressed ?? this.creditWarningSuppressed,
     );
   }
 
@@ -25,10 +36,13 @@ class CreationPrefs {
     return CreationPrefs(
       visualsPromptSuppressed:
           json['visualsPromptSuppressed'] as bool? ?? false,
+      creditWarningSuppressed:
+          json['creditWarningSuppressed'] as bool? ?? false,
     );
   }
 
   Map<String, dynamic> toJson() => {
     'visualsPromptSuppressed': visualsPromptSuppressed,
+    'creditWarningSuppressed': creditWarningSuppressed,
   };
 }

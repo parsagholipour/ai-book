@@ -60,6 +60,7 @@ Widget app({
   bool startFresh = false,
   CreationPrefsStore? prefs,
   PhotoPicker? photoPicker,
+  BillingRepository? billingRepository,
 }) {
   return ProviderScope(
     overrides: [
@@ -69,7 +70,9 @@ Widget app({
       creationRepositoryProvider.overrideWithValue(creation),
       if (projects != null)
         projectsRepositoryProvider.overrideWithValue(projects),
-      billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
+      billingRepositoryProvider.overrideWithValue(
+        billingRepository ?? FakeBillingRepository(),
+      ),
       // Always overridden: the file-backed store calls path_provider, which has
       // no implementation under `flutter test`.
       creationPrefsStoreProvider.overrideWithValue(

@@ -18,18 +18,38 @@ void main() {
   });
 
   test('saved preferences come back on the next launch', () async {
-    await FileCreationPrefsStore(
-      root: root,
-    ).save(const CreationPrefs(visualsPromptSuppressed: true));
+    await FileCreationPrefsStore(root: root).save(
+      const CreationPrefs(
+        visualsPromptSuppressed: true,
+        creditWarningSuppressed: true,
+      ),
+    );
 
     final loaded = await FileCreationPrefsStore(root: root).load();
     expect(loaded.visualsPromptSuppressed, isTrue);
+    expect(loaded.creditWarningSuppressed, isTrue);
   });
 
   test('a first launch has no file and reads as defaults', () async {
     final loaded = await FileCreationPrefsStore(root: root).load();
     expect(loaded.visualsPromptSuppressed, isFalse);
+    expect(loaded.creditWarningSuppressed, isFalse);
   });
+
+  test(
+    'existing preferences retain the image choice and enable the warning',
+    () {
+      final prefs = CreationPrefs.fromJson({'visualsPromptSuppressed': true});
+      expect(prefs.visualsPromptSuppressed, isTrue);
+      expect(prefs.creditWarningSuppressed, isFalse);
+      expect(
+        const CreationPrefs(
+          creditWarningSuppressed: true,
+        ).copyWith(visualsPromptSuppressed: true).creditWarningSuppressed,
+        isTrue,
+      );
+    },
+  );
 
   test('unreadable preferences fall back rather than throw', () async {
     // A preference the app cannot read must not be able to block a build, so
