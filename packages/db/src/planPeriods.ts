@@ -406,13 +406,15 @@ const FALLBACK_PERIOD_MS = 31 * 24 * 60 * 60 * 1000;
  * idempotency key is the period, which is what makes concurrent API instances —
  * and a renewal sweep racing the app's own verification — harmless.
  *
- * A period whose grant already happened is still *adopted* when the account is
- * sitting on a different one. That is the case a cancellation makes reachable:
+ * A free period is still *adopted* when the account is sitting on a different
+ * one. That is the case a cancellation makes reachable:
  * someone who entered a free period on the 1st, subscribed on the 5th and
  * cancelled on the 20th already owns this month's free key, and returning early
  * would leave them holding the subscription's allowance on the free tier. The
  * allowance is not granted twice. Free periods always have zero allowance,
  * including when adopting a period granted before free credits were disabled.
+ * An already-granted paid receipt only owns its recorded period; replaying it
+ * after a switch or renewal must leave the current allowance and period alone.
  */
 async function applyPlanPeriodTx(
   tx: BillingTx,
@@ -448,6 +450,12 @@ async function applyPlanPeriodTx(
 
   if (existing) {
     const grantedPeriodKey = planPeriodKeyFromMetadata(existing.metadata);
+    if (options.operation === "SUBSCRIPTION_CREDIT_GRANT" && grantedPeriodKey !== options.account.planPeriodKey) {
+      // A restore can deliver an older paid receipt after another plan or
+      // renewal took over. It grants nothing and cannot adopt or slide the
+      // current pool onto its own period, even if its reported expiry changed.
+      return { account: options.account, entry: existing };
+    }
     if (grantedPeriodKey !== null && grantedPeriodKey !== options.period.key) {
       // The same grant key re-applied to a *recomputed* period: the mock
       // verifier's moving month-end, or a real verification whose missing
