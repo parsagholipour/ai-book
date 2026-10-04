@@ -4,13 +4,33 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import 'app/app.dart';
+import 'app/launch/app_startup.dart';
+import 'app/routing/app_router.dart';
 import 'features/app_update/data/app_update_repository.dart';
 import 'features/app_update/domain/app_update.dart';
 import 'features/notifications/data/push_messaging.dart';
 import 'shared/diagnostics/crash_reporting.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    AppStartup(
+      initialize: _initializeApp,
+      builder: (services, initialLocation) => ProviderScope(
+        overrides: [
+          initialAppLocationProvider.overrideWithValue(initialLocation),
+          appBuildProvider.overrideWithValue(services.build),
+          if (services.pushMessaging case final messaging?)
+            pushMessagingProvider.overrideWithValue(messaging),
+        ],
+        child: const TomezaApp(),
+      ),
+    ),
+  );
+}
+
+Future<({AppBuild? build, PushMessaging? pushMessaging})>
+_initializeApp() async {
   // Install error handlers before the PDF/audio plugins or any other startup
   // work can fail. Push notifications reuse the same default Firebase app.
   await initializeCrashReporting();
@@ -30,14 +50,5 @@ Future<void> main() async {
   // Book-progress and book-ready notifications. Null in a build made without
   // google-services.json, and the app then simply never offers them.
   final pushMessaging = await FirebasePushMessaging.initialize();
-  runApp(
-    ProviderScope(
-      overrides: [
-        appBuildProvider.overrideWithValue(build),
-        if (pushMessaging != null)
-          pushMessagingProvider.overrideWithValue(pushMessaging),
-      ],
-      child: const TomezaApp(),
-    ),
-  );
+  return (build: build, pushMessaging: pushMessaging);
 }

@@ -1,5 +1,9 @@
 # Tomeza — Promptbook
 
+`launch-book.svg` depicts an author's working copy of “The way home.” The lit window connects the landscape, story, and handwritten reminder; a fountain pen’s gold nib touches the final stroke of that note. The landscape paths follow the left page's perspective and curvature. Chapter text is outlined from the bundled Noto Serif and Manrope fonts; annotations use custom pen strokes. The SVG has no embedded images, external resources, or filters. `LaunchBookArt` adjusts the backdrop for dark mode and settles into place once, respecting reduced motion.
+
+The launch headline uses Noto Serif Regular and Italic. The unmodified fonts and their SIL Open Font License are bundled in `assets/fonts/`.
+
 `google-g.png` is Google's unmodified [official sign-in icon](https://developers.google.com/static/identity/images/g-logo.png), used by the Google authentication button. Follow the [Google sign-in branding guidelines](https://developers.google.com/identity/branding-guidelines) when changing it.
 
 The source SVG retains the exact vector geometry of [13 / Promptbook in Figma](https://www.figma.com/design/ax7QQ2zzRWgVx4Owtr3zcK?node-id=58-290), with its fill mapped to the app theme's primary green (`#0F6B5C`).

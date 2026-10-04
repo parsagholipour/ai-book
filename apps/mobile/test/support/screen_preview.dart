@@ -2,7 +2,7 @@
 /// asserted on.
 ///
 /// `flutter test` draws every glyph with the Ahem box font, so this loads the
-/// real Manrope and Material icon fonts first. Persian/Arabic text has no
+/// real Manrope, Noto Serif, and Material icon fonts first. Persian/Arabic text has no
 /// fallback font here and renders as boxes; that is a limit of the harness, not
 /// of the app.
 ///
@@ -39,6 +39,12 @@ Future<void> loadPreviewFonts() async {
     manrope.addFont(bytes('assets/fonts/Manrope-$weight.ttf'));
   }
   await manrope.load();
+
+  final bookFace = FontLoader('NotoSerif');
+  for (final style in ['Regular', 'Italic']) {
+    bookFace.addFont(bytes('assets/fonts/NotoSerif-$style.ttf'));
+  }
+  await bookFace.load();
 
   final flutterRoot = Platform.environment['FLUTTER_ROOT'];
   if (flutterRoot != null) {

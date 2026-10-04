@@ -71,6 +71,7 @@ dependencies:
   flutter_local_notifications: ^22.3.1
   google_sign_in: ^7.2.0
   firebase_crashlytics: ^5.4.0
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -95,6 +96,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/brand/launch-book.svg
+    - assets/fonts/OFL-NotoSerif.txt
     - assets/brand/tomeza-promptbook-symbol.png
     - assets/brand/google-g.png
 
@@ -105,6 +108,13 @@ flutter:
   # https://flutter.dev/to/asset-from-package
 
   fonts:
+    - family: NotoSerif
+      fonts:
+        - asset: assets/fonts/NotoSerif-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSerif-Italic.ttf
+          weight: 400
+          style: italic
     - family: Manrope
       fonts:
         - asset: assets/fonts/Manrope-Regular.ttf
