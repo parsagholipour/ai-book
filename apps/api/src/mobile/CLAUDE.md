@@ -118,21 +118,25 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   Google's remaining quantity, and ordinary cancellation keeps the paid period. Refund markers and
   purchase grants share serializable transactions so duplicates and late claims cannot restore credits.
   Setup and retry behaviour: `docs/google-play-rtdn.md`.
-- **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat
-  `add_image` Apply.** `POST /api/mobile/plans/:id/approve` claims the `UsageCounter` slot for a
+- **The free tier's illustrated-book limit is claimed at plan approval, chat `add_image`, and illustrated rebuilds.**
+  `POST /api/mobile/plans/:id/approve` claims the `UsageCounter` slot for a
   generation planned with images (403 `IMAGE_LIMIT_REACHED` when it is gone — never a silent
   downgrade to text-only), and the chat `add_image` Apply claims one when it is about to make a
   *text-only* book illustrated — only then, and only when the recomputed cost is above zero: an
   already-illustrated book spent its slot at approve (or at a prior `ADD_IMAGE`, which the
   predicate counts even after an undo), and a zero-priced image writes no ledger entry to carry
-  the claim, so a failure would leak the slot for good. Either claim is stamped onto the
+  the claim, so a failure would leak the slot for good. Each claim is stamped onto the
   reservation as `metadata.imageQuota`, so `refundCreditLedgerEntry` hands the slot back on every
   failure path without each of them knowing about quotas — which is why the confirmed `/resume`
   retry lane, which re-charges a failed attempt, also re-claims: for a `FULL_BOOK_GENERATION`
-  retry priced with interior images, and for an `IMAGE_GENERATION` retry whose payload carries
+  or `BOOK_REPLAN` retry priced with interior images, and for an `IMAGE_GENERATION` retry whose payload carries
   `imageInsertion`, through the same `addImageQuotaLimit` decision the original Apply used.
-  **Known, pre-existing gap:** a chat replan copy carrying `illustrationsEnabled` generates an
-  illustrated book through the worker's self-approval, with no approve step and no claim.
+  A chat replan creates a **new book**, so a priced `queueChatBookReplanCopy` claims a fresh slot
+  even when the source already has illustrations. The requested settings determine the claim: rebuilding
+  without interior illustrations claims nothing, and a cover alone does not count. The claim,
+  charge, copy, and job share the generation-attempt transaction; a refusal creates no copy and
+  returns a fresh Apply card for an upgrade or the next period. A failed rebuild refunds its slot;
+  confirmed retries re-claim from the copy's settings, including retries of downstream page jobs.
 - **The free tier's book length is a rule asked at every door that starts generating a book, not a
   quota.** A free account gets books of up to `freeMaxBookPages` (30, operator-tunable at `/pricing`);
   longer, up to the 600 every schema allows, is a plan perk. `bookPageLimit.ts` owns the check

@@ -698,7 +698,9 @@ export const mockBilling = (() => {
     settleMessageUsage: vi.fn(async () => {}),
     resetMessageAllowance: vi.fn(async () => {}),
     getMessageAllowance: vi.fn(async () => ({ tier: "free", used: 0, limit: 50, remaining: 50, creditsPerMessage: 0, resetEnabled: true, resetCredits: 50, resetsAt: "2026-09-11T00:00:00.000Z", resetToken: "2026-09-10:0:50" })),
-    getImageQuota: vi.fn(async () => null),
+    getImageQuota: vi.fn(async () => null as {
+      used: number; limit: number; periodKey: string; resetsAt: Date;
+    } | null),
     // Null is "no free-tier length cap". Suites exercising the 30-page wall
     // override it with a number.
     getBookPageLimit: vi.fn(async (_userId?: string) => null as number | null),

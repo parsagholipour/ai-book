@@ -251,7 +251,7 @@ code in that area, however obvious the rule looks.
 - **Free accounts spend welcome or purchased credits; only paid plans receive recurring grants.** → packages/db/CLAUDE.md
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
 - **A plan period cut short is *adopted*, not re-granted.** → packages/db/CLAUDE.md
-- **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat `add_image` Apply.** → apps/api/src/mobile/CLAUDE.md
+- **The free tier's illustrated-book limit is claimed at plan approval, chat `add_image`, and illustrated rebuilds.** → apps/api/src/mobile/CLAUDE.md
 - **The free tier's book length is a rule asked at every door that starts generating a book, not a quota.** → apps/api/src/mobile/CLAUDE.md
 - **Reading a book in the app spends nothing; only taking its file out spends the export unlock, and the app asks first.** → apps/api/src/mobile/CLAUDE.md
 - **Chat replies never name a credit price.** → apps/api/src/mobile/CLAUDE.md

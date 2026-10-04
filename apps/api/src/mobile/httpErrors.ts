@@ -299,8 +299,8 @@ export const insufficientCreditsError = {
  * off, and the quota travels with the error so the app can say which it is.
  *
  * The sentence itself is `imageLimitReachedMessage`'s and not this function's,
- * because the limit has a second claiming door: the chat `add_image` Apply
- * fails the operation row instead of answering an HTTP status, and it reaches
+ * because chat `add_image` and rebuild Apply actions report the refusal in a
+ * message instead of answering an HTTP status, and they reach
  * the same reader about the same spent slot. One code, one sentence.
  */
 export function sendImageLimitReached(
@@ -319,6 +319,31 @@ export function sendImageLimitReached(
     }
   });
 }
+
+/** Preserve quota details on routes that declare a 403 response schema. */
+export const imageLimitReachedError = {
+  type: "object",
+  properties: {
+    error: {
+      type: "object",
+      properties: {
+        code: { type: "string" },
+        message: { type: "string" },
+        imageQuota: {
+          type: "object",
+          properties: {
+            used: { type: "integer" },
+            limit: { type: "integer" },
+            resetsAt: { type: "string" }
+          },
+          required: ["used", "limit", "resetsAt"]
+        }
+      },
+      required: ["code", "message", "imageQuota"]
+    }
+  },
+  required: ["error"]
+} as const;
 
 /**
  * What the reader is told when a paid start was wired onto work it does not own.

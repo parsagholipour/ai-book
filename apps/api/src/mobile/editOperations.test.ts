@@ -50,6 +50,7 @@ vi.mock("./imageLayoutOperations.js", () => ({
   proposeImageLayoutEdit: vi.fn(),
   queueChatImageLayout: vi.fn()
 }));
+vi.mock("./replanCopyOperations.js", () => ({ queueChatBookReplanCopy: vi.fn() }));
 vi.mock("./projectChat.js", () => ({
   createAssistantChatMessage: vi.fn(),
   insufficientCreditsChatMessage: vi.fn()

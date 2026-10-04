@@ -491,20 +491,25 @@ describe("illustrated book quota", () => {
     expect(await getImageQuota("user-a", JULY)).toMatchObject({ used: 0, periodKey: "2026-07" });
   });
 
-  it("hands the slot back when the generation it paid for is refunded", async () => {
+  it.each([
+    { operation: "FULL_BOOK_GENERATION", committed: false },
+    { operation: "BOOK_REPLAN", committed: true }
+  ] as const)("hands the slot back when $operation is refunded", async ({ operation, committed }) => {
     seedLivePaidPeriod("user-a");
     const claim = await consumeIllustratedBookUse({ userId: "user-a", limit: LIMIT, now: JUNE });
     const reservation = await reserveCredits({
       userId: "user-a",
       projectId: "project-1",
-      operation: "FULL_BOOK_GENERATION",
+      operation,
       amountCredits: 500,
       idempotencyKey: "reserve:illustrated",
       metadata: { imageQuota: { periodKey: claim.periodKey } },
       now: JUNE
     });
 
-    await refundCreditLedgerEntry(reservation!.id, "Could not be queued", JUNE);
+    if (committed) await commitReservedCredits(reservation!.id);
+    await refundCreditLedgerEntry(reservation!.id, "Generation failed", JUNE);
+    await refundCreditLedgerEntry(reservation!.id, "Repeated failure delivery", JUNE);
     expect(await getImageQuota("user-a", JUNE)).toMatchObject({ used: 0 });
   });
 

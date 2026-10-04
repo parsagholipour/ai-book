@@ -11,6 +11,7 @@ import { queueDirectPlanRevision } from "../editOperations.js";
 import { retryBookEditOperation } from "../bookEditOperationRetries.js";
 import {
   hitTieredLimit,
+  imageLimitReachedError,
   requireMobileAuth,
   sendAuthorManuscript,
   sendGenerationAttemptError,
@@ -450,7 +451,13 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       schema: {
         tags: ["mobile"],
         body: mobileGenerationRetryOpenApiBody,
-        response: { 202: {}, 401: mobileAuthError, 403: pageLimitExceededError, 404: mobileAuthError, 409: mobileAuthError }
+        response: {
+          202: {},
+          401: mobileAuthError,
+          403: { anyOf: [pageLimitExceededError, imageLimitReachedError] },
+          404: mobileAuthError,
+          409: mobileAuthError
+        }
       }
     },
     async (request, reply) => {
@@ -559,8 +566,11 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       // skipped them would deliver a paid book with locked exports while
       // bypassing the free tier's image budget.
       const isFullBookRetry = sourceAttempt.operation === "FULL_BOOK_GENERATION";
+      const isReplanRetry = sourceAttempt.operation === "BOOK_REPLAN";
       let imageQuotaLimit: number | null = null;
-      if (isFullBookRetry) {
+      if (isFullBookRetry || isReplanRetry) {
+        // A replan's project is the copy, whose settings already describe the
+        // rebuilt book. Its failed charge released the slot just like approval.
         const generationInput = createProjectSchema.parse(inputSnapshotFromProject(project));
         // A retry re-charges the whole package, so it is held to the length
         // rule the approval was: a plan that lapsed since may not rewrite it.
@@ -568,7 +578,8 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         if (pageLimit) {
           return sendPageLimitExceeded(reply, pageLimit);
         }
-        if (estimateFullBookCreditCost(generationInput).assumptions.estimatedInteriorImages > 0) {
+        if ((!isReplanRetry || sourceAttempt.quotedCredits > 0) &&
+            estimateFullBookCreditCost(generationInput).assumptions.estimatedInteriorImages > 0) {
           imageQuotaLimit = (await getImageQuota(auth.user.id))?.limit ?? null;
         }
       } else if (

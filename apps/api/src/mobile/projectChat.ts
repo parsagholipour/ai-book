@@ -431,12 +431,13 @@ export async function imageLimitChatMessage(
   resume?: { pendingEdit: Record<string, unknown>; editProposal?: Record<string, unknown> } | undefined
 ): Promise<MobileProjectChatMessageRecord> {
   const bookText = `illustrated book${quota.limit === 1 ? "" : "s"}`;
+  const action = intent.kind === "book_replan" ? "rebuild" : "illustration";
   return createAssistantChatMessage({
     projectId,
     parentId,
     content: resume
-      ? `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that illustration. Upgrade for unlimited illustrated books — or wait for next month — then tap Apply and I’ll run it.`
-      : `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that illustration. Upgrade for unlimited illustrated books, or try again next month.`,
+      ? `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that ${action}. Upgrade for unlimited illustrated books — or wait for next month — then tap Apply and I’ll run it.`
+      : `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that ${action}. Upgrade for unlimited illustrated books, or try again next month.`,
     metadata: {
       intent,
       charged: false,

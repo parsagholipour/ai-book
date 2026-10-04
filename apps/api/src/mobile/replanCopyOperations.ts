@@ -10,6 +10,10 @@ import { type QueuedChatEdit } from "./chatEditOptions.js";
 import { attachReplanCopyToCreationSession, createReplanProjectCopy } from "./projectRecords.js";
 import { cleanTargetLanguage, jsonInputValue, languageDisplayName } from "./support.js";
 import { enqueueGenerationJob } from "../queue.js";
+import { createProjectSchema, estimateFullBookCreditCost, inputWithReplanSettings } from "@book-maker/core";
+import { GenerationQuotaExceededError, getImageQuota } from "@book-maker/db/billing";
+import { imageLimitChatMessage } from "./projectChat.js";
+import { inputSnapshotFromProject } from "./projectSummarySerializers.js";
 
 /**
  * The one edit that does not touch the book it was asked about.
@@ -64,6 +68,12 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
       ...(options.characterContext ? { characterContext: options.characterContext } : {})
     });
   }
+  // The copy is a new book even if its source already spent an illustrated-book
+  // slot. Use the requested settings, so removing illustrations needs no slot.
+  const input = inputWithReplanSettings(createProjectSchema.parse(inputSnapshotFromProject(project)), replanSettings);
+  const imageQuotaLimit = cost > 0 && estimateFullBookCreditCost(input).assumptions.estimatedInteriorImages > 0
+    ? (await getImageQuota(userId))?.limit ?? null
+    : null;
   const targetLanguage = cleanTargetLanguage(intent.targetLanguage);
   const commandRequestId = options.executionCommandId ?? userMessageId;
   const operation = await createOpenBookEditOperation({
@@ -116,6 +126,7 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
     cost,
     billingOperation: "BOOK_REPLAN",
     description: "Mobile book replan copy",
+    imageQuotaLimit,
     ...(options.characterContext ? { characterContext: options.characterContext } : {}),
     metadata: {
       intent,
@@ -185,5 +196,24 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
         });
       }
     }
+  }).catch(async (error: unknown) => {
+    if (!(error instanceof GenerationQuotaExceededError)) throw error;
+    // The attempt rolled back before creating the copy. Its operation claim is
+    // spent, so offer a fresh Apply for an upgrade or the next quota period.
+    const reply = await imageLimitChatMessage(
+      project.id,
+      userMessageId,
+      intent,
+      error.claim,
+      creditsBlockedResume({
+        request: message,
+        scope: intent.scope,
+        intent,
+        affectedPageIndexes: [],
+        credits: cost,
+        ...(options.characterContext ? { characterContext: options.characterContext } : {})
+      }, numberingForProject(project))
+    );
+    return { reply, operation: null };
   });
 }
