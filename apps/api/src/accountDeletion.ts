@@ -17,8 +17,9 @@ import { stopProjectGenerationJobs } from "./queue.js";
  * **What goes, and what stays.** Everything the person made or said is
  * deleted, bytes first-class: every book (through the same stop-jobs, delete
  * and storage cleanup the book's own delete runs), creation drafts and their
- * uploads, imports, saved characters and their pictures, voice calls and their
- * transcripts, sessions, the password and the legal acceptances. The user row
+ * uploads, imports and their originals, retained source extractions, saved
+ * characters and their pictures, voice calls and their transcripts, sessions,
+ * the password and the legal acceptances. The user row
  * itself is kept as a tombstone — email replaced, name cleared, DISABLED — so
  * the credit ledger, purchases and subscriptions it owns survive as the
  * financial records the policy pages say are retained, and moderation reports
@@ -80,6 +81,24 @@ export async function executeAccountDeletion(userId: string, log: Logger): Promi
   }
   result.drafts = (await prisma.mobileCreationDraft.deleteMany({ where: { userId } })).count;
 
+  // Imports store their originals under the import id, not a creation draft.
+  // Keep these rows until cleanup succeeds, including imports whose project
+  // has already gone, so a storage failure can be retried by the next sweep.
+  const imports = await prisma.bookImport.findMany({ where: { userId }, select: { id: true } });
+  for (const { id } of imports) {
+    await deleteCreationAttachmentDraftDir("", id);
+  }
+
+  // Sources outlive their chat (draftId becomes null) and even the feature
+  // flag that enabled extraction. Their storageDraftId still locates the
+  // original; delete it before dropping the last durable reference to it.
+  const sources = await prisma.sourceDocument.findMany({
+    where: { userId }, select: { id: true, storageDraftId: true }
+  });
+  for (const source of sources) {
+    await objectStore().delete(objectKey("attachments", source.storageDraftId, source.id));
+  }
+
   try {
     await objectStore().deletePrefix(`${objectKey("images", LIBRARY_CHARACTER_STORAGE_SUBDIR, userId)}/`);
   } catch (error) {
@@ -91,6 +110,10 @@ export async function executeAccountDeletion(userId: string, log: Logger): Promi
 
   const tombstone = deletedAccountEmail(userId);
   await prisma.$transaction([
+    // Projects have already released their ProjectSource references, and
+    // drafts can no longer be backfilled. This cascades through every source
+    // extraction version and its chunks, including summaries and embeddings.
+    prisma.sourceDocument.deleteMany({ where: { userId } }),
     prisma.bookImport.deleteMany({ where: { userId } }),
     prisma.mobileSession.deleteMany({ where: { userId } }),
     prisma.passwordResetRequest.deleteMany({ where: { userId } }),

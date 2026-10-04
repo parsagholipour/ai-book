@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { seedObject, testObjectStore } from "./testing/objectStorage.js";
 
 const db = vi.hoisted(() => {
   const model = () => ({
@@ -15,6 +16,7 @@ const db = vi.hoisted(() => {
     libraryCharacter: model(),
     voiceCall: model(),
     bookImport: model(),
+    sourceDocument: model(),
     mobileSession: model(),
     passwordResetRequest: model(),
     userPasswordCredential: model(),
@@ -24,20 +26,14 @@ const db = vi.hoisted(() => {
     $transaction: vi.fn(async (writes: unknown[]) => writes)
   };
 });
-const storage = vi.hoisted(() => ({ deletePrefix: vi.fn(async () => undefined) }));
 const jobs = vi.hoisted(() => ({ stopProjectGenerationJobs: vi.fn(async () => ({})) }));
 const projectStorage = vi.hoisted(() => ({
   deleteProjectStorage: vi.fn(async () => ({ book: true, images: true, voice: true, audio: true }))
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: db }));
-vi.mock("@book-maker/storage", () => ({
-  objectKey: (...parts: string[]) => parts.join("/"),
-  objectStore: () => storage
-}));
 vi.mock("./queue.js", () => jobs);
 vi.mock("./projectStorage.js", () => projectStorage);
-vi.mock("./attachmentStorage.js", () => ({ deleteCreationAttachmentDraftDir: vi.fn(async () => undefined) }));
 
 import { ACCOUNT_DELETION_GRACE_MS, deletedAccountEmail, executeAccountDeletion, runAccountDeletionSweep } from "./accountDeletion.js";
 
@@ -50,7 +46,8 @@ const log = { warn: vi.fn(), info: vi.fn() };
  * financial records.
  */
 describe("carrying out an account deletion", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
+  afterEach(() => vi.restoreAllMocks());
 
   it("deletes every book through its own delete before anything else", async () => {
     db.project.findMany.mockResolvedValueOnce([{ id: "book-1" }, { id: "book-2" }] as never);
@@ -62,8 +59,11 @@ describe("carrying out an account deletion", () => {
   });
 
   it("removes saved characters' pictures and leaves a tombstone that keeps the ledger", async () => {
+    seedObject("images/characters/user-1/portrait.webp", "private portrait");
+    seedObject("images/characters/user-10/portrait.webp", "another user's portrait");
     await executeAccountDeletion("user-1", log);
-    expect(storage.deletePrefix).toHaveBeenCalledWith("images/characters/user-1/");
+    expect(await testObjectStore.get("images/characters/user-1/portrait.webp")).toBeNull();
+    expect(await testObjectStore.get("images/characters/user-10/portrait.webp")).not.toBeNull();
     expect(db.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: expect.objectContaining({ email: deletedAccountEmail("user-1"), displayName: null, googleSubject: null, status: "DISABLED" })
@@ -75,6 +75,68 @@ describe("carrying out an account deletion", () => {
       where: { userId: "user-1", status: "PENDING" },
       data: expect.objectContaining({ status: "COMPLETED", email: deletedAccountEmail("user-1"), reason: null })
     });
+  });
+
+  it("deletes imported originals even when their project was already deleted", async () => {
+    db.bookImport.findMany.mockResolvedValueOnce([{ id: "import-1" }, { id: "import-deleted-book" }] as never);
+    seedObject("attachments/import-1/source", "manuscript");
+    seedObject("attachments/import-deleted-book/source", "retained manuscript");
+    seedObject("attachments/import-10/source", "another user's manuscript");
+
+    await executeAccountDeletion("user-1", log);
+
+    expect([...testObjectStore.objects.keys()]).toEqual(["attachments/import-10/source"]);
+    expect(db.bookImport.findMany).toHaveBeenCalledWith({ where: { userId: "user-1" }, select: { id: true } });
+    expect(db.bookImport.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+  });
+
+  it("deletes retained source content and originals after their chat was deleted", async () => {
+    db.project.findMany.mockResolvedValueOnce([{ id: "book-1" }] as never);
+    // No MobileCreationDraft remains: storageDraftId still locates its original.
+    db.sourceDocument.findMany.mockResolvedValueOnce([
+      { id: "source-1", storageDraftId: "deleted-chat" },
+      { id: "source-expired", storageDraftId: "deleted-chat" }
+    ] as never);
+    seedObject("attachments/deleted-chat/source-1", "private source document");
+    seedObject("attachments/other-chat/source-2", "another user's source document");
+
+    await executeAccountDeletion("user-1", log);
+
+    expect([...testObjectStore.objects.keys()]).toEqual(["attachments/other-chat/source-2"]);
+    expect(db.sourceDocument.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1" }, select: { id: true, storageDraftId: true }
+    });
+    // SourceDocument deletion cascades to every extraction version and chunk;
+    // the book's ProjectSource references must be removed first (RESTRICT).
+    expect(db.sourceDocument.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+    expect(db.project.delete.mock.invocationCallOrder[0]).toBeLessThan(db.sourceDocument.deleteMany.mock.invocationCallOrder[0]!);
+    expect(db.sourceDocument.deleteMany.mock.invocationCallOrder[0]).toBeLessThan(db.accountDeletionRequest.updateMany.mock.invocationCallOrder[0]!);
+  });
+
+  it("keeps the import record and deletion request retryable when an original cannot be removed", async () => {
+    db.accountDeletionRequest.findMany.mockResolvedValue([{ id: "request-1", userId: "user-1" }] as never);
+    db.bookImport.findMany.mockResolvedValue([{ id: "import-1" }] as never);
+    seedObject("attachments/import-1/source", "private manuscript");
+    const remove = vi.spyOn(testObjectStore, "delete").mockRejectedValueOnce(new Error("S3 unavailable"));
+
+    expect(await runAccountDeletionSweep(log)).toBe(0);
+    expect(db.bookImport.deleteMany).not.toHaveBeenCalled();
+    expect(db.accountDeletionRequest.updateMany).not.toHaveBeenCalled();
+    expect(await testObjectStore.get("attachments/import-1/source")).not.toBeNull();
+
+    expect(await runAccountDeletionSweep(log)).toBe(1);
+    expect(await testObjectStore.get("attachments/import-1/source")).toBeNull();
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps detached sources retryable when their original cannot be removed", async () => {
+    db.sourceDocument.findMany.mockResolvedValueOnce([{ id: "source-1", storageDraftId: "deleted-chat" }] as never);
+    seedObject("attachments/deleted-chat/source-1", "private source document");
+    vi.spyOn(testObjectStore, "delete").mockRejectedValueOnce(new Error("S3 unavailable"));
+
+    await expect(executeAccountDeletion("user-1", log)).rejects.toThrow("S3 unavailable");
+    expect(db.sourceDocument.deleteMany).not.toHaveBeenCalled();
+    expect(db.accountDeletionRequest.updateMany).not.toHaveBeenCalled();
   });
 
   it("waits out the grace period, and closes a request whose user is already gone", async () => {
