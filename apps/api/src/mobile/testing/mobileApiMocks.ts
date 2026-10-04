@@ -690,6 +690,8 @@ export const mockBilling = (() => {
       constructor(readonly code: string) { super(code); }
     },
     reserveMessageUsage: vi.fn(async () => "message-reservation-1"),
+    consumeAiProcessingUsageTx: vi.fn(async () => {}),
+    refundAiProcessingUsageTx: vi.fn(async () => {}),
     completeMessageUsage: vi.fn(async (_lease, write) => write(mockPrisma)),
     renewMessageUsage: vi.fn(async () => true),
     settleMessageUsage: vi.fn(async () => {}),

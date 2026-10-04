@@ -17,6 +17,7 @@ import type { FastifyInstance } from "fastify";
 import { createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuild.js";
 import { pageLimitExceededError } from "../bookPageLimit.js";
 import type { MobileRouteContext } from "../routeContext.js";
+import { sendProcessingOutcome, withAiProcessingUsage } from "../processingUsage.js";
 
 /**
  * Legacy single-draft creation flow plus the book advisor.
@@ -153,11 +154,16 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a valid creation brief.");
       }
-      const advisor = await adviseMobileBook(parsed.data, {
-        enrich: advisorEnrichment,
-        timeoutMs: options.advisorTimeoutMs
+      return sendProcessingOutcome(reply, async () => {
+        const advise = () => adviseMobileBook(parsed.data, {
+          enrich: advisorEnrichment,
+          timeoutMs: options.advisorTimeoutMs
+        });
+        const advisor = advisorEnrichment
+          ? await withAiProcessingUsage(auth.user.id, "Book advice", advise)
+          : await advise();
+        return { advisor } satisfies MobileBookAdvisorResponseDto;
       });
-      return { advisor } satisfies MobileBookAdvisorResponseDto;
     }
   );
 
@@ -179,7 +185,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
-      return sendFinalizeOutcome(reply, await finalizeMobileCreationDraft(auth.user.id, id));
+      return sendProcessingOutcome(reply, async () => sendFinalizeOutcome(reply, await finalizeMobileCreationDraft(auth.user.id, id)));
     }
   );
 }

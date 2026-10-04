@@ -3,7 +3,7 @@ import { DEFAULT_CREDIT_COSTS, messagePolicy, resetCreditPricing, setCreditPrici
 
 const db = await vi.hoisted(async () => (await import("./testing/billingTestDb.js")).createBillingTestDb());
 vi.mock("./client.ts", () => ({ prisma: db.prisma, Prisma: db.Prisma }));
-const { getMessageAllowance, reserveMessageUsage, settleMessageUsage, resetMessageAllowance, getCreditBalance, renewMessageUsage, recoverMessageUsage, completeMessageUsage } = await import("./billing.ts");
+const { getMessageAllowance, reserveMessageUsage, settleMessageUsage, resetMessageAllowance, getCreditBalance, renewMessageUsage, recoverMessageUsage, completeMessageUsage, consumeAiProcessingUsageTx, refundAiProcessingUsageTx } = await import("./billing.ts");
 const now = new Date("2026-09-10T23:59:00Z");
 const userId = "user-a";
 const send = (requestKey: string) => reserveMessageUsage({ userId, requestKey, now });
@@ -275,5 +275,88 @@ describe("ordinary message allowance", () => {
     await send("race");
     expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 1 });
     expect(db.prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe("AI processing shares the message allowance", () => {
+  const processing = (requestKey: string) => reserveMessageUsage({ userId, requestKey: `processing:${requestKey}`, description: "Book advice", now });
+  const source = (requestKey = "processing:source:file-1:1") => db.prisma.$transaction((tx) =>
+    consumeAiProcessingUsageTx(tx, { userId, requestKey, description: "File processing", now }));
+
+  it("shares one ceiling between chat, advisor, inline uploads, and queued source processing", async () => {
+    price({ messageDailyLimitFree: 3, messageCreditsFree: 7 });
+    await send("project:chat");
+    await processing("advisor");
+    await source();
+    await expect(processing("upload")).rejects.toMatchObject({ code: "MESSAGE_LIMIT_REACHED" });
+    await expect(source("processing:source:file-2:1")).rejects.toMatchObject({ code: "MESSAGE_LIMIT_REACHED" });
+    await expect(send("project:another-chat")).rejects.toMatchObject({ code: "MESSAGE_LIMIT_REACHED" });
+    expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 3, remaining: 0 });
+    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 979, reservedCredits: 14, lifetimeCreditsSpent: 7 });
+  });
+
+  it("fails closed on an empty balance without consuming a slot or enqueuing work", async () => {
+    db.state.accounts.get(userId)!.availableCredits = 0;
+    await expect(processing("advisor")).rejects.toMatchObject({ code: "INSUFFICIENT_CREDITS" });
+    await expect(source()).rejects.toMatchObject({ code: "INSUFFICIENT_CREDITS" });
+    expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 0 });
+    expect(db.state.messageReservations.size).toBe(0);
+  });
+
+  it("returns failed processing credits without recycling its daily attempt", async () => {
+    price({ messageDailyLimitFree: 1, messageCreditsFree: 7 });
+    const leaseId = await processing("failed-file");
+    await settleMessageUsage(userId, "processing:failed-file", false, leaseId);
+    await settleMessageUsage(userId, "processing:failed-file", false, leaseId);
+    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 1000, reservedCredits: 0 });
+    expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 1, remaining: 0 });
+    await expect(processing("failed-file")).rejects.toMatchObject({ code: "REQUEST_IN_PROGRESS" });
+    await expect(processing("new-file")).rejects.toMatchObject({ code: "MESSAGE_LIMIT_REACHED" });
+  });
+
+  it("recovers abandoned inline processing credits after a crash while retaining the attempt", async () => {
+    await processing("abandoned");
+    const later = new Date(now.getTime() + 20 * 60_000);
+    vi.setSystemTime(later);
+    expect(await recoverMessageUsage({ now: later })).toBe(1);
+    expect(await getCreditBalance(userId, later)).toMatchObject({ availableCredits: 1000, reservedCredits: 0 });
+    expect([...db.state.usage.values()]).toEqual([expect.objectContaining({ used: 1 })]);
+    await expect(processing("abandoned")).rejects.toMatchObject({ code: "REQUEST_IN_PROGRESS" });
+  });
+
+  it("refunds a terminal source failure once, retaining its spent authorization and daily slot", async () => {
+    price({ messageDailyLimitFree: 1, messageCreditsFree: 7 });
+    await source();
+    for (let retry = 0; retry < 2; retry++) {
+      await db.prisma.$transaction((tx) => refundAiProcessingUsageTx(tx, userId, "processing:source:file-1:1"));
+    }
+    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 1000, reservedCredits: 0 });
+    expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 1 });
+    await expect(source()).rejects.toMatchObject({ code: "REQUEST_IN_PROGRESS" });
+    await expect(source("processing:source:file-1:2")).rejects.toMatchObject({ code: "MESSAGE_LIMIT_REACHED" });
+  });
+
+  it("rolls back the charge and slot when the durable source job cannot be written", async () => {
+    await expect(db.prisma.$transaction(async (tx) => {
+      await consumeAiProcessingUsageTx(tx, { userId, requestKey: "processing:source:file-1:1", description: "File processing", now });
+      throw new Error("job write failed");
+    })).rejects.toThrow("job write failed");
+    expect(await getMessageAllowance(userId, now)).toMatchObject({ used: 0 });
+    expect(await getCreditBalance(userId, now)).toMatchObject({ availableCredits: 1000, reservedCredits: 0 });
+    expect(db.state.messageReservations.size).toBe(0);
+  });
+
+  it("uses subscriber prices and limits even when their processing is free", async () => {
+    db.state.entitlements.set("pro", {
+      id: "pro", userId, projectId: null, type: "PRO_PLAN", status: "ACTIVE", source: "google_play_subscription",
+      creditsCost: 0, relatedLedgerEntryId: null, purchaseRecordId: null, startsAt: now, expiresAt: null
+    });
+    price({ messageDailyLimitPro: 1, messageCreditsPro: 0 });
+    db.state.accounts.get(userId)!.availableCredits = 0;
+    await source();
+    expect(await getMessageAllowance(userId, now)).toMatchObject({ tier: "pro", used: 1, remaining: 0 });
+    await expect(processing("advisor")).rejects.toMatchObject({ code: "MESSAGE_LIMIT_REACHED" });
+    expect(db.state.ledger.size).toBe(0);
   });
 });

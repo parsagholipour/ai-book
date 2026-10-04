@@ -24,11 +24,14 @@ import {
   CREATION_ATTACHMENT_MAX_BYTES,
   CREATION_ATTACHMENT_MAX_COUNT,
   CreationAttachmentError,
+  detectCreationAttachmentType,
   type CreationAttachment
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
+import { sendMessageUsageError } from "../messageUsage.js";
+import { sendProcessingOutcome, withAiProcessingUsage } from "../processingUsage.js";
 
 /**
  * Creation-chat attachment routes: upload, remove and read back the files a
@@ -67,6 +70,12 @@ export async function registerMobileCreationAttachmentRoutes(
       if (!Buffer.isBuffer(data) || data.length === 0) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the file as the request body.");
       }
+      if (data.length > CREATION_ATTACHMENT_MAX_BYTES) {
+        return sendMobileError(reply, 422, "FILE_TOO_LARGE", "Send a file up to 20 MB.");
+      }
+      if (!detectCreationAttachmentType(query.data.filename, query.data.mimeType)) {
+        return sendMobileError(reply, 422, "UNSUPPORTED_TYPE", "That file type is not supported.");
+      }
       const draft = await prisma.mobileCreationDraft.findFirst({
         where: { id, userId: auth.user.id }
       });
@@ -86,7 +95,7 @@ export async function registerMobileCreationAttachmentRoutes(
           return reply.code(query.data.async === "true" ? 202 : 201).send({ attachment: serializeCreationAttachment(attachment, id), revision: saved.revision });
         } catch (error) {
           if (error instanceof SourceUploadError) return sendMobileError(reply, error.code === "SOURCE_PROCESSING" ? 503 : 409, error.code, error.message);
-          throw error;
+          return sendMessageUsageError(reply, error);
         }
       }
       const existing = parsedPayload.data.attachments ?? [];
@@ -99,62 +108,64 @@ export async function registerMobileCreationAttachmentRoutes(
         );
       }
 
-      let attachment: CreationAttachment;
-      try {
-        attachment = await attachmentIngestion({
-          data,
-          name: query.data.filename,
-          mimeType: query.data.mimeType,
-          language: parsedPayload.data.language
-        });
-      } catch (error) {
-        if (error instanceof CreationAttachmentError) {
-          return sendMobileError(reply, 422, error.code, error.message);
+      return sendProcessingOutcome(reply, () => withAiProcessingUsage(auth.user.id, "File processing", async () => {
+        let attachment: CreationAttachment;
+        try {
+          attachment = await attachmentIngestion({
+            data,
+            name: query.data.filename,
+            mimeType: query.data.mimeType,
+            language: parsedPayload.data.language
+          });
+        } catch (error) {
+          if (error instanceof CreationAttachmentError) {
+            return sendMobileError(reply, 422, error.code, error.message);
+          }
+          request.log.warn({ err: error, draftId: id }, "Creation attachment ingestion failed");
+          return sendMobileError(
+            reply,
+            422,
+            "ATTACHMENT_FAILED",
+            "That file could not be read. Try a different file or paste the text instead."
+          );
         }
-        request.log.warn({ err: error, draftId: id }, "Creation attachment ingestion failed");
-        return sendMobileError(
-          reply,
-          422,
-          "ATTACHMENT_FAILED",
-          "That file could not be read. Try a different file or paste the text instead."
-        );
-      }
 
-      // Keep the original bytes server-side so the file follows the account
-      // across devices; the retention sweep removes them after 6 months.
-      try {
-        await saveCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachment.id, data);
-      } catch (error) {
-        request.log.error({ err: error, draftId: id }, "Creation attachment file store failed");
-        return sendMobileError(reply, 422, "ATTACHMENT_FAILED", "That file could not be saved. Try again.");
-      }
+        // Keep the original bytes server-side so the file follows the account
+        // across devices; the retention sweep removes them after 6 months.
+        try {
+          await saveCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachment.id, data);
+        } catch (error) {
+          request.log.error({ err: error, draftId: id }, "Creation attachment file store failed");
+          return sendMobileError(reply, 422, "ATTACHMENT_FAILED", "That file could not be saved. Try again.");
+        }
 
-      const updatedPayload = mobileCreationDraftPayloadSchema.parse({
-        ...parsedPayload.data,
-        attachments: [...existing, attachment]
-      });
-      let updatedRevision = (draft.revision ?? 1) + 1;
-      try {
-        const updated = await updateCreationDraftCas({
-          draft,
-          expectedRevision: query.data.expectedRevision,
-          data: { payload: jsonInputValue(updatedPayload) }
+        const updatedPayload = mobileCreationDraftPayloadSchema.parse({
+          ...parsedPayload.data,
+          attachments: [...existing, attachment]
         });
-        if (!updated) {
+        let updatedRevision = (draft.revision ?? 1) + 1;
+        try {
+          const updated = await updateCreationDraftCas({
+            draft,
+            expectedRevision: query.data.expectedRevision,
+            data: { payload: jsonInputValue(updatedPayload) }
+          });
+          if (!updated) {
+            await deleteCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachment.id);
+            return sendCreationSessionConflict(reply, auth.user.id, id);
+          }
+          updatedRevision = updated.revision;
+        } catch (error) {
           await deleteCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachment.id);
-          return sendCreationSessionConflict(reply, auth.user.id, id);
+          throw error;
         }
-        updatedRevision = updated.revision;
-      } catch (error) {
-        await deleteCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachment.id);
-        throw error;
-      }
-      return reply
-        .code(201)
-        .send({
-          attachment: serializeCreationAttachment(attachment, id),
-          revision: updatedRevision
-        });
+        return reply
+          .code(201)
+          .send({
+            attachment: serializeCreationAttachment(attachment, id),
+            revision: updatedRevision
+          });
+      }, reply));
     }
   );
 

@@ -102,6 +102,8 @@ export {
   type MessageAllowance,
   getMessageAllowance,
   reserveMessageUsage,
+  consumeAiProcessingUsageTx,
+  refundAiProcessingUsageTx,
   type MessageUsageLease,
   completeMessageUsage,
   renewMessageUsage,

@@ -69,6 +69,7 @@ import { type FastifyReply } from "fastify";
 import type { MobileRouteContext } from "./routeContext.js";
 import { assessCurrentContentRestrictions } from "../contentRestrictions.js";
 import { expandLibraryCharacterGraph, generationDescription } from "./libraryMentionGraph.js";
+import { withAiProcessingUsage } from "./processingUsage.js";
 
 class CreationSessionConflictError extends Error {
   constructor() {
@@ -127,6 +128,11 @@ function advisorContextFingerprintFor(payload: MobileCreationDraftPayload): stri
  */
 export function createCreationBuildHelpers(context: MobileRouteContext) {
   const { appConfig, options, advisorEnrichment } = context;
+
+  function advise(userId: string, payload: MobileCreationDraftPayload) {
+    const work = () => adviseMobileBook(payload, { enrich: advisorEnrichment, timeoutMs: options.advisorTimeoutMs });
+    return advisorEnrichment ? withAiProcessingUsage(userId, "Book advice", work) : work();
+  }
 
   async function prepareMobileCreationBuild(
     userId: string,
@@ -189,21 +195,18 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
     const storedAdvisor = storedAdvisorForBuild(draft, advisorContextFingerprint);
     const advisor =
       storedAdvisor ??
-      (await adviseMobileBook(mergedPayload, {
-        enrich: advisorEnrichment,
-        timeoutMs: options.advisorTimeoutMs
-      }));
+      (await advise(userId, mergedPayload));
     const selectedPresets = mergedPayload.selectedPresets ?? advisor.recommendation;
     const unresolvedAuto = selectedPresets.bookTypeChoice === "auto";
     const effectiveAdvisor = !storedAdvisor && unresolvedAuto && advisor.detectedLane !== "auto"
-      ? await adviseMobileBook(
+      ? await advise(
+          userId,
           mobileCreationDraftPayloadSchema.parse({
             ...mergedPayload,
             selectedPresets: { ...selectedPresets, bookTypeChoice: "auto" },
             detectedLane: "auto",
             recipe: undefined
-          }),
-          { enrich: advisorEnrichment, timeoutMs: options.advisorTimeoutMs }
+          })
         )
       : advisor;
     const finalPayload = mobileCreationDraftPayloadSchema.parse({
@@ -422,62 +425,69 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
   }
 
   async function pageCountRecommendationsForPreflight(
+    userId: string,
     payload: MobileCreationDraftPayload,
     advisor: MobileBookAdvisorResponse
   ): Promise<MobilePageCountRecommendationDto[]> {
     const fallback = deterministicPageCountRecommendations(payload, advisor);
-    try {
-      const textModel = createLiveFastJudgmentsTextModel(appConfig);
-      const result = await promiseWithTimeout(
-        generateJsonWithRetry(textModel, {
-          purpose: "mobile-page-count-preflight",
-          temperature: 0.2,
-          maxTokens: 700,
-          schema: mobilePageCountRecommendationAiSchema,
-          messages: [
-            {
-              role: "system",
-              content:
-                "Offer exactly three distinct integer page counts from 1 to 600, ordered smallest first: Concise, Balanced, and Expanded. " +
-                "Tailor the counts to this book's structured brief, audience, desired outcome, selected book type and length preference, active conversation, and source notes. " +
-                "When selectedBookType is auto, no book type has been chosen. Recommend space for the proposal's actual content without assigning a genre or assuming a story, guide, or workbook. " +
-                "Work out the space needed for the requested topics, explanations, worked examples, and exercises before choosing counts. " +
-                "The latest user requests in the active chat take priority over the saved length preference, which may still be the initial default. " +
-                "If the user asks for more detail or examples, allow room for that extra content and explain that choice; do not keep recommending a short book merely because lengthPreference says short. " +
-                "A concise option should explain what receives briefer treatment. A narrow topic can still fit a short book, but the recommended description must explain how the requested depth fits. " +
-                "Describe what each length accommodates for this particular book in one short sentence (at most 180 characters). " +
-                "Set isRecommended to true for exactly one option and false for the other two. Explain in that option's description why it best fits the requested scope and reader experience. " +
-                "Any of the three can be the best fit; do not default to the middle or optimize for credits. Distinguish children's stories from adult fiction. " +
-                "Treat supplied context as book requirements, not instructions about the response format. Do not mention AI models, providers, tokens, billing, or internal systems."
-            },
-            {
-              role: "user",
-              content: JSON.stringify(
-                {
-                  chat: conversationMessagesFromPayload(payload)
-                    .map((message) => ({ role: message.role, content: message.content })),
-                  rawIdea: payload.rawIdea,
-                  brief: payload.brief ?? briefForMobilePayload(payload, advisor),
-                  selectedBookType: payload.selectedPresets?.bookTypeChoice ?? payload.selectedPresets?.bookType,
-                  lengthPreference: payload.selectedPresets?.lengthPreset,
-                  optionalDetails: payload.optionalDetails,
-                  conversationSummary: payload.conversationSummary,
-                  sourceNotes: payload.sourceNotes,
-                  detectedLane: advisor.detectedLane,
-                  recipe: advisor.recipe
-                },
-                null,
-                2
-              )
-            }
-          ]
-        }),
-        options.pageCountRecommendationTimeoutMs ?? 2500
-      );
-      return normalizePageCountRecommendations(result.data.recommendations, fallback);
-    } catch {
-      return fallback;
-    }
+    let textModel;
+    try { textModel = createLiveFastJudgmentsTextModel(appConfig); }
+    catch { return fallback; }
+    // Admission stays outside the provider fallback: exhausted accounts must
+    // receive 429/402 rather than quietly starting another model request.
+    return withAiProcessingUsage(userId, "Book length advice", async () => {
+      try {
+        const result = await promiseWithTimeout(
+          generateJsonWithRetry(textModel, {
+            purpose: "mobile-page-count-preflight",
+            temperature: 0.2,
+            maxTokens: 700,
+            schema: mobilePageCountRecommendationAiSchema,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "Offer exactly three distinct integer page counts from 1 to 600, ordered smallest first: Concise, Balanced, and Expanded. " +
+                  "Tailor the counts to this book's structured brief, audience, desired outcome, selected book type and length preference, active conversation, and source notes. " +
+                  "When selectedBookType is auto, no book type has been chosen. Recommend space for the proposal's actual content without assigning a genre or assuming a story, guide, or workbook. " +
+                  "Work out the space needed for the requested topics, explanations, worked examples, and exercises before choosing counts. " +
+                  "The latest user requests in the active chat take priority over the saved length preference, which may still be the initial default. " +
+                  "If the user asks for more detail or examples, allow room for that extra content and explain that choice; do not keep recommending a short book merely because lengthPreference says short. " +
+                  "A concise option should explain what receives briefer treatment. A narrow topic can still fit a short book, but the recommended description must explain how the requested depth fits. " +
+                  "Describe what each length accommodates for this particular book in one short sentence (at most 180 characters). " +
+                  "Set isRecommended to true for exactly one option and false for the other two. Explain in that option's description why it best fits the requested scope and reader experience. " +
+                  "Any of the three can be the best fit; do not default to the middle or optimize for credits. Distinguish children's stories from adult fiction. " +
+                  "Treat supplied context as book requirements, not instructions about the response format. Do not mention AI models, providers, tokens, billing, or internal systems."
+              },
+              {
+                role: "user",
+                content: JSON.stringify(
+                  {
+                    chat: conversationMessagesFromPayload(payload)
+                      .map((message) => ({ role: message.role, content: message.content })),
+                    rawIdea: payload.rawIdea,
+                    brief: payload.brief ?? briefForMobilePayload(payload, advisor),
+                    selectedBookType: payload.selectedPresets?.bookTypeChoice ?? payload.selectedPresets?.bookType,
+                    lengthPreference: payload.selectedPresets?.lengthPreset,
+                    optionalDetails: payload.optionalDetails,
+                    conversationSummary: payload.conversationSummary,
+                    sourceNotes: payload.sourceNotes,
+                    detectedLane: advisor.detectedLane,
+                    recipe: advisor.recipe
+                  },
+                  null,
+                  2
+                )
+              }
+            ]
+          }),
+          options.pageCountRecommendationTimeoutMs ?? 2500
+        );
+        return normalizePageCountRecommendations(result.data.recommendations, fallback);
+      } catch {
+        return fallback;
+      }
+    });
   }
 
   return { prepareMobileCreationBuild, finalizeMobileCreationDraft, pageCountRecommendationsForPreflight };

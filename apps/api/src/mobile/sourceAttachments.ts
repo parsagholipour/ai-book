@@ -3,6 +3,7 @@ import { objectKey, objectStore } from "@book-maker/storage";
 import { setTimeout as delay } from "node:timers/promises";
 import { CREATION_ATTACHMENT_MAX_BYTES, loadConfig, creationAttachmentSchema, detectCreationAttachmentType, sanitizeAttachmentName, type CreationAttachment, type SourceRef } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
+import { consumeAiProcessingUsageTx } from "@book-maker/db/billing";
 import { mobileCreationDraftPayloadSchema, type MobileCreationMessage } from "../mobileCreation.js";
 import { linearizeCreationMessages } from "../creationChatTree.js";
 
@@ -57,6 +58,8 @@ export async function saveSourceUpload(options: { userId: string; draftId: strin
     if (existingHash !== hash) throw new SourceUploadError("REQUEST_CONFLICT", "That upload request was already used for another file.");
   }
   return prisma.$transaction(async (tx) => {
+    // Same User → draft order as chat publication and allowance resets.
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${options.userId} FOR UPDATE`;
     await tx.$queryRaw`SELECT "id" FROM "MobileCreationDraft" WHERE "id" = ${options.draftId} AND "userId" = ${options.userId} FOR UPDATE`;
     const draft = await tx.mobileCreationDraft.findFirstOrThrow({ where: { id: options.draftId, userId: options.userId } });
     const payload = mobileCreationDraftPayloadSchema.parse(draft.payload);
@@ -71,6 +74,7 @@ export async function saveSourceUpload(options: { userId: string; draftId: strin
     if ((payload.attachments?.length ?? 0) >= 8) throw new SourceUploadError("ATTACHMENT_LIMIT", "This chat already has eight files. Remove one before adding another.");
     const attachment = creationAttachmentSchema.parse({ id, sourceId: id, extractionVersion: 1, kind: type.kind, name: sanitizeAttachmentName(options.filename), mimeType: type.mimeType, sizeBytes: options.data.length, createdAt: new Date().toISOString(),
       processing: { status: "queued", progress: 0, readableSections: 0, totalSections: 0, unreadable: [], retryable: false } });
+    await consumeAiProcessingUsageTx(tx, { userId: options.userId, requestKey: `processing:source:${id}:1`, description: "File processing" });
     await tx.sourceDocument.create({ data: { id, userId: options.userId, draftId: options.draftId, storageDraftId: options.draftId, uploadKey, contentHash: hash, name: attachment.name, mimeType: type.mimeType, kind: type.kind, sizeBytes: options.data.length, extractions: { create: { version: 1 } } } });
     await tx.mobileCreationDraft.update({ where: { id: draft.id }, data: { payload: { ...payload, attachments: [...(payload.attachments ?? []), attachment] }, revision: { increment: 1 } } });
     return { attachment, revision: draft.revision + 1 };
@@ -89,6 +93,7 @@ export async function waitForSourceUpload(userId: string, attachment: CreationAt
 
 export async function retrySourceUpload(userId: string, draftId: string, sourceId: string, requestId: string, expectedVersion?: number) {
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
     await tx.$queryRaw`SELECT "id" FROM "SourceDocument" WHERE "id" = ${sourceId} AND "userId" = ${userId} AND "draftId" = ${draftId} FOR UPDATE`;
     const source = await tx.sourceDocument.findFirstOrThrow({ where: { id: sourceId, userId, draftId }, include: { extractions: { include: { chunks: true } } } });
     if (source.extractions.some((row) => row.retryKey === requestId)) return;
@@ -102,6 +107,7 @@ export async function retrySourceUpload(userId: string, draftId: string, sourceI
       }
     }
     const version = source.currentVersion + 1;
+    await consumeAiProcessingUsageTx(tx, { userId, requestKey: `processing:source:${sourceId}:${version}`, description: "File processing retry" });
     await tx.sourceExtraction.create({ data: { sourceId, version, retryKey: requestId, extractionComplete: reuseExtraction, fullContent: previous.fullContent, totalSections: previous.totalSections, checkpoints: previous.checkpoints ?? [], unreadable: previous.unreadable ?? [],
       chunks: { create: previous.chunks.map(({ ordinal, section, locator, content, summary, embedding }) => ({ ordinal, section, locator, content, summary, ...(embedding ? { embedding } : {}) })) } } });
     await tx.sourceDocument.update({ where: { id: sourceId }, data: { currentVersion: version } });

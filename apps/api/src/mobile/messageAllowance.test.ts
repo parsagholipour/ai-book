@@ -5,7 +5,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { InsufficientCreditsError, MessageAllowanceError, reserveMessageUsage, resetMessageAllowance, settleMessageUsage } from "@book-maker/db/billing";
-import { approvedPlanRecord, bearer, buildMobileApp, creationDraftRecord, mockAccessTokens, mockPrisma, projectRecord, resetMobileHarness, teardownMobileHarness } from "./testing/mobileApiHarness.js";
+import { approvedPlanRecord, bearer, buildMobileApp, creationDraftRecord, creationPayload, mockAccessTokens, mockPrisma, projectRecord, resetMobileHarness, teardownMobileHarness } from "./testing/mobileApiHarness.js";
 
 beforeEach(() => {
   resetMobileHarness();
@@ -16,6 +16,33 @@ beforeEach(() => {
 afterEach(teardownMobileHarness);
 
 describe("message allowance routes", () => {
+  it.each([
+    "/api/mobile/book-advisor",
+    "/api/mobile/creation-sessions/draft-1/preflight",
+    "/api/mobile/creation-sessions/draft-1/build",
+    "/api/mobile/creation-drafts/draft-1/create-project",
+    "/api/mobile/creation-sessions/draft-1/attachments?filename=photo.png"
+  ])("blocks exhausted accounts before AI processing at %s", async (url) => {
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(creationDraftRecord());
+    const ai = vi.fn(async () => ({}));
+    const app = await buildMobileApp({ advisorEnrichment: ai, attachmentIngestion: async () => { await ai(); throw new Error("Unexpected ingestion"); } });
+    for (const [error, status, code] of [
+      [new MessageAllowanceError("MESSAGE_LIMIT_REACHED"), 429, "MESSAGE_LIMIT_REACHED"],
+      [new InsufficientCreditsError({ requiredCredits: 7, availableCredits: 0, reservedCredits: 0 }), 402, "INSUFFICIENT_CREDITS"]
+    ] as const) {
+      vi.mocked(reserveMessageUsage).mockRejectedValueOnce(error);
+      const response = await app.inject(url.includes("/attachments")
+        ? { method: "POST", url, headers: { ...bearer("token-a"), "content-type": "application/octet-stream" }, payload: Buffer.from("photo") }
+        : { method: "POST", url, headers: bearer("token-a"), payload: url.endsWith("book-advisor") ? creationPayload() : {} });
+      expect(response.statusCode).toBe(status);
+      expect(response.json().error.code).toBe(code);
+      if (status === 402) expect(response.json().error.requiredCredits).toBe(7);
+    }
+    expect(ai).not.toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it.each([
     ["/api/mobile/creation-sessions", { message: "A bedtime story", requestId: "request-1" }],
     ["/api/mobile/projects/project-1/chat/messages", { message: "What is this plan about?", requestId: "request-1" }]

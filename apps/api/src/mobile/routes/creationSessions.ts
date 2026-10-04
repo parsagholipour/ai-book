@@ -1,3 +1,4 @@
+import { sendProcessingOutcome } from "../processingUsage.js";
 import { registerCreationSessionHistoryRoute } from "./creationSessionHistory.js";
 import { getBookPageLimit, settleMessageUsage } from "@book-maker/db/billing";
 import { messageRequestKey, persistMessageReply, withMessageUsage } from "../messageUsage.js";
@@ -695,36 +696,38 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!parsedBody.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "These book settings are not supported.");
       }
-      const prepared = await prepareMobileCreationBuild(auth.user.id, id, parsedBody.data);
-      if (!prepared.ok) {
-        return sendMobileError(reply, prepared.status, prepared.code, prepared.message);
-      }
-      // Persist the advisor stamped with the revision and preset context it
-      // was computed from, so the build tap that follows reuses it instead of
-      // paying for the same calls again. Conditioned on the revision so a
-      // concurrent chat message wins; losing this write only costs a recompute.
-      await prisma.mobileCreationDraft.updateMany({
-        where: { id, revision: prepared.draft.revision },
-        data: {
-          advisorSnapshot: jsonInputValue(
-            advisorSnapshotForStorage(prepared.finalAdvisor, prepared.draft.revision, prepared.advisorContextFingerprint)
-          )
+      return sendProcessingOutcome(reply, async () => {
+        const prepared = await prepareMobileCreationBuild(auth.user.id, id, parsedBody.data);
+        if (!prepared.ok) {
+          return sendMobileError(reply, prepared.status, prepared.code, prepared.message);
         }
+        // Persist the advisor stamped with the revision and preset context it
+        // was computed from, so the build tap that follows reuses it instead of
+        // paying for the same calls again. Conditioned on the revision so a
+        // concurrent chat message wins; losing this write only costs a recompute.
+        await prisma.mobileCreationDraft.updateMany({
+          where: { id, revision: prepared.draft.revision },
+          data: {
+            advisorSnapshot: jsonInputValue(
+              advisorSnapshotForStorage(prepared.finalAdvisor, prepared.draft.revision, prepared.advisorContextFingerprint)
+            )
+          }
+        });
+        const [recommendations, maxPages] = await Promise.all([
+          prepared.pageCount.resolved
+            ? Promise.resolve([])
+            : pageCountRecommendationsForPreflight(auth.user.id, prepared.finalPayload, prepared.finalAdvisor),
+          getBookPageLimit(auth.user.id)
+        ]);
+        return {
+          requiresPageCount: !prepared.pageCount.resolved,
+          detectedPageCount: prepared.pageCount.resolved
+            ? { targetPages: prepared.pageCount.targetPages, source: prepared.pageCount.source }
+            : null,
+          recommendations,
+          maxPages
+        } satisfies MobileCreationBuildPreflightResponseDto;
       });
-      const [recommendations, maxPages] = await Promise.all([
-        prepared.pageCount.resolved
-          ? Promise.resolve([])
-          : pageCountRecommendationsForPreflight(prepared.finalPayload, prepared.finalAdvisor),
-        getBookPageLimit(auth.user.id)
-      ]);
-      return {
-        requiresPageCount: !prepared.pageCount.resolved,
-        detectedPageCount: prepared.pageCount.resolved
-          ? { targetPages: prepared.pageCount.targetPages, source: prepared.pageCount.source }
-          : null,
-        recommendations,
-        maxPages
-      } satisfies MobileCreationBuildPreflightResponseDto;
     }
   );
 
@@ -751,10 +754,10 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!parsedBody.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "These book settings are not supported.");
       }
-      return sendFinalizeOutcome(
+      return sendProcessingOutcome(reply, async () => sendFinalizeOutcome(
         reply,
         await finalizeMobileCreationDraft(auth.user.id, id, parsedBody.data, { requireResolvedPageCount: true })
-      );
+      ));
     }
   );
 }

@@ -25,25 +25,33 @@ export function sendMessageUsageError(reply: FastifyReply, error: unknown): Fast
   throw error;
 }
 
-/** Every accepted user send takes one slot; unsuccessful processing returns its slot and credits. */
+/** Translate admission errors at the HTTP boundary; nested processing helpers throw. */
 export async function withMessageUsage<T>(
   options: { userId: string; requestKey: string; projectId?: string },
   reply: FastifyReply,
   work: () => Promise<T>
 ): Promise<T | FastifyReply> {
-  let leaseId: string;
   try {
-    leaseId = await reserveMessageUsage(options);
+    return await runWithMessageUsage(options, work, () => reply.statusCode < 400);
   } catch (error) {
     return sendMessageUsageError(reply, error);
   }
+}
+
+/** Heartbeat the reservation until delivery, returning credits on failure. */
+export async function runWithMessageUsage<T>(
+  options: { userId: string; requestKey: string; projectId?: string; description?: string },
+  work: () => Promise<T>,
+  succeeded: () => boolean = () => true
+): Promise<T> {
+  const leaseId = await reserveMessageUsage(options);
   const lease = { userId: options.userId, requestKey: options.requestKey, leaseId };
   let renewing = false;
   const heartbeat = setInterval(() => {
     if (renewing) return;
     renewing = true;
     void renewMessageUsage(lease).catch((error: unknown) => {
-      reply.log.warn({ err: error }, "Message reservation heartbeat failed");
+      console.warn("Message reservation heartbeat failed", error);
     }).finally(() => { renewing = false; });
   }, 30_000);
   heartbeat.unref();
@@ -53,10 +61,9 @@ export async function withMessageUsage<T>(
       result = await currentMessage.run(lease, work);
     } catch (error) {
       await settleMessageUsage(options.userId, options.requestKey, false, leaseId);
-      if (error instanceof MessageAllowanceError) return sendMessageUsageError(reply, error);
       throw error;
     }
-    await settleMessageUsage(options.userId, options.requestKey, reply.statusCode < 400, leaseId);
+    await settleMessageUsage(options.userId, options.requestKey, succeeded(), leaseId);
     return result;
   } finally {
     clearInterval(heartbeat);

@@ -9,7 +9,7 @@ vi.mock("../generationTextModelRouting.js", () => ({
   createLiveFastJudgmentsTextModel: () => ({ generateJson })
 }));
 
-import { getBookPageLimit } from "@book-maker/db/billing";
+import { getBookPageLimit, MessageAllowanceError, reserveMessageUsage } from "@book-maker/db/billing";
 import { adviseMobileBook, mobileCreationDraftPayloadSchema } from "../mobileCreation.js";
 import { deterministicPageCountRecommendations } from "./projectRecords.js";
 import { mobilePageCountRecommendationAiSchema } from "./schemas.js";
@@ -49,6 +49,18 @@ describe("page-count preflight", () => {
   afterEach(() => {
     vi.useRealTimers();
     teardownMobileHarness();
+  });
+
+  it("cannot bypass an exhausted allowance through the page-count model fallback", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(creationDraftRecord({ id: "session", payload: creationPayload() }));
+    vi.mocked(reserveMessageUsage).mockRejectedValueOnce(new MessageAllowanceError("MESSAGE_LIMIT_REACHED"));
+    const app = await buildMobileApp({ advisorEnrichment: false });
+    const response = await app.inject({ method: "POST", url: "/api/mobile/creation-sessions/session/preflight", headers: bearer("token-a"), payload: {} });
+    expect(response.statusCode).toBe(429);
+    expect(response.json().error.code).toBe("MESSAGE_LIMIT_REACHED");
+    expect(generateJson).not.toHaveBeenCalled();
+    await app.close();
   });
 
   it("sends the structured brief, selected preferences, source notes, and only the active conversation", async () => {

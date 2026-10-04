@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { reserveCredits, reserveMessageUsage } from "@book-maker/db/billing";
+import { reserveCredits, reserveMessageUsage, settleMessageUsage } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
 import {
@@ -152,7 +152,7 @@ describe("mobile creation drafts and advisor", () => {
     await app.close();
   });
 
-  it("returns deterministic mobile book advisor fallback without spending credits", async () => {
+  it("counts attempted advisor work even when a timeout returns deterministic advice", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const app = await buildMobileApp({
       advisorEnrichment: async () => new Promise<never>(() => undefined),
@@ -188,7 +188,10 @@ describe("mobile creation drafts and advisor", () => {
       bookShapePreview: expect.arrayContaining([expect.stringContaining("lessons")])
     });
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
-    expect(vi.mocked(reserveMessageUsage)).not.toHaveBeenCalled();
+    expect(vi.mocked(reserveMessageUsage)).toHaveBeenCalledExactlyOnceWith({
+      userId: "user-a", requestKey: expect.stringMatching(/^processing:/), description: "Book advice"
+    });
+    expect(vi.mocked(settleMessageUsage)).toHaveBeenCalledWith("user-a", expect.stringMatching(/^processing:/), true, "message-reservation-1");
     expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
     await app.close();
   });

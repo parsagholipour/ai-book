@@ -91,47 +91,80 @@ export async function getMessageAllowance(userId: string, now = new Date()): Pro
 
 /** Reserves a slot even when the message is free. AI work runs outside this transaction. */
 export async function reserveMessageUsage(options: {
-  userId: string; requestKey: string; projectId?: string | undefined; now?: Date | undefined;
+  userId: string; requestKey: string; projectId?: string | undefined; description?: string | undefined; now?: Date | undefined;
 }): Promise<string> {
   const now = options.now ?? new Date();
   // Recovery commits separately: a later cap/credit refusal must not roll its
   // refunds back. This also makes a same-request retry recover without a cron.
   await recoverMessageUsage({ userId: options.userId, now });
-  return messageTransaction(options.userId, async (tx) => {
-    const existing = await tx.messageUsageReservation.findUnique({
-      where: { userId_requestKey: { userId: options.userId, requestKey: options.requestKey } }
-    });
-    if (existing && existing.status !== "REFUNDED") {
-      throw new MessageAllowanceError("REQUEST_IN_PROGRESS");
-    }
-    const tier = await resolvePlanTierTx(tx, options.userId, now);
-    const policy = messagePolicy(tier);
-    const periodKey = dayWindow(now).periodKey;
-    const key = counterKey(options.userId, periodKey);
-    const counter = await tx.usageCounter.upsert({
-      where: { userId_kind_periodKey: key }, create: key, update: {}
-    });
-    if (counter.used >= policy.dailyLimit) {
-      throw new MessageAllowanceError("MESSAGE_LIMIT_REACHED");
-    }
-    // A failed send's retry is a new ledger attempt: a refunded ledger key may never be reused.
-    const ledger = await reserveCreditsTx(tx, {
-      userId: options.userId, projectId: options.projectId,
-      operation: "CHAT_MESSAGE", amountCredits: policy.creditsPerMessage,
-      idempotencyKey: `chat-message:${options.userId}:${randomUUID()}`, now,
-      metadata: { pricingKey: policy.messagePricingKey, quantity: 1, planTier: tier }
-    });
-    const data = {
-      periodKey, resetCount: counter.resetCount, status: "RESERVED", ledgerEntryId: ledger?.id ?? null,
-      leaseId: randomUUID(), expiresAt: new Date(now.getTime() + MESSAGE_LEASE_MS)
-    };
-    const reservation = await tx.messageUsageReservation.upsert({
-      where: { userId_requestKey: { userId: options.userId, requestKey: options.requestKey } },
-      create: { userId: options.userId, requestKey: options.requestKey, ...data }, update: data
-    });
-    await tx.usageCounter.update({ where: { id: counter.id }, data: { used: { increment: 1 } } });
-    return reservation.leaseId;
+  return messageTransaction(options.userId, async (tx) => (await reserveMessageUsageTx(tx, options, now)).leaseId);
+}
+
+type ProcessingUsageOptions = {
+  userId: string; requestKey: string; description: string; now?: Date | undefined;
+};
+
+/**
+ * Commit admission with a durable source job, before any worker can see it.
+ * Callers return saved results before admission; a spent key never authorizes
+ * another model call. Lock User before any domain rows in the outer transaction.
+ */
+export async function consumeAiProcessingUsageTx(tx: BillingTx, options: ProcessingUsageOptions): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${options.userId} FOR UPDATE`;
+  const reservation = await reserveMessageUsageTx(tx, options, options.now ?? new Date());
+  await settleMessageUsageTx(tx, reservation, true);
+}
+
+/** Failed source processing refunds credits, but keeps its daily attempt counted. */
+export async function refundAiProcessingUsageTx(tx: BillingTx, userId: string, requestKey: string): Promise<void> {
+  await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+  const reservation = await tx.messageUsageReservation.findUnique({ where: { userId_requestKey: { userId, requestKey } } });
+  // SETTLED remains terminal even after the credit refund: neither a retry nor
+  // expired-message recovery may recycle this attempt's slot or authorization.
+  if (reservation?.status === "SETTLED" && reservation.ledgerEntryId) {
+    await refundCreditLedgerEntryTx(tx, reservation.ledgerEntryId, "AI processing could not be completed.");
+  }
+}
+
+async function reserveMessageUsageTx(
+  tx: BillingTx,
+  options: { userId: string; requestKey: string; projectId?: string | undefined; description?: string | undefined },
+  now: Date
+): Promise<Reservation> {
+  const existing = await tx.messageUsageReservation.findUnique({
+    where: { userId_requestKey: { userId: options.userId, requestKey: options.requestKey } }
   });
+  if (existing && (existing.status !== "REFUNDED" || options.requestKey.startsWith("processing:"))) {
+    throw new MessageAllowanceError("REQUEST_IN_PROGRESS");
+  }
+  const tier = await resolvePlanTierTx(tx, options.userId, now);
+  const policy = messagePolicy(tier);
+  const periodKey = dayWindow(now).periodKey;
+  const key = counterKey(options.userId, periodKey);
+  const counter = await tx.usageCounter.upsert({
+    where: { userId_kind_periodKey: key }, create: key, update: {}
+  });
+  if (counter.used >= policy.dailyLimit) {
+    throw new MessageAllowanceError("MESSAGE_LIMIT_REACHED");
+  }
+  // A failed send's retry is a new ledger attempt: a refunded ledger key may never be reused.
+  const ledger = await reserveCreditsTx(tx, {
+    userId: options.userId, projectId: options.projectId,
+    operation: "CHAT_MESSAGE", amountCredits: policy.creditsPerMessage,
+    idempotencyKey: `chat-message:${options.userId}:${randomUUID()}`, now,
+    description: options.description,
+    metadata: { pricingKey: policy.messagePricingKey, quantity: 1, planTier: tier }
+  });
+  const data = {
+    periodKey, resetCount: counter.resetCount, status: "RESERVED", ledgerEntryId: ledger?.id ?? null,
+    leaseId: randomUUID(), expiresAt: new Date(now.getTime() + MESSAGE_LEASE_MS)
+  };
+  const reservation = await tx.messageUsageReservation.upsert({
+    where: { userId_requestKey: { userId: options.userId, requestKey: options.requestKey } },
+    create: { userId: options.userId, requestKey: options.requestKey, ...data }, update: data
+  });
+  await tx.usageCounter.update({ where: { id: counter.id }, data: { used: { increment: 1 } } });
+  return reservation;
 }
 
 /** Also called on a durable transcript replay, repairing a crash after the reply was saved. */
@@ -148,7 +181,10 @@ async function settleMessageUsageTx(tx: BillingTx, reservation: Reservation, suc
     if (succeeded) await commitReservedCreditsTx(tx, reservation.ledgerEntryId);
     else await refundCreditLedgerEntryTx(tx, reservation.ledgerEntryId, "Chat message could not be completed.");
   }
-  if (!succeeded) {
+  // Processing attempts remain counted even when no result is delivered. This
+  // also covers expired leases recovered after an API crash. Chat keeps its
+  // existing refund policy; processing retries must use a fresh request key.
+  if (!succeeded && !reservation.requestKey.startsWith("processing:")) {
     // A previous cycle's failure must not give a slot to the allowance bought after it.
     await tx.usageCounter.updateMany({
       where: { ...counterKey(reservation.userId, reservation.periodKey), resetCount: reservation.resetCount, used: { gt: 0 } },

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { objectKey, objectStore } from "@book-maker/storage";
 import { chunkSourceSection, createProviders, createSourceOcr, extractSource, summarizeSource, summarizeSourceOverview } from "@book-maker/core";
 import { prisma, type Prisma } from "@book-maker/db";
+import { refundAiProcessingUsageTx } from "@book-maker/db/billing";
 import { config } from "./config.js";
 
 const LEASE_MS = 180_000;
@@ -25,6 +26,8 @@ export async function processNextSource(): Promise<boolean> {
   const usage = sourceUsageFromStored(job.usage);
   const startedAt = Date.now();
   const priorElapsedMs = usage.elapsedMs;
+  let sourceOwnerId: string | undefined;
+  const processingRequestKey = `processing:source:${job.sourceId}:${job.version}`;
   const where = { sourceId: job.sourceId, version: job.version, leaseToken: token, status: { in: PENDING } };
   const heartbeat = setInterval(() => {
     void prisma.sourceExtraction.updateMany({ where, data: { leaseExpiresAt: new Date(Date.now() + LEASE_MS) } }).catch((error) => console.error("Source lease renewal failed", error));
@@ -32,6 +35,9 @@ export async function processNextSource(): Promise<boolean> {
   heartbeat.unref();
   const checkpoint = async (data: Prisma.SourceExtractionUpdateManyMutationInput, write?: (tx: Prisma.TransactionClient) => Promise<void>) => {
     await prisma.$transaction(async (tx) => {
+      if (data.status === "failed" && sourceOwnerId) {
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${sourceOwnerId} FOR UPDATE`;
+      }
       const claimed = await tx.sourceExtraction.updateMany({ where: { ...where, leaseExpiresAt: { gt: new Date() } }, data: { ...data, usage: { ...usage, elapsedMs: priorElapsedMs + Date.now() - startedAt } } });
       if (claimed.count !== 1) throw new Error("Source processing lease lost");
       await write?.(tx);
@@ -39,6 +45,7 @@ export async function processNextSource(): Promise<boolean> {
   };
   try {
     const source = await prisma.sourceDocument.findUniqueOrThrow({ where: { id: job.sourceId } });
+    sourceOwnerId = source.userId;
     const providers = (() => { try { return createProviders(config); } catch { return undefined; } })();
     const model = !config.MOCK_AI && providers?.text ? new SourceUsageModel(providers.text, usage) : undefined;
     const ocr = createSourceOcr(config);
@@ -84,14 +91,26 @@ export async function processNextSource(): Promise<boolean> {
     const current = await prisma.sourceExtraction.findUniqueOrThrow({ where: { sourceId_version: { sourceId: job.sourceId, version: job.version } } });
     const gaps = Array.isArray(current.unreadable) && current.unreadable.length > 0;
     await checkpoint({ summary, status: chunks.length ? gaps ? "partial" : "ready" : "failed", progress: 100, completedAt: new Date(), leaseToken: null, leaseExpiresAt: null,
-      ...(!chunks.length ? { error: "No readable content was found. Retry or upload another file." } : {}) });
+      ...(!chunks.length ? { error: "No readable content was found. Retry or upload another file." } : {}) }, async (tx) => {
+      if (!chunks.length) await refundAiProcessingUsageTx(tx, source.userId, processingRequestKey);
+    });
     return true;
   } catch (error) {
     console.error("Source processing failed", { sourceId: job.sourceId, version: job.version, error });
     const oversized = error instanceof Error && "code" in error && error.code === "FILE_TOO_LARGE";
     const terminal = oversized || job.attempts >= 3;
     const readable = terminal && !oversized ? await prisma.sourceChunk.count({ where: { sourceId: job.sourceId, version: job.version } }) : 0;
-    await prisma.sourceExtraction.updateMany({ where, data: { usage: { ...usage, elapsedMs: priorElapsedMs + Date.now() - startedAt }, status: terminal ? readable ? "partial" : "failed" : "queued", error: oversized && error instanceof Error ? error.message : "Reading could not finish. Completed extraction is saved; retry to continue.", leaseToken: null, leaseExpiresAt: terminal ? null : new Date(Date.now() + 30_000) } });
+    // The failed verdict and refund commit together. A lost lease cannot refund
+    // a replacement worker's result; a failed refund leaves the job retryable.
+    await prisma.$transaction(async (tx) => {
+      if (terminal && !readable && sourceOwnerId) {
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${sourceOwnerId} FOR UPDATE`;
+      }
+      const updated = await tx.sourceExtraction.updateMany({ where, data: { usage: { ...usage, elapsedMs: priorElapsedMs + Date.now() - startedAt }, status: terminal ? readable ? "partial" : "failed" : "queued", error: oversized && error instanceof Error ? error.message : "Reading could not finish. Completed extraction is saved; retry to continue.", leaseToken: null, leaseExpiresAt: terminal ? null : new Date(Date.now() + 30_000) } });
+      if (updated.count === 1 && terminal && !readable && sourceOwnerId) {
+        await refundAiProcessingUsageTx(tx, sourceOwnerId, processingRequestKey);
+      }
+    });
     return true;
   } finally { clearInterval(heartbeat); }
 }

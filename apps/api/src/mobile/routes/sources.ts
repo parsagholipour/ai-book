@@ -5,6 +5,7 @@ import { hydrateSourceAttachments, retrySourceUpload, SourceUploadError } from "
 import { serializeCreationAttachment } from "../creationSessions.js";
 import { requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import type { FastifyInstance } from "fastify";
+import { sendMessageUsageError } from "../messageUsage.js";
 
 const sourceParams = z.object({ id: z.string().min(1).max(64), attachmentId: z.string().min(1).max(64) });
 const actionBody = z.object({ requestId: z.string().min(1).max(100), version: z.number().int().positive() });
@@ -33,7 +34,7 @@ export async function registerSourceRoutes(fastify: FastifyInstance) {
       if (!payload.attachments?.some((attachment) => attachment.id === attachmentId)) return sendMobileError(reply, 404, "SOURCE_NOT_FOUND", "That file was removed.");
       if (action === "retry") {
         try { await retrySourceUpload(auth.user.id, id, attachmentId, body.requestId, body.version); }
-        catch (error) { if (error instanceof SourceUploadError) return sendMobileError(reply, error.code === "ATTACHMENT_FILE_EXPIRED" ? 422 : 409, error.code, error.message); throw error; }
+        catch (error) { if (error instanceof SourceUploadError) return sendMobileError(reply, error.code === "ATTACHMENT_FILE_EXPIRED" ? 422 : 409, error.code, error.message); return sendMessageUsageError(reply, error); }
       } else {
         if (source.currentVersion !== body.version) return sendMobileError(reply, 409, "SOURCE_CHANGED", "Reading has changed. Reload the file status first.");
         await prisma.sourceExtraction.updateMany({ where: { sourceId: attachmentId, version: body.version, status: { in: ["partial", "limited"] } }, data: { acceptedPartial: true } });
