@@ -243,7 +243,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _stickToBottom = true;
     _stickScrollTimer?.cancel();
     _stickScrollTimer = null;
-    _projectChatSending = false;
+    _resetProjectChatPreview();
     _projectChatBranchSwitching = false;
     _editingProjectMessageId = null;
     _editingCreationMessageId = null;
@@ -291,7 +291,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     AsyncValue<MobileProjectStatus>? generationStatusValue;
     if (isInOutputStage) {
       planValue = ref.watch(projectDetailProvider(activeProjectId));
-      projectChatValue = ref.watch(projectChatProvider(activeProjectId));
+      projectChatValue = _watchProjectChat(activeProjectId);
       final project = planValue?.asData?.value;
       if (_shouldWatchGenerationStatus(project)) {
         final statusValue = ref.watch(projectStatusProvider(activeProjectId));
@@ -305,7 +305,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         if (_rebuildHandoff.awaiting) return;
         _stopPollingWhenSettled(project);
       });
-      projectChatValue?.whenData(_stopPollingWhenRevisionFailed);
+      projectChatValue.whenData(_stopPollingWhenRevisionFailed);
     }
 
     final chat = projectChatValue?.asData?.value;
@@ -316,6 +316,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       chat?.messages.length ?? 0,
       _operationScrollKey(chat),
       state.assistantTyping,
+      state.streamingReply,
+      _projectStreamingReply,
       _generationScrollKey(generationStatusValue),
     );
     _maybeScrollToBottom(scrollTrigger);
@@ -343,6 +345,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       switchingProjectBranch: _projectChatBranchSwitching,
       pendingProjectEcho: _pendingProjectEcho,
       projectChatSending: _projectChatSending,
+      projectStreamingReply: _projectStreamingReply,
       awaitingRebuildStatus: _rebuildHandoff.awaiting,
       rebuildOperationId: _rebuildHandoff.operationId,
       onRetryPendingProjectEcho: activeProjectId == null

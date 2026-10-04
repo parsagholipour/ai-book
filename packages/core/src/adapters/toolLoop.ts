@@ -1,9 +1,11 @@
 import { parseJsonObject } from "./json.js";
 import { z } from "zod";
+import { streamedToolReply } from "./streamedToolReply.js";
 import { isCancellationError } from "./retry.js";
 import {
   bindTextModelCall,
   type ChatMessage,
+  type GenerateWithToolsOptions,
   type TextModelAdapter,
   type ToolCall,
   type ToolCallsResult,
@@ -58,6 +60,7 @@ export type ToolLoopModelCallContext = {
 };
 
 export type ToolLoopOptions<TFinish = string> = {
+  onAssistantText?: ((text: string) => void | Promise<void>) | undefined;
   textModel: TextModelAdapter;
   messages: ChatMessage[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +122,15 @@ const DEFAULT_MAX_TOOL_RESULT_CHARS = 16_000;
 const plainAnswerTool = { name: "finish_evidence_answer", description: "Finish with the user-facing answer using the evidence already returned. State clearly when the requested detail was not found.", parameters: z.object({ answer: z.string() }) };
 
 export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFinish>): Promise<ToolLoopResult<TFinish>> {
+  const preview = options.onAssistantText
+    ? streamedToolReply(options.finishTool?.name ?? plainAnswerTool.name, options.onAssistantText, options.finishTool ? "assistantMessage" : "answer") : undefined;
+  let plainText = "";
+  let previewGeneration = 0;
+  const onToolCallProgress: GenerateWithToolsOptions["onToolCallProgress"] = preview
+    ? async (event) => {
+      if (event.type === "start") { plainText = ""; await options.onAssistantText?.(""); }
+      await preview(event);
+    } : undefined;
   const maxModelCalls = Math.max(1, options.maxModelCalls ?? DEFAULT_MAX_MODEL_CALLS);
   const maxToolResultChars = Math.max(200, options.maxToolResultChars ?? DEFAULT_MAX_TOOL_RESULT_CHARS);
   // `??` would read an explicit `null` — "nothing escapes" — as no answer at all.
@@ -153,18 +165,37 @@ export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFi
       { role: "user", content: JSON.stringify({ returnedEvidence: toolEvents.map((event) => ({ tool: event.call.name, arguments: event.call.arguments, result: event.resultContent, isError: event.isError })) }) },
       messages.at(-1)!
     ] : messages;
-    const invoke = () =>
-      bound.adapter.generateWithTools({
-        messages: callMessages,
-        tools: finishing ? [options.finishTool ?? plainAnswerTool] : toolDefinitions,
-        ...(finishing ? { toolChoice: "required" as const } : options.toolChoice !== undefined ? { toolChoice: options.toolChoice } : {}),
-        ...(options.purpose !== undefined ? { purpose: options.purpose } : {}),
-        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-        ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {})
-      });
-    let result = options.onModelCall
-      ? await options.onModelCall(invoke, { modelCall, maxModelCalls })
-      : await invoke();
+    const invoke = async () => {
+      const generation = ++previewGeneration;
+      try {
+        return await bound.adapter.generateWithTools({
+          ...(onToolCallProgress ? { onToolCallProgress: (event) => generation === previewGeneration ? onToolCallProgress(event) : undefined } : {}),
+          ...(!options.finishTool && options.onAssistantText ? { onOutputTextChunk: async (chunk: string) => {
+            if (generation !== previewGeneration) return;
+            plainText += chunk;
+            await options.onAssistantText?.(plainText);
+          } } : {}),
+          messages: callMessages,
+          tools: finishing ? [options.finishTool ?? plainAnswerTool] : toolDefinitions,
+          ...(finishing ? { toolChoice: "required" as const } : options.toolChoice !== undefined ? { toolChoice: options.toolChoice } : {}),
+          ...(options.purpose !== undefined ? { purpose: options.purpose } : {}),
+          ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+          ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {})
+        });
+      } finally {
+        if (generation === previewGeneration) previewGeneration++;
+      }
+    };
+    let result: ToolCallsResult;
+    try {
+      result = options.onModelCall
+        ? await options.onModelCall(invoke, { modelCall, maxModelCalls })
+        : await invoke();
+    } finally {
+      // A caller's deadline can settle before its provider does. Retire that
+      // preview now, including when the caller switches to a fallback answer.
+      previewGeneration++;
+    }
     if (finishing && !options.finishTool) {
       const answer = plainAnswerTool.parameters.safeParse(result.toolCalls.find((call) => call.name === plainAnswerTool.name)?.arguments);
       if (answer.success) result = { ...result, text: answer.data.answer, toolCalls: [] };

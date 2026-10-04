@@ -1,3 +1,4 @@
+import { sendChatPayload } from "./chatStreaming.js";
 import { type AuthFailure } from "../mobileAuth.js";
 import { InMemoryRateLimiter, identityRateLimitKey, sendRateLimitError } from "../rateLimit.js";
 import { authenticateMobileBearer, sendMobileAuthFailure, type MobileAuthContext } from "../requestAuth.js";
@@ -94,7 +95,7 @@ export function isAuthFailure(auth: MobileAuthContext | AuthFailure): auth is Au
 }
 
 export function sendMobileError(reply: FastifyReply, statusCode: number, code: string, message: string): FastifyReply {
-  return reply.code(statusCode).send({
+  return sendChatPayload(reply, statusCode, {
     error: {
       code,
       message
@@ -248,7 +249,7 @@ export class LibraryMentionError extends Error {
 }
 
 export function sendInsufficientCredits(reply: FastifyReply, error: InsufficientCreditsError): FastifyReply {
-  return reply.code(402).send({
+  return sendChatPayload(reply, 402, {
     error: {
       code: error.code,
       message: "You need more credits for this action.",
@@ -307,7 +308,7 @@ export function sendImageLimitReached(
   reply: FastifyReply,
   quota: { used: number; limit: number; resetsAt: Date }
 ): FastifyReply {
-  return reply.code(403).send({
+  return sendChatPayload(reply, 403, {
     error: {
       code: "IMAGE_LIMIT_REACHED",
       message: imageLimitReachedMessage(quota.limit),

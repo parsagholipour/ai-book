@@ -77,6 +77,7 @@ class ScriptedCreationRepository
   /// When set, message sends (including the one starting a new chat) wait on
   /// this before responding; completing it with an error fails the send.
   Future<void>? sendGate;
+  void Function(String)? emitAssistantText;
 
   /// When set, archive/restore waits on this before applying the change.
   Future<void>? changeGate;
@@ -250,6 +251,7 @@ class ScriptedCreationRepository
 
   @override
   Future<MobileCreationConversationResponse> startConversation({
+    void Function(String text)? onAssistantText,
     String? message,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -262,7 +264,11 @@ class ScriptedCreationRepository
     startedPresets.add(presets);
     if (message != null) {
       startedMessages.add(message);
-      return sendConversationMessage(draftId: 'draft-1', message: message);
+      return sendConversationMessage(
+        draftId: 'draft-1',
+        message: message,
+        onAssistantText: onAssistantText,
+      );
     }
     return MobileCreationConversationResponse.fromJson({
       'session': {
@@ -289,6 +295,7 @@ class ScriptedCreationRepository
 
   @override
   Future<MobileCreationConversationResponse> sendConversationMessage({
+    void Function(String text)? onAssistantText,
     required String draftId,
     required String message,
     List<String>? attachmentIds,
@@ -302,6 +309,7 @@ class ScriptedCreationRepository
     bool skippedQuestion = false,
     List<String>? mentionedCharacterIds,
   }) async {
+    emitAssistantText = onAssistantText;
     await sendGate;
     final error = sendError;
     if (error != null) {

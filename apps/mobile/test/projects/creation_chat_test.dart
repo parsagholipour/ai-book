@@ -26,6 +26,31 @@ Future<void> _openMoreOptions(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('creation reply is visible while the turn is still in flight', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final creation = ScriptedCreationRepository()..sendGate = gate.future;
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'A story about a fox');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+    creation.emitAssistantText!('A curious fox');
+    await tester.pump();
+    expect(find.text('A curious fox'), findsOneWidget);
+    creation.emitAssistantText!('A curious fox in a forest');
+    await tester.pump();
+    expect(find.text('A curious fox'), findsNothing);
+    expect(find.text('A curious fox in a forest'), findsOneWidget);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('A curious fox in a forest'), findsNothing);
+    expect(find.text(reply), findsOneWidget);
+    await tester.teardownScreen();
+  });
+
   testWidgets('greeting and quick replies render; nothing to build yet', (
     tester,
   ) async {

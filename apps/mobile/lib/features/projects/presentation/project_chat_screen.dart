@@ -114,6 +114,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   String? _applyingProposalId;
   @override
   final Map<String, EditProposalOutcome> _proposalOutcomes = {};
+  @override
+  String _streamingReply = '';
+  MobileProjectChatSendResult? _completedChat;
   String? _pendingSendRequestId;
   String? _pendingSendMessage;
 
@@ -275,7 +278,15 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
 
   @override
   Widget build(BuildContext context) {
-    final chatValue = ref.watch(projectChatProvider(widget.projectId));
+    final fetchedChat = ref.watch(projectChatProvider(widget.projectId));
+    final completed = _completedChat;
+    // The POST already returned the saved transcript and its cards. Keep them
+    // visible while a follow-up read is slow or the connection has gone away.
+    final chatValue =
+        completed != null && (fetchedChat.isLoading || fetchedChat.hasError)
+        ? AsyncData<MobileProjectChat>(completed)
+        : fetchedChat;
+    if (!fetchedChat.isLoading && !fetchedChat.hasError) _completedChat = null;
     final projectValue = ref.watch(projectDetailProvider(widget.projectId));
     final status = ref
         .watch(projectStatusProvider(widget.projectId))
@@ -542,6 +553,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     final requestId = _pendingSendRequestId!;
     setState(() {
       _sending = true;
+      _streamingReply = '';
       _pendingEcho = PendingEcho(text: message);
       // A new request supersedes the top-up follow-up; its proposal card in
       // the transcript remains the way to run that edit.
@@ -552,6 +564,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       final result = await ref
           .read(projectsRepositoryProvider)
           .sendProjectChatMessage(
+            onAssistantText: (text) {
+              if (!mounted) return;
+              setState(() => _streamingReply = text);
+              _followBottom();
+            },
             projectId: widget.projectId,
             message: message,
             requestId: requestId,
@@ -569,15 +586,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       ref.invalidate(projectStatusProvider(widget.projectId));
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);
-      // Keep the optimistic bubble until the refreshed transcript (which
-      // contains the real message) is on screen, so the message never blinks
-      // out of the list.
-      try {
-        await ref.read(projectChatProvider(widget.projectId).future);
-      } catch (_) {}
       if (!mounted) return;
       setState(() {
+        _completedChat = result;
         _sending = false;
+        _streamingReply = '';
         _pendingEcho = null;
         _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
@@ -634,7 +647,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     final message = _editController.text.trim();
     if (messageId == null || message.isEmpty || _editing || _bookIsBusy) return;
     if (!await ensureMessageAllowance(context, ref) || !mounted) return;
-    setState(() => _editing = true);
+    setState(() {
+      _editing = true;
+      _streamingReply = '';
+    });
     if (_pendingEditMessage != message) {
       _pendingEditRequestId = _newRequestId('edit');
       _pendingEditMessage = message;
@@ -644,6 +660,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       final result = await ref
           .read(projectsRepositoryProvider)
           .editProjectChatMessage(
+            onAssistantText: (text) {
+              if (mounted) setState(() => _streamingReply = text);
+            },
             projectId: widget.projectId,
             messageId: messageId,
             message: message,
@@ -658,7 +677,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       ref.invalidate(billingProvider);
       if (!mounted) return;
       setState(() {
+        _completedChat = result;
         _editing = false;
+        _streamingReply = '';
         _editingMessageId = null;
         _editController.clear();
       });

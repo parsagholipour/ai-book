@@ -45,6 +45,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     (role: 'user', content: 'Existing user message'),
   ];
   final _messageOverrides = <String, MobileProjectChatMessage>{};
+  void Function(String)? emitAssistantText;
   final sendGates = <Completer<void>>[];
   final editGates = <Completer<void>>[];
   final sendRequestIds = <String?>[];
@@ -322,6 +323,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String message,
     String? requestId,
@@ -329,6 +331,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     List<String>? mentionedCharacterIds,
     Map<String, Object>? readerContext,
   }) async {
+    emitAssistantText = onAssistantText;
     sendRequestIds.add(requestId);
     sentMessages.add(message);
     sentReaderContexts.add(readerContext);
@@ -342,11 +345,12 @@ class ScriptedProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> editProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String messageId,
     required String message,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     editRequestIds.add(requestId);
     if (editGates.isNotEmpty) {

@@ -370,6 +370,7 @@ function installMockClient(
               for (const content of streamParts) {
                 yield { choices: [{ delta: { content } }], usage: null };
               }
+              yield { choices: [{ delta: {}, finish_reason: "stop" }] };
               yield { choices: [], usage };
             })();
           }

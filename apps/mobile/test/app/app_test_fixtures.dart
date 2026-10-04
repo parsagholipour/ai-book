@@ -236,6 +236,7 @@ class FakeCreationRepository
 
   @override
   Future<MobileCreationConversationResponse> startConversation({
+    void Function(String text)? onAssistantText,
     String? message,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -249,6 +250,7 @@ class FakeCreationRepository
 
   @override
   Future<MobileCreationConversationResponse> sendConversationMessage({
+    void Function(String text)? onAssistantText,
     required String draftId,
     required String message,
     List<String>? attachmentIds,
@@ -389,6 +391,7 @@ class FakeProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String message,
     String? requestId,
@@ -413,6 +416,7 @@ class FakeProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> editProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String messageId,
     required String message,

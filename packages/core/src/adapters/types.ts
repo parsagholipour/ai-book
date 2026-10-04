@@ -159,10 +159,16 @@ export type ToolDefinition<TArgs = unknown> = {
 export type ToolChoice = "auto" | "required";
 
 export type GenerateWithToolsOptions = GenerateTextOptions & {
+  /** Provisional argument snapshots; each physical attempt starts with a reset. */
+  onToolCallProgress?: ((event: ToolCallProgress) => void | Promise<void>) | undefined;
   tools: ToolDefinition[];
   /** "required" forces a tool call when the provider supports it; defaults to "auto". */
   toolChoice?: ToolChoice | undefined;
 };
+
+export type ToolCallProgress =
+  | { type: "start" }
+  | { type: "arguments"; index: number; name: string; argumentsText: string };
 
 export type Usage = {
   promptTokens?: number | undefined;

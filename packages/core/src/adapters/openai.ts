@@ -105,7 +105,8 @@ export class OpenAITextAdapter implements TextModelAdapter {
   }
 
   async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
-    const response = await this.createResponse(
+    const create = options.onToolCallProgress ? this.createToolStream.bind(this) : this.createResponse.bind(this);
+    const response = await create(
       options,
       responseInput(options.messages, this.toolTurns),
       {
@@ -126,6 +127,15 @@ export class OpenAITextAdapter implements TextModelAdapter {
       ),
       toolCalls
     };
+  }
+
+  private async createToolStream(options: GenerateWithToolsOptions, input: unknown[], extra: Record<string, unknown>): Promise<ResponseRecord> {
+    await options.onToolCallProgress?.({ type: "start" });
+    const stream = this.responseStream(options, input, extra);
+    while (true) {
+      const next = await stream.next();
+      if (next.done) return next.value;
+    }
   }
 
   async *streamText(options: GenerateTextOptions): AsyncGenerator<string> {
@@ -184,12 +194,13 @@ export class OpenAITextAdapter implements TextModelAdapter {
   }
 
   private async *responseStream(
-    options: GenerateTextOptions,
+    options: GenerateTextOptions & Pick<GenerateWithToolsOptions, "onToolCallProgress">,
     input: unknown[],
     extra: Record<string, unknown> = {},
     jsonGuard?: JsonOutputRepetitionGuard
   ): AsyncGenerator<string, ResponseRecord> {
     const partialOutput = new PartialOutputPreview();
+    const toolArguments = new Map<number, { name: string; argumentsText: string }>();
     let usage: Usage | undefined;
     let model = this.model;
     try {
@@ -202,6 +213,21 @@ export class OpenAITextAdapter implements TextModelAdapter {
       let completed: ResponseRecord | undefined;
       const whitespace = new WhitespaceRunawayGuard();
       for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
+        if (event.type === "response.output_item.added" && isRecord(event.item) &&
+            event.item.type === "function_call" && typeof event.output_index === "number") {
+          toolArguments.set(event.output_index, {
+            name: typeof event.item.name === "string" ? event.item.name : "",
+            argumentsText: typeof event.item.arguments === "string" ? event.item.arguments : ""
+          });
+        }
+        if (event.type === "response.function_call_arguments.delta" && typeof event.output_index === "number" &&
+            typeof event.delta === "string") {
+          const call = toolArguments.get(event.output_index);
+          if (call) {
+            call.argumentsText += event.delta;
+            await options.onToolCallProgress?.({ type: "arguments", index: event.output_index, ...call });
+          }
+        }
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           options.signal?.throwIfAborted();
           if (whitespace.append(event.delta)) {
@@ -213,6 +239,7 @@ export class OpenAITextAdapter implements TextModelAdapter {
           }
           partialOutput.append(event.delta);
           jsonGuard?.append(event.delta);
+          if (options.onToolCallProgress) await options.onOutputTextChunk?.(event.delta);
           yield event.delta;
         }
         if (isRecord(event.response)) {

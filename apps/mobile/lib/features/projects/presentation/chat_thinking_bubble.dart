@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/motion.dart';
 import 'chat_assistant_avatar.dart';
+import 'chat_message_text.dart';
 
 /// The assistant-side "working on it" bubble, shown while a chat turn is in
 /// flight.
@@ -25,6 +26,7 @@ class ChatThinkingBubble extends StatefulWidget {
   const ChatThinkingBubble({
     this.stages = creationThinkingStages,
     this.showAvatar = false,
+    this.text = '',
     super.key,
   });
 
@@ -35,6 +37,7 @@ class ChatThinkingBubble extends StatefulWidget {
   /// Draws the assistant's avatar beside the bubble, for a transcript whose
   /// other assistant messages wear one.
   final bool showAvatar;
+  final String text;
 
   @override
   State<ChatThinkingBubble> createState() => _ChatThinkingBubbleState();
@@ -111,30 +114,35 @@ class _ChatThinkingBubbleState extends State<ChatThinkingBubble>
           bottomStart: Radius.circular(4),
         ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Semantics(
-            label: 'Assistant is thinking',
-            child: ExcludeSemantics(
-              child: _TypingDots(animation: _pulse, color: colors.primary),
+      child: widget.text.isNotEmpty
+          ? ChatMessageText(widget.text)
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Semantics(
+                  label: 'Assistant is thinking',
+                  child: ExcludeSemantics(
+                    child: _TypingDots(
+                      animation: _pulse,
+                      color: colors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: AnimatedSwitcher(
+                    duration: AppMotion.medium,
+                    child: Text(
+                      stage,
+                      key: ValueKey(stage),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 12),
-          Flexible(
-            child: AnimatedSwitcher(
-              duration: AppMotion.medium,
-              child: Text(
-                stage,
-                key: ValueKey(stage),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),

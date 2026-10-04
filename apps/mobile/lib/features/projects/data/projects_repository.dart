@@ -53,6 +53,7 @@ abstract interface class ProjectsRepository {
   });
 
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String message,
     String? requestId,
@@ -62,6 +63,7 @@ abstract interface class ProjectsRepository {
   });
 
   Future<MobileProjectChatSendResult> editProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String messageId,
     required String message,
@@ -284,6 +286,7 @@ class MobileProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String message,
     String? requestId,
@@ -291,7 +294,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     List<String>? mentionedCharacterIds,
     Map<String, Object>? readerContext,
   }) async {
-    final data = await apiClient.postMap(
+    final data = await apiClient.postChatMap(
       '/api/mobile/projects/$projectId/chat/messages',
       data: {
         'message': message,
@@ -302,20 +305,21 @@ class MobileProjectsRepository implements ProjectsRepository {
         if (readerContext != null && readerContext.isNotEmpty)
           'readerContext': readerContext,
       },
-      receiveTimeout: llmReceiveTimeout,
+      onAssistantText: onAssistantText,
     );
     return MobileProjectChatSendResult.fromJson(data);
   }
 
   @override
   Future<MobileProjectChatSendResult> editProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String messageId,
     required String message,
     String? requestId,
     List<String>? mentionedCharacterIds,
   }) async {
-    final data = await apiClient.postMap(
+    final data = await apiClient.postChatMap(
       '/api/mobile/projects/$projectId/chat/messages',
       data: {
         'message': message,
@@ -324,7 +328,7 @@ class MobileProjectsRepository implements ProjectsRepository {
         if (mentionedCharacterIds != null && mentionedCharacterIds.isNotEmpty)
           'mentionedCharacterIds': mentionedCharacterIds,
       },
-      receiveTimeout: llmReceiveTimeout,
+      onAssistantText: onAssistantText,
     );
     return MobileProjectChatSendResult.fromJson(data);
   }

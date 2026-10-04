@@ -7,6 +7,63 @@ import 'package:tomeza/features/projects/presentation/chat_thinking_bubble.dart'
 import 'project_chat_harness_optimistic.dart';
 
 void main() {
+  testWidgets('streaming follows the bottom until the reader scrolls back', (
+    tester,
+  ) async {
+    final repository = ScriptedProjectsRepository()..fillWithManyMessages();
+    final gate = Completer<void>();
+    repository.sendGates.add(gate);
+    await tester.pumpWidget(chatApp(repository));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Explain the ending');
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    repository.emitAssistantText!('The ending brings them home.');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    final position = scrollPosition(tester);
+    expect(position.pixels, closeTo(position.maxScrollExtent, 8));
+
+    position.jumpTo(position.minScrollExtent);
+    await tester.pump();
+    repository.emitAssistantText!('The ending brings them home again.');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(position.pixels, position.minScrollExtent);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'streams into one temporary bubble then replaces it with the saved reply',
+    (tester) async {
+      final repository = ScriptedProjectsRepository();
+      final gate = Completer<void>();
+      repository.sendGates.add(gate);
+      await tester.pumpWidget(chatApp(repository));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Explain the ending');
+      await tester.tap(find.byIcon(Icons.send_outlined));
+      await tester.pump();
+      repository.emitAssistantText!('The ending');
+      await tester.pump();
+      expect(find.text('The ending'), findsOneWidget);
+      expect(find.text('Reply about Explain the ending'), findsNothing);
+      repository.emitAssistantText!('The ending brings them home');
+      await tester.pump();
+      expect(find.text('The ending'), findsNothing);
+      expect(find.text('The ending brings them home'), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('The ending brings them home'), findsNothing);
+      expect(find.text('Reply about Explain the ending'), findsOneWidget);
+    },
+  );
+
   testWidgets('a sent message appears immediately while the request is in '
       'flight and stays after it lands', (tester) async {
     final repository = ScriptedProjectsRepository();
@@ -199,5 +256,4 @@ void main() {
 
     expect(position.pixels, greaterThan(position.maxScrollExtent * 0.8));
   });
-
 }

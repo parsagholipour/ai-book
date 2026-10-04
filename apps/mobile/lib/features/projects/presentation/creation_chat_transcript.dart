@@ -16,6 +16,7 @@ class _Transcript extends StatelessWidget {
     this.switchingProjectBranch = false,
     this.pendingProjectEcho,
     this.projectChatSending = false,
+    this.projectStreamingReply = '',
     this.awaitingRebuildStatus = false,
     this.rebuildOperationId,
     this.creditsReady = false,
@@ -57,6 +58,7 @@ class _Transcript extends StatelessWidget {
 
   /// Whether a request about the finished book is waiting on the server.
   final bool projectChatSending;
+  final String projectStreamingReply;
 
   /// Undo/Redo has queued a compile; kept until the project settles, not only
   /// until the first status tick.
@@ -317,7 +319,7 @@ class _Transcript extends StatelessWidget {
     }
     if (hasLivePlanBubble) cursor++;
     if (hasTyping && index == cursor) {
-      return const ChatThinkingBubble(showAvatar: true);
+      return ChatThinkingBubble(showAvatar: true, text: state.streamingReply);
     }
     if (hasTyping) cursor++;
     // The just-sent message about the finished book, and the assistant working
@@ -344,7 +346,8 @@ class _Transcript extends StatelessWidget {
     }
     if (hasCreditsReady) cursor++;
     if (hasOutputThinking && index == cursor) {
-      return const ChatThinkingBubble(
+      return ChatThinkingBubble(
+        text: projectStreamingReply,
         stages: bookChatThinkingStages,
         showAvatar: true,
       );

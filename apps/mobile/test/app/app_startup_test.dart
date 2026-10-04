@@ -22,7 +22,7 @@ void main() {
         ),
       );
 
-      expect(find.text('A little idea.\nA book of your own.'), findsOneWidget);
+      expect(find.text('An Idea.\nA book of your own.'), findsOneWidget);
       expect(calls, 1);
       await tester.pump(const Duration(milliseconds: 200));
       expect(find.text('Opening Tomeza'), findsOneWidget);

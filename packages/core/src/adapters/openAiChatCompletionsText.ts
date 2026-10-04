@@ -12,8 +12,10 @@ import type {
   Usage
 } from "./types.js";
 import { parseJsonObject, parseSchemaWithContext, throwWithProviderUsage } from "./json.js";
+import { ProviderStreamInterruptedError } from "./retry.js";
 import {
   openAiRequestOptions,
+  parseOpenAiToolArguments,
   toolCallsFromOpenAiMessage,
   toOpenAiTools
 } from "./openaiToolCalling.js";
@@ -104,6 +106,7 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
   }
 
   async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    if (options.onToolCallProgress) return this.generateToolsStreaming(options);
     const response = await this.createCompletion(options, "tools", options.messages, {
       tools: toOpenAiTools(options.tools),
       tool_choice: options.toolChoice ?? "auto"
@@ -113,6 +116,43 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
     return {
       ...this.textResult(message?.content ?? "", usage),
       toolCalls: toolCallsFromOpenAiMessage(message)
+    };
+  }
+
+  private async generateToolsStreaming(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    await options.onToolCallProgress?.({ type: "start" });
+    const stream = await this.createStream(options, "tools", options.messages, {
+      tools: toOpenAiTools(options.tools), tool_choice: options.toolChoice ?? "auto"
+    }, true);
+    const calls = new Map<number, { id: string; name: string; argumentsText: string }>();
+    let text = "";
+    let usage: Usage | undefined;
+    let finished = false;
+    for await (const chunk of stream) {
+      const choice = chunk.choices[0];
+      text += choice?.delta?.content ?? "";
+      if (choice?.delta?.content) await options.onOutputTextChunk?.(choice.delta.content);
+      for (const delta of choice?.delta?.tool_calls ?? []) {
+        const call = calls.get(delta.index) ?? { id: `call_${delta.index}`, name: "", argumentsText: "" };
+        if (delta.id) call.id = delta.id;
+        if (delta.function?.name) call.name += delta.function.name;
+        call.argumentsText += delta.function?.arguments ?? "";
+        calls.set(delta.index, call);
+        await options.onToolCallProgress?.({ type: "arguments", index: delta.index, ...call });
+      }
+      if (choice?.finish_reason === "tool_calls" || choice?.finish_reason === "stop") finished = true;
+      usage = this.usageFromResponse(chunk.usage) ?? usage;
+      await reportTextProviderUsage(options, this.usageFromResponse(chunk.usage));
+    }
+    if (!finished) throwWithProviderUsage(
+      new ProviderStreamInterruptedError("Tool response stream ended before completion."),
+      { provider: this.provider, model: this.model, usage }
+    );
+    return {
+      ...this.textResult(text, usage),
+      toolCalls: [...calls.values()].map((call) => ({
+        id: call.id, name: call.name, arguments: parseOpenAiToolArguments(call.argumentsText)
+      }))
     };
   }
 
@@ -154,16 +194,24 @@ export abstract class OpenAIChatCompletionsTextAdapter implements TextModelAdapt
     const stream = await this.createStream(options, requestKind, messages, extraParameters, true);
     let text = "";
     let usage: Usage | undefined;
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        text += content;
-        await options.onOutputTextChunk?.(content);
+    let finished = false;
+    try {
+      for await (const chunk of stream) {
+        const choice = chunk.choices[0];
+        usage = this.usageFromResponse(chunk.usage) ?? usage;
+        await reportTextProviderUsage(options, this.usageFromResponse(chunk.usage));
+        const content = choice?.delta?.content;
+        if (content) {
+          text += content;
+          await options.onOutputTextChunk?.(content);
+        }
+        if (choice?.finish_reason) finished = true;
       }
-      usage = this.usageFromResponse(chunk.usage) ?? usage;
-      await reportTextProviderUsage(options, this.usageFromResponse(chunk.usage));
+      if (!finished) throw new ProviderStreamInterruptedError("Text response stream ended before completion.");
+      return { text, usage };
+    } catch (error) {
+      throwWithProviderUsage(error, { provider: this.provider, model: this.model, usage });
     }
-    return { text, usage };
   }
 
   private async createCompletion(

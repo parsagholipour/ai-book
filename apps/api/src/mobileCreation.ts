@@ -387,6 +387,9 @@ export async function enrichCreationTurnWithSearch(
 
   try {
     const loop = await runToolLoop({
+      ...(request.onAssistantText ? {
+        onAssistantText: (text: string) => request.onAssistantText!(sourceTools?.validate(text) ?? text)
+      } : {}),
       textModel: options.textModel,
       messages: [...creationTurnMessages(request, base), ...(request.sourceService ? [{ role: "system" as const, content: SOURCE_INSTRUCTIONS }] : [])],
       tools: [webSearchTool, updateSettingsTool, requestBuildTool, ...(sourceTools?.tools ?? [])],

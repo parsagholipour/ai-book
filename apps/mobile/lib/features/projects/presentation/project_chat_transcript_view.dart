@@ -18,6 +18,7 @@ mixin _ProjectChatTranscriptView
   bool get _loadingEarlier;
   String? get _editingMessageId;
   PendingEcho? get _pendingEcho;
+  String get _streamingReply;
   String? get _creditsReadyProposalId;
   bool _canLoadEarlier(MobileProjectChat chat);
   String? _replanCopyTargetProjectId(MobileProjectChatMessage message);
@@ -176,7 +177,10 @@ mixin _ProjectChatTranscriptView
       // work is live: the progress card below says the same thing with real
       // numbers, and two busy indicators read as two things happening.
       if (_showThinking(liveStatus)) ...[
-        const ChatThinkingBubble(stages: bookChatThinkingStages),
+        ChatThinkingBubble(
+          stages: bookChatThinkingStages,
+          text: (_sending || _editing) ? _streamingReply : '',
+        ),
         const SizedBox(height: 12),
       ],
       for (final operation in operations.unanchored)

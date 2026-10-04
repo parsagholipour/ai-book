@@ -420,6 +420,7 @@ class _FakeCreationRepository
 
   @override
   Future<MobileCreationConversationResponse> startConversation({
+    void Function(String text)? onAssistantText,
     String? message,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -433,6 +434,7 @@ class _FakeCreationRepository
 
   @override
   Future<MobileCreationConversationResponse> sendConversationMessage({
+    void Function(String text)? onAssistantText,
     required String draftId,
     required String message,
     List<String>? attachmentIds,

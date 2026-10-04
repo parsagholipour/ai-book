@@ -220,6 +220,7 @@ class CreationChatController extends Notifier<CreationChatState>
     state = state.copyWith(
       messages: optimistic,
       assistantTyping: true,
+      streamingReply: '',
       quickReplies: const <String>[],
       question: null,
       initError: null,
@@ -249,9 +250,16 @@ class CreationChatController extends Notifier<CreationChatState>
     // keep this notifier alive so the completion is persisted even if the
     // user navigates away mid-send.
     final keepAliveLink = ref.keepAlive();
+    void onAssistantText(String text) {
+      if (requestId == _messageRequestId && state.draftId == draftId) {
+        state = state.copyWith(streamingReply: text);
+      }
+    }
+
     try {
       final response = draftId == null
           ? await _repository.startConversation(
+              onAssistantText: onAssistantText,
               message: trimmed,
               presets: presets,
               sourceNotes: sourceNotes,
@@ -261,6 +269,7 @@ class CreationChatController extends Notifier<CreationChatState>
               remixSlug: state.remixSlug,
             )
           : await _repository.sendConversationMessage(
+              onAssistantText: onAssistantText,
               draftId: draftId,
               message: trimmed,
               attachmentIds: attachmentIds.isEmpty ? null : attachmentIds,
@@ -423,6 +432,7 @@ class CreationChatController extends Notifier<CreationChatState>
             entry,
       ],
       assistantTyping: true,
+      streamingReply: '',
       initError: null,
     );
     final pendingSessions = ref.read(pendingChatSessionsProvider.notifier);
@@ -438,9 +448,16 @@ class CreationChatController extends Notifier<CreationChatState>
     }
     final cache = _cache;
     final keepAliveLink = ref.keepAlive();
+    void onAssistantText(String text) {
+      if (requestId == _messageRequestId && state.draftId == draftId) {
+        state = state.copyWith(streamingReply: text);
+      }
+    }
+
     try {
       final response = draftId == null
           ? await _repository.startConversation(
+              onAssistantText: onAssistantText,
               message: failed.content,
               presets: presets,
               sourceNotes: sourceNotes,
@@ -452,6 +469,7 @@ class CreationChatController extends Notifier<CreationChatState>
               remixSlug: state.remixSlug,
             )
           : await _repository.sendConversationMessage(
+              onAssistantText: onAssistantText,
               draftId: draftId,
               message: failed.content,
               attachmentIds: attachmentIds.isEmpty ? null : attachmentIds,

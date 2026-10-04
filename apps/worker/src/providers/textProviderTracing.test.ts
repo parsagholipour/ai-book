@@ -53,6 +53,7 @@ function fixture(provider: Provider, outcomes: Array<"success" | "incomplete" | 
         yield { type: incomplete ? "response.incomplete" : "response.completed", response };
       } else {
         yield { choices: [{ delta: { content: text } }], usage };
+        yield { choices: [{ delta: {}, finish_reason: incomplete ? "length" : "stop" }] };
       }
     })();
   };

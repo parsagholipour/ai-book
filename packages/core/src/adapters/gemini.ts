@@ -97,6 +97,9 @@ export class GeminiTextAdapter implements TextModelAdapter {
   }
 
   async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    // Gemini's API-key endpoint does not support partial function arguments.
+    // Reset any preview left by a failed provider before using its whole result.
+    await options.onToolCallProgress?.({ type: "start" });
     const prompt = geminiPromptFromMessages(options.messages);
     const maxOutputTokens = chapterOutputBudget(options, this.thinkingEffort);
     await reportTextProviderRequest(options, "gemini", this.model, maxOutputTokens);

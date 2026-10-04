@@ -127,7 +127,7 @@ class _LaunchScreenState extends State<LaunchScreen>
                                 child: Text.rich(
                                   TextSpan(
                                     children: [
-                                      const TextSpan(text: 'A little idea.\n'),
+                                      const TextSpan(text: 'An Idea.\n'),
                                       TextSpan(
                                         text: 'A book of your own.',
                                         style: TextStyle(
@@ -146,14 +146,6 @@ class _LaunchScreenState extends State<LaunchScreen>
                                         letterSpacing: -1.0,
                                         fontWeight: FontWeight.w400,
                                       ),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                'Start with what’s on your mind.',
-                                textAlign: TextAlign.center,
-                                style: theme.textTheme.bodyLarge?.copyWith(
-                                  color: colors.onSurfaceVariant,
                                 ),
                               ),
                             ],

@@ -39,7 +39,8 @@ export async function generateGroundedProjectAnswer(
   replyTo?: ChatReplyQuote | undefined,
   /** The turn's already-loaded active messages; saves a full transcript re-read. */
   preloadedMessages?: MobileProjectChatMessageRecord[] | undefined,
-  sourceService?: SourceService | undefined
+  sourceService?: SourceService | undefined,
+  onAssistantText?: ((text: string) => void) | undefined
 ): Promise<string> {
   if (!textModel) {
     return fallback;
@@ -167,6 +168,7 @@ export async function generateGroundedProjectAnswer(
       const evidence = await sources.tools[0]!.execute({ query: message.slice(0, 1500) });
       const loop = await runToolLoop({
         textModel, ...answerRequest,
+        ...(onAssistantText ? { onAssistantText: (text: string) => onAssistantText(sources.validate(text)) } : {}),
         messages: [...answerRequest.messages, { role: "system", content: SOURCE_INSTRUCTIONS + " The privateSourcePassages below were retrieved for this turn and may be cited directly. Citation markers in book prose or earlier messages are not evidence unless their passage was retrieved for this turn. Distinguish manuscript inventions from uploaded evidence: never attribute a detail found only in the generated book to an uploaded source. When asked what an upload says, answer from its passages." }, { role: "user", content: JSON.stringify({ question: message, privateSourcePassages: evidence, answerRequirements: "Answer the question above. For claims about what the uploaded archive or source says, use ONLY the exact privateSourcePassages content here, not the generated plan or prose earlier. If the requested detail is absent, say so and stop; do not fill the gap with a nearby detail from the story. Each private citation must support the complete statement it is attached to." }) }],
         tools: sources.tools, maxModelCalls: 4, finishOnLastCall: true, maxToolResultChars: 1_000_000,
         onModelCall: (invoke) => withTimeout(invoke(), GROUNDED_ANSWER_CALL_BUDGET_MS, "Source-grounded answer")
@@ -177,7 +179,28 @@ export async function generateGroundedProjectAnswer(
     // not retried, so the request cannot hang the chat turn indefinitely.
     const bound = await bindTextModelCall(textModel, answerRequest.purpose);
     const result = await withRecoverableNetworkRetry(
-      () => withTimeout(bound.adapter.generateText(answerRequest), GROUNDED_ANSWER_CALL_BUDGET_MS, "Grounded answer"),
+      async () => {
+        let text = "";
+        let active = true;
+        onAssistantText?.("");
+        try {
+          return await withTimeout(bound.adapter.generateText({ ...answerRequest,
+            ...(onAssistantText ? { onProviderRequest: () => {
+              if (!active) return;
+              text = "";
+              onAssistantText("");
+            }, onOutputTextChunk: (chunk: string) => {
+              if (!active) return;
+              text += chunk;
+              onAssistantText(clipReplyText(text, 2400));
+            } } : {})
+          }), GROUNDED_ANSWER_CALL_BUDGET_MS, "Grounded answer");
+        } finally {
+          // The deadline settles before the provider does. Retire its preview
+          // before fallback persistence or the next attempt can begin.
+          active = false;
+        }
+      },
       { attempts: 2, delayMs: 500 }
     );
     return clipReplyText(result.text, 2400) || fallback;

@@ -1,3 +1,4 @@
+import { withChatStreaming } from "../chatStreaming.js";
 import { sendProcessingOutcome } from "../processingUsage.js";
 import { registerCreationSessionHistoryRoute } from "./creationSessionHistory.js";
 import { getBookPageLimit, settleMessageUsage } from "@book-maker/db/billing";
@@ -148,12 +149,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       attachValidation: true,
       schema: { tags: ["mobile"], body: mobileCreationSessionStartOpenApiBody, response: { 201: {}, 401: mobileAuthError } }
     },
-    async (request, reply) => {
+    withChatStreaming(async (request, reply, onAssistantText) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
-        return;
-      }
-      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "creation-session-start")) {
         return;
       }
       const parsedBody = mobileCreationSessionStartBodySchema.safeParse(request.body ?? {});
@@ -186,6 +184,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         return;
       }
       const runMessage = async () => {
+        // Saved replays and attempts whose message lease is still held must
+        // not spend the allowance for starting another turn.
+        if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "creation-session-start")) return;
         let turn = greeting;
         let messages = normalizeCreationMessageIds(greetingMessages);
         let payload: MobileCreationDraftPayload;
@@ -212,6 +213,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
             }
           ].slice(-60);
           const turnRequest: MobileCreationTurnRequest = {
+            onAssistantText,
             messages: nextMessages,
             presets: parsedBody.data.presets ? mobileCreationPresetsSchema.parse(parsedBody.data.presets) : undefined,
             sourceNotes: parsedBody.data.sourceNotes,
@@ -278,7 +280,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       return firstMessage
         ? withMessageUsage({ userId: auth.user.id, requestKey: messageRequestKey("creation-start", parsedBody.data.requestId) }, reply, runMessage)
         : runMessage();
-    }
+    })
   );
 
   fastify.post(
@@ -291,12 +293,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError }
       }
     },
-    async (request, reply) => {
+    withChatStreaming(async (request, reply, onAssistantText) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
-        return;
-      }
-      if (!(await hitTieredLimit(advisorLimiter, reply, auth.user.id, "creation-session-message"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -403,6 +402,8 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         treeWithUser = appendCreationMessage(priorTree, userMessage).messages;
       }
       return withMessageUsage({ userId: auth.user.id, requestKey: messageRequestKey(`creation:${id}`, parsedBody.data.requestId) }, reply, async () => {
+        // Admission rejects in-flight replays before this turn-rate check.
+        if (!(await hitTieredLimit(advisorLimiter, reply, auth.user.id, "creation-session-message"))) return;
         const incoming = foldCreationTranscriptTree(treeWithUser, parsedPayload.data.conversationSummary);
         const activeMessages = linearizeCreationMessages(incoming.messages).active;
         // Every character mentioned anywhere on the ACTIVE branch rides the turn
@@ -424,6 +425,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         );
         const activeAttachments = await hydrateSourceAttachments(auth.user.id, submittedAttachments(attachmentPool, activeMessages));
         const turnRequest: MobileCreationTurnRequest = {
+          onAssistantText,
           messages: activeMessages,
           ...(activeCharacters.length > 0
             ? {
@@ -490,7 +492,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           turn
         } satisfies MobileCreationConversationResponseDto;
       });
-    }
+    })
   );
 
   fastify.post(

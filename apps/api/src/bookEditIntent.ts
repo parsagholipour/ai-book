@@ -287,6 +287,7 @@ export function classifierPageSample(
 }
 
 export async function classifyProjectChatMessage(options: {
+  onAssistantText?: ((text: string) => void) | undefined;
   sourceService?: SourceService | undefined;
   message: string;
   stage: BookEditProjectStage;
@@ -430,6 +431,7 @@ export async function classifyProjectChatMessage(options: {
 
   try {
     const routed = await routeWithToolAgent({
+      onAssistantText: options.onAssistantText,
       message,
       stage,
       pages: options.pages,
@@ -484,6 +486,7 @@ const ROUTER_MAX_MODEL_CALLS = 4;
 const ROUTER_READ_PAGE_TEXT_CAP = 4_000;
 
 type RouteAgentOptions = {
+  onAssistantText?: ((text: string) => void) | undefined;
   sourceService?: SourceService | undefined;
   message: string;
   stage: Exclude<BookEditProjectStage, "other">;
@@ -535,6 +538,9 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
     return start === end ? String(start) : `${start}-${end}`;
   };
   const result = await runToolLoop({
+    ...(options.onAssistantText ? {
+      onAssistantText: (text: string) => options.onAssistantText!(sources?.validate(text) ?? text)
+    } : {}),
     textModel: options.textModel,
     purpose: "project_chat.edit_router",
     temperature: 0,

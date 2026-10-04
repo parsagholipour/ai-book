@@ -223,6 +223,7 @@ class _BranchingProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String message,
     String? requestId,
@@ -235,11 +236,12 @@ class _BranchingProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> editProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String messageId,
     required String message,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) async {
     editedMessageIds.add(messageId);
     final edited = _nodes.firstWhere((node) => node.id == messageId);

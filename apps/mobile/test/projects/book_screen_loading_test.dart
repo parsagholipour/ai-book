@@ -106,6 +106,7 @@ class SlowPlanRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String message,
     String? requestId,
@@ -130,11 +131,12 @@ class SlowPlanRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectChatSendResult> editProjectChatMessage({
+    void Function(String text)? onAssistantText,
     required String projectId,
     required String messageId,
     required String message,
     String? requestId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }

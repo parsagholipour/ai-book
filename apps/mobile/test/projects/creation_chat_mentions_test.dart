@@ -67,6 +67,7 @@ class MentionRecordingRepository extends ScriptedCreationRepository {
 
   @override
   Future<MobileCreationConversationResponse> startConversation({
+    void Function(String text)? onAssistantText,
     String? message,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -89,6 +90,7 @@ class MentionRecordingRepository extends ScriptedCreationRepository {
 
   @override
   Future<MobileCreationConversationResponse> sendConversationMessage({
+    void Function(String text)? onAssistantText,
     required String draftId,
     required String message,
     List<String>? attachmentIds,
@@ -318,9 +320,7 @@ void main() {
     tester,
   ) async {
     final creation = MentionRecordingRepository(
-      sessions: [
-        chatSession(draftId: 'draft-1', title: 'A book about Luna'),
-      ],
+      sessions: [chatSession(draftId: 'draft-1', title: 'A book about Luna')],
     );
     creation.resumeMessages['draft-1'] = [
       {'id': 'c0', 'role': 'assistant', 'content': greeting},
@@ -364,9 +364,7 @@ void main() {
     tester,
   ) async {
     final creation = MentionRecordingRepository(
-      sessions: [
-        chatSession(draftId: 'draft-1', title: 'A book about Luna'),
-      ],
+      sessions: [chatSession(draftId: 'draft-1', title: 'A book about Luna')],
     );
     creation.resumeMessages['draft-1'] = [
       {'id': 'c0', 'role': 'assistant', 'content': greeting},

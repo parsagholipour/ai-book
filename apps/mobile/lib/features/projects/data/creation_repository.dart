@@ -43,6 +43,7 @@ abstract interface class CreationRepository {
   /// Starts a chat session. [remixSlug] names the shared book a "Make a book
   /// like this" chat started from, so the server records the draft's origin.
   Future<MobileCreationConversationResponse> startConversation({
+    void Function(String text)? onAssistantText,
     String? message,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -53,6 +54,7 @@ abstract interface class CreationRepository {
   });
 
   Future<MobileCreationConversationResponse> sendConversationMessage({
+    void Function(String text)? onAssistantText,
     required String draftId,
     required String message,
     List<String>? mentionedCharacterIds,
@@ -246,6 +248,7 @@ class MobileCreationRepository implements CreationRepository {
 
   @override
   Future<MobileCreationConversationResponse> startConversation({
+    void Function(String text)? onAssistantText,
     String? message,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -254,7 +257,7 @@ class MobileCreationRepository implements CreationRepository {
     String? requestId,
     String? remixSlug,
   }) async {
-    final data = await apiClient.postMap(
+    final data = await apiClient.postChatMap(
       '/api/mobile/creation-sessions',
       data: <String, dynamic>{
         'message': ?message,
@@ -266,13 +269,14 @@ class MobileCreationRepository implements CreationRepository {
         'requestId': ?requestId,
         'remixSlug': ?remixSlug,
       },
-      receiveTimeout: llmReceiveTimeout,
+      onAssistantText: onAssistantText,
     );
     return MobileCreationConversationResponse.fromJson(data);
   }
 
   @override
   Future<MobileCreationConversationResponse> sendConversationMessage({
+    void Function(String text)? onAssistantText,
     required String draftId,
     required String message,
     List<String>? mentionedCharacterIds,
@@ -286,7 +290,7 @@ class MobileCreationRepository implements CreationRepository {
     int? expectedRevision,
     bool skippedQuestion = false,
   }) async {
-    final data = await apiClient.postMap(
+    final data = await apiClient.postChatMap(
       '/api/mobile/creation-sessions/$draftId/messages',
       data: <String, dynamic>{
         'message': message,
@@ -303,7 +307,7 @@ class MobileCreationRepository implements CreationRepository {
         'expectedRevision': ?expectedRevision,
         if (skippedQuestion) 'skippedQuestion': true,
       },
-      receiveTimeout: llmReceiveTimeout,
+      onAssistantText: onAssistantText,
     );
     return MobileCreationConversationResponse.fromJson(data);
   }

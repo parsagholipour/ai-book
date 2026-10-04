@@ -66,6 +66,7 @@ export { editProposalMessage, editProposalSummary, operationQueuedMessage } from
 
 
 export async function handleProjectChatIntent(options: {
+  onAssistantText?: ((text: string) => void) | undefined;
   userId: string;
   project: ProjectForChat;
   userMessageId: string;
@@ -120,7 +121,8 @@ export async function handleProjectChatIntent(options: {
             options.textModel,
             options.replyTo,
             options.activeMessages,
-            options.sourceService
+            options.sourceService,
+            options.onAssistantText
           )
         : intent.assistantMessage;
     const reply = await createAssistantChatMessage({

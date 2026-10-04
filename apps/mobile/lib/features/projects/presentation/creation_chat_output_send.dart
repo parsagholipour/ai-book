@@ -11,6 +11,29 @@ part of 'creation_chat_screen.dart';
 /// The output-stage chat's send path, and everything it has in flight.
 mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   bool _projectChatSending = false;
+  String _projectStreamingReply = '';
+  int _projectPreviewEpoch = 0;
+  MobileProjectChatSendResult? _completedProjectChat;
+
+  void _resetProjectChatPreview() {
+    _projectChatSending = false;
+    _projectStreamingReply = '';
+    _completedProjectChat = null;
+    _projectPreviewEpoch++;
+  }
+
+  AsyncValue<MobileProjectChat> _watchProjectChat(String projectId) {
+    final fetched = ref.watch(projectChatProvider(projectId));
+    final completed = _completedProjectChat;
+    if (completed == null || completed.reply.projectId != projectId) {
+      return fetched;
+    }
+    // The send already returned the saved transcript. Keep its message and
+    // action cards visible if the follow-up read is slow or loses connection.
+    if (fetched.isLoading || fetched.hasError) return AsyncData(completed);
+    _completedProjectChat = null;
+    return fetched;
+  }
 
   /// The resumable proposal behind a "You now have enough credits" bubble,
   /// set when a paywall opened from an insufficient-credits reply closed with
@@ -172,14 +195,23 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     }
     setState(() {
       _projectChatSending = true;
+      _projectStreamingReply = '';
       _pendingProjectEcho = PendingEcho(text: trimmed);
       _clearCreditsReadyPrompt();
     });
     _resumeStickToBottom();
+    final previewEpoch = ++_projectPreviewEpoch;
     try {
       final repository = ref.read(projectsRepositoryProvider);
+      void onAssistantText(String text) {
+        if (mounted && previewEpoch == _projectPreviewEpoch) {
+          setState(() => _projectStreamingReply = text);
+        }
+      }
+
       final result = editingMessageId != null
           ? await repository.editProjectChatMessage(
+              onAssistantText: onAssistantText,
               projectId: projectId,
               messageId: editingMessageId,
               message: trimmed,
@@ -187,12 +219,14 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
               mentionedCharacterIds: mentionIds,
             )
           : await repository.sendProjectChatMessage(
+              onAssistantText: onAssistantText,
               projectId: projectId,
               message: trimmed,
               requestId: requestId,
               replyToMessageId: replyTo?.messageId,
               mentionedCharacterIds: mentionIds,
             );
+      if (!mounted || previewEpoch != _projectPreviewEpoch) return result;
       _pendingProjectRequestId = null;
       _pendingProjectRequestText = null;
       _pendingProjectEditMessageId = null;
@@ -204,7 +238,9 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       ref.invalidate(billingProvider);
       if (!mounted) return result;
       setState(() {
+        _completedProjectChat = result;
         _projectChatSending = false;
+        _projectStreamingReply = '';
         _pendingProjectEcho = null;
         _editingProjectMessageId = null;
         _messageAnchors.forget();
@@ -224,13 +260,14 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       }
       return result;
     } catch (error) {
-      if (!mounted) return null;
+      if (!mounted || previewEpoch != _projectPreviewEpoch) return null;
       unawaited(handleMessageAllowanceError(context, ref, error));
       // The message stays on screen with its own Retry rather than being
       // pushed back into the composer, so a failure never loses the text and
       // never fights with anything typed while the request was in flight.
       setState(() {
         _projectChatSending = false;
+        _projectStreamingReply = '';
         _pendingProjectEcho = PendingEcho(
           text: trimmed,
           failed: true,
@@ -292,6 +329,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
         'project-proposal-apply-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _projectChatSending = true;
+      _projectStreamingReply = '';
       // Settling a proposal makes the top-up follow-up stale either way.
       _clearCreditsReadyPrompt();
     });
@@ -348,6 +386,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
         'project-proposal-cancel-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _projectChatSending = true;
+      _projectStreamingReply = '';
       _clearCreditsReadyPrompt();
     });
     try {
@@ -377,6 +416,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     final requestId = 'project-undo-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _projectChatSending = true;
+      _projectStreamingReply = '';
       _undoingProjectEdit = true;
     });
     _resumeStickToBottom();
@@ -389,6 +429,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
+        _projectStreamingReply = '';
         _undoingProjectEdit = false;
         _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
@@ -397,6 +438,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
+        _projectStreamingReply = '';
         _undoingProjectEdit = false;
         _rebuildHandoff.clear();
       });
@@ -413,6 +455,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     final requestId = 'project-redo-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       _projectChatSending = true;
+      _projectStreamingReply = '';
       _redoingProjectEdit = true;
     });
     _resumeStickToBottom();
@@ -425,6 +468,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
+        _projectStreamingReply = '';
         _redoingProjectEdit = false;
         _rebuildHandoff.arm(result, currentStatus: statusBefore);
       });
@@ -433,6 +477,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       if (!mounted) return;
       setState(() {
         _projectChatSending = false;
+        _projectStreamingReply = '';
         _redoingProjectEdit = false;
         _rebuildHandoff.clear();
       });

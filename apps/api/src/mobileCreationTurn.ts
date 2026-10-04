@@ -156,6 +156,7 @@ export type CreationTurnCharacter = {
 };
 
 export type MobileCreationTurnRequest = {
+  onAssistantText?: ((text: string) => void) | undefined;
   sourceService?: SourceService | undefined;
   messages: MobileCreationMessage[];
   brief?: MobileBookRecipe | undefined;

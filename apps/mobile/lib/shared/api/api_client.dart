@@ -11,6 +11,8 @@ import '../../features/auth/domain/legal_gate.dart';
 import 'api_error.dart';
 import 'auth_token_store.dart';
 
+part 'chat_stream.dart';
+
 final dioProvider = Provider<Dio>((ref) {
   final config = ref.watch(appConfigProvider);
   final build = ref.watch(appBuildProvider);
@@ -465,16 +467,20 @@ class ApiClient {
 
   Future<Response<ResponseBody>> _streamRequest(
     String path, {
+    String method = 'GET',
+    String accept = 'text/event-stream',
+    Object? data,
+    Duration? receiveTimeout,
     bool requiresAuth = true,
     bool retryOnAuthFailure = true,
     CancelToken? cancelToken,
   }) async {
     final generation = requiresAuth ? tokenStore.generation : null;
     final options = Options(
-      method: 'GET',
+      method: method,
       responseType: ResponseType.stream,
-      receiveTimeout: Duration.zero,
-      headers: {'Accept': 'text/event-stream'},
+      receiveTimeout: receiveTimeout ?? Duration.zero,
+      headers: {'Accept': accept},
     );
     if (requiresAuth) {
       final accessToken = await _validAccessToken(generation);
@@ -489,6 +495,7 @@ class ApiClient {
         generation,
         () => dio.request<ResponseBody>(
           path,
+          data: data,
           options: options,
           cancelToken: cancelToken,
         ),
@@ -501,13 +508,14 @@ class ApiClient {
         return _mapped(
           () => dio.request<ResponseBody>(
             path,
+            data: data,
             cancelToken: cancelToken,
             options: Options(
-              method: 'GET',
+              method: method,
               responseType: ResponseType.stream,
-              receiveTimeout: Duration.zero,
+              receiveTimeout: receiveTimeout ?? Duration.zero,
               headers: {
-                'Accept': 'text/event-stream',
+                'Accept': accept,
                 'Authorization': 'Bearer ${tokens.accessToken}',
               },
             ),
@@ -515,6 +523,7 @@ class ApiClient {
           generation: generation,
         );
       }
+      await _decodeStreamError(error);
       throw _mapDioException(error);
     }
   }
@@ -579,6 +588,7 @@ class ApiClient {
     try {
       return await _withSession(generation, send);
     } on DioException catch (error) {
+      await _decodeStreamError(error);
       throw _mapDioException(error);
     }
   }

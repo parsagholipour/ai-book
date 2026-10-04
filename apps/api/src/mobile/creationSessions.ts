@@ -1,3 +1,4 @@
+import { sendChatPayload } from "./chatStreaming.js";
 import { linearizeCreationMessages, normalizeCreationMessageIds } from "../creationChatTree.js";
 import { normalizeCreationQuestion } from "../creationQuestion.js";
 import {
@@ -352,7 +353,7 @@ export async function sendCreationSessionConflict(
     return sendMobileError(reply, 409, "SESSION_CONFLICT", "This chat changed elsewhere. Reload it and try again.");
   }
   const messages = conversationMessagesFromPayload(payload.data);
-  return reply.code(409).send({
+  return sendChatPayload(reply, 409, {
     error: {
       code: "SESSION_CONFLICT",
       message: "This chat changed elsewhere. Your latest version has been reloaded."

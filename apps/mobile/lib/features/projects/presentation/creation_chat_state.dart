@@ -119,6 +119,7 @@ class CreationChatState {
     this.archived = false,
     this.messages = const <MobileCreationMessage>[],
     this.assistantTyping = false,
+    this.streamingReply = '',
     this.buildPhase = CreationBuildPhase.idle,
     this.brief,
     this.presets = defaultCreationPresets,
@@ -155,6 +156,7 @@ class CreationChatState {
   final bool archived;
   final List<MobileCreationMessage> messages;
   final bool assistantTyping;
+  final String streamingReply;
   final CreationBuildPhase buildPhase;
   final MobileBookRecipe? brief;
   final MobileCreationPresets presets;
@@ -243,6 +245,7 @@ class CreationChatState {
     bool? archived,
     List<MobileCreationMessage>? messages,
     bool? assistantTyping,
+    String? streamingReply,
     CreationBuildPhase? buildPhase,
     Object? brief = _sentinel,
     MobileCreationPresets? presets,
@@ -281,6 +284,9 @@ class CreationChatState {
       archived: archived ?? this.archived,
       messages: messages ?? this.messages,
       assistantTyping: assistantTyping ?? this.assistantTyping,
+      streamingReply: assistantTyping == false
+          ? ''
+          : streamingReply ?? this.streamingReply,
       buildPhase: buildPhase ?? this.buildPhase,
       brief: brief == _sentinel ? this.brief : brief as MobileBookRecipe?,
       presets: presets ?? this.presets,

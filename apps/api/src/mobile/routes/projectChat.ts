@@ -1,3 +1,4 @@
+import { withChatStreaming } from "../chatStreaming.js";
 import { settleMessageUsage } from "@book-maker/db/billing";
 import { messageRequestKey, withMessageUsage } from "../messageUsage.js";
 import { createSourceService } from "@book-maker/db";
@@ -100,12 +101,9 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         response: { 401: mobileAuthError, 404: mobileAuthError }
       }
     },
-    async (request, reply) => {
+    withChatStreaming(async (request, reply, onAssistantText) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
-        return;
-      }
-      if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "project-chat")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -221,6 +219,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         resolvePendingEditTurn(pendingScope, parsed.data.message, { currentScope });
 
       return withMessageUsage({ userId: auth.user.id, projectId: id, requestKey: messageRequestKey(`project:${id}`, parsed.data.requestId) }, reply, async () => {
+        // Admission rejects in-flight replays before this turn-rate check.
+        if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "project-chat")) return;
         let userMessage: MobileProjectChatMessageRecord;
         try {
           // A recovered attempt can have saved its USER row before dying.
@@ -344,6 +344,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         const intent = confirmedProposal?.intent
           ? confirmedProposal.intent
           : await classifyProjectChatMessage({
+              onAssistantText,
               message: resolvedMessage,
               stage,
               pages,
@@ -427,6 +428,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         }
 
         const outcome = await handleProjectChatIntent({
+          onAssistantText,
           userId: auth.user.id,
           project,
           userMessageId: userMessage.id,
@@ -451,7 +453,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
             : null
         } satisfies MobileProjectChatMessageResponseDto;
       });
-    }
+    })
   );
 
   fastify.post(
