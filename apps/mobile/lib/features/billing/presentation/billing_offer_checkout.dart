@@ -66,6 +66,11 @@ class BillingOfferCheckout extends StatelessWidget {
     final canRetry = storeDown && onRetry != null && !busy;
     final status = state.error ?? state.message;
     final subscription = item?.isSubscription ?? false;
+    final switching =
+        subscription &&
+        !isCurrent &&
+        state.billing?.plan != null &&
+        state.billing!.plan!.tier != 'free';
     final after = !subscription && item != null && state.billing != null
         ? state.billing!.credits.available + item.creditAmount
         : null;
@@ -160,6 +165,9 @@ class BillingOfferCheckout extends StatelessWidget {
                   ? 'Return to your book and try again.'
                   : storeDown
                   ? 'Google Play is not reachable right now.'
+                  : switching
+                  ? 'Switches now at full price. Credits reset; unused paid time carries over. '
+                        'Renews monthly; cancel in Google Play.'
                   : subscription
                   ? 'Renews monthly · Cancel anytime in Google Play'
                   : 'One-time purchase · Credits never expire',

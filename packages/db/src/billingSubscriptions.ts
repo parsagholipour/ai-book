@@ -9,6 +9,7 @@
 import {
   DEFAULT_BILLING_PRODUCTS,
   PLAN_ENTITLEMENT_TYPES,
+  jsonRecord,
   type BillingOperation,
   type PlanEntitlementType,
   planEntitlementTypeForSubscriptionSku
@@ -125,10 +126,16 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
 
   const existing = await tx.purchaseRecord.findFirst({
     where: { provider: "GOOGLE_PLAY", purchaseTokenHash: tokenHash },
-    select: { id: true, userId: true, creditsGranted: true, status: true, externalPurchaseId: true }
+    select: { id: true, userId: true, creditsGranted: true, status: true, externalPurchaseId: true, metadata: true }
   });
   if (existing && existing.userId !== userId) {
     throw new Error("This Google Play purchase is already linked to another account.");
+  }
+  // A verification started before a switch can arrive after its replacement.
+  // Retirement is durable and must win over that stale ACTIVE response.
+  if (existing && typeof jsonRecord(existing.metadata).replacedByPurchaseTokenHash === "string") {
+    return { purchaseRecordId: existing.id, status: "REVOKED", creditsGranted: existing.creditsGranted,
+      ledgerEntryId: null, subscriptionStatus: "EXPIRED", entitlementType: null };
   }
   // A cancellation learned during restore is the same terminal refund as RTDN.
   if (verification.kind === "one_time" && verification.providerStatus === "CANCELED") {
@@ -151,6 +158,9 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
   if (existing && (refund?.refundableQuantity === 0 || (verification.kind === "one_time" && existing.status === "REVOKED"))) {
     return { purchaseRecordId: existing.id, status: "REVOKED", creditsGranted: existing.creditsGranted,
       ledgerEntryId: null, subscriptionStatus: null, entitlementType: null };
+  }
+  if (verification.kind === "subscription" && verification.grantable && refund?.refundableQuantity !== 0) {
+    await retireReplacedSubscriptionTx(tx, userId, verification, tokenHash, now);
   }
   const purchaseStatus = purchaseRecordStatusForVerification(verification);
   const recordData = {
@@ -308,6 +318,49 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
     subscriptionStatus,
     entitlementType
   };
+}
+
+/** Only Google's verified replacement link may retire a previous purchase. */
+async function retireReplacedSubscriptionTx(
+  tx: BillingTx, userId: string, verification: VerifiedGooglePlayPurchase, tokenHash: string, now: Date
+): Promise<void> {
+  const linkedToken = verification.metadata?.linkedPurchaseToken;
+  if (typeof linkedToken !== "string" || !linkedToken.trim()) return;
+  const oldHash = hashPurchaseToken(linkedToken);
+  if (oldHash === tokenHash) throw new Error("A Google Play subscription cannot replace itself.");
+  const previous = await tx.purchaseRecord.findFirst({
+    where: { provider: "GOOGLE_PLAY", purchaseTokenHash: oldHash }
+  });
+  if (previous && previous.userId !== userId) {
+    throw new Error("The replaced Google Play subscription is linked to another account.");
+  }
+  const metadata = jsonRecord(previous?.metadata);
+  if (typeof metadata.replacedByPurchaseTokenHash === "string" && metadata.replacedByPurchaseTokenHash !== tokenHash) {
+    throw new Error("This Google Play subscription has already been replaced.");
+  }
+  const retirement = {
+    metadata: jsonInput({ ...metadata, replacedByPurchaseTokenHash: tokenHash })
+  };
+  // Replacing a plan is not a refund: keep the prior paid record's status and
+  // amount for revenue accounting. Its marker closes future receipt grants.
+  // The replacement can reach us before the old receipt was ever recorded.
+  // Keep a token tombstone so a later restore cannot claim the retired plan.
+  const retired = previous
+    ? await tx.purchaseRecord.update({ where: { id: previous.id }, data: retirement })
+    : await tx.purchaseRecord.create({ data: {
+        userId, provider: "GOOGLE_PLAY", purchaseTokenHash: oldHash, currency: "USD", status: "REVOKED", ...retirement
+      } });
+  await tx.userEntitlement.updateMany({
+    where: { purchaseRecordId: retired.id, status: "ACTIVE" }, data: { status: "EXPIRED", expiresAt: now }
+  });
+  const subscription = await tx.subscriptionState.findFirst({
+    where: { provider: "GOOGLE_PLAY", externalSubscriptionId: oldHash }
+  });
+  if (subscription) {
+    await tx.subscriptionState.update({ where: { id: subscription.id }, data: {
+      status: "EXPIRED", autoRenewing: false, currentPeriodEnd: now, nextCreditGrantAt: null
+    } });
+  }
 }
 
 export type EndSubscriptionResult = {

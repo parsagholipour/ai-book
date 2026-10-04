@@ -70,11 +70,34 @@ are rejected and can also accumulate in the dead-letter topic.
 This handles notices delivered after setup. Historical refunds from before RTDN was enabled need
 reconciliation using Google's [Voided Purchases API](https://developers.google.com/android-publisher/voided-purchases).
 
+## Switching subscription plans
+
+Deploy the API before the mobile release. Billing responses include the current purchase's SHA-256
+hash so the app can match it to the subscription owned by the selected Google Play account. A
+missing or mismatched purchase blocks switching and asks the reader to restore purchases.
+
+The app uses Google's `CHARGE_FULL_PRICE` replacement mode: the new plan and its full credit
+allowance take effect immediately, Google charges the new plan price, and the value of unused
+paid time extends the new subscription. Checkout discloses the immediate charge and credit reset.
+The verified `linkedPurchaseToken` retires the previous entitlement and renewal state in the same
+transaction as the new grant. A durable retirement marker prevents delayed old receipts from
+reactivating the replaced plan or overwriting its replacement's credit allowance.
+Historical paid purchase records retain their status and amount for revenue accounting; a
+replacement does not refund that payment.
+
+Before publishing, use a Play license tester to switch Creator → Max and Max → Creator, including
+after restarting the app. Confirm that Play shows one renewing subscription, the app shows the new
+plan and allowance, and restoring purchases does not change that allowance. Already-existing
+duplicate subscriptions require reconciliation in Google Play; the app blocks further switches
+when more than one plan is owned.
+
 ## Tests
 
 ```bash
 pnpm -F @book-maker/api test src/googlePlayRtdn.test.ts src/googlePlayBilling.test.ts
 pnpm -F @book-maker/db test src/googlePlayRefunds.test.ts
+pnpm -F @book-maker/db test src/subscriptionReplacement.test.ts
+(cd apps/mobile && flutter test test/billing/subscription_checkout_test.dart)
 DB_INTEGRATION=true pnpm -F @book-maker/db test src/googlePlayRefunds.integration.test.ts
 ```
 

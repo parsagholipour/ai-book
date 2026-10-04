@@ -121,7 +121,8 @@ describe("mobile billing and Google Play", () => {
       endsAt: null,
       // Nothing to cancel on free, even though this backend runs the mock verifier.
       canCancelInApp: false,
-      productSku: null
+      productSku: null,
+      purchaseTokenHash: null
     });
     expect(body.billing.allowance).toEqual({
       monthlyCredits: 0,
@@ -165,13 +166,15 @@ describe("mobile billing and Google Play", () => {
       renewsAt: new Date("2026-07-15T00:00:00.000Z"),
       cancelAtPeriodEnd: false,
       endsAt: null,
-      productSku: "tomeza.pro_monthly"
+      productSku: "tomeza.pro_monthly",
+      purchaseTokenHash: "test-plan-token-hash"
     });
     const paid = (
       await app.inject({ method: "GET", url: "/api/mobile/billing", headers: bearer("token-a") })
     ).json();
 
     expect(paid.billing.imageQuota).toBeNull();
+    expect(paid.billing.plan.purchaseTokenHash).toBe("test-plan-token-hash");
     expect(paid.billing.plan).toMatchObject({ tier: "pro", renewsAt: "2026-07-15T00:00:00.000Z", endsAt: null });
     // The limit still ships on a paid plan — the paywall's free rung describes
     // what cancelling would drop you to.
@@ -197,7 +200,8 @@ describe("mobile billing and Google Play", () => {
       renewsAt: null,
       cancelAtPeriodEnd: true,
       endsAt: new Date("2026-09-12T00:00:00.000Z"),
-      productSku: "tomeza.creator_monthly"
+      productSku: "tomeza.creator_monthly",
+      purchaseTokenHash: "test-plan-token-hash"
     });
     const app = await buildMobileApp();
 
@@ -287,7 +291,8 @@ describe("mobile billing and Google Play", () => {
       entitlementType: null
     });
     expect(body.billing.credits.available).toBe(1100);
-    expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|generationStrategy|purchaseToken/);
+    // Checkout may compare the token's hash; raw Play credentials never ship.
+    expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|generationStrategy|"purchaseToken"/);
     await app.close();
   });
 
@@ -416,7 +421,8 @@ describe("mobile billing and Google Play", () => {
       renewsAt: null,
       cancelAtPeriodEnd: true,
       endsAt: new Date("2026-09-12T00:00:00.000Z"),
-      productSku: "tomeza.creator_monthly"
+      productSku: "tomeza.creator_monthly",
+      purchaseTokenHash: "test-plan-token-hash"
     });
     const verifier = {
       verifyPurchase: vi.fn(async () => ({

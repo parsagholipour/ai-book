@@ -196,6 +196,7 @@ class MobileSubscriptionPlan {
     this.endsAt,
     this.canCancelInApp = false,
     this.productSku,
+    this.purchaseTokenHash,
   });
 
   final String tier;
@@ -215,6 +216,7 @@ class MobileSubscriptionPlan {
   /// real Google Play, where cancelling happens in the Play subscription centre.
   final bool canCancelInApp;
   final String? productSku;
+  final String? purchaseTokenHash;
 
   factory MobileSubscriptionPlan.fromJson(Map<String, dynamic> json) {
     final renewsAt = json['renewsAt'];
@@ -228,6 +230,7 @@ class MobileSubscriptionPlan {
       endsAt: endsAt is String ? DateTime.tryParse(endsAt) : null,
       canCancelInApp: json['canCancelInApp'] as bool? ?? false,
       productSku: json['productSku'] as String?,
+      purchaseTokenHash: json['purchaseTokenHash'] as String?,
     );
   }
 

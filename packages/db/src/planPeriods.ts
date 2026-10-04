@@ -56,6 +56,8 @@ export type PlanSummary = {
   /** When a cancelled plan drops to free. Null while it is still renewing. */
   endsAt: Date | null;
   productSku: string | null;
+  /** Identifies the owned Play purchase without exposing its raw token. */
+  purchaseTokenHash: string | null;
 };
 
 export type MonthlyQuota = {
@@ -208,7 +210,7 @@ export async function grantSubscriptionPlanPeriodTx(tx: BillingTx, options: Subs
 export async function getPlanSummary(userId: string, now: Date = new Date()): Promise<PlanSummary> {
   const tier = await resolvePlanTier(userId, now);
   if (tier === "free") {
-    return { tier, source: "free", status: null, renewsAt: null, cancelAtPeriodEnd: false, endsAt: null, productSku: null };
+    return { tier, source: "free", status: null, renewsAt: null, cancelAtPeriodEnd: false, endsAt: null, productSku: null, purchaseTokenHash: null };
   }
   const subscription = await prisma.subscriptionState.findFirst({
     where: { userId, status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED"] } },
@@ -217,6 +219,7 @@ export async function getPlanSummary(userId: string, now: Date = new Date()): Pr
       status: true,
       currentPeriodEnd: true,
       autoRenewing: true,
+      externalSubscriptionId: true,
       product: { select: { sku: true } }
     }
   });
@@ -231,7 +234,8 @@ export async function getPlanSummary(userId: string, now: Date = new Date()): Pr
     renewsAt: cancelAtPeriodEnd ? null : periodEnd,
     cancelAtPeriodEnd,
     endsAt: cancelAtPeriodEnd ? periodEnd : null,
-    productSku: subscription?.product?.sku ?? null
+    productSku: subscription?.product?.sku ?? null,
+    purchaseTokenHash: subscription?.externalSubscriptionId ?? null
   };
 }
 

@@ -37,6 +37,7 @@ export type MobileBillingDto = {
      */
     canCancelInApp: boolean;
     productSku: string | null;
+    purchaseTokenHash: string | null;
   };
   /**
    * What the free tier grants, whether or not the reader is on it. Both

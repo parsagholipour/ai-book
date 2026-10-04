@@ -682,7 +682,8 @@ export const mockBilling = (() => {
       renewsAt: null,
       cancelAtPeriodEnd: false,
       endsAt: null,
-      productSku: null
+      productSku: null,
+      purchaseTokenHash: null
     })),
     // Null is "no limit on this plan". Suites that want the free tier's limit
     // override this with a quota object.

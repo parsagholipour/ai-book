@@ -196,6 +196,7 @@ class BillingController extends ChangeNotifier {
   }
 
   Future<void> buy(MobileBillingProduct product) async {
+    if (_state.pendingProductIds.isNotEmpty) return;
     final storeProduct = _state.storeProducts[product.sku];
     if (!_state.storeAvailable || storeProduct == null) {
       _setState(
@@ -220,6 +221,17 @@ class BillingController extends ChangeNotifier {
       await _storeClient.buyProduct(
         storeProduct,
         consumable: product.isConsumable,
+        subscription: product.isSubscription
+            ? StoreSubscriptionCheckout(
+                productIds: plans.map((plan) => plan.sku).toSet(),
+                hasActivePlan:
+                    _state.billing?.plan != null &&
+                    _state.billing!.plan!.tier != 'free',
+                currentProductId: _state.billing?.plan?.productSku,
+                currentPurchaseTokenHash:
+                    _state.billing?.plan?.purchaseTokenHash,
+              )
+            : null,
       );
     } catch (error) {
       final nextPending = {..._state.pendingProductIds}..remove(product.sku);
@@ -227,6 +239,7 @@ class BillingController extends ChangeNotifier {
         _state.copyWith(
           pendingProductIds: nextPending,
           error: userFacingError(error),
+          clearMessage: true,
         ),
       );
       _emitPurchaseEvent(BillingPurchaseStopped(productId: product.sku));

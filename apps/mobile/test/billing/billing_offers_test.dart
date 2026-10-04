@@ -360,6 +360,25 @@ void main() {
   );
 
   testWidgets(
+    'plan switching terms and checkout fit small screens with large text',
+    (tester) async {
+      await openSalesOffer(
+        tester,
+        repository: SalesOfferRepository(planTier: 'creator'),
+        size: const Size(320, 640),
+        textScale: 2,
+      );
+      expect(tester.takeException(), isNull);
+      expect(
+        find.textContaining('Switches now at full price'),
+        findsOneWidget,
+      );
+      expect(salesBuy.hitTestable(), findsOneWidget);
+      expect(tester.getRect(salesCheckout).bottom, lessThanOrEqualTo(640));
+    },
+  );
+
+  testWidgets(
     'custom credit goals disclose one purchase and reject an empty amount',
     (tester) async {
       await openSalesOffer(

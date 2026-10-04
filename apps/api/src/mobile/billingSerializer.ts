@@ -54,7 +54,8 @@ export async function serializeMobileBilling(
       endsAt: plan.endsAt?.toISOString() ?? null,
       // Nothing to cancel on the free tier, whatever this backend can do.
       canCancelInApp: options.canCancelInApp && plan.tier !== "free",
-      productSku: plan.productSku
+      productSku: plan.productSku,
+      purchaseTokenHash: plan.purchaseTokenHash ?? null
     },
     freeTier: {
       monthlyCredits: pricing.freeMonthlyCredits,

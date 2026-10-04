@@ -114,6 +114,7 @@ describe("Google Play billing verifier", () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         latestOrderId: "GPA.5555-6666-7777-88888",
+        linkedPurchaseToken: "replaced-subscription-token",
         startTime: "2026-06-15T00:00:00Z",
         subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
         acknowledgementState: "ACKNOWLEDGEMENT_STATE_PENDING",
@@ -145,6 +146,7 @@ describe("Google Play billing verifier", () => {
       grantable: true,
       providerStatus: "SUBSCRIPTION_STATE_ACTIVE",
       externalPurchaseId: "GPA.5555-6666-7777-88888",
+      metadata: { linkedPurchaseToken: "replaced-subscription-token" },
       subscription: {
         status: "ACTIVE",
         currentPeriodStart: new Date("2026-06-15T00:00:00Z"),

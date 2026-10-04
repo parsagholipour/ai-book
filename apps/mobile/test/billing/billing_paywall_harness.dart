@@ -246,6 +246,7 @@ class FakeStoreBillingClient implements StoreBillingClient {
   Future<void> buyProduct(
     StoreProduct product, {
     required bool consumable,
+    StoreSubscriptionCheckout? subscription,
   }) async {
     buyCalls.add(BuyCall(product: product, consumable: consumable));
   }
