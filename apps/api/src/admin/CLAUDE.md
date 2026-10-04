@@ -71,9 +71,14 @@ rather than inventing a cost.
   two must add up to the Costs tab's total. `VOICE_CALL_MINUTE` shows 100% margin honestly and
   wrongly, because the app holds its own socket to Gemini; that is what `OPERATION_NOTES` is for.
 - **"Revenue" is two different numbers and the dashboard shows both.** Cash collected
-  (`PurchaseRecord.amountMicros`) is money banked in the window; credits delivered × the credit
+  (`PurchasePayment.amountMicros` less its cumulative `refundedAmountMicros`, by `paidAt`) is
+  recorded payments in the window; credits delivered × the credit
   rate is the value of work actually done. They diverge because a reader buys on one day and spends
   over the next month, so pairing either alone against provider spend misstates the margin.
+  A payment is one paid order; `PurchaseRecord` tracks a token's current state and spans renewals.
+  Expiry and cancellation leave payments intact. Overview totals, daily series and user cash all
+  read payments. Prices are catalog snapshots, not Play settlement amounts; legacy backfill is
+  marked `legacy_catalog_estimate`. See `docs/google-play-rtdn.md` for migration and date semantics.
 - **A reversal is an amount, not a boolean.** A page-priced operation can return only the part it
   did not deliver. Revenue, project/user inspection, pricing coverage and operation economics read
   the cumulative REFUND amount and subtract it from the original SPEND; `reversedByEntry` merely

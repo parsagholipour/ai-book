@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DETACHED_FROM_PROJECT_LIFECYCLE, PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
-import { canRecoverGenerationJob, laterJobSupersedesOwningFailure } from "./generationRecovery.js";
+import { canRecoverGenerationJob, laterJobSupersedesOwningFailure, recoveryPayload } from "./generationRecovery.js";
 
 describe("canRecoverGenerationJob", () => {
   const context = {
@@ -9,6 +9,32 @@ describe("canRecoverGenerationJob", () => {
     pageIds: new Set<string>()
   };
   const createdAt = new Date("2026-08-01T00:00:00Z");
+
+  it("recovers a rebuild copy before its planner creates a target plan", () => {
+    const payload = { operationId: "rebuild-1", sourceProjectId: "source-1", sourcePlanId: "source-plan" };
+    expect(canRecoverGenerationJob("REPLAN_BOOK", payload, { ...context, currentPlanId: null }, createdAt)).toBe(true);
+    expect(recoveryPayload("REPLAN_BOOK", payload, null)).toEqual(payload);
+  });
+
+  it.each([
+    {},
+    { operationId: "rebuild-1" },
+    { sourcePlanId: "source-plan" },
+    { operationId: "", sourcePlanId: "source-plan" },
+    { operationId: "rebuild-1", sourcePlanId: " " },
+    { operationId: "rebuild-1", sourcePlanId: "source-plan", planId: "superseded-plan" }
+  ])("does not recover a planless rebuild without its original source identity: %j", (payload) => {
+    expect(canRecoverGenerationJob("REPLAN_BOOK", payload, { ...context, currentPlanId: null }, createdAt)).toBe(false);
+  });
+
+  it("still refuses a detached or superseded rebuild", () => {
+    const payload = { operationId: "rebuild-1", sourcePlanId: "source-plan", planId: "older-target-plan" };
+    expect(canRecoverGenerationJob("REPLAN_BOOK", payload, context, createdAt)).toBe(false);
+    expect(canRecoverGenerationJob("REPLAN_BOOK", {
+      operationId: "rebuild-1", sourcePlanId: "source-plan", [DETACHED_FROM_PROJECT_LIFECYCLE]: true
+    }, { ...context, currentPlanId: null }, createdAt)).toBe(false);
+    expect(canRecoverGenerationJob("GENERATE_BOOK", { planId: "source-plan" }, { ...context, currentPlanId: null }, createdAt)).toBe(false);
+  });
 
   it("recovers an ordinary failed compile against the current plan", () => {
     expect(

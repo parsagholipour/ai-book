@@ -1,4 +1,4 @@
-import { appendRunLog, objectKey } from "@book-maker/storage";
+import { accountRunLogKey, appendRunLog, objectKey } from "@book-maker/storage";
 import {
   isRecoverableNetworkError,
   providerRetryAfterMs,
@@ -18,8 +18,8 @@ import {
  * Per-job run logs and the retry/reporting policy around provider calls.
  *
  * Every AI call a job makes is appended as a JSON line under
- * `books/<projectId>/runs/`, which is the primary artifact for
- * debugging a generation after the fact.
+ * `books/<projectId>/runs/`, or the owning account's run prefix for
+ * projectless work. These are the primary generation debugging artifacts.
  */
 
 /** Network retry budget applied to every provider call. */
@@ -38,11 +38,15 @@ export type LoggedImageAttempt = {
 };
 
 export function createRunLogger(job: RawWorkerJob): RunLogger {
-  const projectId = workerJobStringField(job, "projectId") ?? "_unknown-project";
+  const owningProjectId = workerJobStringField(job, "projectId");
+  const accountUserId = owningProjectId ? undefined : workerJobStringField(job, "userId");
+  const projectId = owningProjectId ?? "_unknown-project";
   const generationJobId = workerJobStringField(job, "generationJobId");
   const runId = generationJobId ?? `bull-${job.id ?? "unknown"}`;
-  const logDir = objectKey("books", projectId, "runs");
-  const filePath = `${logDir}/${safePathPart(runId)}-${safePathPart(job.name)}.jsonl`;
+  const filename = `${safePathPart(runId)}-${safePathPart(job.name)}.jsonl`;
+  const filePath = accountUserId
+    ? accountRunLogKey(accountUserId, filename)
+    : objectKey("books", projectId, "runs", filename);
 
   return {
     filePath,
@@ -61,7 +65,7 @@ export function createRunLogger(job: RawWorkerJob): RunLogger {
         ...data
       };
       try {
-        await appendRunLog(filePath, safeJsonStringify(entry));
+        await appendRunLog(filePath, safeJsonStringify(entry), accountUserId ? { accountUserId } : {});
       } catch (error) {
         console.error(`Failed to write run log ${filePath}`, error);
       }

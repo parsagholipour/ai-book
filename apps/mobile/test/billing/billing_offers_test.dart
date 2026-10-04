@@ -16,6 +16,7 @@ import 'billing_paywall_harness.dart';
 class SalesOfferRepository extends FakeBillingRepository {
   SalesOfferRepository({super.planTier}) {
     billing = MobileBilling(
+      purchaseAccountId: billing.purchaseAccountId,
       credits: billing.credits,
       entitlements: billing.entitlements,
       products: [
@@ -369,10 +370,7 @@ void main() {
         textScale: 2,
       );
       expect(tester.takeException(), isNull);
-      expect(
-        find.textContaining('Switches now at full price'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('Switches now at full price'), findsOneWidget);
       expect(salesBuy.hitTestable(), findsOneWidget);
       expect(tester.getRect(salesCheckout).bottom, lessThanOrEqualTo(640));
     },

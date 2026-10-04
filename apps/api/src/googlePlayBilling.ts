@@ -281,6 +281,7 @@ export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): Go
 }
 
 type GooglePlayProductPurchase = {
+  obfuscatedExternalAccountId?: string;
   orderId?: string;
   purchaseTimeMillis?: string;
   purchaseState?: number;
@@ -291,6 +292,7 @@ type GooglePlayProductPurchase = {
 };
 
 type GooglePlaySubscriptionPurchaseV2 = {
+  externalAccountIdentifiers?: { obfuscatedExternalAccountId?: string };
   latestOrderId?: string;
   startTime?: string;
   subscriptionState?: string;
@@ -324,6 +326,7 @@ function mapOneTimePurchase(
     purchasedAt: millisDate(purchase.purchaseTimeMillis),
     quantity: purchase.quantity ?? 1,
     metadata: {
+      obfuscatedExternalAccountId: purchase.obfuscatedExternalAccountId ?? null,
       acknowledgementState: purchase.acknowledgementState ?? null,
       consumptionState: purchase.consumptionState ?? null,
       regionCode: purchase.regionCode ?? null
@@ -361,6 +364,7 @@ function mapSubscriptionPurchase(
       autoRenewing: matchingLineItem?.autoRenewingPlan?.autoRenewEnabled ?? null
     },
     metadata: {
+      obfuscatedExternalAccountId: purchase.externalAccountIdentifiers?.obfuscatedExternalAccountId ?? null,
       acknowledgementState: purchase.acknowledgementState ?? null,
       regionCode: purchase.regionCode ?? null,
       linkedPurchaseToken: purchase.linkedPurchaseToken ?? null,

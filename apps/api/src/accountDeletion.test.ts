@@ -17,12 +17,15 @@ const db = vi.hoisted(() => {
     voiceCall: model(),
     bookImport: model(),
     sourceDocument: model(),
+    generationJob: model(),
     mobileSession: model(),
     passwordResetRequest: model(),
     userPasswordCredential: model(),
     legalAcceptance: model(),
     user: model(),
     accountDeletionRequest: model(),
+    $queryRaw: vi.fn(async () => []),
+    $executeRaw: vi.fn(async () => 0),
     $transaction: vi.fn(async (writes: unknown[]) => writes)
   };
 });
@@ -49,7 +52,7 @@ describe("carrying out an account deletion", () => {
   beforeEach(() => vi.resetAllMocks());
   afterEach(() => vi.restoreAllMocks());
 
-  it("deletes every book through its own delete before anything else", async () => {
+  it("deletes every book through its own delete", async () => {
     db.project.findMany.mockResolvedValueOnce([{ id: "book-1" }, { id: "book-2" }] as never);
     const result = await executeAccountDeletion("user-1", log);
     expect(jobs.stopProjectGenerationJobs).toHaveBeenCalledWith("book-1");
@@ -85,9 +88,63 @@ describe("carrying out an account deletion", () => {
 
     await executeAccountDeletion("user-1", log);
 
-    expect([...testObjectStore.objects.keys()]).toEqual(["attachments/import-10/source"]);
+    expect([...testObjectStore.objects.keys()].sort()).toEqual(["attachments/import-10/source", "books/.account-runs/user-1/deleted"]);
     expect(db.bookImport.findMany).toHaveBeenCalledWith({ where: { userId: "user-1" }, select: { id: true } });
     expect(db.bookImport.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+  });
+
+  it("deletes account-owned and legacy portrait logs, including deleted characters' jobs", async () => {
+    db.generationJob.findMany.mockResolvedValueOnce([{ id: "portrait-old", type: "GENERATE_CHARACTER_PORTRAIT" }] as never);
+    const owned = [
+      "books/.account-runs/user-1/runs/portrait-new-generate-character-portrait.jsonl.events/1.json",
+      "books/_unknown-project/runs/portrait-old-generate-character-portrait.jsonl.events/1.json",
+      "books/_unknown-project/runs/portrait-old-generate-character-portrait.jsonl"
+    ];
+    for (const key of owned) seedObject(key, "private character name, description and appearance");
+    const other = "books/_unknown-project/runs/portrait-old-other-generate-character-portrait.jsonl.events/1.json";
+    seedObject(other, "another account's prompt");
+    seedObject("books/.account-runs/user-10/runs/other.jsonl.events/1.json", "another account's prompt");
+
+    await executeAccountDeletion("user-1", log);
+
+    for (const key of owned) expect(await testObjectStore.get(key), key).toBeNull();
+    expect(await testObjectStore.get(other)).not.toBeNull();
+    expect(await testObjectStore.get("books/.account-runs/user-10/runs/other.jsonl.events/1.json")).not.toBeNull();
+    expect(db.generationJob.findMany).toHaveBeenCalledWith({
+      where: { projectId: null, type: "GENERATE_CHARACTER_PORTRAIT", payload: { path: ["userId"], equals: "user-1" } },
+      select: { id: true }
+    });
+  });
+
+  it("keeps log cleanup retryable when storage is unavailable", async () => {
+    db.accountDeletionRequest.findMany.mockResolvedValue([{ id: "request-1", userId: "user-1" }] as never);
+    db.generationJob.findMany.mockResolvedValue([{ id: "portrait-old", type: "GENERATE_CHARACTER_PORTRAIT" }] as never);
+    const key = "books/_unknown-project/runs/portrait-old-generate-character-portrait.jsonl.events/1.json";
+    seedObject(key, "private prompt");
+    vi.spyOn(testObjectStore, "delete").mockRejectedValueOnce(new Error("S3 unavailable"));
+
+    expect(await runAccountDeletionSweep(log)).toBe(0);
+    expect(db.accountDeletionRequest.updateMany).not.toHaveBeenCalled();
+    expect(await testObjectStore.get(key)).not.toBeNull();
+    expect(await runAccountDeletionSweep(log)).toBe(1);
+    expect(await testObjectStore.get(key)).toBeNull();
+  });
+
+  it("repairs logs left by an already-completed account deletion", async () => {
+    db.$queryRaw.mockResolvedValue([{ id: "deleted-request", userId: "user-1" }] as never);
+    db.generationJob.findMany.mockResolvedValue([{ id: "portrait-old", type: "GENERATE_CHARACTER_PORTRAIT" }] as never);
+    const key = "books/_unknown-project/runs/portrait-old-generate-character-portrait.jsonl.events/1.json";
+    seedObject(key, "private prompt left by an old deletion");
+    vi.spyOn(testObjectStore, "delete").mockRejectedValueOnce(new Error("S3 unavailable"));
+
+    await runAccountDeletionSweep(log);
+    expect(db.$executeRaw).not.toHaveBeenCalled();
+    expect(await testObjectStore.get(key)).not.toBeNull();
+    await runAccountDeletionSweep(log);
+    expect(await testObjectStore.get(key)).toBeNull();
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(db.project.delete).not.toHaveBeenCalled();
+    expect(db.user.update).not.toHaveBeenCalled();
   });
 
   it("deletes retained source content and originals after their chat was deleted", async () => {
@@ -102,7 +159,7 @@ describe("carrying out an account deletion", () => {
 
     await executeAccountDeletion("user-1", log);
 
-    expect([...testObjectStore.objects.keys()]).toEqual(["attachments/other-chat/source-2"]);
+    expect([...testObjectStore.objects.keys()].sort()).toEqual(["attachments/other-chat/source-2", "books/.account-runs/user-1/deleted"]);
     expect(db.sourceDocument.findMany).toHaveBeenCalledWith({
       where: { userId: "user-1" }, select: { id: true, storageDraftId: true }
     });

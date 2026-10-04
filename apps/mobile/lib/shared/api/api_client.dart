@@ -120,6 +120,7 @@ class ApiClient {
   /// token on every call, so parallel refreshes desync the stored pair from
   /// the server and brick the session.
   Future<MobileSessionTokens>? _refreshInFlight;
+  int? _refreshGeneration;
 
   Future<Response<dynamic>> getJson(String path, {bool requiresAuth = true}) {
     return _request('GET', path, requiresAuth: requiresAuth);
@@ -165,7 +166,9 @@ class ApiClient {
   }
 
   Future<Map<String, String>> authHeaders() async {
-    final accessToken = await _validAccessToken();
+    final generation = tokenStore.generation;
+    final accessToken = await _validAccessToken(generation);
+    _assertCurrentSession(generation);
     return {'Authorization': 'Bearer $accessToken'};
   }
 
@@ -262,18 +265,22 @@ class ApiClient {
       );
     }
 
-    final accessToken = await _validAccessToken();
+    final generation = tokenStore.generation;
+    final accessToken = await _validAccessToken(generation);
     try {
-      return await dio.request<dynamic>(
-        path,
-        data: Stream.fromIterable([bytes]),
-        queryParameters: queryParameters,
-        options: buildOptions(accessToken),
-        onSendProgress: onSendProgress,
+      return await _withSession(
+        generation,
+        () => dio.request<dynamic>(
+          path,
+          data: Stream.fromIterable([bytes]),
+          queryParameters: queryParameters,
+          options: buildOptions(accessToken),
+          onSendProgress: onSendProgress,
+        ),
       );
     } on DioException catch (error) {
       if (error.response?.statusCode == 401) {
-        final tokens = await refreshTokens();
+        final tokens = await _refreshForSession(generation);
         return _mapped(
           () => dio.request<dynamic>(
             path,
@@ -282,6 +289,7 @@ class ApiClient {
             options: buildOptions(tokens.accessToken),
             onSendProgress: onSendProgress,
           ),
+          generation: generation,
         );
       }
       throw _mapDioException(error);
@@ -312,20 +320,24 @@ class ApiClient {
     ProgressCallback? onReceiveProgress,
     CancelToken? cancelToken,
   }) async {
-    final accessToken = await _validAccessToken();
+    final generation = tokenStore.generation;
+    final accessToken = await _validAccessToken(generation);
     try {
       return DownloadedFile.fromResponse(
-        await dio.download(
-          path,
-          savePath,
-          options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
-          onReceiveProgress: onReceiveProgress,
-          cancelToken: cancelToken,
+        await _withSession(
+          generation,
+          () => dio.download(
+            path,
+            savePath,
+            options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+            onReceiveProgress: onReceiveProgress,
+            cancelToken: cancelToken,
+          ),
         ),
       );
     } on DioException catch (error) {
       if (error.response?.statusCode == 401) {
-        final tokens = await refreshTokens();
+        final tokens = await _refreshForSession(generation);
         return DownloadedFile.fromResponse(
           await _mapped(
             () => dio.download(
@@ -337,6 +349,7 @@ class ApiClient {
               onReceiveProgress: onReceiveProgress,
               cancelToken: cancelToken,
             ),
+            generation: generation,
           ),
         );
       }
@@ -345,21 +358,33 @@ class ApiClient {
   }
 
   Future<MobileSessionTokens> refreshTokens() {
+    return _refreshForSession(tokenStore.generation);
+  }
+
+  Future<MobileSessionTokens> _refreshForSession(int generation) {
+    _assertCurrentSession(generation);
     final inFlight = _refreshInFlight;
-    if (inFlight != null) {
+    if (inFlight != null && _refreshGeneration == generation) {
       return inFlight;
     }
-    final refresh = _refreshTokens().whenComplete(() {
-      _refreshInFlight = null;
+    late final Future<MobileSessionTokens> refresh;
+    refresh = _refreshTokens(generation).whenComplete(() {
+      // An old completion must not discard a newer account's refresh slot.
+      if (identical(_refreshInFlight, refresh)) {
+        _refreshInFlight = null;
+        _refreshGeneration = null;
+      }
     });
     _refreshInFlight = refresh;
+    _refreshGeneration = generation;
     return refresh;
   }
 
-  Future<MobileSessionTokens> _refreshTokens() async {
+  Future<MobileSessionTokens> _refreshTokens(int generation) async {
     final current = await tokenStore.read();
+    _assertCurrentSession(generation);
     if (current == null || current.isRefreshExpired) {
-      await tokenStore.clear();
+      await tokenStore.clearIfCurrent(generation);
       throw const ApiException(
         code: 'SESSION_EXPIRED',
         message: 'Sign in again to continue.',
@@ -373,16 +398,19 @@ class ApiClient {
         data: {'refreshToken': current.refreshToken},
         options: Options(contentType: Headers.jsonContentType),
       );
+      _assertCurrentSession(generation);
       final data = response.data as Map<String, dynamic>;
       final tokens = MobileSessionTokens.fromJson(
         data['session'] as Map<String, dynamic>,
       );
-      await tokenStore.write(tokens);
+      await tokenStore.writeIfCurrent(generation, tokens);
+      _assertCurrentSession(generation);
       return tokens;
     } on DioException catch (error) {
+      _assertCurrentSession(generation);
       final mapped = _mapDioException(error);
       if (mapped.isAuthFailure) {
-        await tokenStore.clear();
+        await tokenStore.clearIfCurrent(generation);
       }
       throw mapped;
     }
@@ -396,23 +424,27 @@ class ApiClient {
     bool retryOnAuthFailure = true,
     Duration? receiveTimeout,
   }) async {
+    final generation = requiresAuth ? tokenStore.generation : null;
     final options = Options(
       method: method,
       contentType: data == null ? null : Headers.jsonContentType,
       receiveTimeout: receiveTimeout,
     );
     if (requiresAuth) {
-      final accessToken = await _validAccessToken();
+      final accessToken = await _validAccessToken(generation);
       options.headers = {'Authorization': 'Bearer $accessToken'};
     }
 
     try {
-      return await dio.request<dynamic>(path, data: data, options: options);
+      return await _withSession(
+        generation,
+        () => dio.request<dynamic>(path, data: data, options: options),
+      );
     } on DioException catch (error) {
       if (requiresAuth &&
           retryOnAuthFailure &&
           error.response?.statusCode == 401) {
-        final tokens = await refreshTokens();
+        final tokens = await _refreshForSession(generation!);
         return _mapped(
           () => dio.request<dynamic>(
             path,
@@ -424,6 +456,7 @@ class ApiClient {
               headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
             ),
           ),
+          generation: generation,
         );
       }
       throw _mapDioException(error);
@@ -436,6 +469,7 @@ class ApiClient {
     bool retryOnAuthFailure = true,
     CancelToken? cancelToken,
   }) async {
+    final generation = requiresAuth ? tokenStore.generation : null;
     final options = Options(
       method: 'GET',
       responseType: ResponseType.stream,
@@ -443,7 +477,7 @@ class ApiClient {
       headers: {'Accept': 'text/event-stream'},
     );
     if (requiresAuth) {
-      final accessToken = await _validAccessToken();
+      final accessToken = await _validAccessToken(generation);
       options.headers = {
         ...?options.headers,
         'Authorization': 'Bearer $accessToken',
@@ -451,16 +485,19 @@ class ApiClient {
     }
 
     try {
-      return await dio.request<ResponseBody>(
-        path,
-        options: options,
-        cancelToken: cancelToken,
+      return await _withSession(
+        generation,
+        () => dio.request<ResponseBody>(
+          path,
+          options: options,
+          cancelToken: cancelToken,
+        ),
       );
     } on DioException catch (error) {
       if (requiresAuth &&
           retryOnAuthFailure &&
           error.response?.statusCode == 401) {
-        final tokens = await refreshTokens();
+        final tokens = await _refreshForSession(generation!);
         return _mapped(
           () => dio.request<ResponseBody>(
             path,
@@ -475,20 +512,28 @@ class ApiClient {
               },
             ),
           ),
+          generation: generation,
         );
       }
       throw _mapDioException(error);
     }
   }
 
-  Future<String> _validAccessToken() async {
-    return (await validTokens()).accessToken;
+  Future<String> _validAccessToken(int? generation) async {
+    return (await _validTokensForSession(
+      generation ?? tokenStore.generation,
+    )).accessToken;
   }
 
   /// The stored session, refreshed first when its access token is about to
   /// expire.
-  Future<MobileSessionTokens> validTokens() async {
+  Future<MobileSessionTokens> validTokens() {
+    return _validTokensForSession(tokenStore.generation);
+  }
+
+  Future<MobileSessionTokens> _validTokensForSession(int generation) async {
     final tokens = await tokenStore.read();
+    _assertCurrentSession(generation);
     if (tokens == null) {
       throw const ApiException(
         code: 'AUTH_REQUIRED',
@@ -497,7 +542,7 @@ class ApiClient {
       );
     }
     if (tokens.isRefreshExpired) {
-      await tokenStore.clear();
+      await tokenStore.clearIfCurrent(generation);
       throw const ApiException(
         code: 'SESSION_EXPIRED',
         message: 'Sign in again to continue.',
@@ -505,9 +550,20 @@ class ApiClient {
       );
     }
     if (tokens.shouldRefreshAccessToken) {
-      return refreshTokens();
+      return _refreshForSession(generation);
     }
     return tokens;
+  }
+
+  void _assertCurrentSession(int generation) {
+    if (tokenStore.generation != generation) {
+      // Cancellation, not an auth failure: callers must not sign out or clear
+      // the new account in response to an old account's abandoned request.
+      throw const ApiException(
+        code: 'REQUEST_CANCELLED',
+        message: 'The request was canceled because your sign-in changed.',
+      );
+    }
   }
 
   /// Runs [send] and maps any Dio failure onto an [ApiException].
@@ -519,11 +575,25 @@ class ApiClient {
   /// in `reader_overlays.dart` — both test `is ApiException` first — so an
   /// expired access token would downgrade the "still preparing" overlay to a
   /// dead "Could not download this book".
-  Future<T> _mapped<T>(Future<T> Function() send) async {
+  Future<T> _mapped<T>(Future<T> Function() send, {int? generation}) async {
     try {
-      return await send();
+      return await _withSession(generation, send);
     } on DioException catch (error) {
       throw _mapDioException(error);
+    }
+  }
+
+  /// A late 401 must not replay an old request with the next user's tokens.
+  /// The same fence keeps a late successful response out of the new account.
+  Future<T> _withSession<T>(int? generation, Future<T> Function() send) async {
+    if (generation != null) _assertCurrentSession(generation);
+    try {
+      final result = await send();
+      if (generation != null) _assertCurrentSession(generation);
+      return result;
+    } on DioException {
+      if (generation != null) _assertCurrentSession(generation);
+      rethrow;
     }
   }
 

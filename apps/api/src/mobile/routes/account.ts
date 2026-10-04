@@ -4,6 +4,7 @@ import {
   GooglePlayVerificationError,
   purchaseNeedsAcknowledgement
 } from "../../googlePlayBilling.js";
+import { GooglePlayAccountMismatchError, requireGooglePlayPurchaseOwner } from "../../googlePlayAccount.js";
 import {
   type MobileBillingDto,
   type MobileBillingResponseDto,
@@ -32,6 +33,9 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
   const billingFor = (userId: string): Promise<MobileBillingDto> => serializeMobileBilling(userId, { canCancelInApp });
 
   function sendPlayError(reply: FastifyReply, error: unknown): FastifyReply {
+    if (error instanceof GooglePlayAccountMismatchError) {
+      return sendMobileError(reply, 409, error.code, error.message);
+    }
     if (error instanceof GooglePlayBillingConfigError) {
       return sendMobileError(reply, 503, error.code, "Google Play Billing is not configured on this backend yet.");
     }
@@ -141,6 +145,7 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
           productType: product.productType,
           purchaseToken: parsed.data.purchaseToken
         });
+        await requireGooglePlayPurchaseOwner(auth.user.id, verification, appConfig.MOCK_GOOGLE_PLAY_BILLING);
         const purchase = await recordVerifiedGooglePlayPurchase({
           userId: auth.user.id,
           verification: {

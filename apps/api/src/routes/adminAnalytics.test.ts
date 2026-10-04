@@ -9,7 +9,8 @@ const mockDb = vi.hoisted(() => {
   const prisma = {
     user: { upsert: vi.fn(), count: vi.fn(), findUnique: vi.fn() },
     mobileSession: { findUnique: vi.fn() },
-    purchaseRecord: { aggregate: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
+    purchaseRecord: { findMany: vi.fn() },
+    purchasePayment: { aggregate: vi.fn(), groupBy: vi.fn() },
     providerCallLog: { aggregate: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
     creditLedgerEntry: { aggregate: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
     userCreditAccount: { aggregate: vi.fn(), findUnique: vi.fn() },
@@ -49,8 +50,8 @@ function stubEmpty() {
   p.user.upsert.mockResolvedValue({ id: "local-admin" });
   p.mobileSession.findUnique.mockResolvedValue(null);
   p.user.count.mockResolvedValue(0);
-  p.purchaseRecord.aggregate.mockResolvedValue({ _sum: { amountMicros: null } });
-  p.purchaseRecord.groupBy.mockResolvedValue([]);
+  p.purchasePayment.aggregate.mockResolvedValue({ _sum: { amountMicros: null } });
+  p.purchasePayment.groupBy.mockResolvedValue([]);
   p.providerCallLog.aggregate.mockResolvedValue({ _sum: { costHint: null } });
   p.providerCallLog.count.mockResolvedValue(0);
   p.providerCallLog.groupBy.mockResolvedValue([]);
@@ -174,7 +175,7 @@ describe("GET /api/admin/overview", () => {
   it("reports cash and unit margins separately, because they answer different questions", async () => {
     // A reader bought $100 of credits this window but only consumed $30 of
     // service. Cash margin looks great; unit margin is the honest one.
-    mockDb.prisma.purchaseRecord.aggregate.mockResolvedValue({ _sum: { amountMicros: 100_000_000n } });
+    mockDb.prisma.purchasePayment.aggregate.mockResolvedValue({ _sum: { amountMicros: 100_000_000n } });
     mockDb.prisma.providerCallLog.aggregate.mockResolvedValue({ _sum: { costHint: 12 } });
     stubCreditAggregate({ kept: 3000 });
     mockDb.prisma.userCreditAccount.aggregate.mockResolvedValue({
@@ -196,6 +197,21 @@ describe("GET /api/admin/overview", () => {
     // Credits bought and not yet burned are an obligation, not income.
     expect(money.creditsOutstanding).toBe(7500);
     expect(money.creditsOutstandingUsd).toBe(75);
+  });
+
+  it("reports retained renewal payments net of order-specific refunds without a subscription-status filter", async () => {
+    mockDb.prisma.purchasePayment.aggregate.mockResolvedValue({
+      _sum: { amountMicros: 59_970_000n, refundedAmountMicros: 19_990_000n }
+    });
+    app = await buildApp();
+    const response = await app.inject({ method: "GET", url: "/api/admin/overview" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().money.cashCollectedUsd).toBe(39.98);
+    const query = mockDb.prisma.purchasePayment.aggregate.mock.calls[0]![0];
+    expect(query.where).toEqual({ paidAt: { gte: expect.any(Date), lte: expect.any(Date) } });
+    const seriesSql = mockDb.prisma.$queryRaw.mock.calls.map(([sql]) => Array.from(sql).join(" ")).join(" ");
+    expect(seriesSql).toContain('FROM "PurchasePayment"');
+    expect(seriesSql).toContain('p."amountMicros" - p."refundedAmountMicros"');
   });
 
   it("keeps refunded charges out of delivered credits and reports them separately", async () => {

@@ -15,12 +15,16 @@ class MobileBilling {
     this.messageAllowance,
     this.freeTier = const MobileFreeTier(),
     this.maxBookPages,
+    this.purchaseAccountId,
   });
 
   final CreditBalance credits;
   final List<MobileEntitlement> entitlements;
   final List<MobileBillingProduct> products;
   final Map<String, dynamic> creditCosts;
+
+  /// Server-issued, stable Play checkout identity. Older servers omit it.
+  final String? purchaseAccountId;
 
   /// Optional so an older server — and every test fixture that predates plans —
   /// still parses. A null plan reads as free.
@@ -51,6 +55,7 @@ class MobileBilling {
     final messageAllowance = json['messageAllowance'];
     final freeTier = json['freeTier'];
     return MobileBilling(
+      purchaseAccountId: json['purchaseAccountId'] as String?,
       credits: CreditBalance.fromJson(json['credits'] as Map<String, dynamic>),
       entitlements: entitlements
           .map(
@@ -597,6 +602,7 @@ class StorePurchaseUpdate {
     required this.status,
     required this.purchaseToken,
     this.purchaseId,
+    this.purchaseAccountId,
     this.errorMessage,
     this.pendingCompletePurchase = false,
     this.source,
@@ -606,6 +612,9 @@ class StorePurchaseUpdate {
   final StorePurchaseStatus status;
   final String purchaseToken;
   final String? purchaseId;
+
+  /// Account identity retained by Google, including delayed/restored purchases.
+  final String? purchaseAccountId;
   final String? errorMessage;
   final bool pendingCompletePurchase;
   final Object? source;

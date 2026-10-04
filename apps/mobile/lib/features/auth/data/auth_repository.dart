@@ -42,12 +42,13 @@ class MobileAuthRepository implements AuthRepository {
 
   @override
   Future<AuthSession?> restoreSession() async {
+    final generation = tokenStore.generation;
     var tokens = await tokenStore.read();
-    if (tokens == null) {
+    if (tokens == null || tokenStore.generation != generation) {
       return null;
     }
     if (tokens.isRefreshExpired) {
-      await tokenStore.clear();
+      await tokenStore.clearIfCurrent(generation);
       return null;
     }
 
@@ -55,16 +56,19 @@ class MobileAuthRepository implements AuthRepository {
       if (tokens.shouldRefreshAccessToken) {
         tokens = await apiClient.refreshTokens();
       }
+      if (tokenStore.generation != generation) return null;
 
       final data = await apiClient.getMap('/api/mobile/auth/me');
       final latestTokens = await tokenStore.read() ?? tokens;
+      if (tokenStore.generation != generation) return null;
       return AuthSession(
         user: AuthUser.fromJson(data['user'] as Map<String, dynamic>),
         tokens: latestTokens,
       );
     } on ApiException catch (error) {
+      if (tokenStore.generation != generation) return null;
       if (error.isAuthFailure) {
-        await tokenStore.clear();
+        await tokenStore.clearIfCurrent(generation);
         return null;
       }
       rethrow;
@@ -163,7 +167,12 @@ class MobileAuthRepository implements AuthRepository {
 
   @override
   Future<void> logout() async {
+    final generation = tokenStore.generation;
     final tokens = await tokenStore.read();
+    // Revoke local ownership before waiting for the network. The captured
+    // token still revokes the server session; its delayed response may never
+    // clear a sign-in that happened in the meantime.
+    await tokenStore.clearIfCurrent(generation);
     try {
       if (tokens != null) {
         await apiClient.postJson(
@@ -172,8 +181,9 @@ class MobileAuthRepository implements AuthRepository {
           requiresAuth: false,
         );
       }
-    } finally {
-      await tokenStore.clear();
+    } on ApiException {
+      // Server revocation is best-effort: offline logout still removes this
+      // device's session and lets the controller clear its account caches.
     }
   }
 

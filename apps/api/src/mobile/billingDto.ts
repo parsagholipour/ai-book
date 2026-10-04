@@ -9,6 +9,8 @@ import { type CreditPricing, type PlanTier } from "@book-maker/core";
  */
 
 export type MobileBillingDto = {
+  /** Opaque account identity attached to Play checkout and verified on claim. */
+  purchaseAccountId: string;
   messageAllowance: import("@book-maker/db/billing").MessageAllowance;
   credits: {
     /** Everything the user can spend right now: allowance plus purchased. */

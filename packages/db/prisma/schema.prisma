@@ -310,6 +310,7 @@ model User {
   creditLedger            CreditLedgerEntry[]
   entitlements            UserEntitlement[]
   purchases               PurchaseRecord[]
+  payments                PurchasePayment[]
   subscriptions           SubscriptionState[]
   moderationReports       ModerationReport[]       @relation("ModerationReportReporter")
   moderationReviews       ModerationReport[]       @relation("ModerationReportReviewer")
@@ -700,6 +701,8 @@ model PurchaseRecord {
   creditLedger CreditLedgerEntry[]
   entitlements UserEntitlement[]
 
+  payments     PurchasePayment[]
+
   @@index([userId, createdAt])
   @@index([provider, externalPurchaseId])
   /// One record per purchase token: concurrent verifications (the Play
@@ -707,6 +710,31 @@ model PurchaseRecord {
   /// cash in the revenue dashboard and letting the same token link to two
   /// accounts. NULL hashes (legacy rows) stay unconstrained.
   @@unique([purchaseTokenHash])
+}
+
+/// Cash history is independent of the mutable purchase-token/subscription state.
+/// Amount and date are frozen at first verification; only cumulative refunds change.
+model PurchasePayment {
+  id                   String   @id @default(cuid())
+  userId               String
+  purchaseRecordId     String
+  idempotencyKey       String   @unique
+  orderId              String?
+  amountMicros         BigInt
+  refundedAmountMicros BigInt   @default(0)
+  currency             String
+  /// Renewal time is first observation: Play's subscription startTime is not its renewal time.
+  paidAt               DateTime
+  /// Catalog snapshots are estimates, not store settlement reports.
+  amountSource         String   @default("catalog_snapshot")
+  createdAt            DateTime @default(now())
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchaseRecord PurchaseRecord @relation(fields: [purchaseRecordId], references: [id], onDelete: Cascade)
+
+  @@index([paidAt])
+  @@index([userId, paidAt])
+  @@index([purchaseRecordId, orderId])
 }
 
 model SubscriptionState {

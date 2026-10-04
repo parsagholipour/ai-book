@@ -65,7 +65,7 @@ export type Product = {
   title: string;
   productType: string;
   creditAmount: number;
-  priceMicros: bigint;
+  priceMicros: bigint | null;
   currency: string;
   active: boolean;
 };
@@ -84,6 +84,18 @@ export type Purchase = {
   purchasedAt: Date | null;
   verifiedAt: Date | null;
   metadata: unknown;
+};
+
+export type Payment = {
+  id: string;
+  userId: string;
+  purchaseRecordId: string;
+  idempotencyKey: string;
+  orderId: string | null;
+  amountMicros: bigint;
+  refundedAmountMicros: bigint;
+  currency: string;
+  paidAt: Date;
 };
 
 export type Subscription = {
@@ -164,6 +176,7 @@ export function createBillingTestDb() {
     entitlements: new Map<string, Entitlement>(),
     products: new Map<string, Product>(),
     purchases: new Map<string, Purchase>(),
+    payments: new Map<string, Payment>(),
     googlePlayRefunds: new Map<string, Record<string, any>>(),
     subscriptions: new Map<string, Subscription>(),
     usage: new Map<string, Usage>(),
@@ -405,6 +418,25 @@ export function createBillingTestDb() {
         }
         Object.assign(row, data);
         return row;
+      })
+    },
+    purchasePayment: {
+      upsert: vi.fn(async ({ where, create }: any) => {
+        const existing = state.payments.get(where.idempotencyKey);
+        if (existing) return existing;
+        const row: Payment = { id: `payment-${state.payments.size + 1}`, refundedAmountMicros: 0n, ...create };
+        state.payments.set(row.idempotencyKey, row);
+        return row;
+      }),
+      findMany: vi.fn(async ({ where }: any) => [...state.payments.values()].filter((row) =>
+        row.purchaseRecordId === where.purchaseRecordId &&
+        (where.orderId === undefined || row.orderId === where.orderId)
+      )),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        const row = [...state.payments.values()].find((entry) => entry.id === where.id);
+        if (!row || (where.refundedAmountMicros?.lt !== undefined && row.refundedAmountMicros >= where.refundedAmountMicros.lt)) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
       })
     },
     subscriptionState: {
@@ -762,6 +794,7 @@ export function createBillingTestDb() {
     state.entitlements.clear();
     state.products.clear();
     state.purchases.clear();
+    state.payments.clear();
     state.googlePlayRefunds.clear();
     state.subscriptions.clear();
     state.usage.clear();

@@ -386,6 +386,7 @@ export const mockPrisma = ({
   mobileCreationOutput: { create: vi.fn(), findFirst: vi.fn() },
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },
+  purchaseRecord: { findFirst: vi.fn(noRow) },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
   page: {
     findUnique: vi.fn(),

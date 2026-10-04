@@ -52,6 +52,7 @@ const exportPlans = [
 class ExportOfferRepository extends FakeBillingRepository {
   ExportOfferRepository({super.planTier, bool empty = false}) {
     billing = MobileBilling(
+      purchaseAccountId: billing.purchaseAccountId,
       credits: billing.credits,
       entitlements: billing.entitlements,
       products: empty ? const [] : exportPlans,

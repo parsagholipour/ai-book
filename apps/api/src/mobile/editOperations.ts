@@ -131,6 +131,8 @@ export async function queueAttemptChatOperation(options: {
       description: options.description,
       metadata: options.metadata,
       imageQuotaLimit: options.imageQuotaLimit ?? null,
+      // A rebuild's full-book price includes exports for the new copy.
+      grantExportEntitlement: options.billingOperation === "BOOK_REPLAN",
       create: async (tx, context) => {
         const job = await options.enqueue(tx, context);
         await tx.bookEditOperation.update({

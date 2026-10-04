@@ -103,8 +103,8 @@ export async function listAdminUsers(options: {
       COALESCE(a."lifetimeCreditsSpent", 0) AS "lifetimeSpent",
       (SELECT COUNT(*) FROM "Project" p WHERE p."userId" = u.id) AS projects,
       (SELECT COUNT(*) FROM "Project" p WHERE p."userId" = u.id AND p.status = 'COMPLETE') AS books_completed,
-      (SELECT SUM(pr."amountMicros") FROM "PurchaseRecord" pr
-        WHERE pr."userId" = u.id AND pr.status IN ('VERIFIED','GRANTED')) AS cash_micros,
+      (SELECT SUM(pr."amountMicros" - pr."refundedAmountMicros") FROM "PurchasePayment" pr
+        WHERE pr."userId" = u.id) AS cash_micros,
       (SELECT s.status::text FROM "SubscriptionState" s
         WHERE s."userId" = u.id ORDER BY s."updatedAt" DESC LIMIT 1) AS subscription_status,
       (SELECT MAX(e."createdAt") FROM "CreditLedgerEntry" e WHERE e."userId" = u.id) AS last_activity,

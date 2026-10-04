@@ -1,4 +1,5 @@
 import { type MobileBillingDto } from "./dto.js";
+import { googlePlayAccountId } from "../googlePlayAccount.js";
 import { DEFAULT_BILLING_PRODUCTS, creditPricing } from "@book-maker/core";
 import {
   getCreditBalance,
@@ -37,6 +38,7 @@ export async function serializeMobileBilling(
   const pricing = creditPricing();
   const welcomeCredits = await getWelcomeCreditsGranted(userId);
   return {
+    purchaseAccountId: googlePlayAccountId(userId),
     messageAllowance,
     credits: {
       available: balance.availableCredits,

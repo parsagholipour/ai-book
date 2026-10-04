@@ -15,6 +15,8 @@ Database records still establish ownership and entitlement. Existing authenticat
 | `books/<projectId>/` | Manuscript, PDF/EPUB/DOCX, provenance, reader chapter cache |
 | `books/.export-backups/<projectId>/` | Export predecessors awaiting cleanup |
 | `books/<projectId>/runs/` | Provider calls and other durable generation diagnostics |
+| `books/.account-runs/<userId>/runs/` | Account-level generation diagnostics, including saved-character portraits |
+| `books/.account-runs/<userId>/deleted` | Empty deletion marker preventing later account-level log appends |
 | `books/<projectId>/share-previews/` | Preview slices a public share serves, keyed by the compile's digest; superseded slices are removed when a new one is stored, and revoke/take-down clear the prefix |
 | `images/<projectId>/` | Covers, page illustrations, reference sheets |
 | `images/characters/<userId>/` | Retained character photos and portraits |
@@ -28,6 +30,10 @@ Construct keys with `objectKey(category, ...segments)`. Object operations are `p
 Export publication retains the existing database revision fence and project lock. Pending render outputs stay local; publication copies predecessor objects to private backup keys, puts new bytes, and restores predecessors when the transaction fails. The provenance digest identifies the exact bytes returned even if a reader overlaps publication. Superseded objects are removed after success and old abandoned backups are swept from their dedicated prefix, without scanning book content or run logs. There is no multi-object S3 transaction; the database fence and digest checks remain necessary.
 
 Run-log appends each write an immutable JSON event under `<run-key>.events/`. This preserves concurrent appends without pretending S3 supports file append. Use `readRunLog(runKey)` to reconstruct JSONL and `listRunLogs(projectId)` to discover runs. The plan repair, development rerun, worker provenance probe, and adherence replay tools use these helpers. `--log-file` on the repair tool now names an S3 run key. `.scratch/` experiment reports and checked-in fixture inputs stay local.
+
+Projectless worker jobs with a `userId` use `accountRunLogKey` and pass `accountUserId` to `appendRunLog`. Account deletion writes the empty marker before deleting that account's run objects. Appends check the marker before and after uploading; an upload finishing during cleanup removes its own event. An unreadable marker refuses the append, and diagnostic failures remain nonfatal to generation.
+
+Deletion also removes older `books/_unknown-project/runs/` logs by the exact IDs of the account's projectless `GenerationJob` rows, whose payloads retain `userId` after a character is removed. It deletes both event subtrees and consolidated JSONL objects, keeps the job and financial records, and propagates storage failures so the request stays pending. The hourly deletion sweep repairs up to 20 previously deleted accounts per pass, recording `accountRunLogsDeleted` in request metadata only after cleanup succeeds. Deploy the updated API and worker together so running workers respect the marker.
 
 ## Local scratch and tests
 

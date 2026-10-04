@@ -354,8 +354,16 @@ void main() {
       expect(await store.isAvailable(), isTrue);
       expect(query.products.single.price, 'Debug');
 
-      await store.buyProduct(query.products.single, consumable: true);
-      await store.buyProduct(query.products.single, consumable: true);
+      await store.buyProduct(
+        query.products.single,
+        consumable: true,
+        purchaseAccountId: 'test-purchase-account',
+      );
+      await store.buyProduct(
+        query.products.single,
+        consumable: true,
+        purchaseAccountId: 'test-purchase-account',
+      );
       await pumpEventQueue();
 
       expect(updates, hasLength(2));

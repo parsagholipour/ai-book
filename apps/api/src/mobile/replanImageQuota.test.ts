@@ -141,11 +141,12 @@ describe("illustrated rebuild quota", () => {
     mockPrisma.generationJob.findMany
       .mockResolvedValueOnce([jobRecord({
         id: "job-failed", type, status: "FAILED", attemptId: sourceAttempt.id,
-        payload: { pageId: "page-1", planId: "plan-1" }
+        payload: { pageId: "page-1", planId: "plan-1", operationId: "operation-rebuild" }
       })])
       .mockResolvedValueOnce([{ id: "job-paid-retry", status: "QUEUED" }]);
     mockPrisma.page.findMany.mockResolvedValueOnce([{ id: "page-1" }]);
     mockPrisma.generationAttempt.findMany.mockResolvedValueOnce([sourceAttempt]);
+    mockPrisma.bookEditOperation.updateMany.mockResolvedValueOnce({ count: 1 });
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-paid-retry", type }));
     const app = await buildMobileApp();
     const response = await app.inject({

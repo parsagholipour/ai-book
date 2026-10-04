@@ -49,10 +49,12 @@ void main() {
   Future<void> openCheckout({
     String? tier = 'creator',
     String? accountToken = 'old',
+    String? purchaseAccountId = 'test-purchase-account',
   }) async {
     final repository = FakeBillingRepository(planTier: tier);
     final billing = repository.billing;
     repository.billing = MobileBilling(
+      purchaseAccountId: purchaseAccountId,
       credits: billing.credits,
       entitlements: billing.entitlements,
       plan: tier == null
@@ -86,6 +88,28 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  test('checkout cannot open without a server account identity', () async {
+    await openCheckout(purchaseAccountId: null);
+    await controller.buy(pack);
+    expect(play.launched, isEmpty);
+    expect(controller.state.pendingProductIds, isEmpty);
+    expect(controller.state.error, contains('temporarily unavailable'));
+  });
+
+  test(
+    'restored Play callbacks retain the original checkout account',
+    () async {
+      await openCheckout();
+      play.updates = Stream.value([
+        purchase(pack.sku, 'restored-token', accountId: 'original-account'),
+      ]);
+      final client = InAppPurchaseStoreBillingClient(inAppPurchase: play);
+      final update = (await client.purchaseUpdates.first).single;
+      expect(update.purchaseAccountId, 'original-account');
+      expect(update.purchaseToken, 'restored-token');
+    },
+  );
+
   test(
     'Creator to Max replaces the owned purchase instead of buying twice',
     () async {
@@ -96,6 +120,7 @@ void main() {
       await openCheckout(accountToken: 'creator-token');
       await controller.buy(max);
       expect(play.launched.single, isA<GooglePlayPurchaseParam>());
+      expect(play.launched.single.applicationUserName, 'test-purchase-account');
       final change = (play.launched.single as GooglePlayPurchaseParam)
           .changeSubscriptionParam!;
       expect(change.oldPurchaseDetails, same(owned));
@@ -127,6 +152,7 @@ void main() {
       );
       await openCheckout(tier: null);
       await controller.buy(creator);
+      expect(play.launched.single.applicationUserName, 'test-purchase-account');
       expect(
         (play.launched.single as GooglePlayPurchaseParam)
             .changeSubscriptionParam,
@@ -140,6 +166,7 @@ void main() {
     () async {
       await openCheckout();
       await controller.buy(pack);
+      expect(play.launched.single.applicationUserName, 'test-purchase-account');
       expect(play.consumable, isTrue);
       expect(play.autoConsume, isFalse);
       expect(play.addition.queries, 0);
@@ -275,6 +302,7 @@ GooglePlayPurchaseDetails purchase(
   String sku,
   String token, {
   bool renewing = true,
+  String? accountId,
 }) {
   return GooglePlayPurchaseDetails.fromPurchase(
     PurchaseWrapper(
@@ -282,6 +310,7 @@ GooglePlayPurchaseDetails purchase(
       packageName: 'com.tomeza.tomeza',
       purchaseTime: 1,
       purchaseToken: token,
+      obfuscatedAccountId: accountId,
       signature: '',
       products: [sku],
       isAutoRenewing: renewing,
@@ -298,8 +327,9 @@ class FakePlay implements InAppPurchase {
   bool opensCheckout = true;
   bool consumable = false;
   bool? autoConsume;
+  Stream<List<PurchaseDetails>> updates = const Stream.empty();
   @override
-  Stream<List<PurchaseDetails>> get purchaseStream => const Stream.empty();
+  Stream<List<PurchaseDetails>> get purchaseStream => updates;
   @override
   Future<bool> isAvailable() async => true;
   @override

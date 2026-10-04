@@ -156,7 +156,12 @@ describe("mobile generation resume", () => {
     await app.close();
   });
 
-  it("uses a confirmed quote to create a fresh charged recovery attempt", async () => {
+  it.each([
+    { operation: "FULL_BOOK_GENERATION", type: "GENERATE_PAGE", unlock: true },
+    { operation: "BOOK_REPLAN", type: "REPLAN_BOOK", unlock: true },
+    { operation: "BOOK_REPLAN", type: "GENERATE_PAGE", unlock: true },
+    { operation: "PAGE_REGENERATION", type: "GENERATE_PAGE", unlock: false }
+  ] as const)("retries $type under $operation with only its included export entitlement", async ({ operation, type, unlock }) => {
     mockAccessTokens({ "token-a": "user-a" });
     const sourceAttempt = {
       id: "attempt-source",
@@ -164,7 +169,7 @@ describe("mobile generation resume", () => {
       commandKey: "mobile:plan-approval:plan-1",
       requestFingerprint: "source-fingerprint",
       status: "FAILED",
-      operation: "FULL_BOOK_GENERATION" as const,
+      operation,
       quotedCredits: 776,
       projectId: "project-1",
       refundPending: false
@@ -181,10 +186,11 @@ describe("mobile generation resume", () => {
         jobRecord({
           id: "job-failed-page",
           projectId: "project-1",
-          type: "GENERATE_PAGE",
+          type,
           status: "FAILED",
           attemptId: sourceAttempt.id,
           payload: {
+            operationId: "operation-rebuild",
             pageId: "page-1",
             planId: "plan-1",
             billingLedgerEntryId: "refunded-ledger"
@@ -195,8 +201,9 @@ describe("mobile generation resume", () => {
     mockPrisma.page.findMany.mockResolvedValueOnce([{ id: "page-1" }]);
     mockPrisma.generationAttempt.findMany.mockResolvedValueOnce([sourceAttempt]);
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
-      jobRecord({ id: "job-paid-retry", type: "GENERATE_PAGE" })
+      jobRecord({ id: "job-paid-retry", type })
     );
+    mockPrisma.bookEditOperation.updateMany.mockResolvedValueOnce({ count: 1 });
     const app = await buildMobileApp();
 
     const response = await app.inject({
@@ -212,22 +219,27 @@ describe("mobile generation resume", () => {
     expect(response.statusCode).toBe(202);
     expect(response.json()).toMatchObject({ resumedActions: 1, currentAction: "Picking up your book generation." });
     expect(reserveCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ operation: "FULL_BOOK_GENERATION", amountCredits: 776 })
+      expect.objectContaining({ operation, amountCredits: 776 })
     );
     expect(enqueueGenerationJob).toHaveBeenCalledWith(
       expect.objectContaining({
         attemptId: expect.stringContaining("attempt-mobile-generation-retry-attempt-source"),
         payload: expect.objectContaining({
           pageId: "page-1",
-          billingLedgerEntryId: "ledger-FULL_BOOK_GENERATION"
+          billingLedgerEntryId: `ledger-${operation}`
         })
       })
     );
-    // The retry re-charges the full package, so it re-grants what the refund
-    // revoked: exports stay unlocked on the delivered book.
-    expect(vi.mocked(grantProjectEntitlement)).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "user-a", type: "EXPORT_UNLOCK" })
-    );
+    // Whole-book packages include exports even when only a child page failed.
+    // A standalone page rewrite never buys an export unlock.
+    if (unlock) {
+      expect(grantProjectEntitlement).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        userId: "user-a", projectId: "project-1", type: "EXPORT_UNLOCK",
+        creditsCost: 776, relatedLedgerEntryId: `ledger-${operation}`
+      }));
+    } else {
+      expect(grantProjectEntitlement).not.toHaveBeenCalled();
+    }
     await app.close();
   });
 

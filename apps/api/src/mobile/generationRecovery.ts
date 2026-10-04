@@ -53,7 +53,14 @@ export function canRecoverGenerationJob(
   }
 
   if (!context.currentPlanId) {
-    return false;
+    // A rebuilt copy starts with no plan of its own. Its planner reads the
+    // original book's plan, so failure before staging must still be retryable.
+    // A payload already tied to a target plan remains subject to that plan's
+    // lifetime; this exception is only for the source-backed planning step.
+    return type === "REPLAN_BOOK" &&
+      !payloadPlanId(payloadRecord) &&
+      typeof payloadRecord.operationId === "string" && payloadRecord.operationId.trim().length > 0 &&
+      typeof payloadRecord.sourcePlanId === "string" && payloadRecord.sourcePlanId.trim().length > 0;
   }
 
   const planId = payloadPlanId(payloadRecord);

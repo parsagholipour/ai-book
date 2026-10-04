@@ -27,7 +27,7 @@ import 'package:tomeza/features/sharing/data/book_share_repository.dart';
 import 'package:tomeza/features/sharing/data/pending_remix.dart';
 
 Widget testApp({
-  required FakeAuthRepository authRepository,
+  required AuthRepository authRepository,
   FakeProjectsRepository? projectsRepository,
   FakeBillingRepository? billingRepository,
   FakeCreationRepository? creationRepository,

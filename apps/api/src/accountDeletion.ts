@@ -1,6 +1,7 @@
 import { LIBRARY_CHARACTER_STORAGE_SUBDIR } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { objectKey, objectStore } from "@book-maker/storage";
+import { deleteAccountGenerationLogs, markAccountGenerationLogsDeleted, repairDeletedAccountGenerationLogs } from "./accountRunLogDeletion.js";
 import { deleteCreationAttachmentDraftDir } from "./attachmentStorage.js";
 import { deleteProjectStorage } from "./projectStorage.js";
 import { stopProjectGenerationJobs } from "./queue.js";
@@ -56,6 +57,8 @@ export type AccountDeletionResult = {
  */
 export async function executeAccountDeletion(userId: string, log: Logger): Promise<AccountDeletionResult> {
   const result: AccountDeletionResult = { userId, projects: 0, drafts: 0, characters: 0, voiceCalls: 0, storageFailures: 0 };
+
+  await deleteAccountGenerationLogs(userId);
 
   const projects = await prisma.project.findMany({ where: { userId }, select: { id: true } });
   for (const { id } of projects) {
@@ -123,6 +126,7 @@ export async function executeAccountDeletion(userId: string, log: Logger): Promi
       where: { id: userId },
       data: { email: tombstone, displayName: null, googleSubject: null, status: "DISABLED", disabledAt: new Date() }
     }),
+    markAccountGenerationLogsDeleted(userId),
     prisma.accountDeletionRequest.updateMany({
       where: { userId, status: "PENDING" },
       data: { status: "COMPLETED", completedAt: new Date(), email: tombstone, reason: null }
@@ -161,5 +165,6 @@ export async function runAccountDeletionSweep(log: Logger, now = new Date()): Pr
       log.warn({ err: error, requestId: request.id }, "Account deletion failed; it will be retried");
     }
   }
+  await repairDeletedAccountGenerationLogs(log);
   return completed;
 }

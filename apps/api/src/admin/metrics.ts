@@ -12,7 +12,7 @@
  * counted separately as `unpricedCalls` so the total is never quietly short.
  *
  * **"Revenue" means two different things and the dashboard shows both.** Cash
- * collected (`PurchaseRecord.amountMicros`) is money in the bank during the
+ * collected (the net of `PurchasePayment` amounts and refunds) is cash during the
  * window. Credits delivered is the notional value of work done in the window,
  * which is what actually pairs against provider spend for unit economics.
  * They diverge because a reader buys credits on one day and spends them on
@@ -148,9 +148,9 @@ export async function loadAdminOverview(window: AdminWindow): Promise<AdminOverv
 async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
   const inWindow = { gte: window.since, lte: window.until };
   const [cash, provider, unpriced, delivered, refunded, accounts] = await Promise.all([
-    prisma.purchaseRecord.aggregate({
-      _sum: { amountMicros: true },
-      where: { status: { in: ["VERIFIED", "GRANTED"] }, createdAt: inWindow }
+    prisma.purchasePayment.aggregate({
+      _sum: { amountMicros: true, refundedAmountMicros: true },
+      where: { paidAt: inWindow }
     }),
     prisma.providerCallLog.aggregate({
       _sum: { costHint: true },
@@ -171,7 +171,7 @@ async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
     prisma.userCreditAccount.aggregate({ _sum: { availableCredits: true, reservedCredits: true } })
   ]);
 
-  const cashCollectedUsd = round2(Number(cash._sum.amountMicros ?? 0n) / 1_000_000);
+  const cashCollectedUsd = round2(Number((cash._sum.amountMicros ?? 0n) - (cash._sum.refundedAmountMicros ?? 0n)) / 1_000_000);
   const providerSpendUsd = round2(provider._sum.costHint ?? 0);
   const creditsRefunded = Math.max(refunded._sum.amountCredits ?? 0, 0);
   const creditsDelivered = netSettledCredits(delivered._sum.amountCredits ?? 0, refunded._sum.amountCredits ?? 0);
@@ -212,9 +212,9 @@ async function loadPeople(window: AdminWindow): Promise<AdminOverview["people"]>
         by: ["userId"],
         where: { entryType: "SPEND", createdAt: inWindow }
       }),
-      prisma.purchaseRecord.groupBy({
+      prisma.purchasePayment.groupBy({
         by: ["userId"],
-        where: { status: { in: ["VERIFIED", "GRANTED"] } }
+        where: { amountMicros: { gt: 0 } }
       })
     ]);
 
@@ -284,8 +284,9 @@ async function loadSeries(window: AdminWindow): Promise<MoneySeriesPoint[]> {
     )
     SELECT
       days.day,
-      (SELECT SUM(p."amountMicros") FROM "PurchaseRecord" p
-        WHERE p.status IN ('VERIFIED','GRANTED') AND date_trunc('day', p."createdAt") = days.day) AS cash_micros,
+      (SELECT SUM(p."amountMicros" - p."refundedAmountMicros") FROM "PurchasePayment" p
+        WHERE p."paidAt" >= ${window.since} AND p."paidAt" <= ${window.until}
+          AND date_trunc('day', p."paidAt") = days.day) AS cash_micros,
       (SELECT SUM(l."costHint") FROM "ProviderCallLog" l
         WHERE l."costHint" IS NOT NULL AND date_trunc('day', l."createdAt") = days.day) AS provider_usd,
       -- Same rule as netSettledCredits: original charge less its cumulative reversal.

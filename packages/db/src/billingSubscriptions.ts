@@ -18,6 +18,7 @@ import { prisma } from "./client.ts";
 import { type BillingTx, hashPurchaseToken, jsonInput, runSerializable } from "./billingInternals.ts";
 import { grantCreditsTx } from "./billingLedger.ts";
 import { ensureCurrentPlanPeriodTx, grantSubscriptionPlanPeriodTx } from "./planPeriods.ts";
+import { recordPurchasePaymentTx } from "./purchasePayments.ts";
 
 import { applyGooglePlayRefundTx, recordGooglePlayRefundTx, runGooglePlayTransaction } from "./googlePlayRefunds.ts";
 
@@ -131,11 +132,23 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
   if (existing && existing.userId !== userId) {
     throw new Error("This Google Play purchase is already linked to another account.");
   }
+  const grantIdempotencyKey = googlePlayGrantIdempotencyKey(verification, tokenHash);
+  const recordPayment = (purchaseRecordId: string) => recordPurchasePaymentTx(tx, {
+    userId, purchaseRecordId, tokenHash, idempotencyKey: grantIdempotencyKey,
+    priceMicros: product.priceMicros, currency: product.currency, verification, now
+  });
+  // Historical payment evidence survives even when the access-state guard
+  // correctly ignores a stale receipt. The payment's own key/refund markers dedupe it.
+  if (existing) await recordPayment(existing.id);
   // A verification started before a switch can arrive after its replacement.
   // Retirement is durable and must win over that stale ACTIVE response.
   if (existing && typeof jsonRecord(existing.metadata).replacedByPurchaseTokenHash === "string") {
     return { purchaseRecordId: existing.id, status: "REVOKED", creditsGranted: existing.creditsGranted,
       ledgerEntryId: null, subscriptionStatus: "EXPIRED", entitlementType: null };
+  }
+  if (existing && verification.kind === "subscription") {
+    const stale = await staleSubscriptionVerificationResult(tx, existing, verification, tokenHash);
+    if (stale) return stale;
   }
   // A cancellation learned during restore is the same terminal refund as RTDN.
   if (verification.kind === "one_time" && verification.providerStatus === "CANCELED") {
@@ -186,6 +199,7 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
       data: { userId, provider: "GOOGLE_PLAY", purchaseTokenHash: tokenHash, ...recordData },
       select: recordSelect
     });
+    await recordPayment(purchaseRecord.id);
   }
 
   if (refund?.refundableQuantity === 0 || (verification.kind === "one_time" && existing?.status === "REVOKED")) {
@@ -236,7 +250,6 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
 
   const quantity = verification.kind === "one_time" ? Math.max(1, Math.floor(verification.quantity ?? 1)) : 1;
   const amountCredits = product.creditAmount * quantity;
-  const grantIdempotencyKey = googlePlayGrantIdempotencyKey(verification, tokenHash);
   const grantMetadata = {
     productSku: product.sku,
     provider: "GOOGLE_PLAY",
@@ -317,6 +330,60 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
     ledgerEntryId: ledgerEntry?.id ?? null,
     subscriptionStatus,
     entitlementType
+  };
+}
+
+/** An older order cannot rewrite any part of the subscription that replaced it. */
+async function staleSubscriptionVerificationResult(
+  tx: BillingTx,
+  purchase: { id: string; userId: string; status: string; creditsGranted: number; externalPurchaseId: string | null; metadata: unknown },
+  verification: VerifiedGooglePlayPurchase,
+  tokenHash: string
+): Promise<GooglePlayPurchaseRecordResult | null> {
+  // The current order may legitimately be cancelled, expire, or have its end
+  // corrected in either direction. Those updates still belong to this period.
+  if (verification.externalPurchaseId && verification.externalPurchaseId === purchase.externalPurchaseId) return null;
+
+  const metadata = jsonRecord(purchase.metadata);
+  const recordedEnd = jsonRecord(metadata.subscription).currentPeriodEnd;
+  const reportedEnd = verification.subscription?.currentPeriodEnd;
+  const earlierPeriod = typeof recordedEnd === "string" && reportedEnd && reportedEnd.getTime() < Date.parse(recordedEnd);
+  // An old order's expiry can be missing or corrected past the new one. Its
+  // recorded grant identifies its paid period even then. Conversely, period
+  // bounds catch old receipts never recorded here.
+  const recordedGrant = verification.externalPurchaseId && purchase.externalPurchaseId
+    ? await tx.creditLedgerEntry.findUnique({
+        where: { idempotencyKey: googlePlayGrantIdempotencyKey(verification, tokenHash) },
+        select: { metadata: true }
+      })
+    : null;
+  if (recordedGrant) {
+    const account = await tx.userCreditAccount.findUnique({
+      where: { userId: purchase.userId }, select: { planPeriodKey: true }
+    });
+    const grantedPeriod = jsonRecord(recordedGrant.metadata).planPeriodKey;
+    // Before this guard existed, a stale receipt could overwrite the other
+    // rows while the allowance stayed current. Let its owning receipt repair
+    // those rows on restore; it must not be mistaken for another old order.
+    if (typeof grantedPeriod === "string" && grantedPeriod === account?.planPeriodKey) return null;
+  }
+  if (!earlierPeriod && !recordedGrant) return null;
+
+  // This read and the freshness decision run inside the same serializable
+  // transaction as renewals and refunds. Return current state without touching
+  // the order ID, expiry, entitlement, allowance, or any refund marker.
+  const subscription = await tx.subscriptionState.findFirst({
+    where: { provider: "GOOGLE_PLAY", externalSubscriptionId: tokenHash },
+    select: { status: true }
+  });
+  return {
+    purchaseRecordId: purchase.id,
+    status: purchase.status,
+    creditsGranted: purchase.creditsGranted,
+    ledgerEntryId: null,
+    subscriptionStatus: subscription?.status ?? null,
+    entitlementType: subscription && subscriptionEntitlementIsActive(subscription.status) && typeof metadata.productSku === "string"
+      ? planEntitlementTypeForSubscriptionSku(metadata.productSku) : null
   };
 }
 

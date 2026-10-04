@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     $transaction: vi.fn()
   },
   revisePlan: vi.fn(),
+  getProjectOrThrow: vi.fn(),
   stagedPlanCreate: vi.fn(),
   canEnqueueProjectWork: vi.fn(),
   dispatchWorkerGenerationJob: vi.fn(),
@@ -34,7 +35,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJo
 vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {} }) }));
 vi.mock("../generation/bookHelpers.js", () => ({
-  getProjectOrThrow: async (id: string) => ({ id, currentPlanId: "plan-1", targetPages: 12 }),
+  getProjectOrThrow: mocks.getProjectOrThrow,
   nextPlanVersion: mocks.nextPlanVersion,
   planInputSnapshot: (input: { targetPages: number }) => ({ targetPages: input.targetPages }),
   strategyForInput: () => ({ revisePlan: mocks.revisePlan })
@@ -90,6 +91,7 @@ function replanJob(payload: Record<string, unknown>): Job {
 describe("replanBook page budget", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getProjectOrThrow.mockImplementation(async (id: string) => ({ id, currentPlanId: "plan-1", targetPages: 12 }));
     mocks.prisma.planVersion.findUnique.mockResolvedValue({
       id: "plan-1",
       inputSnapshot: sourceSnapshot,
@@ -182,6 +184,30 @@ describe("replanBook page budget", () => {
     mocks.prisma.generationJob.upsert.mockResolvedValue({ id: "job-generate" });
   });
   afterEach(() => vi.clearAllMocks());
+
+  it("runs a newly paid retry from the original plan while the copy has no plan", async () => {
+    mocks.getProjectOrThrow.mockImplementation(async (id: string) => ({
+      id, currentPlanId: id === "project-copy" ? null : "plan-1", targetPages: 12
+    }));
+    const operation = await mocks.prisma.bookEditOperation.findUnique({ where: { id: "operation-1" } });
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({
+      ...operation, generationJobId: "job-retry", status: "QUEUED",
+      structuralLeaseToken: null, structuralLeaseExpiresAt: null, structuralLeaseCompletedAt: null
+    });
+
+    await replanBook(replanJob({ generationJobId: "job-retry", targetPages: 3, billingLedgerEntryId: "retry-ledger" }));
+
+    expect(mocks.prisma.planVersion.findUnique).toHaveBeenCalledWith({ where: { id: "plan-1" }, include: { project: true } });
+    expect(mocks.revisePlan).toHaveBeenCalledTimes(1);
+    expect(mocks.stagedPlanCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ projectId: "project-copy", status: "DRAFT" })
+    }));
+    expect(mocks.prisma.bookEditOperation.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ generationJobId: "job-retry" }),
+      data: expect.objectContaining({ generationJobId: "job-generate" })
+    }));
+    expect(mocks.dispatchWorkerGenerationJob).toHaveBeenCalledWith("job-generate");
+  });
 
   it("plans against the requested page count rather than the source book's", async () => {
     await replanBook(replanJob({ targetPages: 3 }));

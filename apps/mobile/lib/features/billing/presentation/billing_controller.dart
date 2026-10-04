@@ -106,6 +106,9 @@ class BillingController extends ChangeNotifier {
   late final StreamSubscription<List<StorePurchaseUpdate>> _subscription;
   final _purchaseEvents = StreamController<BillingPurchaseEvent>.broadcast();
   final _purchaseKeepAliveReleases = <String, VoidCallback>{};
+  // Covers in-process pending callbacks from older store implementations that
+  // omit the receipt's account id. Google retains the durable identity itself.
+  final _checkoutAccounts = <String, String>{};
 
   BillingPurchaseState _state = const BillingPurchaseState();
   BillingPurchaseSuccess? _unacknowledgedPurchaseSuccess;
@@ -218,9 +221,23 @@ class BillingController extends ChangeNotifier {
       ),
     );
     try {
+      // A pending checkout can keep this controller alive across account changes.
+      // Its cached billing payload must never select the next purchase's owner.
+      final billing = await _billingRepository.getBilling();
+      final accountId = billing.purchaseAccountId;
+      if (accountId == null || accountId.isEmpty) {
+        throw const ApiException(
+          code: 'BILLING_ACCOUNT_UNAVAILABLE',
+          message:
+              'Purchases are temporarily unavailable. Please try again later.',
+        );
+      }
+      _setState(_state.copyWith(billing: billing));
+      _checkoutAccounts[product.sku] = accountId;
       await _storeClient.buyProduct(
         storeProduct,
         consumable: product.isConsumable,
+        purchaseAccountId: accountId,
         subscription: product.isSubscription
             ? StoreSubscriptionCheckout(
                 productIds: plans.map((plan) => plan.sku).toSet(),
@@ -437,6 +454,21 @@ class BillingController extends ChangeNotifier {
           ),
         );
         try {
+          final purchaseAccountId =
+              purchase.purchaseAccountId ??
+              _checkoutAccounts[purchase.productId];
+          if (purchaseAccountId != null) {
+            final currentBilling = await _billingRepository.getBilling();
+            if (currentBilling.purchaseAccountId != purchaseAccountId) {
+              throw const ApiException(
+                code: 'GOOGLE_PLAY_ACCOUNT_MISMATCH',
+                message:
+                    'Sign in to the Tomeza account that started this purchase, then restore purchases.',
+              );
+            }
+          }
+          // The server repeats the check against Google's receipt, closing an
+          // account switch between this read and the authenticated request.
           final result = await _billingRepository.verifyGooglePlayPurchase(
             productId: purchase.productId,
             purchaseToken: purchase.purchaseToken,
@@ -450,6 +482,7 @@ class BillingController extends ChangeNotifier {
             purchase,
             consumable: product.isConsumable,
           );
+          _checkoutAccounts.remove(purchase.productId);
           if (_disposed) {
             return;
           }

@@ -372,12 +372,12 @@ describe("credit ledger operations", () => {
     expect(spendCall?.[0].data.metadata).toMatchObject({ reason: "manual" });
   });
 
-  it("refunds failed project generation once and revokes ledger-backed entitlements", async () => {
+  it.each(["FULL_BOOK_GENERATION", "BOOK_REPLAN"] as const)("includes downloads in %s and revokes the unlock on refund", async (operation) => {
     await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
     const spend = await spendCredits({
       userId: "user-a",
       projectId: "project-1",
-      operation: "FULL_BOOK_GENERATION",
+      operation,
       amountCredits: 800,
       idempotencyKey: "spend:project-1"
     });
@@ -390,14 +390,20 @@ describe("credit ledger operations", () => {
       relatedLedgerEntryId: spend?.id
     });
 
+    const download = await ensureProjectExportEntitlementOrSpend({
+      userId: "user-a", projectId: "project-1", idempotencyKey: "mobile:project:project-1:export-unlock"
+    });
+    expect(download.chargedLedgerEntry).toBeNull();
+    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 200, lifetimeCreditsSpent: 800 });
+
     const refund = await refundLatestProjectOperationCredits({
       projectId: "project-1",
-      operation: "FULL_BOOK_GENERATION",
+      operation,
       reason: "Worker failed"
     });
     const secondRefund = await refundLatestProjectOperationCredits({
       projectId: "project-1",
-      operation: "FULL_BOOK_GENERATION",
+      operation,
       reason: "Worker failed again"
     });
 

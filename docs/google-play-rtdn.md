@@ -58,6 +58,10 @@ and [authenticated push subscriptions](https://docs.cloud.google.com/pubsub/docs
 - Subscription cancellation keeps access until the paid period ends. A refund of the current order
   revokes its subscription benefits and remaining allowance; spent credits become debt. Refunds of
   historical orders leave newer paid periods alone and exclude unused allowance already expired.
+- A delayed verification of an older subscription order is ignored before any billing state is
+  written. Recorded order grants and period bounds identify stale receipts, preserving the current
+  order ID, subscription expiry, entitlement and allowance together. Updates to the current order,
+  including cancellation, expiry corrections and expiration, still apply.
 - Non-refund state notifications reverify known purchases. Unclaimed purchases are verified when
   the app first submits them. Console test notifications are acknowledged without billing changes.
 
@@ -82,8 +86,7 @@ paid time extends the new subscription. Checkout discloses the immediate charge 
 The verified `linkedPurchaseToken` retires the previous entitlement and renewal state in the same
 transaction as the new grant. A durable retirement marker prevents delayed old receipts from
 reactivating the replaced plan or overwriting its replacement's credit allowance.
-Historical paid purchase records retain their status and amount for revenue accounting; a
-replacement does not refund that payment.
+Historical payments remain in `PurchasePayment`; a replacement does not refund that payment.
 
 Before publishing, use a Play license tester to switch Creator → Max and Max → Creator, including
 after restarting the app. Confirm that Play shows one renewing subscription, the app shows the new
@@ -91,13 +94,64 @@ plan and allowance, and restoring purchases does not change that allowance. Alre
 duplicate subscriptions require reconciliation in Google Play; the app blocks further switches
 when more than one plan is owned.
 
+## Purchase account binding
+
+Deploy the API before releasing the updated app. Billing responses provide a stable opaque
+`purchaseAccountId`; checkout refreshes it for the signed-in account and attaches it to Google
+Play as the obfuscated account ID, including subscription replacements. The API compares the
+identity returned by Google with the authenticated account before granting or acknowledging.
+Pending payments and restored purchases therefore remain bound to the account that opened checkout,
+even after logout, an app restart, or a reinstall. A mismatch remains unfinished and asks the reader
+to sign into the original account and restore purchases.
+
+Real receipts created by older builds without an account ID can only be restored by their already
+recorded owner. Unclaimed legacy receipts require support verification; the API must not let the
+current caller assign them to an arbitrary account. Mock billing is exempt from this legacy check.
+An updated app connected to an older API blocks checkout until the account identity is available.
+
+Before publishing, test a delayed payment with a Play license tester: start checkout as A, switch
+to B, then complete payment. B must receive no credits or plan; signing back into A and restoring
+must grant the purchase once. Repeat after restarting the app.
+
+## Payment history and revenue
+
+Deploy migration `000093_purchase_payments` before starting the updated API, then regenerate the
+Prisma client. `PurchaseRecord` keeps token ownership and the latest subscription state.
+`PurchasePayment` records each verified paid order once, independently of credit grants, so a
+renewal adds cash even when its credits are zero, and expiry never removes prior payments.
+Restore, cancellation, and catalog price changes preserve the original amount and date.
+Subscription receipts without an order ID grant access under the existing rules but do not
+create a cash payment: an expiry extension alone is not evidence of a new sale.
+
+The overview total, daily chart, and user cash totals use payment amounts minus cumulative
+refunds. A subscription refund names one order; one-time quantity refunds prorate that purchase.
+Refunds reduce the original payment's day, matching the dashboard's existing net-history convention.
+The paying-user count includes anyone with a positive recorded payment, including expired plans.
+
+Amounts remain **catalog price snapshots**, in the catalog's reporting currency (the launch
+catalog is USD); they are not Google settlement reports and do not account for regional prices,
+offers, taxes, exchange rates, or store fees. One-time payments use the verified purchase time;
+renewals use first verification time because the subscription's `startTime` is its original start,
+not the latest renewal. A delayed notification therefore records cash when first observed.
+
+The migration recovers distinct renewal orders and dates from retained credit grants, including
+expired purchases, and applies existing refund markers. The historical code did not save per-order
+prices, so backfilled amounts use the last recorded catalog price and carry
+`amountSource: legacy_catalog_estimate`. Unobserved renewals and old price changes cannot be
+reconstructed exactly from this database; reconcile those against Play financial exports.
+
 ## Tests
 
 ```bash
 pnpm -F @book-maker/api test src/googlePlayRtdn.test.ts src/googlePlayBilling.test.ts
+pnpm -F @book-maker/api test src/mobile/purchaseAccount.test.ts
 pnpm -F @book-maker/db test src/googlePlayRefunds.test.ts
 pnpm -F @book-maker/db test src/subscriptionReplacement.test.ts
+pnpm -F @book-maker/db test src/subscriptionRestoration.test.ts
+pnpm -F @book-maker/db test src/purchasePayments.test.ts
+DB_INTEGRATION=true pnpm -F @book-maker/db test src/purchasePayments.integration.test.ts
 (cd apps/mobile && flutter test test/billing/subscription_checkout_test.dart)
+(cd apps/mobile && flutter test test/billing/purchase_account_test.dart)
 DB_INTEGRATION=true pnpm -F @book-maker/db test src/googlePlayRefunds.integration.test.ts
 ```
 

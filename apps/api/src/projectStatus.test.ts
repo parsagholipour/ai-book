@@ -858,7 +858,9 @@ describe("what the open-work read costs a finished book", () => {
 });
 
 describe("buildProjectStatus recovery attempts", () => {
-  it("selects operation so an initial-plan retry can skip confirmation", async () => {
+  it.each(["PLAN_BOOK", "REPLAN_BOOK"] as const)("exposes a failed %s attempt before a target plan exists", async (type) => {
+    const operation = type === "PLAN_BOOK" ? "PLAN_GENERATION" : "BOOK_REPLAN";
+    const payload = type === "PLAN_BOOK" ? {} : { operationId: "rebuild-1", sourcePlanId: "original-plan" };
     vi.clearAllMocks();
     mockPrisma.project.findUnique.mockResolvedValue(
       projectRecord({ status: "FAILED", currentPlanId: null, currentPlan: null }) as never
@@ -866,7 +868,7 @@ describe("buildProjectStatus recovery attempts", () => {
     mockPrisma.$queryRawUnsafe.mockResolvedValue([] as never);
     mockPrisma.generationJob.findMany.mockImplementation(async (args?: unknown) =>
       (args as { where?: { status?: string } } | undefined)?.where?.status === "FAILED"
-        ? [{ type: "PLAN_BOOK", payload: {}, createdAt: new Date("2026-08-20T01:00:00.000Z"), attemptId: "attempt-plan" }]
+        ? [{ type, payload, createdAt: new Date("2026-08-20T01:00:00.000Z"), attemptId: "attempt-plan" }]
         : []
     );
     mockPrisma.generationAttempt.findMany.mockResolvedValueOnce([
@@ -874,7 +876,7 @@ describe("buildProjectStatus recovery attempts", () => {
         id: "attempt-plan",
         commandKey: "mobile:creation-build:draft:req",
         status: "FAILED",
-        operation: "PLAN_GENERATION",
+        operation,
         quotedCredits: 40,
         refundPending: false,
         retryAttempt: null
@@ -887,7 +889,8 @@ describe("buildProjectStatus recovery attempts", () => {
       expect.objectContaining({ select: expect.objectContaining({ operation: true }) })
     );
     expect(status?.project.generationAttempts).toEqual([
-      expect.objectContaining({ id: "attempt-plan", operation: "PLAN_GENERATION" })
+      expect.objectContaining({ id: "attempt-plan", operation })
     ]);
+    expect(status?.progress).toMatchObject({ resumableFailedJobs: 1, resumableAttemptIds: ["attempt-plan"] });
   });
 });

@@ -246,9 +246,16 @@ class FakeStoreBillingClient implements StoreBillingClient {
   Future<void> buyProduct(
     StoreProduct product, {
     required bool consumable,
+    required String purchaseAccountId,
     StoreSubscriptionCheckout? subscription,
   }) async {
-    buyCalls.add(BuyCall(product: product, consumable: consumable));
+    buyCalls.add(
+      BuyCall(
+        product: product,
+        consumable: consumable,
+        purchaseAccountId: purchaseAccountId,
+      ),
+    );
   }
 
   @override
@@ -277,10 +284,15 @@ class FakeStoreBillingClient implements StoreBillingClient {
 }
 
 class BuyCall {
-  const BuyCall({required this.product, required this.consumable});
+  const BuyCall({
+    required this.product,
+    required this.consumable,
+    required this.purchaseAccountId,
+  });
 
   final StoreProduct product;
   final bool consumable;
+  final String purchaseAccountId;
 }
 
 class FinishCall {
@@ -306,8 +318,13 @@ class VerificationCall {
   final String? projectId;
 }
 
-MobileBilling fakeBilling({required int availableCredits, String? planTier}) {
+MobileBilling fakeBilling({
+  required int availableCredits,
+  String? planTier,
+  String purchaseAccountId = 'test-purchase-account',
+}) {
   return MobileBilling(
+    purchaseAccountId: purchaseAccountId,
     credits: CreditBalance(
       available: availableCredits,
       reserved: 0,

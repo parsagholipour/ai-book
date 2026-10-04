@@ -38,6 +38,7 @@ abstract interface class StoreBillingClient {
   Future<void> buyProduct(
     StoreProduct product, {
     required bool consumable,
+    required String purchaseAccountId,
     StoreSubscriptionCheckout? subscription,
   });
 
@@ -90,6 +91,7 @@ class InAppPurchaseStoreBillingClient implements StoreBillingClient {
   Future<void> buyProduct(
     StoreProduct product, {
     required bool consumable,
+    required String purchaseAccountId,
     StoreSubscriptionCheckout? subscription,
   }) async {
     final details = product.source;
@@ -100,8 +102,15 @@ class InAppPurchaseStoreBillingClient implements StoreBillingClient {
         !consumable &&
             subscription != null &&
             defaultTargetPlatform == TargetPlatform.android
-        ? await _subscriptionPurchaseParam(details, subscription)
-        : PurchaseParam(productDetails: details);
+        ? await _subscriptionPurchaseParam(
+            details,
+            subscription,
+            purchaseAccountId,
+          )
+        : PurchaseParam(
+            productDetails: details,
+            applicationUserName: purchaseAccountId,
+          );
     if (consumable) {
       final opened = await _inAppPurchase.buyConsumable(
         purchaseParam: purchaseParam,
@@ -123,6 +132,7 @@ class InAppPurchaseStoreBillingClient implements StoreBillingClient {
   Future<PurchaseParam> _subscriptionPurchaseParam(
     ProductDetails product,
     StoreSubscriptionCheckout subscription,
+    String purchaseAccountId,
   ) async {
     final response = await _inAppPurchase
         .getPlatformAddition<InAppPurchaseAndroidPlatformAddition>()
@@ -165,7 +175,10 @@ class InAppPurchaseStoreBillingClient implements StoreBillingClient {
           'Your current plan was not found in this Google Play account. Use the account that bought it, then restore purchases.',
         );
       }
-      return GooglePlayPurchaseParam(productDetails: product);
+      return GooglePlayPurchaseParam(
+        productDetails: product,
+        applicationUserName: purchaseAccountId,
+      );
     }
     final previous = owned.values.single;
     if (!subscription.hasActivePlan ||
@@ -192,6 +205,7 @@ class InAppPurchaseStoreBillingClient implements StoreBillingClient {
     }
     return GooglePlayPurchaseParam(
       productDetails: product,
+      applicationUserName: purchaseAccountId,
       changeSubscriptionParam: ChangeSubscriptionParam(
         oldPurchaseDetails: previous,
         // A plan grants a full allowance immediately. Charge for the new
@@ -230,6 +244,9 @@ class InAppPurchaseStoreBillingClient implements StoreBillingClient {
     return StorePurchaseUpdate(
       productId: details.productID,
       purchaseId: details.purchaseID,
+      purchaseAccountId: details is GooglePlayPurchaseDetails
+          ? details.billingClientPurchase.obfuscatedAccountId
+          : null,
       purchaseToken: details.verificationData.serverVerificationData,
       status: _mapStatus(details.status),
       errorMessage: details.error?.message,
@@ -288,6 +305,7 @@ class DebugStoreBillingClient implements StoreBillingClient {
   Future<void> buyProduct(
     StoreProduct product, {
     required bool consumable,
+    required String purchaseAccountId,
     StoreSubscriptionCheckout? subscription,
   }) async {
     _purchaseCounter += 1;
@@ -298,6 +316,7 @@ class DebugStoreBillingClient implements StoreBillingClient {
         productId: product.id,
         status: StorePurchaseStatus.purchased,
         purchaseId: purchaseId,
+        purchaseAccountId: purchaseAccountId,
         purchaseToken: purchaseId,
         pendingCompletePurchase: true,
         source: const DebugStoreProduct(),

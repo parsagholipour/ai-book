@@ -2,6 +2,7 @@ import { jsonRecord } from "@book-maker/core";
 import type { GooglePlayRefund } from "./generated/prisma/client.ts";
 import { type BillingTx, effectivePlanCredits, hashPurchaseToken, jsonInput, runSerializable } from "./billingInternals.ts";
 import { ensureCreditAccountRow } from "./planPeriods.ts";
+import { refundPurchasePaymentsTx } from "./purchasePayments.ts";
 
 export type GooglePlayRefundNotice = {
   purchaseToken: string;
@@ -58,6 +59,7 @@ export async function applyGooglePlayRefundTx(tx: BillingTx, refund: GooglePlayR
     where: { provider: "GOOGLE_PLAY", purchaseTokenHash: refund.purchaseTokenHash }
   });
   if (!purchase) return; // Keep the marker: a later app verification must see it.
+  await refundPurchasePaymentsTx(tx, purchase.id, refund);
   const grants = await tx.creditLedgerEntry.findMany({
     where: { purchaseRecordId: purchase.id, entryType: "GRANT", status: "SETTLED" }
   });

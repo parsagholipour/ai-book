@@ -235,6 +235,7 @@ class _SilentStoreClient implements StoreBillingClient {
   Future<void> buyProduct(
     StoreProduct product, {
     bool consumable = false,
+    required String purchaseAccountId,
     StoreSubscriptionCheckout? subscription,
   }) async {}
 

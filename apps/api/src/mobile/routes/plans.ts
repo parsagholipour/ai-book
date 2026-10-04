@@ -608,9 +608,19 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           description: "Confirmed mobile generation retry",
           metadata: { sourceAttemptId: sourceAttempt.id, retryRequestId: retryBody.data.requestId },
           imageQuotaLimit,
-          grantExportEntitlement: isFullBookRetry,
+          grantExportEntitlement: isFullBookRetry || isReplanRetry,
           create: async (tx, { attemptId, ledgerEntry }) => {
+            // Claim Project before touching an edit operation, matching the
+            // worker's lock order. A rejected retry rolls back its charge too.
+            const claimed = await tx.project.updateMany({
+              where: { id, status: { notIn: [...LIVE_PROJECT_STATUSES] } },
+              data: { status: nextStatus }
+            });
+            if (claimed.count !== 1) {
+              throw new ResumeAlreadyLiveError();
+            }
             let primaryJobId: string | null = null;
+            let editOperationId: string | null = null;
             for (const sourceJob of sourceJobs) {
               const payload = recoveryPayload(sourceJob.type as GenerationJobType, sourceJob.payload, project.currentPlanId);
               delete payload.billingLedgerEntryId;
@@ -623,23 +633,37 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
                 attemptId,
                 payload: { ...payload, ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {}) }
               });
+              if (sourceJob.type === "REPLAN_BOOK") {
+                const operationId = payload.operationId;
+                if (typeof operationId !== "string" || !operationId.trim()) {
+                  throw new GenerationAttemptConflictError("The original rebuild operation is unavailable.");
+                }
+                // The planner claims the operation by exact generationJobId
+                // and QUEUED/ACTIVE status. Copying the payload alone leaves
+                // it FAILED and linked to the refunded predecessor forever.
+                const reopened = await tx.bookEditOperation.updateMany({
+                  where: {
+                    id: operationId, kind: "BOOK_REPLAN", generationJobId: sourceJob.id,
+                    status: { in: ["FAILED", "CANCELED"] }, structuralLeaseCompletedAt: null,
+                    project: { userId: auth.user.id }
+                  },
+                  data: {
+                    status: "QUEUED", generationJobId: job.id, ledgerEntryId: ledgerEntry?.id ?? null,
+                    creditsCharged: sourceAttempt.quotedCredits, error: null,
+                    structuralLeaseToken: null, structuralLeaseExpiresAt: null
+                  }
+                });
+                if (reopened.count !== 1) {
+                  throw new GenerationAttemptConflictError("This rebuild has changed. Refresh the book before retrying.");
+                }
+                editOperationId = operationId;
+              }
               primaryJobId ??= job.id;
             }
             if (!primaryJobId) {
               throw new Error("Confirmed retry created no generation job.");
             }
-            // The claim both resume surfaces share: refuse to start on top of
-            // a project that is already live (an operator resume, an edit, or
-            // a concurrent retry). Inside the attempt's transaction, so a
-            // refused claim rolls the charge back with everything else.
-            const claimed = await tx.project.updateMany({
-              where: { id, status: { notIn: [...LIVE_PROJECT_STATUSES] } },
-              data: { status: nextStatus }
-            });
-            if (claimed.count !== 1) {
-              throw new ResumeAlreadyLiveError();
-            }
-            return { projectId: id, primaryJobId };
+            return { projectId: id, primaryJobId, ...(editOperationId ? { editOperationId } : {}) };
           }
         });
       } catch (error) {

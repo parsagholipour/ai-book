@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { reserveCredits } from "@book-maker/db/billing";
+import { grantProjectEntitlement, reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
 import { fakeDecideModel } from "../testing/bookEditIntentFixtures.js";
@@ -31,6 +31,49 @@ import {
 describe("mobile project chat book replan", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
+
+  it("includes the copy's export unlock in the rebuild charge exactly once", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({
+      status: "COMPLETE", currentPlanId: "plan-1", currentPlan: approvedPlanRecord(), pages: generatedPages()
+    }));
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(
+      jobRecord({ id: "job-replan", projectId: "project-copy", type: "REPLAN_BOOK" })
+    );
+    const app = await buildMobileApp();
+    try {
+      const proposal = await app.inject({
+        method: "POST", url: "/api/mobile/projects/project-1/chat/messages", headers: bearer("token-a"),
+        payload: { message: "Generate again" }
+      });
+      expect(proposal.statusCode).toBe(200);
+      const card = proposal.json().reply.metadata.editProposal;
+      expect(card.kind).toBe("book_replan");
+      expect(grantProjectEntitlement).not.toHaveBeenCalled();
+
+      const apply = () => app.inject({
+        method: "POST", url: "/api/mobile/projects/project-1/chat/proposals/apply", headers: bearer("token-a"),
+        payload: { proposalId: card.id }
+      });
+      const first = await apply();
+      expect(first.statusCode).toBe(200);
+      expect(first.json().operation.kind).toBe("book_replan");
+      expect(reserveCredits).toHaveBeenCalledWith(expect.objectContaining({
+        operation: "BOOK_REPLAN", amountCredits: card.credits
+      }));
+      expect(grantProjectEntitlement).toHaveBeenCalledWith(expect.objectContaining({
+        userId: "user-a", projectId: "project-copy", type: "EXPORT_UNLOCK",
+        creditsCost: card.credits, relatedLedgerEntryId: "ledger-BOOK_REPLAN"
+      }));
+
+      expect((await apply()).statusCode).toBe(200);
+      expect(grantProjectEntitlement).toHaveBeenCalledTimes(1);
+      expect(reserveCredits).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.project.create).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
 
   it.each(["available", "unavailable"])("quotes Generate again and waits for Apply with the router %s", async (availability) => {
     mockAccessTokens({ "token-a": "user-a" });
