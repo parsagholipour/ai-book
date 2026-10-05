@@ -39,12 +39,13 @@ function input(category: CreateProjectInput["category"], prompt: string, mobile?
   } as CreateProjectInput;
 }
 
-const OFF_PATH: Array<[string, CreateProjectInput]> = [
+const OFF_PATH: Array<[label: string, input: CreateProjectInput, writingMode?: BookPlan["writingMode"]]> = [
   ["a history", input("HISTORY", "A history of the shipping container.")],
   ["a novel", input("STORY", "A novel about a lighthouse keeper.", { bookTypeChoice: "adult_story" })],
   ["a children's book", input("KIDS", "A bedtime story about a fox.", { bookTypeChoice: "children_story" })],
   ["a business history filed under Business", input("BUSINESS", "A history of Nokia, from rubber boots to phones.", { bookTypeChoice: "lead_magnet" })],
-  ["a guide the reader did not choose as one", input("BUSINESS", "A practical guide to pricing your work.", { bookTypeChoice: "offer_guide" })]
+  ["a guide the reader did not choose as one", input("BUSINESS", "A practical guide to pricing your work.", { bookTypeChoice: "offer_guide" })],
+  ["an analytical book misclassified by Auto as a Business guide", input("BUSINESS", "Assess Bolsonaro's personality and governing record.", { bookTypeChoice: "auto", detectedLane: "practical_guide" }), "analytical-history"]
 ];
 
 const TOOLKIT: InstructionalToolkit = {
@@ -92,8 +93,12 @@ function composeOptions(bookInput: CreateProjectInput, plan: BookPlan, model: Fa
   };
 }
 
-async function prompts(bookInput: CreateProjectInput, toolkit: InstructionalToolkit | undefined): Promise<string[]> {
-  const plan = { ...makeFallbackPlan(bookInput), continuityRules: ["Keep the agenda at 25 minutes."] };
+function scopedPlan(bookInput: CreateProjectInput, writingMode?: BookPlan["writingMode"]): BookPlan {
+  return { ...makeFallbackPlan(bookInput), continuityRules: ["Keep the agenda at 25 minutes."], ...(writingMode ? { writingMode } : {}) };
+}
+
+async function prompts(bookInput: CreateProjectInput, toolkit: InstructionalToolkit | undefined, writingMode?: BookPlan["writingMode"]): Promise<string[]> {
+  const plan = scopedPlan(bookInput, writingMode);
   const { model, seen } = recordingModel(bookInput);
   const options = { ...composeOptions(bookInput, plan, model), ...(toolkit ? { toolkit } : {}) };
   const draft = await composeChapter(options);
@@ -102,11 +107,11 @@ async function prompts(bookInput: CreateProjectInput, toolkit: InstructionalTool
 }
 
 describe("books off the toolkit path compose exactly as before", () => {
-  for (const [label, bookInput] of OFF_PATH) {
+  for (const [label, bookInput, writingMode] of OFF_PATH) {
     it(`${label}: the same prompts with or without a toolkit handed in, and none of its sentences`, async () => {
-      expect(usesToolkit(bookInput, makeFallbackPlan(bookInput))).toBe(false);
-      const without = await prompts(bookInput, undefined);
-      const withToolkit = await prompts(bookInput, TOOLKIT);
+      expect(usesToolkit(bookInput, scopedPlan(bookInput, writingMode))).toBe(false);
+      const without = await prompts(bookInput, undefined, writingMode);
+      const withToolkit = await prompts(bookInput, TOOLKIT, writingMode);
       expect(withToolkit).toEqual(without);
       const text = without.join("\n");
       for (const marker of TOOLKIT_MARKERS) expect(text).not.toContain(marker);
@@ -114,7 +119,7 @@ describe("books off the toolkit path compose exactly as before", () => {
     });
 
     it(`${label}: plans its episodes with the prompt it always had`, async () => {
-      const plan = makeFallbackPlan(bookInput);
+      const plan = scopedPlan(bookInput, writingMode);
       const { model, seen } = recordingModel(bookInput);
       await planEpisodes({ input: bookInput, plan, stance: { thesis: "t", positions: ["p", "q"], refusals: [], voiceSample: "v" }, textModel: model });
       expect(seen.join("\n")).not.toContain("A research lead is one fact");

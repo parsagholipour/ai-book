@@ -1,4 +1,4 @@
-import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import type { CreateProjectInput } from "../schemas/book.js";
 import { isRecord } from "../schemas/jsonCoercion.js";
 import {
   runningCaseSchema,
@@ -8,7 +8,7 @@ import {
   type InstructionalToolkit
 } from "../schemas/instructional.js";
 import { LONG_SECTION_FORMS, PINNED_FORMS } from "./chapterFormPalette.js";
-import { inferWritingMode } from "./styleContract.js";
+import { inferWritingMode, type WritingModePlan } from "./styleContract.js";
 
 /**
  * A practical guide or a workbook, planned from what the reader walks away
@@ -55,7 +55,7 @@ export function toolkitBookKind(input: CreateProjectInput | undefined): Instruct
 }
 
 /** Whether this book takes the toolkit path: the reader's book type and an instructional writing mode, both. */
-export function usesToolkit(input: CreateProjectInput | undefined, plan?: Pick<BookPlan, "title" | "premise" | "audience" | "authorStance"> | undefined): boolean {
+export function usesToolkit(input: CreateProjectInput | undefined, plan?: WritingModePlan | undefined): boolean {
   return toolkitBookKind(input) !== undefined && inferWritingMode(input, plan) === "instructional";
 }
 
@@ -66,7 +66,7 @@ export function usesToolkit(input: CreateProjectInput | undefined, plan?: Pick<B
  */
 export function activeToolkit(
   input: CreateProjectInput | undefined,
-  plan: Pick<BookPlan, "title" | "premise" | "audience" | "authorStance"> | undefined,
+  plan: WritingModePlan | undefined,
   toolkit: InstructionalToolkit | undefined
 ): InstructionalToolkit | undefined {
   return toolkit && usesToolkit(input, plan) ? toolkit : undefined;

@@ -270,7 +270,7 @@ describe("createPlanningPackage", () => {
     expect(prompts.get(100)).toContain("from five to eight pages");
     expect(prompts.get(100)).toContain("what needs more pages is two chapters");
     expect(prompts.get(100)).not.toContain("fourteen pages");
-    expect(prompts.get(24)).not.toContain("Give chapters different lengths");
+    expect(prompts.get(24)).not.toContain("Allocate chapter lengths");
     // The rule is also the guarantee: the nines' extra pages go to the longest chapters with room, the fives stay short.
     const pages = plans.get(100)!.chapters.map((chapter) => chapter.targetPages);
     expect(pages).toEqual([8, 6, 8, 5, 8, 6, 8, 5, 8, 6, 8, 5, 7, 6, 6]);

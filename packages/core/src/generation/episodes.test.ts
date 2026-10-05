@@ -132,7 +132,7 @@ describe("the chapterFocus option", () => {
     // scene call runs on a `scene` or `portrait` episode, and the planner
     // returned documents and figures nearly everywhere.
     const unfocused = scriptedDevelopmentModel([noFocusAnswer]);
-    await planEpisodes({ input: { ...developmentInput, category: "HISTORY" }, plan, stance, textModel: unfocused.model, focus: false });
+    await planEpisodes({ input: { ...developmentInput, category: "HISTORY" }, plan: { ...plan, writingMode: "analytical-history" }, stance, textModel: unfocused.model, focus: false });
     const system = systemPrompt(unfocused.calls[0]!);
     expect(system).toContain("a datable event with a named participant in a named place");
     expect(system).toContain("at least half the chapters carry one scene");

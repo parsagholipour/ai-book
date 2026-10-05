@@ -144,4 +144,29 @@ describe("Auto book type resolved from the chat", () => {
       "unspecified"
     );
   });
+
+  it("preserves an analytical nonfiction brief through Auto without adding guide instructions", async () => {
+    const messages = [{ role: "user" as const, content: "A book assessing Bolsonaro's personality and his government's performance" }];
+    const base = deterministicCreationTurn({ messages, presets: autoPresets });
+    const turn = await turnWith({
+      autoLane: "auto",
+      brief: { ...base.brief, artifact: "Political analysis", promise: "An evidence-based assessment of Bolsonaro's leadership and governing record" }
+    }, { messages, presets: autoPresets });
+    const payload = mobileCreationDraftPayloadSchema.parse({
+      payloadVersion: 3,
+      rawIdea: messages[0]!.content,
+      messages,
+      recipe: turn.brief,
+      selectedPresets: turn.presets
+    });
+    const advisor = deterministicAdvisor(payload);
+    const prompt = composeMobileProjectPrompt(payload, advisor);
+    expect(advisor.recipe.lane).toBe("auto");
+    expect(advisor.recipe.artifact).toBe("Political analysis");
+    expect(briefForMobilePayload(payload, advisor).intent).toBe("unspecified");
+    expect(prompt).toContain("Artifact: Political analysis");
+    expect(prompt).toContain("An evidence-based assessment of Bolsonaro's leadership and governing record");
+    expect(prompt).not.toContain("Create a practical guide.");
+    expect(prompt).not.toContain("Checklist and call-to-action");
+  });
 });

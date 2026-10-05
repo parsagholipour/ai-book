@@ -118,8 +118,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
           role: "system",
           content: [
             "You are a senior human book editor and book packager.",
-            "Create a practical generation plan for a long-form Markdown book.",
-            "The plan must be specific enough for page-by-page generation without sounding machine-written.",
+            "Create a generation plan for a long-form Markdown book, shaped by the requested subject and form.",
+            "Each chapter summary states its distinct argument, explanation, or story development. Its keyBeats name the concrete material that develops it: relevant events, policies, documents, concepts, examples, or scenes. Broad instructions to examine a topic or find examples later are not usable beats.",
             "Return the plan fields at the JSON root; do not nest them under plan, data, or result.",
             "Plan real book chapters, not one titled chapter or section per generated page.",
             `The sum of chapter targetPages must equal exactly ${options.input.targetPages}.`,
@@ -130,12 +130,13 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             // came in at 55% while its six-page neighbours reached the floor.
             ...(options.input.targetPages >= 40
               ? [
-                  `Give chapters different lengths, from five to ${NUMBER_WORDS[maxComposedChapterPages(options.input)] ?? String(maxComposedChapterPages(options.input))} pages: at least one long chapter that narrates a single case, one short chapter that reads a single document, and no run of chapters of the same length. A chapter is written as one piece, and no chapter is longer than that: what needs more pages is two chapters.`
+                  `Allocate chapter lengths according to their material, from five to ${NUMBER_WORDS[maxComposedChapterPages(options.input)] ?? String(maxComposedChapterPages(options.input))} pages. Equal lengths are fine when the material warrants them. Use a dedicated case-study or document chapter only when it advances this book's purpose. A chapter is written as one piece, and no chapter is longer than that: what needs more pages is two chapters.`
                 ]
               : []),
             // Three blind readers of the same book found chapters 13-14 re-narrating
             // the cases of chapters 1-2, because the outline asked them to.
-            "At most one chapter synthesizes or concludes; every other chapter's keyBeats name material that chapter introduces, and no keyBeat of any chapter revisits, returns to or re-examines an earlier chapter's case — a callback is one sentence, not a beat.",
+            "Each chapter must make a distinct contribution. Its keyBeats name new events, evidence, explanation, or a comparison that advances the book's argument. A synthesis may draw on earlier evidence to reach a new judgment, but must not retell earlier cases. Use one concluding chapter.",
+            "For nonfiction, give every major requested topic substantive coverage. When the reader asks for an assessment, plan the evidence, competing explanations, and supported judgments themselves. Keep advice on how to assess, checklists, and methodological caveats brief unless teaching a method is the requested purpose.",
             "Do not create more chapters than targetPages, because every chapter must contain at least one page.",
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",
             "Treat researchContext as input-only evidence. Use it to ground the plan, but do not include a researchNotes field or reproduce its source records in your response; the server attaches them after planning.",
@@ -176,8 +177,13 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
               toneProfile,
               language: targetLanguagePayload(options.input.language),
               readingGuidance: kidsReadingGuidancePayload(options.input),
-              template,
-              fallbackOutline: planWithoutResearchNotes(fallback),
+              // Auto's inferred routing category is not a reader-selected form.
+              // A business template and generic outline pulled a political
+              // assessment toward diagnostics and worksheets before it was written.
+              ...(mediaSettingsMobileRecord(options.input.mediaSettings).bookTypeChoice === "auto" ? {} : {
+                template,
+                fallbackOutline: planWithoutResearchNotes(fallback)
+              }),
               researchContext: researchContextForPlanPrompt(researchNotes)
             },
             null,
@@ -718,8 +724,8 @@ function mobileAutoPlanningGuidance(input: CreateProjectInput): string[] {
   }
   return [
     "This mobile project kept Book type as Auto until planning.",
-    "Decide the real book shape from the user's creation chat, source notes, and manual settings. Valid shapes include children's fable, short story, workbook, practical guide, client tool, offer guide, and lead magnet.",
-    "The CUSTOM category and general-book template are only a neutral routing shell; do not treat them as the user's requested genre.",
+    "Decide the real book shape from the user's creation chat, source notes, and manual settings. Valid shapes include biography, analytical nonfiction, history, reference, children's fable, short story, workbook, practical guide, client tool, offer guide, and lead magnet.",
+    "The user's own messages and explicit choices take precedence over assistant-created recommendations, inferred lanes, categories, and template labels. Those routing hints are suggestions, not the user's requested genre or purpose.",
     "If the chat implies a specific form, such as a children's fable or a workbook, plan that form directly."
   ];
 }

@@ -153,11 +153,16 @@ export type StyleContractSource = {
   userPrompt?: string | undefined;
 };
 
+export type WritingModePlan = Pick<BookPlan, "title" | "premise" | "audience" | "authorStance" | "writingMode">;
+
 export function inferWritingMode(
   input: CreateProjectInput | undefined,
-  plan?: Pick<BookPlan, "title" | "premise" | "audience" | "authorStance">
+  plan?: WritingModePlan
 ): WritingMode {
-  const mode = guessedWritingMode(input, plan);
+  // The completed plan knows the book's form. Category is only a fallback:
+  // Auto filed political analysis under Business and overrode its saved
+  // analytical mode with guide worksheets throughout research and drafting.
+  const mode = isWritingMode(plan?.writingMode) ? plan.writingMode : guessedWritingMode(input, plan);
   // The stance's own answer about the book (STANCE_RESEARCH_RULE): a book
   // written from no source is a story, whatever the category and cue words
   // said. A fantasy novel about "the last era of a dying dynasty", filed as
