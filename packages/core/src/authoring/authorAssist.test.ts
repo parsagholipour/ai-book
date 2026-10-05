@@ -72,6 +72,22 @@ describe("runQuickAuthorAssist: validation", () => {
 });
 
 describe("runQuickAuthorAssist: kinds", () => {
+  it.each([
+    ["Persian", "باران آرام روی پنجره می‌زد. مریم در را باز کرد.", "باد سردی به داخل آمد."],
+    ["Spanish", "La lluvia golpeaba la ventana. María abrió la puerta.", "Una ráfaga fría entró en la casa."]
+  ])("does not force English when continuing a %s manuscript with default book settings", async (_language, before, continuation) => {
+    const { textModel, requests } = scripted({ text: continuation });
+    await runQuickAuthorAssist(request({ kind: "continue", before, instruction: "Continue the scene." }), { textModel });
+
+    expect(requests).toHaveLength(1);
+    const system = requests[0]!.messages[0]!.content;
+    expect(system).not.toContain("Write every string value in English");
+    expect(system).toContain("language of the author's manuscript");
+    expect(system).toContain("prose immediately before the cursor");
+    expect(payload(requests[0]!)).toMatchObject({ before, instruction: "Continue the scene.", fallbackLanguage: "English" });
+    expect(payload(requests[0]!)).not.toHaveProperty("targetLanguage");
+  });
+
   it("rewrite returns one cleaned replacement that keeps the selection's whitespace", async () => {
     const { textModel, requests } = scripted({ text: 'Here is the clearer version:\n"The well had run dry."' });
     const result = await runQuickAuthorAssist(request({ selection: "\nThe well was dry, it was.\n\n", preset: "clearer" }), { textModel });

@@ -55,9 +55,9 @@ import {
  *    an `outputContract` (packages/core/src/generation/CLAUDE.md, "Every
  *    adherence prompt names its keys and shows the shape"). The tests hold the
  *    two to the schemas.
- * 3. **The author's voice and language.** Every string is written in the
- *    book's language; the style profile governs the voice when the book has
- *    one, and the author's own surrounding text does otherwise.
+ * 3. **The author's voice and language.** The manuscript determines the
+ *    language; the saved book language is only a fallback for a blank book.
+ *    The style profile governs voice, never overrides the current text's language.
  *
  * Each builder spells its purpose as a literal: `textRouting.test.ts` reads
  * the purposes core passes out of the source, and a property access is
@@ -116,9 +116,14 @@ function languageName(language: string): string {
   return isEnglishLanguage(language) ? "English" : languageLabel(language);
 }
 
-function languageRule(book: AuthorAssistBook): string {
-  const name = languageName(book.language);
-  return `Write every string value in ${name}, the book's language, whatever language the request fields are in. Keep every name exactly as the author spells it, in its own script. Keep the JSON keys exactly as given.`;
+function languageRule(sources: string): string {
+  return system([
+    "Write human-readable string values in the language of the author's manuscript. Infer it from the actual writing, even when fallbackLanguage or an older styleProfile suggests a different language.",
+    sources,
+    "When there is no usable prose, infer the language from the author's chapter notes, premise or existing chapter notes, then styleProfile.sampleExcerpts. Use fallbackLanguage only when these do not establish a language.",
+    "The language of these system instructions, the app interface, preset labels or the author's instruction field does not change the manuscript language. Never translate the writing just to match them or fallbackLanguage. Do not infer language from names, nationality or setting.",
+    "For mixed-language prose, follow the surrounding narrative while preserving intentional dialogue or quotations in another language. Keep every name exactly as the author spells it, in its own script. Copy find and quote values verbatim. Keep JSON keys and enum values exactly as given."
+  ]);
 }
 
 /** How the form of the book changes the writing. */
@@ -175,7 +180,7 @@ function quickPayload(input: QuickAssistPromptInput, contract: unknown, extra: R
   const notes = clipAtWord(input.chapter.notes.trim(), AUTHOR_ASSIST_LIMITS.chapterNotesChars);
   return userMessage({
     task: input.kind,
-    targetLanguage: languageName(input.book.language),
+    fallbackLanguage: languageName(input.book.language),
     book: bookPayload(input.book),
     ...stylePayload(input.book),
     chapter: { title: clipAtWord(input.chapter.title.trim(), AUTHOR_ASSIST_LIMITS.chapterTitleChars), ...(notes ? { notes } : {}) },
@@ -193,7 +198,7 @@ function quickSystem(input: QuickAssistPromptInput, taskRules: readonly string[]
     content: system([
       SUGGEST_ONLY_ROLE,
       QUICK_UNTRUSTED_RULE,
-      languageRule(input.book),
+      languageRule("For continue, follow the prose immediately before the cursor (the end of before); if it is absent or too short to establish a language, use after, then selection. For rewrite, proofread and describe, preserve selection's language, using before and after to disambiguate short selections. For brainstorm and ask, use selection and the surrounding prose in before and after."),
       prose && VOICE_RULE,
       authorKindGuidance(input.book.kind),
       ...taskRules,
@@ -368,7 +373,7 @@ function longSystem(book: AuthorAssistBook, taskRules: readonly string[], keys: 
     content: system([
       SUGGEST_ONLY_ROLE,
       LONG_UNTRUSTED_RULE,
-      languageRule(book),
+      languageRule("For a chapter draft, follow previousChapterEnding. For chapter feedback, use chapter.markdown. For consistency notes, use the prose in chapters[].text. For an outline, use the author's premise and existingChapters[].notes."),
       voice && VOICE_RULE,
       authorKindGuidance(book.kind),
       ...taskRules,
@@ -406,7 +411,7 @@ export function draftChapterCall(input: DraftChapterPromptInput): AuthorAssistCa
       longSystem(input.book, rules, "Return exactly one JSON object with the single key markdown (a string), shaped like outputContract, and no other keys.", true),
       userMessage({
         task: "draft_chapter",
-        targetLanguage: languageName(input.book.language),
+        fallbackLanguage: languageName(input.book.language),
         book: bookPayload(input.book),
         ...stylePayload(input.book),
         layout: input.layout,
@@ -447,7 +452,7 @@ export function chapterFeedbackCall(input: ChapterFeedbackPromptInput): AuthorAs
       ),
       userMessage({
         task: "chapter_feedback",
-        targetLanguage: languageName(input.book.language),
+        fallbackLanguage: languageName(input.book.language),
         book: bookPayload(input.book),
         ...stylePayload(input.book),
         chapter: { title: input.chapter.title, markdown: input.chapter.markdown },
@@ -483,7 +488,7 @@ export function consistencyCall(input: ConsistencyPromptInput): AuthorAssistCall
       ),
       userMessage({
         task: "consistency",
-        targetLanguage: languageName(input.book.language),
+        fallbackLanguage: languageName(input.book.language),
         book: bookPayload(input.book),
         chapters: input.chapters.map((chapter) => ({
           number: chapter.number,
@@ -528,7 +533,7 @@ export function outlineCall(input: OutlinePromptInput): AuthorAssistCall<Outline
       ),
       userMessage({
         task: "outline",
-        targetLanguage: languageName(input.book.language),
+        fallbackLanguage: languageName(input.book.language),
         book: bookPayload(input.book),
         ...stylePayload(input.book),
         ...(input.premise ? { premise: input.premise } : {}),

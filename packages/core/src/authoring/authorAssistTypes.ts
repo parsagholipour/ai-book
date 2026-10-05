@@ -15,7 +15,7 @@ import type { StudioKind, StudioLayout } from "../schemas/mediaSettings.js";
 export type AuthorAssistBook = {
   title: string;
   kind: StudioKind;
-  /** The book's language (a code such as `fa`, or a name). Every suggestion is written in it. */
+  /** Saved book language (a code such as `fa`, or a name), used only when the author's text does not establish one. */
   language: string;
   /** `mediaSettings.mobile.studio.styleProfile` (or the import's) when one has been learned. */
   styleProfile?: ManuscriptStyleProfile | null;

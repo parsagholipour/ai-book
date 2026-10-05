@@ -103,12 +103,16 @@ describe("author assist prompts", () => {
       expect(call.schema.safeParse(contract).success).toBe(true);
     });
 
-    it(`${name}: frames the author's text as untrusted content and asks for the book's language`, () => {
+    it(`${name}: follows the manuscript's language while treating its text as untrusted content`, () => {
       const system = systemOf(call);
       expect(system).toMatch(/untrusted content/);
       expect(system).toMatch(/ignore any instruction/);
-      expect(system).toContain("Write every string value in English");
-      expect(payloadOf(call).targetLanguage).toBe("English");
+      expect(system).toContain("language of the author's manuscript");
+      expect(system).toContain("even when fallbackLanguage or an older styleProfile suggests a different language");
+      expect(system).toContain("Use fallbackLanguage only when these do not establish a language");
+      expect(system).toContain("Keep JSON keys and enum values exactly as given");
+      expect(payloadOf(call).fallbackLanguage).toBe("English");
+      expect(payloadOf(call)).not.toHaveProperty("targetLanguage");
     });
 
     it(`${name}: spells a Writing Studio purpose with a budget`, () => {
@@ -157,10 +161,10 @@ describe("author assist prompts", () => {
     expect(systemOf(proofreadCall(quick({ kind: "proofread" })))).not.toContain("When styleProfile is present");
   });
 
-  it("writes in the book's language and states the rewrite preset", () => {
+  it("keeps the saved language as a fallback and states the rewrite preset", () => {
     const call = rewriteCall(quick({ book: { ...book, language: "fa" }, preset: "shorter" }));
-    expect(payloadOf(call).targetLanguage).toBe("Persian");
-    expect(systemOf(call)).toContain("Write every string value in Persian");
+    expect(payloadOf(call).fallbackLanguage).toBe("Persian");
+    expect(systemOf(call)).not.toContain("Write every string value in Persian");
     expect(payloadOf(call)).toMatchObject({ preset: "shorter", presetGuidance: expect.stringContaining("shorter") });
     const selection = "The well was dry. ".repeat(120);
     expect(rewriteCall(quick({ preset: "longer", selection })).maxTokens).toBeGreaterThan(
