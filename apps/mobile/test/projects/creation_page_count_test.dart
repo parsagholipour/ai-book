@@ -73,11 +73,11 @@ void main() {
       await openPages(tester, creation);
 
       expect(find.text('Recommended'), findsOneWidget);
-      expect(find.text('Recommended for a compact book.'), findsOneWidget);
-      expect(find.text('More room for detail.'), findsOneWidget);
+      expect(find.text('Recommended for a compact book.'), findsNothing);
+      expect(find.text('More room for detail.'), findsNothing);
       expect(
         find.text('Room for additional examples and practice.'),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         tester.getTopLeft(find.text('8 pages')).dy,
@@ -197,7 +197,7 @@ void main() {
       expect(find.text('6 pages'), findsOneWidget);
       expect(
         find.text('The longest book the free plan writes.'),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.ensureVisible(find.text('6 pages'));
       await tester.tap(find.text('6 pages'));
@@ -349,7 +349,7 @@ void main() {
     )..preflightRecommendations = legacy.recommendations;
     await openPages(tester, creation);
     expect(find.text('Recommended'), findsNothing);
-    expect(find.text('A compact read.'), findsOneWidget);
+    expect(find.text('A compact read.'), findsNothing);
     await tester.tap(find.text('12 pages'));
     await tester.continuePastVisualsPrompt();
     await tester.pump(const Duration(milliseconds: 100));

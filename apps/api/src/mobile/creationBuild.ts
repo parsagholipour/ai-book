@@ -481,7 +481,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
               }
             ]
           }),
-          options.pageCountRecommendationTimeoutMs ?? 2500
+          options.pageCountRecommendationTimeoutMs ?? 9000
         );
         return normalizePageCountRecommendations(result.data.recommendations, fallback);
       } catch {

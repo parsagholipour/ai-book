@@ -50,14 +50,12 @@ class _PlanBubbleState extends ConsumerState<_PlanBubble> {
     }
 
     return widget.planValue!.when(
-      loading: () => _buildSpinnerBubble(
-        context,
-        widget.busyAction == 'revise'
-            ? 'Revising your book plan…'
-            : 'Building your book plan…',
-        semanticsLabel: widget.busyAction == 'revise'
-            ? 'Revising plan'
-            : 'Building plan',
+      loading: () => Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: const AppSkeletonCard(label: 'Loading book details', lines: 2),
+        ),
       ),
       error: (e, _) => _buildSpinnerBubble(context, 'Waiting for plan…'),
       data: (project) {

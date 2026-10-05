@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   AlibabaTextAdapter, DeepInfraAdapter, DeepSeekAdapter, FallbackTextModelAdapter, GeminiResearchAdapter, GeminiTextAdapter,
   OpenAITextAdapter, OpenRouterAdapter, ProviderHttpError, generateJsonWithRetry,
+  composeChapter, createProjectSchema, makeFallbackPlan,
   type GenerateTextOptions, type TextModelAdapter
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -16,6 +17,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: vi.fn(), upd
 
 import { LoggingResearchAdapter, LoggingTextModelAdapter } from "./loggedAdapters.js";
 import { createRunLogger } from "./runLogging.js";
+import capturedProse from "../../../../packages/core/src/generation/testing/bolsonaroProseRunaway.json" with { type: "json" };
 
 const options = { messages: [{ role: "user" as const, content: "Write the chapter." }], purpose: "compose-chapter", maxTokens: 10_608 };
 const schema = z.object({ value: z.string() });
@@ -128,6 +130,46 @@ it("records each widened retry's requested and effective limit", async () => {
   expect(requests.map(({ requestedMaxTokens, effectiveMaxTokens }) => [requestedMaxTokens, effectiveMaxTokens])).toEqual([
     [10_608, 48_000], [72_000, 72_000]
   ]);
+});
+
+it("records a stopped prose loop as unknown usage and its fresh recovery as a separate paid call", async () => {
+  vi.clearAllMocks();
+  const adapter = new OpenAITextAdapter({ apiKey: "fixture", model: "gpt-6-luna", thinkingEffort: "none" });
+  const good = Array.from({ length: 300 }, (_, i) => `Example ${i} distinguishes a specific policy decision from its measured public outcome.`).join(" ");
+  let calls = 0;
+  const closed: number[] = [];
+  Object.assign(adapter, { client: { responses: { create: async () => {
+    const call = ++calls;
+    return (async function* () {
+      try {
+        yield { type: "response.output_text.delta", delta: call === 1 ? capturedProse.partialOutput.tail : good };
+        yield { type: "response.completed", response: { status: "completed", model: "gpt-6-luna",
+          usage: { input_tokens: 100, output_tokens: 4000 } } };
+      } finally { closed.push(call); }
+    })();
+  } } } });
+  const run = logged(adapter);
+  const input = createProjectSchema.parse({ prompt: "Assess Bolsonaro's presidency", category: "BUSINESS", targetPages: 120 });
+  const plan = makeFallbackPlan(input);
+  const result = await composeChapter({ input, plan, chapter: plan.chapters[0]!, textModel: run.adapter,
+    stance: { thesis: "Assess the record", positions: [], refusals: [], voiceSample: "Be specific." },
+    composition: { chapterIndex: 1, throughLine: "Assess the record", sections: [{ form: "principle", subject: "Policy outcomes", share: 1, owns: [] }], landing: "A verdict", avoid: [] },
+    chapterPageStart: 1, chapterPageEnd: 6, earlierChapters: [], continuityNotes: [], researchNotes: [] });
+  expect(result.markdown).toBe(good);
+  const entries = await run.entries();
+  const requests = entries.filter(entry => entry.event === "text.generateText.provider_request");
+  expect(requests.map(entry => [entry.attempt, entry.effectiveMaxTokens])).toEqual([[1, 12912], [2, 12912]]);
+  expect(new Set(requests.map(entry => entry.callId)).size).toBe(2);
+  expect(entries.find(entry => entry.event === "text.generateText.error")).toMatchObject({
+    error: { name: "ProseOutputRepetitionError", context: { reason: "repeated_prose" } }
+  });
+  expect(prisma.providerCallLog.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    costHint: null, metadata: expect.objectContaining({ liveStatus: "failed", costStatus: "unknown_usage" })
+  }) }));
+  expect(prisma.providerCallLog.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+    promptTokens: 100, outputTokens: 4000, metadata: expect.objectContaining({ liveStatus: "settled", provisional: false })
+  }) }));
+  expect(closed).toEqual([1, 2]);
 });
 
 it("increments the request index on a recoverable network retry", async () => {

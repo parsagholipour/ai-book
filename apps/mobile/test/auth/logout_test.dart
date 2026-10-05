@@ -6,6 +6,7 @@ import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/auth/domain/legal_gate.dart';
 import 'package:tomeza/features/auth/presentation/auth_controller.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
+import 'package:tomeza/features/projects/data/project_snapshot_cache.dart';
 import 'package:tomeza/shared/api/api_client.dart';
 import 'package:tomeza/shared/api/auth_token_store.dart';
 
@@ -73,6 +74,9 @@ void main() {
         );
         expect(container.read(authControllerProvider).value, isNotNull);
         final previousCache = container.read(creationConversationCacheProvider);
+        final previousProjectCache = container.read(
+          projectSnapshotCacheProvider,
+        );
         container.read(legalGateDismissedProvider.notifier).dismiss();
 
         await tester.runAsync(
@@ -89,6 +93,10 @@ void main() {
         expect(
           container.read(creationConversationCacheProvider),
           isNot(same(previousCache)),
+        );
+        expect(
+          container.read(projectSnapshotCacheProvider),
+          isNot(same(previousProjectCache)),
         );
         expect(logoutRequest?.path, '/api/mobile/auth/logout');
         expect(logoutRequest?.data, {

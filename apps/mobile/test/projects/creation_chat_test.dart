@@ -912,8 +912,8 @@ void main() {
     );
     expect(find.text('≈ ${expectedCredits(8)} credits'), findsOneWidget);
     expect(find.text('≈ ${expectedCredits(12)} credits'), findsOneWidget);
-    expect(find.text('Recommended for a compact book.'), findsOneWidget);
-    expect(find.text('More room for detail.'), findsOneWidget);
+    expect(find.text('Recommended for a compact book.'), findsNothing);
+    expect(find.text('More room for detail.'), findsNothing);
 
     // The custom field shows a live estimate for whatever the user types.
     await tester.enterText(

@@ -12,6 +12,7 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/api/export_provenance.dart';
 import '../domain/project_models.dart';
 import 'export_repair_watch.dart';
+import 'project_snapshot_cache.dart';
 
 enum ExportOpenOutcome { opened, sharedFallback }
 
@@ -680,12 +681,18 @@ final projectsProvider = FutureProvider<List<MobileProjectSummary>>((ref) {
 });
 
 final projectDetailProvider = FutureProvider.autoDispose
-    .family<MobileProjectDetail, String>((ref, id) {
-      return ref.watch(projectsRepositoryProvider).getProject(id);
+    .family<MobileProjectDetail, String>((ref, id) async {
+      final cache = ref.watch(projectSnapshotCacheProvider);
+      final project = await ref
+          .watch(projectsRepositoryProvider)
+          .getProject(id);
+      if (ref.mounted) cache.details[id] = project;
+      return project;
     });
 
 final projectStatusProvider = StreamProvider.autoDispose
     .family<MobileProjectStatus, String>((ref, id) {
+      final cache = ref.watch(projectSnapshotCacheProvider);
       final pollDelay = _StatusPollDelay();
       ref.onDispose(pollDelay.dispose);
       return _watchProjectStatus(
@@ -693,12 +700,20 @@ final projectStatusProvider = StreamProvider.autoDispose
         id,
         pollDelay,
         ref.watch(exportRepairWatchProvider(id)),
-      );
+      ).map((status) {
+        if (ref.mounted) cache.statuses[id] = status;
+        return status;
+      });
     });
 
 final projectChatProvider = FutureProvider.autoDispose
-    .family<MobileProjectChat, String>((ref, id) {
-      return ref.watch(projectsRepositoryProvider).getProjectChat(id);
+    .family<MobileProjectChat, String>((ref, id) async {
+      final cache = ref.watch(projectSnapshotCacheProvider);
+      final chat = await ref
+          .watch(projectsRepositoryProvider)
+          .getProjectChat(id);
+      if (ref.mounted) cache.chats[id] = chat;
+      return chat;
     });
 
 /// Identifies one applied edit, so its diff can be cached per operation.

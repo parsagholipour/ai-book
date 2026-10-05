@@ -219,8 +219,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
   }
 }
 
-/// One recommended count: pages, price, and why — two tight rows instead of
-/// a stacked card, so three options still fit above the custom field.
+/// One recommended count with its price or plan badge and optional label.
 class _PageCountOption extends StatelessWidget {
   const _PageCountOption({
     required this.recommendation,
@@ -338,10 +337,6 @@ class _PageCountOption extends StatelessWidget {
               if (recommendation.label != pagesLabel) ...[
                 const SizedBox(height: 2),
                 Text(recommendation.label, style: text.labelMedium),
-              ],
-              if (recommendation.description.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(recommendation.description, style: text.bodySmall),
               ],
             ],
           ),

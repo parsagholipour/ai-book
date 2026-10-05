@@ -40,6 +40,7 @@ import '../../characters/presentation/character_library_screen.dart';
 import '../../sharing/domain/book_remix.dart';
 import '../../studio/presentation/start_writing_sheet.dart';
 import '../data/creation_prefs_store.dart';
+import '../data/project_snapshot_cache.dart';
 import '../data/projects_repository.dart';
 import '../domain/chat_markdown.dart';
 import '../domain/creation_message_models.dart';
@@ -290,18 +291,25 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     AsyncValue<MobileProjectChat>? projectChatValue;
     AsyncValue<MobileProjectStatus>? generationStatusValue;
     if (isInOutputStage) {
-      planValue = ref.watch(projectDetailProvider(activeProjectId));
+      final cache = ref.watch(projectSnapshotCacheProvider);
+      planValue = _withCachedOutput(
+        ref.watch(projectDetailProvider(activeProjectId)),
+        cache.details[activeProjectId],
+      );
       projectChatValue = _watchProjectChat(activeProjectId);
-      final project = planValue?.asData?.value;
+      final project = planValue.asData?.value;
       if (_shouldWatchGenerationStatus(project)) {
         final statusValue = ref.watch(projectStatusProvider(activeProjectId));
-        generationStatusValue = statusValue;
+        generationStatusValue = _withCachedOutput(
+          statusValue,
+          cache.statuses[activeProjectId],
+        );
         // The status stream is the only thing that knows the book is still
         // being worked on; the plan and the transcript arrive by polling.
-        _syncLivePolling(activeProjectId, statusValue);
+        _syncLivePolling(activeProjectId, generationStatusValue);
         _didReceiveProjectStatus(statusValue);
       }
-      planValue?.whenData((project) {
+      planValue.whenData((project) {
         if (_rebuildHandoff.awaiting) return;
         _stopPollingWhenSettled(project);
       });
@@ -814,15 +822,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     required bool keyboardOpen,
   }) {
     return planValue.when(
-      loading: () => _PlanBuildingFooter(
-        message: switch (_planBusyAction) {
-          'revise' => 'Revising your book plan…',
-          'retry-plan' => 'Retrying your book plan…',
-          _ => 'Creating your book plan…',
-        },
-        isRevision: _planBusyAction == 'revise',
-        statusValue: planningStatusValue,
-      ),
+      loading: () => const _OutputLoadingFooter(),
       error: (error, _) => _PlanErrorFooter(
         message: userFacingError(error),
         onRetry: () => _refreshOutput(activeProjectId),

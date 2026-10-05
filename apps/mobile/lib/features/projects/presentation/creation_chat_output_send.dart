@@ -26,7 +26,10 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     final fetched = ref.watch(projectChatProvider(projectId));
     final completed = _completedProjectChat;
     if (completed == null || completed.reply.projectId != projectId) {
-      return fetched;
+      return _withCachedOutput(
+        fetched,
+        ref.watch(projectSnapshotCacheProvider).chats[projectId],
+      );
     }
     // The send already returned the saved transcript. Keep its message and
     // action cards visible if the follow-up read is slow or loses connection.

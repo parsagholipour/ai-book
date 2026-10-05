@@ -85,6 +85,28 @@ class _ProjectChatFooter extends StatelessWidget {
   }
 }
 
+class _OutputLoadingFooter extends StatelessWidget {
+  const _OutputLoadingFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      elevation: 8,
+      child: const SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: AppSkeletonGroup(
+            label: 'Loading book actions',
+            child: AppSkeleton.box(height: 48, radius: 20),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PlanBuildingFooter extends StatelessWidget {
   const _PlanBuildingFooter({
     this.message = 'Creating your book plan…',

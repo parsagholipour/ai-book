@@ -133,7 +133,7 @@ describe("page-count preflight", () => {
     expect(mobilePageCountRecommendationAiSchema.safeParse({ recommendations: body.recommendations }).success).toBe(true);
   });
 
-  it("keeps the default 2.5-second timeout and returns deterministic options", async () => {
+  it("keeps the default 9-second timeout and returns deterministic options", async () => {
     const started = new Promise<void>((resolve) => {
       generateJson.mockImplementation(() => {
         resolve();
@@ -150,7 +150,7 @@ describe("page-count preflight", () => {
     const response = app.inject({ method: "POST", url: "/api/mobile/creation-sessions/draft-1/preflight", headers: bearer("token-a"), payload: {} })
       .then((value) => { settled = true; return value; });
     await started;
-    await vi.advanceTimersByTimeAsync(2499);
+    await vi.advanceTimersByTimeAsync(8999);
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     const result = await response;

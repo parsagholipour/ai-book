@@ -46,20 +46,87 @@ export const BOOK_PDF_CSS = `
     margin: 0;
     padding: 0;
   }
-  /* The bundled Markdown table scrolls horizontally on screen; a PDF clips
-     those columns. Fit wide comparisons into the printable page instead. */
-  table:has(tr > :nth-child(5)) {
+  /* Override the bundled Markdown grid for print. A real table can repeat
+     its header and keep rows together; a scrolling block can do neither. */
+  table {
     display: table;
-    table-layout: fixed;
+    table-layout: auto;
     width: 100%;
     max-width: 100%;
     overflow: visible;
+    margin: 0.8em 0 1.4em;
+    border-collapse: collapse;
+    border-spacing: 0;
+    border-top: 1.5pt solid #8b6f4e;
+    border-bottom: 0.75pt solid #b7a38a;
+    font-size: 0.92em;
+    line-height: 1.4;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  table th,
+  table td {
+    padding: 0.65em 0.75em;
+    border: none;
+    border-bottom: 0.5pt solid #e4ded6;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+  /* Marked emits align attributes for Markdown's :--- / ---: delimiters. */
+  table th:not([align]),
+  table td:not([align]) {
+    text-align: start;
+  }
+  table:not(:has(tr > :nth-child(7))) th,
+  table:not(:has(tr > :nth-child(7))) td {
+    min-width: 7em;
+  }
+  table th {
+    font-family: "InterBook", "Segoe UI", system-ui, sans-serif;
+    font-size: 0.9em;
+    font-weight: 700;
+    line-height: 1.4;
+    color: #4a4038;
+    background: #f0ece6;
+    border-bottom: 0.75pt solid #b7a38a;
+  }
+  table tr {
+    border: none;
+    background: #fff;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  table tr:nth-child(2n) {
+    background: #faf8f5;
+  }
+  table thead {
+    display: table-header-group;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-after: avoid;
+  }
+  /* Long prose shares the available width according to its content. Even a
+     URL must wrap rather than widen the table beyond the printed sheet. */
+  table:has(tr > :nth-child(5)) {
     font-size: 0.85em;
   }
   table:has(tr > :nth-child(5)) th,
   table:has(tr > :nth-child(5)) td {
-    padding: 0.4em;
-    overflow-wrap: anywhere;
+    padding: 0.6em;
+  }
+  table:not(:has(tr > :nth-child(5))) th:first-child,
+  table:not(:has(tr > :nth-child(5))) td:first-child {
+    min-width: 8em;
+  }
+  /* Empty worksheet cells need writing space and visible column boundaries. */
+  table:has(tbody td:empty):not(:has(tbody td:not(:first-child):not(:empty))) {
+    table-layout: fixed;
+  }
+  table:has(tbody td:empty):not(:has(tbody td:not(:first-child):not(:empty))) th:first-child {
+    width: 26%;
+  }
+  table td:empty {
+    height: 2.8em;
+    border-inline: 0.5pt solid #e4ded6;
   }
   body {
     font-family: "SourceSerifBook", Georgia, "Times New Roman", serif;

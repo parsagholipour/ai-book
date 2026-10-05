@@ -175,14 +175,20 @@ export class OpenAITextAdapter implements TextModelAdapter {
     let textOutput = "";
     const stream = this.responseStream(options, input, text ? { text } : {}, text ? new JsonOutputRepetitionGuard() : undefined);
     let completed: ResponseRecord;
-    while (true) {
-      const next = await stream.next();
-      if (next.done) {
-        completed = next.value;
-        break;
+    try {
+      while (true) {
+        const next = await stream.next();
+        if (next.done) {
+          completed = next.value;
+          break;
+        }
+        textOutput += next.value;
+        await options.onOutputTextChunk?.(next.value);
       }
-      textOutput += next.value;
-      await options.onOutputTextChunk?.(next.value);
+    } finally {
+      // A prose observer can reject a runaway while this generator is paused
+      // at yield. Close the SDK iterator so the paid request stops too.
+      await stream.return({});
     }
 
     return {

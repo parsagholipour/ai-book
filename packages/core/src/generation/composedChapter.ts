@@ -1,6 +1,7 @@
 import { acceptsChapterEdit, type ChapterEditAcceptanceOptions } from "./chapterEditAcceptance.js";
 import { chapterResearchNotesForPrompt, CHAPTER_RESEARCH_CONTEXT_RULE } from "./chapterResearchContext.js";
 import { chapterDegeneracy } from "./chapterIntegrity.js";
+import { generateChapterProse } from "./generateChapterProse.js";
 import { chapterCutConstraints } from "./chapterCutContext.js";
 import { deletionOnlyResult } from "./composedChapterCuts.js";
 export { cutChapterTail, CUT_TAIL_WORDS, deletionOnlyResult } from "./composedChapterCuts.js";
@@ -151,6 +152,7 @@ export type EarlierChapterDigest = {
 };
 
 export type ComposeChapterOptions = {
+  signal?: AbortSignal | undefined;
   input: CreateProjectInput;
   plan: BookPlan;
   stance: AuthorStance;
@@ -551,6 +553,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     attempts += 1;
     const request = {
       purpose: COMPOSE_CHAPTER_PURPOSE,
+      ...(options.signal ? { signal: options.signal } : {}),
       temperature: options.temperature ?? options.input.temperature,
       maxTokens: composeMaxTokens(budget),
       messages: [
@@ -560,7 +563,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     };
     let result;
     try {
-      result = await options.textModel.generateText(request);
+      result = await generateChapterProse(options.textModel, request, !best?.markdown);
     } catch (error) {
       // The length retry is a second try at a chapter that already exists: a truncated,
       // refused or unreachable reply keeps the longer earlier draft rather than failing

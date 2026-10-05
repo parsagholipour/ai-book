@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../projects/data/creation_repository.dart';
+import '../../projects/data/project_snapshot_cache.dart';
 import '../../projects/data/projects_repository.dart';
 import '../data/auth_repository.dart';
 import '../domain/auth_models.dart';
@@ -82,6 +83,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     ref.invalidate(chatSearchProvider, asReload: true);
     ref.invalidate(archivedChatSessionsProvider, asReload: true);
     ref.invalidate(creationConversationCacheProvider);
+    ref.invalidate(projectSnapshotCacheProvider);
     state = const AsyncData(null);
   }
 }

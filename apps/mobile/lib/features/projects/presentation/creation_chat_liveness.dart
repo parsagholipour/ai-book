@@ -179,6 +179,15 @@ bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
   };
 }
 
+/// A missing response says nothing about the book's stage. Paint its last
+/// successful read while reconnecting, but let fresh data and errors through.
+AsyncValue<T> _withCachedOutput<T>(AsyncValue<T> fetched, T? cached) {
+  if (fetched.isLoading && !fetched.hasValue && cached != null) {
+    return AsyncData(cached);
+  }
+  return fetched;
+}
+
 String? _outputMessagingLockLabel({
   required String? projectStatus,
   required MobileProjectStatus? liveStatus,
