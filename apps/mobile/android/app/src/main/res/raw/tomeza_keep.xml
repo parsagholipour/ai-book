@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Resources the release resource shrinker cannot see being used. Each one is
+  looked up by name at runtime (Resources.getIdentifier) from a Dart string,
+  and the shrinker reads only bytecode and XML, so without this file release
+  builds strip them while debug builds keep working.
+
+  - drawable/ic_stat_tomeza: the book-notification small icon, named by
+    bookNotificationIcon in lib/features/notifications/data/
+    book_notification_presenter.dart. Without it flutter_local_notifications
+    fails to initialize with "invalid_icon", and push notifications switch
+    off for the whole app.
+  - drawable/audio_service_*: the audiobook notification's play, pause, stop
+    and skip buttons, named by audio_service's MediaControl constants.
+  - mipmap/ic_launcher: the audiobook notification's small icon (the
+    androidNotificationIcon default). The manifest also keeps it; it is
+    listed so that renaming the launcher icon cannot strip it silently.
+
+  Named for the app rather than keep.xml: google_sign_in_android ships
+  res/raw/keep.xml, and an app resource with the same name would replace it.
+  The build reads this file and does not package it.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_tomeza,@drawable/audio_service_*,@mipmap/ic_launcher" />

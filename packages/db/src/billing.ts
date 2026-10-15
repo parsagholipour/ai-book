@@ -7,6 +7,8 @@
  *
  *   billingInternals.ts     transaction wrapper, row shapes, shared fragments
  *   billingLedger.ts        balances and every credit mutation
+ *   ledgerReversal.ts       a settled charge's one cumulative reversal
+ *   userStopSettlement.ts   what a reader's own stop or delete keeps
  *   billingEntitlements.ts  the durable unlocks credits buy
  *   billingSubscriptions.ts Google Play purchases and subscription state
  *   planPeriods.ts          allowances and quotas
@@ -34,14 +36,22 @@ export {
 
 export {
   type ProjectEntitlementType,
-  ensureProjectExportEntitlementOrSpend,
   grantProjectEntitlement,
   hasActiveProjectEntitlement,
   hasActiveSubscriptionEntitlement,
   listActiveUserEntitlements
 } from "./billingEntitlements.ts";
 
-export { WELCOME_CREDITS_IP_WINDOW_DAYS, ensureWelcomeCreditsTx, getWelcomeCreditsGranted } from "./welcomeCredits.ts";
+export {
+  type PendingWelcomeGrant,
+  type PendingWelcomeGrantReason,
+  WELCOME_CREDITS_IP_WINDOW_DAYS,
+  describePendingWelcomeGrant,
+  ensureWelcomeCreditsTx,
+  getWelcomeCreditsGranted,
+  isWelcomeCreditGrantPending,
+  setWelcomeGrantHold
+} from "./welcomeCredits.ts";
 
 export {
   type ConsumeUsageResult,
@@ -96,6 +106,13 @@ export {
   settledGenerationAttemptIds,
   startGenerationAttempt
 } from "./generationAttempts.ts";
+
+export {
+  type UserStopDelivered,
+  type UserStopSettlement,
+  recordUserStopSettlementTx,
+  userStopSettlement
+} from "./userStopSettlement.ts";
 
 export {
   MessageAllowanceError,

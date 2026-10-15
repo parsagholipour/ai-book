@@ -19,6 +19,29 @@ vi.mock("@book-maker/db", () => ({
   Prisma: { raw: (sql: string) => sql }
 }));
 
+// Each charge's dollars come from the valuation (`admin/creditValuation.test.ts`
+// covers how); these suites test what the routes do with them.
+const mockValuation = vi.hoisted(() => ({ loadValuedSpends: vi.fn() }));
+vi.mock("../admin/creditValuation.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../admin/creditValuation.js")>()),
+  loadValuedSpends: mockValuation.loadValuedSpends
+}));
+
+/** One valued charge on a book, as the valuation returns it for a paying reader. */
+function valuedCharge(projectId: string, usd: number, operation = "FULL_BOOK_GENERATION") {
+  return {
+    userId: "payer",
+    createdAt: new Date("2026-08-20T00:00:00.000Z"),
+    operation,
+    projectId,
+    grossCredits: 0,
+    refundedCredits: 0,
+    usd,
+    refundedUsd: 0,
+    paidCredits: 0
+  };
+}
+
 const originalEnv = { ...process.env };
 let app: FastifyInstance;
 
@@ -40,6 +63,7 @@ beforeEach(() => {
   mockDb.prisma.planVersion.findFirst.mockResolvedValue(null);
   mockDb.prisma.$queryRawUnsafe.mockResolvedValue([]);
   mockDb.prisma.$queryRaw.mockResolvedValue([]);
+  mockValuation.loadValuedSpends.mockResolvedValue([]);
 });
 
 afterEach(async () => {
@@ -74,6 +98,8 @@ describe("GET /api/admin/operations/plans", () => {
         provider_cost_usd: 0.1234567
       }
     ]);
+    // The plan's 100 credits, valued by where they came from.
+    mockValuation.loadValuedSpends.mockResolvedValue([valuedCharge("book-1", 0.28, "PLAN_GENERATION")]);
     app = await buildApp();
 
     const response = await app.inject({
@@ -96,10 +122,10 @@ describe("GET /api/admin/operations/plans", () => {
           grossCredits: 100,
           refundedCredits: 0,
           netCredits: 100,
-          revenueUsd: 1,
+          revenueUsd: 0.28,
           providerCostUsd: 0.123457,
-          marginUsd: 0.876543,
-          marginPercent: 87.7
+          marginUsd: 0.156543,
+          marginPercent: 55.9
         }
       ],
       total: 31,
@@ -134,6 +160,12 @@ describe("GET /api/admin/operations/plans", () => {
     expect(economicsSql).toContain("PLAN_GENERATION");
     expect(economicsSql).toContain("j.type = 'PLAN_BOOK'");
     expect(economicsSql).not.toContain("GENERATE_BOOK");
+    // Plan revenue is the project's plan charges only, never the book that followed.
+    expect(mockValuation.loadValuedSpends).toHaveBeenCalledWith({
+      kind: "projects",
+      projectIds: ["book-1"],
+      operation: "PLAN_GENERATION"
+    });
   });
 });
 
@@ -168,6 +200,7 @@ describe("GET /api/admin/operations/plans/:id", () => {
         audio_ms: 0
       }
     ]);
+    mockValuation.loadValuedSpends.mockResolvedValue([valuedCharge("book-1", 0.28, "PLAN_GENERATION")]);
     app = await buildApp();
 
     const response = await app.inject({ method: "GET", url: "/api/admin/operations/plans/plan-1" });
@@ -177,9 +210,9 @@ describe("GET /api/admin/operations/plans/:id", () => {
       planId: "plan-1",
       chargeCount: 1,
       grossCredits: 100,
-      revenueUsd: 1,
+      revenueUsd: 0.28,
       providerCostUsd: 0.1,
-      marginUsd: 0.9,
+      marginUsd: 0.18,
       totals: { calls: 2, pricedCalls: 2, usd: 0.1, promptTokens: 1000, outputTokens: 200 }
     });
     expect(response.json().purposes).toEqual([

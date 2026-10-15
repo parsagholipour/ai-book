@@ -193,7 +193,7 @@ describe("restructurePages recovery", () => {
 
     expect(mocks.refundUnwrittenEditPages).not.toHaveBeenCalled();
     expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", undefined, {
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
       contentRevision: 7,
       requireContentRevisionMatch: true
     });

@@ -8,7 +8,14 @@ vi.mock("./client.ts", () => ({
   Prisma: fakeDb.Prisma
 }));
 
-const { ensureCurrentPlanPeriod, getCreditBalance, getWelcomeCreditsGranted } = await import("./billing.ts");
+const {
+  describePendingWelcomeGrant,
+  ensureCurrentPlanPeriod,
+  getCreditBalance,
+  getWelcomeCreditsGranted,
+  isWelcomeCreditGrantPending,
+  setWelcomeGrantHold
+} = await import("./billing.ts");
 const { WELCOME_CREDITS_IP_WINDOW_DAYS } = await import("./welcomeCredits.ts");
 
 const JUNE = new Date("2026-06-15T12:00:00.000Z");
@@ -45,6 +52,7 @@ describe("welcome credits", () => {
   beforeEach(() => {
     fakeDb.reset();
     resetCreditPricing();
+    setWelcomeGrantHold(null);
   });
 
   it.each([["US", 2000], ["CA", 2000], ["FR", 2000], ["JP", 2000], ["KR", 2000], ["SG", 2000], ["AE", 2000],
@@ -141,9 +149,11 @@ describe("welcome credits", () => {
     });
   });
 
+  // Three a high-income address and two elsewhere since a verified email gated
+  // the grant (migration 000110; it was two and one).
   it.each([
-    ["US", 2], ["CA", 2], ["JP", 2], ["AE", 2], ["GF", 2],
-    ["IN", 1], ["PK", 1], ["BR", 1], ["AQ", 1], [null, 1]
+    ["US", 3], ["CA", 3], ["JP", 3], ["AE", 3], ["GF", 3],
+    ["IN", 2], ["PK", 2], ["BR", 2], ["AQ", 2], [null, 2]
   ] as const)("limits signup country %s to %i same-IP grants", async (country, limit) => {
     for (let index = 0; index <= limit; index += 1) {
       const userId = `user-${index}`;
@@ -170,14 +180,14 @@ describe("welcome credits", () => {
       welcomeCreditsLowMiddleIncome: 500
     });
     for (const country of ["US", "IN"]) {
-      for (let index = 0; index < 3; index += 1) {
+      for (let index = 0; index < 4; index += 1) {
         const userId = `${country}-${index}`;
         pendingGrant(userId, `ip-${country}`, country);
         await ensureCurrentPlanPeriod(userId, JUNE);
-        expect(await getWelcomeCreditsGranted(userId)).toBe(index < (country === "US" ? 2 : 1) ? 500 : 0);
+        expect(await getWelcomeCreditsGranted(userId)).toBe(index < (country === "US" ? 3 : 2) ? 500 : 0);
       }
     }
-    expect(welcomeGrants()).toHaveLength(3);
+    expect(welcomeGrants()).toHaveLength(5);
   });
 
   it.each([["US", 3], ["IN", 2], [null, 2]] as const)(
@@ -241,29 +251,34 @@ describe("welcome credits", () => {
     pendingGrant("lower-first", "ip-shared", "IN");
     pendingGrant("higher-second", "ip-shared", "US");
     pendingGrant("higher-third", "ip-shared", "CA");
-    for (const userId of ["lower-first", "higher-second", "higher-third"]) {
+    pendingGrant("higher-fourth", "ip-shared", "JP");
+    for (const userId of ["lower-first", "higher-second", "higher-third", "higher-fourth"]) {
       await ensureCurrentPlanPeriod(userId, JUNE);
     }
 
     expect(await getWelcomeCreditsGranted("lower-first")).toBe(WELCOME);
     expect(await getWelcomeCreditsGranted("higher-second")).toBe(WELCOME);
-    expect(await getWelcomeCreditsGranted("higher-third")).toBe(0);
-    expect(welcomeGrants()).toHaveLength(2);
+    expect(await getWelcomeCreditsGranted("higher-third")).toBe(WELCOME);
+    expect(await getWelcomeCreditsGranted("higher-fourth")).toBe(0);
+    expect(welcomeGrants()).toHaveLength(3);
   });
 
-  it("withholds a lower-income claim after a high-income grant from the same IP", async () => {
+  it("withholds a lower-income claim after high-income grants fill its cap on the same IP", async () => {
     pendingGrant("higher-first", "ip-shared", "US");
-    pendingGrant("lower-second", "ip-shared", "IN");
+    pendingGrant("higher-second", "ip-shared", "US");
+    pendingGrant("lower-third", "ip-shared", "IN");
     await ensureCurrentPlanPeriod("higher-first", JUNE);
-    await ensureCurrentPlanPeriod("lower-second", JUNE);
+    await ensureCurrentPlanPeriod("higher-second", JUNE);
+    await ensureCurrentPlanPeriod("lower-third", JUNE);
 
     expect(await getWelcomeCreditsGranted("higher-first")).toBe(WELCOME);
-    expect(await getWelcomeCreditsGranted("lower-second")).toBe(0);
-    expect(fakeDb.state.welcomeGrants.get("lower-second")?.outcome).toBe("RECENT_IP");
+    expect(await getWelcomeCreditsGranted("higher-second")).toBe(WELCOME);
+    expect(await getWelcomeCreditsGranted("lower-third")).toBe(0);
+    expect(fakeDb.state.welcomeGrants.get("lower-third")?.outcome).toBe("RECENT_IP");
   });
 
   it("expires high-income IP grants after 30 days and keeps rejected claims settled", async () => {
-    for (const userId of ["first", "second"]) {
+    for (const userId of ["first", "second", "third"]) {
       pendingGrant(userId, "ip-shared", "US");
       await ensureCurrentPlanPeriod(userId, JUNE);
     }
@@ -279,19 +294,21 @@ describe("welcome credits", () => {
     pendingGrant("after-boundary", "ip-shared", "US");
     await ensureCurrentPlanPeriod("after-boundary", afterBoundary);
     expect(await getWelcomeCreditsGranted("after-boundary")).toBe(WELCOME);
-    expect(welcomeGrants()).toHaveLength(3);
+    expect(welcomeGrants()).toHaveLength(4);
   });
 
-  it("withholds silently when the same IP was granted inside 30 days", async () => {
-    fakeDb.state.welcomeGrants.set("user-b", {
-      userId: "user-b",
-      ipHash: "ip-a",
-      outcome: "GRANTED",
-      amountCredits: 1000,
-      ledgerEntryId: "ledger-prior",
-      createdAt: new Date("2026-05-20T12:00:00.000Z"),
-      settledAt: new Date("2026-05-20T12:00:00.000Z")
-    });
+  it("withholds silently when the same IP was granted up to its cap inside 30 days", async () => {
+    for (const userId of ["user-b", "user-c"]) {
+      fakeDb.state.welcomeGrants.set(userId, {
+        userId,
+        ipHash: "ip-a",
+        outcome: "GRANTED",
+        amountCredits: 1000,
+        ledgerEntryId: `ledger-prior-${userId}`,
+        createdAt: new Date("2026-05-20T12:00:00.000Z"),
+        settledAt: new Date("2026-05-20T12:00:00.000Z")
+      });
+    }
     pendingGrant("user-a", "ip-a");
     await ensureCurrentPlanPeriod("user-a", JUNE);
 
@@ -344,7 +361,8 @@ describe("welcome credits", () => {
     expect(welcomeGrants()).toHaveLength(0);
   });
 
-  it("settles the second same-IP pending as RECENT_IP after the first grants", async () => {
+  it("settles a same-IP pending past the cap as RECENT_IP after the first grants", async () => {
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsAccountsPerIpLowMiddleIncome: 1 });
     pendingGrant("user-a", "ip-shared");
     pendingGrant("user-b", "ip-shared");
     await ensureCurrentPlanPeriod("user-a", JUNE);
@@ -363,7 +381,8 @@ describe("welcome credits", () => {
     expect(welcomeGrants()).toHaveLength(1);
   });
 
-  it("only one of two overlapping same-IP first opens is granted", async () => {
+  it("only one of two overlapping same-IP first opens is granted at a cap of one", async () => {
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsAccountsPerIpLowMiddleIncome: 1 });
     pendingGrant("user-a", "ip-shared");
     pendingGrant("user-b", "ip-shared");
     await Promise.all([ensureCurrentPlanPeriod("user-a", JUNE), ensureCurrentPlanPeriod("user-b", JUNE)]);
@@ -383,8 +402,8 @@ describe("welcome credits", () => {
     }
   });
 
-  it("only two of three overlapping high-income same-IP first opens are granted", async () => {
-    const userIds = ["user-a", "user-b", "user-c"];
+  it("only three of four overlapping high-income same-IP first opens are granted", async () => {
+    const userIds = ["user-a", "user-b", "user-c", "user-d"];
     for (const userId of userIds) {
       pendingGrant(userId, "ip-shared", "US");
     }
@@ -392,9 +411,9 @@ describe("welcome credits", () => {
 
     expect(fakeDb.prisma.$queryRaw.mock.calls.some((call) => welcomeIpLockSql(call, "ip-shared"))).toBe(true);
     const outcomes = userIds.map((userId) => fakeDb.state.welcomeGrants.get(userId)?.outcome);
-    expect(outcomes.filter((outcome) => outcome === "GRANTED")).toHaveLength(2);
+    expect(outcomes.filter((outcome) => outcome === "GRANTED")).toHaveLength(3);
     expect(outcomes.filter((outcome) => outcome === "RECENT_IP")).toHaveLength(1);
-    expect(welcomeGrants()).toHaveLength(2);
+    expect(welcomeGrants()).toHaveLength(3);
     for (const userId of userIds) {
       const granted = fakeDb.state.welcomeGrants.get(userId)?.outcome === "GRANTED";
       expect(await getCreditBalance(userId, JUNE)).toMatchObject({
@@ -402,6 +421,135 @@ describe("welcome credits", () => {
         planCredits: MONTHLY
       });
     }
+  });
+
+  it("leaves a free account's grant pending while the spend breaker holds grants, and grants it once released", async () => {
+    pendingGrant("user-a");
+    let held = true;
+    setWelcomeGrantHold(() => held);
+
+    expect(await getCreditBalance("user-a", JUNE)).toMatchObject({ purchasedCredits: 0 });
+    expect(await isWelcomeCreditGrantPending("user-a")).toBe(true);
+    expect(welcomeGrants()).toHaveLength(0);
+
+    held = false;
+    expect(await getCreditBalance("user-a", JUNE)).toMatchObject({ purchasedCredits: WELCOME });
+    expect(await isWelcomeCreditGrantPending("user-a")).toBe(false);
+    expect(await getWelcomeCreditsGranted("user-a")).toBe(WELCOME);
+    expect(welcomeGrants()).toHaveLength(1);
+  });
+
+  it("welcomes an account already on a paid plan while grants are held", async () => {
+    pendingGrant("user-a");
+    fakeDb.state.entitlements.set("entitlement-plan", {
+      id: "entitlement-plan",
+      userId: "user-a",
+      projectId: null,
+      type: "CREATOR_PLAN",
+      status: "ACTIVE",
+      source: "google_play_subscription",
+      creditsCost: 0,
+      relatedLedgerEntryId: null,
+      purchaseRecordId: null,
+      startsAt: new Date("2026-06-01T00:00:00.000Z"),
+      expiresAt: new Date("2026-07-01T00:00:00.000Z")
+    });
+    setWelcomeGrantHold(() => true);
+
+    await ensureCurrentPlanPeriod("user-a", JUNE);
+
+    expect(await getWelcomeCreditsGranted("user-a")).toBe(WELCOME);
+    expect(welcomeGrants()).toHaveLength(1);
+  });
+
+  describe("email verification", () => {
+    it("keeps an unverified account's grant pending, and grants it on the first read after verification", async () => {
+      pendingGrant("user-a");
+      fakeDb.state.unverifiedEmailUsers.add("user-a");
+
+      expect(await getCreditBalance("user-a", JUNE)).toMatchObject({ purchasedCredits: 0 });
+      await ensureCurrentPlanPeriod("user-a", JUNE);
+      expect(fakeDb.state.welcomeGrants.get("user-a")).toMatchObject({ outcome: "PENDING", settledAt: null });
+      expect(welcomeGrants()).toHaveLength(0);
+      // Nothing was written, so nothing was locked either.
+      expect(fakeDb.prisma.$queryRaw.mock.calls.some((call) => welcomeIpLockSql(call, "ip-a"))).toBe(false);
+      expect(await describePendingWelcomeGrant("user-a")).toEqual({ reason: "email_unverified", credits: WELCOME });
+
+      fakeDb.state.unverifiedEmailUsers.delete("user-a");
+      expect(await getCreditBalance("user-a", JUNE)).toMatchObject({ purchasedCredits: WELCOME });
+      expect(await getWelcomeCreditsGranted("user-a")).toBe(WELCOME);
+      expect(await describePendingWelcomeGrant("user-a")).toBeNull();
+      expect(welcomeGrants()).toHaveLength(1);
+    });
+
+    it("settles an unverified account on a full address at once, so no credits are promised", async () => {
+      setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsAccountsPerIpLowMiddleIncome: 1 });
+      pendingGrant("first", "ip-shared");
+      await ensureCurrentPlanPeriod("first", JUNE);
+      pendingGrant("second", "ip-shared");
+      fakeDb.state.unverifiedEmailUsers.add("second");
+
+      await ensureCurrentPlanPeriod("second", JUNE);
+
+      expect(fakeDb.state.welcomeGrants.get("second")).toMatchObject({ outcome: "RECENT_IP", amountCredits: 0 });
+      expect(await isWelcomeCreditGrantPending("second")).toBe(false);
+      expect(await describePendingWelcomeGrant("second")).toBeNull();
+      expect(welcomeGrants()).toHaveLength(1);
+    });
+
+    it("still settles the toggle and a missing address for an unverified account", async () => {
+      pendingGrant("no-ip", null);
+      fakeDb.state.unverifiedEmailUsers.add("no-ip");
+      await ensureCurrentPlanPeriod("no-ip", JUNE);
+      expect(fakeDb.state.welcomeGrants.get("no-ip")?.outcome).toBe("NO_IP");
+
+      setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsEnabled: 0 });
+      pendingGrant("off", "ip-off");
+      fakeDb.state.unverifiedEmailUsers.add("off");
+      await ensureCurrentPlanPeriod("off", JUNE);
+      expect(fakeDb.state.welcomeGrants.get("off")?.outcome).toBe("DISABLED");
+      expect(welcomeGrants()).toHaveLength(0);
+    });
+
+    it("counts only granted claims toward the cap, so the first account to verify is the one welcomed", async () => {
+      setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsAccountsPerIpLowMiddleIncome: 1 });
+      for (const userId of ["early", "late"]) {
+        pendingGrant(userId, "ip-house");
+        fakeDb.state.unverifiedEmailUsers.add(userId);
+        await ensureCurrentPlanPeriod(userId, JUNE);
+      }
+      expect(await isWelcomeCreditGrantPending("early")).toBe(true);
+      expect(await isWelcomeCreditGrantPending("late")).toBe(true);
+
+      fakeDb.state.unverifiedEmailUsers.delete("late");
+      await ensureCurrentPlanPeriod("late", JUNE);
+      await ensureCurrentPlanPeriod("early", JUNE);
+
+      expect(await getWelcomeCreditsGranted("late")).toBe(WELCOME);
+      expect(fakeDb.state.welcomeGrants.get("early")?.outcome).toBe("RECENT_IP");
+      expect(welcomeGrants()).toHaveLength(1);
+    });
+
+    it("names the spend hold only for a verified account, and verification first when both apply", async () => {
+      pendingGrant("verified");
+      pendingGrant("unverified");
+      fakeDb.state.unverifiedEmailUsers.add("unverified");
+      setWelcomeGrantHold(() => true);
+      await ensureCurrentPlanPeriod("verified", JUNE);
+      await ensureCurrentPlanPeriod("unverified", JUNE);
+
+      expect(await describePendingWelcomeGrant("verified")).toEqual({ reason: "spend_hold", credits: WELCOME });
+      expect(await describePendingWelcomeGrant("unverified")).toEqual({ reason: "email_unverified", credits: WELCOME });
+      expect(await describePendingWelcomeGrant("legacy")).toBeNull();
+    });
+
+    it("reports the signup country's amount", async () => {
+      setCreditPricing({ ...DEFAULT_CREDIT_COSTS, welcomeCreditsRegionalEnabled: 1, welcomeCreditsHighIncome: 2000 });
+      pendingGrant("user-us", "ip-us", "US");
+      fakeDb.state.unverifiedEmailUsers.add("user-us");
+      await ensureCurrentPlanPeriod("user-us", JUNE);
+      expect(await describePendingWelcomeGrant("user-us")).toEqual({ reason: "email_unverified", credits: 2000 });
+    });
   });
 
   it("retries a serializable conflict and still grants", async () => {

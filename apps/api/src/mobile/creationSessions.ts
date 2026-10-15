@@ -296,7 +296,7 @@ export function creationBranchTurn(
     quickReplies: turnUi?.quickReplies ?? [],
     readiness: {
       ...derived.readiness,
-      missing: question ? [question.prompt.replace(/[.!?]+$/g, "")] : []
+      missing: question ? [question.prompt.replace(/(?<![.!?])[.!?]+$/g, "")] : []
     }
   };
 }

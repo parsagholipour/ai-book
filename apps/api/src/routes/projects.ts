@@ -203,11 +203,12 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   // their own module: everything below takes an operator.
   registerProjectAssetRoutes(fastify, appConfig);
 
-  fastify.get("/api/voice/rtc-config", async () => resolveVoiceRtcConfig(appConfig));
+  // Each guards itself rather than trusting the auth hook alone; rtc-config hands out TURN credentials.
+  fastify.get("/api/voice/rtc-config", async (request, reply) => ((await requireOperatorActor(request, reply)) ? resolveVoiceRtcConfig(appConfig) : reply));
 
-  fastify.get("/api/voice/providers", async () => voiceProviderOptions(appConfig));
+  fastify.get("/api/voice/providers", async (request, reply) => ((await requireOperatorActor(request, reply)) ? voiceProviderOptions(appConfig) : reply));
 
-  fastify.get("/api/runtime", async () => ({
+  fastify.get("/api/runtime", async (request, reply) => ((await requireOperatorActor(request, reply)) ? {
     mockAi: appConfig.MOCK_AI,
     providers: {
       text: appConfig.MOCK_AI ? "fake" : "deepseek",
@@ -240,7 +241,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         recommendedPageRange: strategy.recommendedPageRange
       }))
     ]
-  }));
+  } : reply));
 
   fastify.get("/api/templates", async (request, reply) => {
     const actor = await requireOperatorActor(request, reply);

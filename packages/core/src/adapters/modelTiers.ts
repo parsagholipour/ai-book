@@ -107,3 +107,8 @@ export function modelTierImageSelection(tier: ModelTier): ImageModelSelection | 
   }
   return undefined;
 }
+
+/** Premium-tier covers render once per book, so they use the strongest image model. */
+export function premiumCoverImageSelection(): ImageModelSelection {
+  return { provider: "gemini", model: PREMIUM_COVER_IMAGE_MODEL };
+}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
@@ -61,9 +62,11 @@ Widget app({
   CreationPrefsStore? prefs,
   PhotoPicker? photoPicker,
   BillingRepository? billingRepository,
+  List<Override> overrides = const [],
 }) {
   return ProviderScope(
     overrides: [
+      ...overrides,
       apiAuthHeadersProvider.overrideWith(
         (ref) async => const <String, String>{},
       ),
@@ -237,6 +240,7 @@ MobileProjectDetail plannedProject({
   bool withoutPlan = false,
   bool coverEnabled = true,
   bool illustrationsEnabled = true,
+  int targetPages = 28,
 }) {
   return MobileProjectDetail(
     id: id,
@@ -251,7 +255,7 @@ MobileProjectDetail plannedProject({
     progressPercent: 20,
     currentAction: currentAction,
     promptPreview: 'Create a workbook for teachers launching a course.',
-    targetPages: 28,
+    targetPages: targetPages,
     pageCount: 0,
     imageCount: 0,
     hasPlan: !withoutPlan,
@@ -531,8 +535,6 @@ const _exports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     filename: 'book.pdf',
     contentType: 'application/pdf',
@@ -540,8 +542,6 @@ const _exports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',
@@ -552,8 +552,6 @@ const unlockedExports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: true,
-    unlocked: true,
-    creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     filename: 'book.pdf',
     contentType: 'application/pdf',
@@ -561,8 +559,6 @@ const unlockedExports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: true,
-    unlocked: true,
-    creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',

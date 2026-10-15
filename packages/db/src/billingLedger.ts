@@ -9,7 +9,7 @@
  * (`planCreditsDelta`), which is what lets a refund put credits back where they
  * came from. See `planPeriods.ts` for how periods are granted.
  */
-import { jsonRecord, type BillingOperation } from "@book-maker/core";
+import { type BillingOperation } from "@book-maker/core";
 import { prisma } from "./client.ts";
 import {
   InsufficientCreditsError,
@@ -17,23 +17,22 @@ import {
   type CreditBalance,
   type CreditLedgerEntryRecord,
   type LedgerContext,
-  imageQuotaPeriodKeyFromMetadata,
-  jsonInput,
   ledgerData,
   ledgerRefundSelect,
   ledgerSelect,
-  planPeriodKeyFromMetadata,
   revokeEntitlementsForLedgerEntryTx,
-  runSerializable
+  runSerializable,
+  spendableCredits
 } from "./billingInternals.ts";
 import {
   type PlanAccountRow,
   effectivePlanCredits,
   ensureCreditAccountRow,
   ensureCurrentPlanPeriod,
-  ensureCurrentPlanPeriodTx,
-  releaseIllustratedBookUseTx
+  ensureCurrentPlanPeriodTx
 } from "./planPeriods.ts";
+import { refundPoolSplit, refundSettledCreditLedgerEntryTx, releaseUsageForEntryTx } from "./ledgerReversal.ts";
+import { refundableCredits, userStopSettlement } from "./userStopSettlement.ts";
 
 export async function getCreditBalance(userId: string, now: Date = new Date()): Promise<CreditBalance> {
   const account = await ensureCurrentPlanPeriod(userId, now);
@@ -260,7 +259,14 @@ export async function spendCredits(options: LedgerContext & {
  * allowance; if the period has since rolled over, the whole amount goes to the
  * purchased pool instead — that period's allowance has already been re-granted
  * in full, so topping it up again would hand out more than the plan allows. The
- * user keeps the value either way, in the pool that does not expire.
+ * user keeps the value in the pool that does not expire — unless the reader
+ * stopped the work themselves, in which case that share lapses with its period
+ * and a charge that kept delivered pages gives back only the rest
+ * (`userStopSettlement.ts`).
+ *
+ * A charge whose paid attempt SUCCEEDED is never reversed whole: that work was
+ * delivered (`deliveredAttemptCharge` below), and only an attempt-less path
+ * that walked to the wrong charge could ask.
  */
 export async function refundCreditLedgerEntry(
   entryId: string,
@@ -270,324 +276,17 @@ export async function refundCreditLedgerEntry(
   return runSerializable((tx) => refundCreditLedgerEntryTx(tx, entryId, reason, now));
 }
 
-const reversalRefundSelect = {
-  ...ledgerRefundSelect,
-  description: true,
-  balanceAfterCredits: true,
-  createdAt: true
-} as const;
-
-function refundClaimKeys(metadata: unknown): string[] {
-  const value = jsonRecord(metadata).refundClaimKeys;
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
-    : [];
-}
-
-/**
- * One settlement that grew the cumulative reversal, oldest first.
- *
- * A charge has exactly one reversal row — `reversesEntryId` is unique and every
- * reader of `reversedByEntry` treats it as a single row — so a partial
- * settlement and the top-up that completes it share one row's columns. Those
- * columns can only describe one moment: `balanceAfterCredits` is the spendable
- * balance right after the write that *created* the row, and rewriting it on a
- * top-up made it name a moment nothing records (`updatedAt` is selected
- * nowhere), while the reason the first settlement gave was overwritten
- * outright. The row therefore keeps the stamp it was born with, and this trail
- * carries what one row cannot: each settlement's own amount, resulting balance,
- * reason and time. The row's `description` is the trail's reasons in order, so
- * the operator dashboard — the only surface that shows it — still reads why
- * every part of the charge came back.
- */
-type RefundSettlement = {
-  credits: number;
-  reason: string;
-  at: string;
-  balanceAfterCredits?: number;
-  claimKey?: string;
-};
-
-function refundSettlements(metadata: unknown): RefundSettlement[] {
-  const value = jsonRecord(metadata).refundSettlements;
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((item): RefundSettlement[] => {
-    const record = jsonRecord(item);
-    const { credits, reason, at, balanceAfterCredits, claimKey } = record;
-    if (typeof credits !== "number" || typeof reason !== "string" || typeof at !== "string") {
-      return [];
-    }
-    return [
-      {
-        credits,
-        reason,
-        at,
-        ...(typeof balanceAfterCredits === "number" ? { balanceAfterCredits } : {}),
-        ...(typeof claimKey === "string" && claimKey.length > 0 ? { claimKey } : {})
-      }
-    ];
-  });
-}
-
-/**
- * The settlements already on a reversal row, reconstructing the one a row
- * written before this trail existed can only describe through its own columns.
- * Without that reconstruction the first deployed top-up would still lose the
- * partial settlement's reason and balance — the very rows this is here for.
- */
-function recordedRefundSettlements(
-  refund: {
-    metadata: unknown;
-    description: string | null;
-    balanceAfterCredits: number | null;
-    createdAt: Date;
-  },
-  refundedBefore: number
-): RefundSettlement[] {
-  const stored = refundSettlements(refund.metadata);
-  if (stored.length > 0) {
-    return stored;
-  }
-  return [
-    {
-      credits: refundedBefore,
-      reason: refund.description ?? "",
-      at: refund.createdAt.toISOString(),
-      ...(refund.balanceAfterCredits !== null ? { balanceAfterCredits: refund.balanceAfterCredits } : {})
-    }
-  ];
-}
-
-/** Every distinct reason the trail holds, in order, as the row's description. */
-function joinedRefundReasons(settlements: RefundSettlement[]): string {
-  const seen = new Set<string>();
-  for (const settlement of settlements) {
-    const reason = settlement.reason.trim();
-    if (reason) {
-      seen.add(reason);
-    }
-  }
-  return [...seen].join("; ");
-}
-
-/**
- * How much of a reversal goes back to each pool.
- *
- * `planShare` is the part of it that was spent out of the allowance, and it
- * only returns there while the period it was spent from is still the live one:
- * after a rollover that period's allowance has already been re-granted in full,
- * so topping it up again would hand out more than the plan allows. Whatever is
- * left lands in the purchased pool, which never expires — the user keeps the
- * value either way.
- *
- * The two callers differ only in what they can hand back at this moment: a
- * release returns the whole hold, a settled reversal returns the increment this
- * settlement adds. The period rule itself lives here once, or the two would
- * drift apart.
- */
-function refundPoolSplit(options: {
-  account: Pick<PlanAccountRow, "planPeriodKey" | "planPeriodEnd">;
-  entryMetadata: unknown;
-  planShare: number;
-  credits: number;
-  now: Date;
-}): { toPlan: number; toPurchased: number } {
-  const entryPeriodKey = planPeriodKeyFromMetadata(options.entryMetadata);
-  const samePeriod =
-    options.planShare > 0 &&
-    entryPeriodKey !== null &&
-    entryPeriodKey === options.account.planPeriodKey &&
-    options.account.planPeriodEnd !== null &&
-    options.account.planPeriodEnd > options.now;
-  const toPlan = samePeriod ? options.planShare : 0;
-  return { toPlan, toPurchased: options.credits - toPlan };
-}
-
-/**
- * Add up to `requestedCredits` to a settled charge's one reversal row.
- *
- * The row is cumulative: its amount is the authoritative total returned so
- * far. Partial callers also supply a stable claim key, stored in metadata, so
- * replaying one settlement is a no-op while a later full failure can still add
- * exactly the unpaid remainder. Keeping one linked reversal preserves every
- * deployed reader of `reversedByEntry`; those readers must compare its amount,
- * not treat its presence as a whole-charge boolean.
- *
- * Only the amount is cumulative. `balanceAfterCredits` is written once, when
- * the row is created, and a top-up leaves it alone: it is a point-in-time stamp
- * and the row has only one point in time it can name. The reasons accumulate
- * instead of replacing each other, and `metadata.refundSettlements` keeps the
- * per-settlement amounts, balances and timestamps the single row cannot.
- */
-async function refundSettledCreditLedgerEntryTx(
-  tx: BillingTx,
-  entry: {
-    id: string;
-    userId: string;
-    projectId: string | null;
-    operation: string;
-    amountCredits: number;
-    planCreditsDelta: number;
-    metadata: unknown;
-  },
-  options: {
-    requestedCredits: number;
-    reason: string;
-    now: Date;
-    claimKey?: string | undefined;
-  }
-): Promise<CreditLedgerEntryRecord | null> {
-  const charged = Math.abs(entry.amountCredits);
-  const existingRefund = await tx.creditLedgerEntry.findUnique({
-    where: { reversesEntryId: entry.id },
-    select: reversalRefundSelect
-  });
-  const existingMetadata = jsonRecord(existingRefund?.metadata);
-  const existingClaimKeys = refundClaimKeys(existingRefund?.metadata);
-
-  if (options.claimKey && existingClaimKeys.includes(options.claimKey)) {
-    return existingRefund;
-  }
-
-  // Compatibility for a partial row written before claim keys were recorded:
-  // the same amount and reason is the only settlement that old code could have
-  // made for this charge. Adopt its key without moving the balance again.
-  if (
-    options.claimKey &&
-    existingRefund &&
-    existingClaimKeys.length === 0 &&
-    existingMetadata.partialRefund === true &&
-    existingRefund.amountCredits === Math.min(options.requestedCredits, charged) &&
-    existingRefund.description === options.reason
-  ) {
-    return tx.creditLedgerEntry.update({
-      where: { id: existingRefund.id },
-      data: {
-        metadata: jsonInput({ ...existingMetadata, refundClaimKeys: [options.claimKey] })
-      },
-      select: ledgerSelect
-    });
-  }
-
-  const refundedBefore = Math.min(Math.max(existingRefund?.amountCredits ?? 0, 0), charged);
-  const remaining = charged - refundedBefore;
-  const increment = Math.min(Math.max(Math.trunc(options.requestedCredits), 0), remaining);
-  if (increment <= 0) {
-    return existingRefund;
-  }
-
-  const account = await ensureCreditAccountRow(tx, entry.userId);
-  const chargedFromPlan = Math.min(charged, Math.abs(entry.planCreditsDelta));
-  // Refunds consume the source allowance share first. This is independent of
-  // where an earlier refund landed: after a period rollover that source share
-  // correctly lands in purchased credits instead.
-  const sourcePlanRefundedBefore = Math.min(refundedBefore, chargedFromPlan);
-  const sourcePlanIncrement = Math.min(increment, chargedFromPlan - sourcePlanRefundedBefore);
-  const { toPlan, toPurchased } = refundPoolSplit({
-    account,
-    entryMetadata: entry.metadata,
-    planShare: sourcePlanIncrement,
-    credits: increment,
-    now: options.now
-  });
-  // Read off the account before the pools move, so the stamp this settlement
-  // records cannot depend on whether `account` is a snapshot or a live row.
-  const balanceAfterCredits = spendableCredits(account, options.now) + increment;
-
-  await tx.userCreditAccount.update({
-    where: { userId: entry.userId },
-    data: {
-      planCredits: { increment: toPlan },
-      availableCredits: { increment: toPurchased },
-      lifetimeCreditsSpent: { decrement: increment }
-    }
-  });
-
-  const refundedTotal = refundedBefore + increment;
-  const refundedToPlanCredits = (existingRefund?.planCreditsDelta ?? 0) + toPlan;
-  const nextClaimKeys = options.claimKey
-    ? [...new Set([...existingClaimKeys, options.claimKey])]
-    : existingClaimKeys;
-  const settlements: RefundSettlement[] = [
-    ...(existingRefund ? recordedRefundSettlements(existingRefund, refundedBefore) : []),
-    {
-      credits: increment,
-      reason: options.reason,
-      at: options.now.toISOString(),
-      balanceAfterCredits,
-      ...(options.claimKey ? { claimKey: options.claimKey } : {})
-    }
-  ];
-  const description = joinedRefundReasons(settlements);
-  const metadata = jsonInput({
-    ...existingMetadata,
-    // `reason` stays the most recent settlement's; `refundSettlements` is where
-    // every settlement's own reason, amount, balance and time survive.
-    reason: options.reason,
-    partialRefund: refundedTotal < charged,
-    chargedCredits: charged,
-    refundedToPlanCredits,
-    refundedToPurchasedCredits: refundedTotal - refundedToPlanCredits,
-    refundSettlements: settlements,
-    ...(nextClaimKeys.length > 0 ? { refundClaimKeys: nextClaimKeys } : {})
-  });
-
-  // Entitlements and quota claims are indivisible. A partial reversal leaves
-  // them in place; the top-up that reaches the whole charge revokes/releases
-  // them exactly once, in this same transaction.
-  if (refundedTotal === charged) {
-    await revokeEntitlementsForLedgerEntryTx(tx, entry.id);
-    await releaseUsageForEntryTx(tx, entry);
-  }
-
-  if (existingRefund) {
-    return tx.creditLedgerEntry.update({
-      where: { id: existingRefund.id },
-      data: {
-        amountCredits: refundedTotal,
-        planCreditsDelta: refundedToPlanCredits,
-        // `balanceAfterCredits` is deliberately not written here. It stamps the
-        // balance at this row's `createdAt`, which a top-up arriving later
-        // cannot honestly restate — every settlement's own stamp is in
-        // `metadata.refundSettlements` instead.
-        description,
-        metadata
-      },
-      select: ledgerSelect
-    });
-  }
-
-  return tx.creditLedgerEntry.create({
-    data: {
-      userId: entry.userId,
-      ...(entry.projectId ? { projectId: entry.projectId } : {}),
-      entryType: "REFUND",
-      status: "SETTLED",
-      operation: entry.operation as BillingOperation,
-      amountCredits: refundedTotal,
-      planCreditsDelta: refundedToPlanCredits,
-      balanceAfterCredits,
-      idempotencyKey: `refund:${entry.id}`,
-      reversesEntryId: entry.id,
-      description,
-      metadata
-    },
-    select: ledgerSelect
-  });
-}
-
 /**
  * Gives back part of a settled charge, for work priced by the page that
  * delivered fewer pages than it billed.
  *
- * The ledger's unit is the whole entry — a structural insert is charged
- * `pagesBilled × pageRegenerationPerPage` in a single spend — so an apply that
- * settles having written two of five pages can neither keep the money nor hand
- * back all of it. It is deliberately the *only* partial reversal in the ledger:
- * everything else either delivers what it billed or delivers nothing, and the
- * whole-entry path stays the answer for those. A portion covering the whole
+ * The ledger's unit is the whole entry — a full book is charged one package —
+ * so a run the reader stopped after some of its pages were written can neither
+ * keep the money nor hand back all of it. It is deliberately the *only* partial
+ * reversal in the ledger, and its one production caller is the user-stop
+ * settlement `refundCreditLedgerEntryTx` routes here, under the stop's own claim
+ * key; everything else either delivers what it billed or delivers nothing, and
+ * the whole-entry path stays the answer for those. A portion covering the whole
  * charge, or an entry still RESERVED (a hold has no half to release), delegates
  * straight to it, so there is one implementation of a full reversal.
  *
@@ -599,40 +298,51 @@ async function refundSettledCreditLedgerEntryTx(
  * free-tier illustrated-book slot are all-or-nothing grants, so a partial
  * reversal has no share of either to return.
  */
-export async function refundCreditLedgerEntryPortion(options: {
+export async function refundCreditLedgerEntryPortion(options: PortionRefund): Promise<CreditLedgerEntryRecord | null> {
+  const requested = Math.trunc(options.amountCredits);
+  if (!Number.isFinite(requested) || requested <= 0) {
+    return null;
+  }
+  return runSerializable((tx) => refundCreditLedgerEntryPortionTx(tx, options));
+}
+
+type PortionRefund = {
   entryId: string;
   amountCredits: number;
   reason: string;
   idempotencyKey: string;
   now?: Date | undefined;
-}): Promise<CreditLedgerEntryRecord | null> {
+};
+
+async function refundCreditLedgerEntryPortionTx(
+  tx: BillingTx,
+  options: PortionRefund
+): Promise<CreditLedgerEntryRecord | null> {
   const now = options.now ?? new Date();
   const requested = Math.trunc(options.amountCredits);
   if (!Number.isFinite(requested) || requested <= 0) {
     return null;
   }
-  return runSerializable(async (tx) => {
-    const entry = await tx.creditLedgerEntry.findUnique({
-      where: { id: options.entryId },
-      select: ledgerRefundSelect
-    });
-    if (!entry || entry.amountCredits >= 0) {
-      return null;
-    }
-    const claimKey = options.idempotencyKey.trim();
-    if (!claimKey) {
-      throw new Error("Partial credit refunds require a stable idempotency key.");
-    }
-    const charged = Math.abs(entry.amountCredits);
-    if (requested >= charged || entry.status !== "SETTLED") {
-      return refundCreditLedgerEntryTx(tx, options.entryId, options.reason, now);
-    }
-    return refundSettledCreditLedgerEntryTx(tx, entry, {
-      requestedCredits: requested,
-      reason: options.reason,
-      now,
-      claimKey
-    });
+  const entry = await tx.creditLedgerEntry.findUnique({
+    where: { id: options.entryId },
+    select: ledgerRefundSelect
+  });
+  if (!entry || entry.amountCredits >= 0) {
+    return null;
+  }
+  const claimKey = options.idempotencyKey.trim();
+  if (!claimKey) {
+    throw new Error("Partial credit refunds require a stable idempotency key.");
+  }
+  const charged = Math.abs(entry.amountCredits);
+  if (requested >= charged || entry.status !== "SETTLED") {
+    return refundCreditLedgerEntryTx(tx, options.entryId, options.reason, now);
+  }
+  return refundSettledCreditLedgerEntryTx(tx, entry, {
+    requestedCredits: requested,
+    reason: options.reason,
+    now,
+    claimKey
   });
 }
 
@@ -717,12 +427,15 @@ export async function refundCreditLedgerEntryTx(
   if (entry.status === "RESERVED") {
     const account = await ensureCreditAccountRow(tx, entry.userId);
     const planPortion = Math.min(amountCredits, Math.abs(entry.planCreditsDelta));
+    // A user stop only ever stamps a settled spend, so a hold always splits
+    // the way a failure's refund does.
     const { toPlan, toPurchased } = refundPoolSplit({
       account,
       entryMetadata: entry.metadata,
       planShare: planPortion,
       credits: amountCredits,
-      now
+      now,
+      lapseExpiredPlanShare: false
     });
 
     const updated = await tx.userCreditAccount.updateMany({
@@ -758,12 +471,67 @@ export async function refundCreditLedgerEntryTx(
   if (entry.status !== "SETTLED") {
     return null;
   }
+  if (await deliveredAttemptCharge(tx, entry)) {
+    console.warn(`Refused to reverse charge ${entry.id}: the attempt that paid it was delivered.`, { reason });
+    return null;
+  }
 
+  // Whichever path settles a charge the reader stopped — the stop itself, the
+  // worker noticing it, the attempt reconciler, a legacy fallback — it is the
+  // stop's settlement, under the stop's claim. One that kept delivered work is
+  // the partial reversal; the reversal itself refuses to grow past it anyway.
+  const stop = userStopSettlement(entry.metadata);
+  if (stop && stop.keptCredits > 0) {
+    return refundCreditLedgerEntryPortionTx(tx, {
+      entryId,
+      amountCredits: refundableCredits(entry),
+      reason,
+      idempotencyKey: stop.claimKey,
+      now
+    });
+  }
   return refundSettledCreditLedgerEntryTx(tx, entry, {
     requestedCredits: amountCredits,
     reason,
-    now
+    now,
+    ...(stop ? { claimKey: stop.claimKey } : {})
   });
+}
+
+/**
+ * Whether this settled charge paid for a `GenerationAttempt` that SUCCEEDED.
+ *
+ * A delivered attempt's charge is final. `failGenerationAttemptTx` already
+ * refuses a SUCCEEDED attempt, but the attempt-less settlements reach a charge
+ * by walking to it — the API's legacy stop (`stopLegacySettlement.ts`), the
+ * worker's `refundFailedProjectCredits`, the project-latest fallback below — and
+ * a free recompile queued after the book was delivered walked its `planId` to
+ * the book's own `FULL_BOOK_GENERATION` charge and gave the whole of it back on
+ * a delete (launch review 2026-10-13, B3). The rule lives here so no walk can
+ * reach past it. Every attempt-linked charge names its attempt in metadata
+ * (`startGenerationAttempt`), and the attempt has to name the charge back.
+ * Nothing that legitimately refunds an attempt's charge does so after it
+ * SUCCEEDED: a failure or a stop terminalizes it FAILED or CANCELED first, and a
+ * delivered shortfall is a partial reversal (`refundCreditLedgerEntryPortion`),
+ * which does not come through here.
+ */
+async function deliveredAttemptCharge(
+  tx: BillingTx,
+  entry: { id: string; metadata: unknown }
+): Promise<boolean> {
+  const metadata = entry.metadata;
+  const attemptId =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>).generationAttemptId
+      : undefined;
+  if (typeof attemptId !== "string" || !attemptId) {
+    return false;
+  }
+  const attempt = await tx.generationAttempt.findUnique({
+    where: { id: attemptId },
+    select: { status: true, ledgerEntryId: true }
+  });
+  return attempt?.status === "SUCCEEDED" && attempt.ledgerEntryId === entry.id;
 }
 
 /**
@@ -784,7 +552,13 @@ const PROJECT_REFUND_SCAN_PAGE = 25;
  * what a failure reaching this path is here to do — so eligibility compares
  * `reversedByEntry.amountCredits` against the charge rather than testing the
  * relation for null. That comparison spans two rows of the same table, which is
- * something Prisma has no `where` for, so it is decided here.
+ * something Prisma has no `where` for, so it is decided here. And it compares
+ * against what the charge may still give back (`refundableCredits`), not its
+ * whole amount: a charge a user stop settled to what it delivered no longer
+ * stands, and topping it up is the one thing this path must not do to it. A
+ * charge whose attempt SUCCEEDED still stands but is refused by the reversal
+ * itself, so the scan stops there and refunds nothing older either: every
+ * caller is an attempt-less fallback, and a delivered run is not its to settle.
  *
  * It is decided over a bounded window rather than the whole history: pages of
  * `PROJECT_REFUND_SCAN_PAGE`, newest first, stopping at the first eligible
@@ -822,13 +596,14 @@ export async function refundLatestProjectOperationCredits(options: {
         id: true,
         status: true,
         amountCredits: true,
+        metadata: true,
         reversedByEntry: { select: { amountCredits: true } }
       }
     });
     const entry = entries.find(
       (candidate) =>
         candidate.status === "RESERVED" ||
-        (candidate.reversedByEntry?.amountCredits ?? 0) < Math.abs(candidate.amountCredits)
+        (candidate.reversedByEntry?.amountCredits ?? 0) < refundableCredits(candidate)
     );
     if (entry) {
       return refundCreditLedgerEntry(entry.id, options.reason);
@@ -839,23 +614,6 @@ export async function refundLatestProjectOperationCredits(options: {
     }
     cursorId = oldest.id;
   }
-}
-
-/**
- * A monthly quota slot is claimed before the charge and released with it. Three
- * illustrated books a month is tight enough that losing one to an infrastructure
- * failure is worth the ten lines it takes to hand it back — and riding the
- * refund funnel means every failure path already covers it.
- */
-async function releaseUsageForEntryTx(tx: BillingTx, entry: { userId: string; metadata: unknown }): Promise<void> {
-  const periodKey = imageQuotaPeriodKeyFromMetadata(entry.metadata);
-  if (periodKey) {
-    await releaseIllustratedBookUseTx(tx, entry.userId, periodKey);
-  }
-}
-
-function spendableCredits(account: PlanAccountRow, now: Date = new Date()): number {
-  return account.availableCredits + effectivePlanCredits(account, now);
 }
 
 function serializeCreditBalance(account: PlanAccountRow, now: Date): CreditBalance {

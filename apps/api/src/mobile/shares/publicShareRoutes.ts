@@ -22,7 +22,8 @@ import {
 } from "./shareBook.js";
 import { previewSheetRange } from "./sharePageRange.js";
 import { renderNoLongerSharedPage, renderShareNotFoundPage, renderSharePage } from "./sharePage.js";
-import { loadShareBySlug, wasShareSlugIssued, type BookShareRecord } from "./shareRecords.js";
+import { loadShareBySlug, shareServesCurrentText, wasShareSlugIssued, type BookShareRecord } from "./shareRecords.js";
+import type { ShareRescreener } from "./shareRescreen.js";
 import { isShareSlug } from "./shareSlug.js";
 
 /**
@@ -37,6 +38,13 @@ import { isShareSlug } from "./shareSlug.js";
  * `publicShareRoutes.test.ts` pins both halves. What a stranger can reach is
  * decided here, by the share row: an ACTIVE share serves its book (a preview
  * serves only the preview slice), and anything else serves a 410 with no bytes.
+ *
+ * **And only text screened at the book's current revision.** A live share whose
+ * book changed since its last screen (`shareServesCurrentText`) is answered as
+ * a book being updated: the page names neither the title nor the author and
+ * shows no viewer, the PDF is a 503, the cover is the generic image — and the
+ * request asks the rescreener for a screen (`shareRescreen.ts`), which public
+ * traffic can start at most once per share and revision.
  *
  * **Production only proxies what Nginx names.** `deploy/nginx.conf` sends
  * `/api`, `/docs`, the asset prefixes and `/s/` to this process and serves the
@@ -55,7 +63,13 @@ import { isShareSlug } from "./shareSlug.js";
 type PublicShareRouteOptions = {
   reportRateLimit?: Partial<RateLimitConfig>;
   pdfRateLimit?: Partial<RateLimitConfig>;
+  /** Asked for a screen when a stale share is reached; without one, the background sweep is the only door. */
+  rescreener?: Pick<ShareRescreener, "requestFromPublic">;
 };
+
+/** What a stale share's page says in place of the book's own title and author, which no screen has read yet. */
+const UPDATING_TITLE = "A book on Tomeza";
+const ANONYMOUS_BYLINE = "A Tomeza author";
 
 const ROBOTS = "noindex, nofollow";
 const SHARE_BYTES_CACHE = "public, max-age=300";
@@ -101,7 +115,9 @@ export const publicShareRoutes: FastifyPluginAsync<PublicShareRouteOptions> = as
   const pdfLimiter = new InMemoryRateLimiter({ maxAttempts: 120, windowMs: 10 * 60 * 1000, ...options.pdfRateLimit });
 
   fastify.addHook("onSend", async (request, reply, payload) => {
-    if (request.url.startsWith("/s/")) {
+    // The matched route, not `request.url`: `/%73/<slug>` runs the same page
+    // and has to carry the same noindex and nosniff headers.
+    if (request.routeOptions.url?.startsWith("/s/")) {
       reply.header("X-Robots-Tag", ROBOTS);
       reply.header("X-Content-Type-Options", "nosniff");
       reply.header("Referrer-Policy", "no-referrer");
@@ -112,19 +128,34 @@ export const publicShareRoutes: FastifyPluginAsync<PublicShareRouteOptions> = as
   fastify.get("/s/_/:file", async (request, reply) => sendStaticAsset(request, reply));
   fastify.get("/s/_/pdfjs/:file", async (request, reply) => sendStaticAsset(request, reply, "pdfjs"));
 
+  /** True when the share may show its book; otherwise asks for a screen and answers as being updated. */
+  const servesCurrentText = (share: BookShareRecord, project: ShareProject, request: FastifyRequest): boolean => {
+    if (shareServesCurrentText(share, project)) {
+      return true;
+    }
+    try {
+      options.rescreener?.requestFromPublic(share, project);
+    } catch (error) {
+      request.log.warn({ err: error, shareId: share.id }, "share re-screen could not be requested");
+    }
+    return false;
+  };
+
   fastify.get("/s/:slug", async (request, reply) => {
     const resolved = await resolveShare(request, reply);
     if (!resolved) {
       return;
     }
     const { share, project } = resolved;
+    const current = servesCurrentText(share, project, request);
     const available = await objectStore().head(objectKey("books", project.id, publishedExportFilename("pdf")));
     if (!available) {
       await queueRepair(project, request);
     }
+    const servable = current && Boolean(available);
     let visiblePages: number | null = null;
     let readingPages: number | null = null;
-    if (share.mode === "PREVIEW" && available) {
+    if (share.mode === "PREVIEW" && servable) {
       const loaded = await loadSharedPdfLayout(project).catch(() => null);
       if (loaded) {
         const range = previewSheetRange(loaded.layout, share.previewPages ?? 1);
@@ -135,18 +166,21 @@ export const publicShareRoutes: FastifyPluginAsync<PublicShareRouteOptions> = as
     reply.header("Cache-Control", SHARE_PAGE_CACHE);
     reply.header("Content-Security-Policy", PAGE_CSP);
     reply.type("text/html; charset=utf-8");
+    // A stale share shows nothing of the book's own words: the title,
+    // subtitle and author name are text of the revision no screen has read.
+    // The note is the author's, moderated on its own, and unchanged by an edit.
     return renderSharePage({
       slug: share.slug,
       publicApiUrl: appConfig.PUBLIC_API_URL,
-      title: project.title,
-      subtitle: project.subtitle,
-      byline: share.showAuthorName && project.authorName?.trim() ? project.authorName.trim() : "A Tomeza author",
+      title: current ? project.title : UPDATING_TITLE,
+      subtitle: current ? project.subtitle : null,
+      byline: current && share.showAuthorName && project.authorName?.trim() ? project.authorName.trim() : ANONYMOUS_BYLINE,
       kind: shareBookKind(project.mediaSettings),
       caption: share.captionStatus === "ALLOWED" ? share.caption : null,
       mode: share.mode === "FULL" ? "full" : "preview",
       visiblePages,
       readingPages,
-      available: Boolean(available)
+      available: servable
     });
   });
 
@@ -160,6 +194,9 @@ export const publicShareRoutes: FastifyPluginAsync<PublicShareRouteOptions> = as
       return;
     }
     const { share, project } = resolved;
+    if (!servesCurrentText(share, project, request)) {
+      return reply.code(503).header("Retry-After", "60").type("text/plain; charset=utf-8").send("This book is being updated.");
+    }
     let pdf: SharedPdf | null;
     try {
       pdf = share.mode === "FULL" ? await loadFullSharedPdf(project.id) : await loadPreviewSharedPdf(project, share.previewPages ?? 1);
@@ -187,6 +224,12 @@ export const publicShareRoutes: FastifyPluginAsync<PublicShareRouteOptions> = as
     const resolved = await resolveShare(request, reply, { bytes: true });
     if (!resolved) {
       return;
+    }
+    // A cover typesets the title, and an edit can redraw it: a stale share's
+    // link preview gets the generic image until the book is screened again.
+    if (!shareServesCurrentText(resolved.share, resolved.project)) {
+      reply.header("Cache-Control", SHARE_PAGE_CACHE);
+      return reply.type("image/jpeg").send(await genericShareImage());
     }
     const cover = await coverJpeg(resolved.project.id).catch((error: unknown) => {
       request.log.warn({ err: error, projectId: resolved.project.id }, "share cover could not be read");
@@ -335,23 +378,29 @@ export function genericShareImage(): Promise<Buffer> {
 const require = createRequire(import.meta.url);
 const PUBLIC_DIR = fileURLToPath(new URL("../../../public/share/", import.meta.url));
 
-/** The page's own files and the vendored pdf.js (legacy build, for older phone browsers). */
-const STATIC_ASSETS: Record<string, { path: () => string; type: string }> = {
-  "share.css": { path: () => `${PUBLIC_DIR}share.css`, type: "text/css; charset=utf-8" },
-  "share.js": { path: () => `${PUBLIC_DIR}share.js`, type: "text/javascript; charset=utf-8" },
-  "icon.svg": { path: () => `${PUBLIC_DIR}icon.svg`, type: "image/svg+xml" },
-  "pdfjs/pdf.min.mjs": { path: () => require.resolve("pdfjs-dist/legacy/build/pdf.min.mjs"), type: "text/javascript; charset=utf-8" },
-  "pdfjs/pdf.worker.min.mjs": {
-    path: () => require.resolve("pdfjs-dist/legacy/build/pdf.worker.min.mjs"),
-    type: "text/javascript; charset=utf-8"
-  }
-};
+/**
+ * The page's own files and the vendored pdf.js (legacy build, for older phone
+ * browsers). A `Map`, never an object literal read by the URL's own segment:
+ * `/s/_/constructor`, `/s/_/__proto__` and `/s/_/toString` found
+ * `Object.prototype`'s members there and answered 500 (pre-launch review,
+ * 2026-10-13).
+ */
+const STATIC_ASSETS = new Map<string, { path: () => string; type: string }>([
+  ["share.css", { path: () => `${PUBLIC_DIR}share.css`, type: "text/css; charset=utf-8" }],
+  ["share.js", { path: () => `${PUBLIC_DIR}share.js`, type: "text/javascript; charset=utf-8" }],
+  ["icon.svg", { path: () => `${PUBLIC_DIR}icon.svg`, type: "image/svg+xml" }],
+  ["pdfjs/pdf.min.mjs", { path: () => require.resolve("pdfjs-dist/legacy/build/pdf.min.mjs"), type: "text/javascript; charset=utf-8" }],
+  [
+    "pdfjs/pdf.worker.min.mjs",
+    { path: () => require.resolve("pdfjs-dist/legacy/build/pdf.worker.min.mjs"), type: "text/javascript; charset=utf-8" }
+  ]
+]);
 const staticCache = new Map<string, Promise<Buffer>>();
 
 async function sendStaticAsset(request: FastifyRequest, reply: FastifyReply, folder?: string) {
   const { file } = z.object({ file: z.string().max(80) }).parse(request.params);
   const name = folder ? `${folder}/${file}` : file;
-  const asset = STATIC_ASSETS[name];
+  const asset = STATIC_ASSETS.get(name);
   if (!asset) {
     return reply.code(404).type("text/plain; charset=utf-8").send("Not found.");
   }

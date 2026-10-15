@@ -1,15 +1,20 @@
 import { Queue, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import {
-  BOOK_GENERATION_CHARGE_LOOKBACK,
+  GENERATION_JOB_RETENTION,
+  INTERACTIVE_JOB_QUEUE,
+  LONG_JOB_QUEUE,
   STOPPED_JOB_ERROR,
   STOPPED_JOB_MESSAGE,
-  bookGenerationChargeFromPayloads,
+  clearLaneJobIdForAdd,
   dispatchBackoffMs,
   errorMessage,
+  generationJobPlacement,
+  isLaneJobActive,
+  removeIdleLaneJobs,
   generationJobOwnsFailureLifecycle,
   generationJobRestoresPreEditProjectStatus,
-  isPresentationOnlyRecompile,
+  freeRecompileFallbackStatus,
   isRevisionOwnedCoverPayload,
   jobNames,
   payloadOwnsProjectOutcome,
@@ -18,7 +23,6 @@ import {
   loadConfig,
   parseStructuralApplication,
   preEditProjectStatus,
-  presentationRecompileFallbackStatus,
   retryJobOptions,
   type GenerationJobType
 } from "@book-maker/core";
@@ -34,16 +38,17 @@ import {
 import {
   GenerationAttemptJobClaimError,
   failGenerationAttempt,
-  refundCreditLedgerEntry,
-  refundLatestProjectOperationCredits
+  recordUserStopSettlementTx
 } from "@book-maker/db/billing";
+import { legacyOperationId, settleLegacyStoppedJobs } from "./stopLegacySettlement.js";
 
 // The job-name table, retry budgets, backoff, and stop constants are shared
 // with the worker through @book-maker/core/jobDispatch — one definition on
 // both sides of the queue.
 export { jobNames, type GenerationJobType };
 
-export const BOOK_QUEUE_NAME = "book-maker";
+/** The long lane keeps the original queue's name (`jobLanes.ts` in core). */
+export const BOOK_QUEUE_NAME = LONG_JOB_QUEUE;
 
 const config = loadConfig();
 
@@ -51,9 +56,26 @@ export const redisConnection = new Redis(config.REDIS_URL, {
   maxRetriesPerRequest: null
 });
 
-export const bookQueue = new Queue(BOOK_QUEUE_NAME, {
-  connection: redisConnection
+// Retention rides each job's own options, the same on both enqueue sides.
+const defaultJobOptions = { ...GENERATION_JOB_RETENTION };
+
+/** The long lane. Its name and this export predate the lanes; scripts import it. */
+export const bookQueue = new Queue(LONG_JOB_QUEUE, {
+  connection: redisConnection,
+  defaultJobOptions
 });
+
+export const interactiveQueue = new Queue(INTERACTIVE_JOB_QUEUE, {
+  connection: redisConnection,
+  defaultJobOptions
+});
+
+/**
+ * Both lanes, for every lookup of a job by id: a row's job lives in the lane
+ * its type and payload name, and a requeue — or a row the previous release
+ * queued in `book-maker` — can leave a copy in the other one.
+ */
+export const generationQueues = [bookQueue, interactiveQueue] as const;
 
 type RequeueableGenerationJob = {
   id: string;
@@ -223,7 +245,16 @@ export async function dispatchGenerationJob(generationJobId: string) {
     return generationJob;
   }
   try {
-    const bullJob = await bookQueue.add(
+    // Never add over a copy still live in either lane, and clear a finished
+    // one first — an add over a finished id in its own lane is a silent no-op.
+    if (!(await clearLaneJobIdForAdd(generationQueues, generationJob.id))) {
+      return deferDispatch(generationJob);
+    }
+    // The lane is the row's (type, payload), so the worker's re-push of the
+    // same row lands in the same queue and BullMQ's job-id dedupe still holds.
+    const placement = generationJobPlacement(generationJob.type, payload);
+    const laneQueue = placement.lane === "interactive" ? interactiveQueue : bookQueue;
+    const bullJob = await laneQueue.add(
       jobName,
       {
         ...payload,
@@ -233,7 +264,11 @@ export async function dispatchGenerationJob(generationJobId: string) {
         generationJobId: generationJob.id,
         ...(generationJob.attemptId ? { attemptId: generationJob.attemptId } : {})
       },
-      { ...jobOptionsForType(generationJob.type as GenerationJobType), jobId: generationJob.id }
+      {
+        ...jobOptionsForType(generationJob.type as GenerationJobType),
+        ...(placement.priority !== undefined ? { priority: placement.priority } : {}),
+        jobId: generationJob.id
+      }
     );
     return prisma.generationJob.update({
       where: { id: generationJob.id },
@@ -255,15 +290,21 @@ export async function dispatchGenerationJob(generationJobId: string) {
       dispatchAttempt: attempts,
       error: errorMessage(error)
     });
-    return prisma.generationJob.update({
-      where: { id: generationJob.id },
-      data: {
-        dispatchAttempts: attempts,
-        nextDispatchAt: new Date(Date.now() + dispatchBackoffMs(attempts)),
-        message: "Waiting for the generation queue"
-      }
-    });
+    return deferDispatch(generationJob);
   }
+}
+
+/** Leaves the row QUEUED without a Bull id for the reconcile sweep, after a backoff. */
+function deferDispatch(generationJob: { id: string; dispatchAttempts: number }) {
+  const attempts = generationJob.dispatchAttempts + 1;
+  return prisma.generationJob.update({
+    where: { id: generationJob.id },
+    data: {
+      dispatchAttempts: attempts,
+      nextDispatchAt: new Date(Date.now() + dispatchBackoffMs(attempts)),
+      message: "Waiting for the generation queue"
+    }
+  });
 }
 
 export async function reconcileUndispatchedGenerationJobs(limit = 50): Promise<number> {
@@ -296,10 +337,7 @@ export async function requeueGenerationJob(job: RequeueableGenerationJob) {
     select: { bullJobId: true }
   });
   if (existingBullId?.bullJobId) {
-    const existingBullJob = await bookQueue.getJob(existingBullId.bullJobId);
-    if (existingBullJob && (await existingBullJob.getState()) !== "active") {
-      await existingBullJob.remove().catch(() => undefined);
-    }
+    await removeIdleLaneJobs(generationQueues, existingBullId.bullJobId);
   }
 
   await prisma.generationJob.update({
@@ -415,31 +453,35 @@ export async function stopProjectGenerationJobs(projectId: string) {
     }
 
     // The stopped job, canceled operation/lease, restored project and the paid
-    // attempt's *refund obligation* are one verdict: a crash after this commit
-    // must not leave an open attempt whose failed job nothing will reconcile.
+    // attempt's *refund obligation* are one verdict, and so is what that refund
+    // may be: a stop is the reader's own, so its stamp on the charge — what was
+    // delivered, at the quoted rates (`userStopSettlement.ts`) — is written here,
+    // before a delete cascades the pages away, and binds every later settlement.
     // The ledger move deliberately stays outside. It has to be SERIALIZABLE —
-    // `refundCreditLedgerEntryTx` reads the entry and the account without `FOR
-    // UPDATE` and increments from that snapshot, so at this transaction's Read
-    // Committed it can release the same charge twice beside the worker's own
-    // settlement — and it is the one write that can fail alone (the
-    // `reversesEntryId` unique index), which in here would roll back every job,
-    // operation and project write above it. `refundPending` on a terminal row
-    // is what `reconcileGenerationAttemptRefunds` sweeps, so the settlement
-    // below and the reconciler are both free to finish it.
+    // `refundCreditLedgerEntryTx` reads the entry and account without `FOR
+    // UPDATE`, so at Read Committed it can release the same charge twice beside
+    // the worker — and it is the one write that can fail alone (`reversesEntryId`
+    // is unique), which would roll back every write above. `refundPending` on a
+    // terminal row is what `reconcileGenerationAttemptRefunds` sweeps, so the
+    // settlement below and the reconciler are both free to finish it.
     for (const attemptId of settlingAttemptIds(stopped)) {
-      await tx.generationAttempt.updateMany({
+      const canceled = await tx.generationAttempt.updateMany({
         where: { id: attemptId, status: { in: ["QUEUED", "ACTIVE"] } },
         data: { status: "CANCELED", error: STOPPED_JOB_ERROR, finishedAt: new Date(), refundPending: true }
       });
+      if (canceled.count === 1) await recordUserStopSettlementTx(tx, attemptId);
     }
 
     // Outcome precedence is deliberate and independent of query order. A real
     // generation run still owns FAILED even when stopped beside derivative or
     // edit rows. Without one, an edit restores its queue-time settled status;
     // REVIEW_REQUIRED wins if inconsistent legacy rows are ever stopped
-    // together, preserving the more cautious verdict. A presentation-only
-    // reprint is the final restore case. Anything else — including a stop that
-    // claims zero rows — keeps the stranded-project fallback to FAILED.
+    // together, preserving the more cautious verdict. A free recompile — a
+    // presentation reprint, or a free edit's (manual save, Undo, Redo, Studio
+    // publish or takeover) — is the final restore case: it owns no FAILED, so
+    // the book goes back to the settled status it carries. Anything else —
+    // including a stop that claims zero rows — keeps the stranded-project
+    // fallback to FAILED.
     const stoppedRestorableEdits = stopped.filter((job) =>
       restoresPreEditProjectStatusOnStop(job, editStop.restorableContinuationJobIds)
     );
@@ -448,7 +490,10 @@ export async function stopProjectGenerationJobs(projectId: string) {
       (job) =>
         !stoppedRestorableEditIds.has(job.id) && generationJobOwnsFailureLifecycle(job.type, job.payload)
     );
-    const presentationJobs = stopped.filter((job) => isPresentationOnlyRecompile(job.payload));
+    const freeRecompileStatuses = stopped.flatMap((job) => {
+      const fallback = freeRecompileFallbackStatus(job.payload);
+      return fallback ? [fallback] : [];
+    });
     const completedPublicationOwnsEditing =
       project.status === "EDITING" && appliedEditHandoffJobIds.size === 0
         ? await hasLiveCompletedPublicationTailTx(tx, projectId, project.contentRevision)
@@ -475,12 +520,8 @@ export async function stopProjectGenerationJobs(projectId: string) {
         where: { id: projectId, status: "EDITING" },
         data: { status: restoredStatus }
       });
-    } else if (presentationJobs.length > 0 && project.status === "EDITING") {
-      const restoredStatus = presentationJobs.some(
-        (job) => presentationRecompileFallbackStatus(job.payload) === "REVIEW_REQUIRED"
-      )
-        ? "REVIEW_REQUIRED"
-        : "COMPLETE";
+    } else if (freeRecompileStatuses.length > 0 && project.status === "EDITING") {
+      const restoredStatus = freeRecompileStatuses.includes("REVIEW_REQUIRED") ? "REVIEW_REQUIRED" : "COMPLETE";
       await tx.project.updateMany({
         where: { id: projectId, status: "EDITING" },
         data: { status: restoredStatus }
@@ -500,20 +541,8 @@ export async function stopProjectGenerationJobs(projectId: string) {
       if (!job.bullJobId) {
         return;
       }
-      const bullJob = await bookQueue.getJob(job.bullJobId);
-      if (!bullJob) {
-        return;
-      }
-      const state = await bullJob.getState();
-      if (state === "active") {
-        return;
-      }
-      try {
-        await bullJob.remove();
-        removedQueueJobs += 1;
-      } catch {
-        // A worker may have claimed the job between the state check and remove.
-      }
+      // Either lane: an active copy is left to its delivery, whose stale check refuses it.
+      removedQueueJobs += await removeIdleLaneJobs(generationQueues, job.bullJobId);
     })
   );
 
@@ -546,7 +575,9 @@ export async function stopProjectGenerationJobs(projectId: string) {
   // missing file was cancelled. Deleting a finished book is enough to trigger
   // it: the status poll queues a repair the moment the PDF is missing, and both
   // delete routes stop the project's open jobs first. It is not legacy work —
-  // nothing was charged for it, so nothing settles.
+  // nothing was charged for it, so nothing settles. A free edit's recompile
+  // (`FREE_EDIT_RECOMPILE`) is excluded the same way: a one-word edit then a
+  // delete used to walk its `planId` to the delivered book's charge too.
   const legacyJobs = openJobs.filter((job) => !job.attemptId && payloadOwnsProjectOutcome(job.payload));
   if (legacyJobs.length > 0) {
     await settleLegacyStoppedJobs(projectId, legacyJobs);
@@ -584,76 +615,6 @@ function restoresPreEditProjectStatusOnStop(
     generationJobRestoresPreEditProjectStatus(job.type) &&
     (job.type !== "CONTINUE_BOOK" || restorableContinuationJobIds.has(job.id))
   );
-}
-
-const BOOK_RUN_JOB_TYPES = new Set(["GENERATE_BOOK", "GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"]);
-
-/**
- * Legacy (attempt-less) rows settle the way the worker settles them: each job
- * type against its own charge. Only book-run rows may walk to the project's
- * full-book entry — routing a stopped audiobook or edit there refunds a charge
- * that paid for a book the user keeps.
- */
-async function settleLegacyStoppedJobs(
-  projectId: string,
-  legacyJobs: ReadonlyArray<{ id: string; type: string; payload: unknown }>
-): Promise<void> {
-  const refundedEntryIds = new Set<string>();
-  const refundOnce = async (entryId: string) => {
-    if (!refundedEntryIds.has(entryId)) {
-      refundedEntryIds.add(entryId);
-      await refundCreditLedgerEntry(entryId, STOPPED_JOB_ERROR);
-    }
-  };
-  const bookRunJobs: Array<{ type: string; payload: unknown }> = [];
-  for (const job of legacyJobs) {
-    const payload = jsonPayloadToRecord(job.payload);
-    const ownEntryId =
-      typeof payload.billingLedgerEntryId === "string" && payload.billingLedgerEntryId
-        ? payload.billingLedgerEntryId
-        : null;
-    if (BOOK_RUN_JOB_TYPES.has(job.type)) {
-      bookRunJobs.push(job);
-      continue;
-    }
-    if (job.type === "PLAN_BOOK") {
-      if (ownEntryId) {
-        await refundOnce(ownEntryId);
-      } else {
-        await refundLatestProjectOperationCredits({ projectId, operation: "PLAN_GENERATION", reason: STOPPED_JOB_ERROR });
-      }
-      continue;
-    }
-    // Audiobooks, edits, continuations, replans: their own stamped entry, or
-    // their operation's. Unpriced derivative work (characters, research)
-    // stamps nothing and refunds nothing.
-    if (ownEntryId) {
-      await refundOnce(ownEntryId);
-      continue;
-    }
-    const operationId = legacyOperationId(payload);
-    if (operationId) {
-      const operation = await prisma.bookEditOperation.findUnique({
-        where: { id: operationId },
-        select: { ledgerEntryId: true }
-      });
-      if (operation?.ledgerEntryId) {
-        await refundOnce(operation.ledgerEntryId);
-      }
-    }
-  }
-  if (bookRunJobs.length > 0) {
-    const chargedEntryId = await stoppedRunLedgerEntryId(projectId, bookRunJobs);
-    if (chargedEntryId) {
-      await refundOnce(chargedEntryId);
-    } else {
-      await refundLatestProjectOperationCredits({
-        projectId,
-        operation: "FULL_BOOK_GENERATION",
-        reason: STOPPED_JOB_ERROR
-      });
-    }
-  }
 }
 
 /**
@@ -838,58 +799,15 @@ async function compensateStoppedStructuralShiftTx(
   }
 }
 
-function legacyOperationId(payload: Record<string, unknown>): string | null {
-  const value = payload.operationId ?? payload.editOperationId ?? payload.replanOperationId;
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-/**
- * The charge that paid for the run being stopped, resolved the same way the
- * worker settles a failed run (its runtime/jobLifecycle.ts): the GENERATE_BOOK
- * payload's own ledger entry first, then the plan walk shared through
- * `bookGenerationChargeFromPayloads`. Null falls back to the latest
- * FULL_BOOK_GENERATION charge, which keeps runs enqueued before the payload
- * stamp refundable.
- */
-async function stoppedRunLedgerEntryId(
-  projectId: string,
-  openJobs: ReadonlyArray<{ type: string; payload: unknown }>
-): Promise<string | null> {
-  let planId: string | null = null;
-  for (const job of openJobs) {
-    const payload = jsonPayloadToRecord(job.payload);
-    if (job.type === "GENERATE_BOOK" && typeof payload.billingLedgerEntryId === "string" && payload.billingLedgerEntryId) {
-      return payload.billingLedgerEntryId;
-    }
-    if (!planId && typeof payload.planId === "string" && payload.planId) {
-      planId = payload.planId;
-    }
-  }
-  if (!planId) {
-    return null;
-  }
-  const rows = await prisma.generationJob.findMany({
-    where: { projectId, type: "GENERATE_BOOK" },
-    orderBy: { createdAt: "desc" },
-    take: BOOK_GENERATION_CHARGE_LOOKBACK,
-    select: { payload: true }
-  });
-  return bookGenerationChargeFromPayloads(rows, planId);
-}
-
 export async function isBullJobActive(bullJobId: string | null): Promise<boolean> {
   if (!bullJobId) {
     return false;
   }
-  const bullJob = await bookQueue.getJob(bullJobId);
-  if (!bullJob) {
-    return false;
-  }
-  return (await bullJob.getState()) === "active";
+  return isLaneJobActive(generationQueues, bullJobId);
 }
 
 export async function closeQueue() {
-  await bookQueue.close();
+  await Promise.all(generationQueues.map((queue) => queue.close()));
   redisConnection.disconnect();
 }
 

@@ -165,8 +165,11 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(repository.verifications.single.productId, 'tomeza.credit_pack_2');
-    expect(repository.verifications.single.purchaseToken, 'purchase-token-2');
+    expect(
+      repository.verifications.map((call) => call.purchaseToken).toList(),
+      ['pending-token', 'purchase-token-2'],
+    );
+    expect(repository.verifications.last.productId, 'tomeza.credit_pack_2');
     expect(store.finished.single.purchaseToken, 'purchase-token-2');
 
     await tester.tap(

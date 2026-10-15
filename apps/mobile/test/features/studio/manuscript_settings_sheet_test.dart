@@ -144,20 +144,34 @@ void main() {
     expect(results, [null]);
   });
 
-  testWidgets('a title too short to print is refused in place', (tester) async {
+  testWidgets('an empty title is refused in place', (tester) async {
     final studio = _studio();
     await tester.pumpWidget(_app(studio, []));
     await tester.pumpAndSettle();
     await _open(tester);
 
-    await _type(tester, 'settings-title', 'M');
+    await _type(tester, 'settings-title', '   ');
     await tester.tap(find.byKey(const ValueKey('settings-save')));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('Give your book a title of at least two characters.'),
-      findsOneWidget,
-    );
+    expect(find.text('Give your book a title.'), findsOneWidget);
     expect(studio.settingsUpdates, isEmpty);
+  });
+
+  // A CJK book is often named in one character ("海"), and the server takes
+  // 1–160 everywhere; the sheet used to ask for two.
+  testWidgets('a one-character title is a title', (tester) async {
+    final studio = _studio();
+    await tester.pumpWidget(_app(studio, []));
+    await tester.pumpAndSettle();
+    await _open(tester);
+
+    await _type(tester, 'settings-title', '海');
+    await tester.tap(find.byKey(const ValueKey('settings-save')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('at least two characters'), findsNothing);
+    expect(studio.settingsUpdates, hasLength(1));
+    expect(studio.settingsUpdates.single.title, '海');
   });
 }

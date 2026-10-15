@@ -6,6 +6,7 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../book_matter/presentation/author_profile_screen.dart';
 import '../../notifications/presentation/book_notifications_offer.dart';
 import '../../characters/presentation/character_library_screen.dart';
 import '../../projects/data/creation_repository.dart';
@@ -65,6 +66,13 @@ class AccountScreen extends ConsumerWidget {
           AppSettingsSection(
             title: 'Library',
             children: [
+              AppSettingsRow(
+                key: const ValueKey('account-author-profile'),
+                icon: Icons.history_edu_outlined,
+                title: 'Author profile',
+                subtitle: 'Your pen name and bio, for every new book',
+                onTap: () => context.push(authorProfileLocation),
+              ),
               AppSettingsRow(
                 key: const ValueKey('account-archived-chats'),
                 icon: Icons.archive_outlined,

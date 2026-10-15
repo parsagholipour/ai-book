@@ -195,7 +195,7 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
     markdown: `![Book cover](${image("cover.svg")})\n\n# The Covered Book\n\nOpening.\n\n${paragraphs(6, "Chapter")}`
   },
   {
-    // The coverless front matter — `formatTitlePage` in markdown.ts, reproduced
+    // The coverless front matter — `formatBookMatter` in bookMatterPages.ts, reproduced
     // verbatim because the harness renders markdown rather than compiling a book.
     // It is a *fixed-height, clipped* sheet whose stack is centred by auto
     // margins, so it is the one piece of furniture where a stylesheet edit can
@@ -212,6 +212,130 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
       "</section>",
       "",
       paragraphs(6, "Chapter")
+    ].join("\n")
+  },
+  {
+    // Every page of book matter, as `formatBookMatter` writes it: the title page
+    // *behind* a cover (`pdf-front`: counted, unnumbered, no second counter
+    // reset), the dedication and publication details sharing one sheet, and
+    // About the Author opening a fresh sheet off its marker.
+    name: "matter-pages",
+    language: "en",
+    markdown: [
+      `![Book cover](${image("cover.svg")})`,
+      '<section class="book-title-page book-title-page--after-cover">',
+      '  <h1 class="book-title-page__title">The Quiet Engine</h1>',
+      '  <p class="book-title-page__subtitle">A study of machines that would rather not</p>',
+      '  <p class="book-title-page__byline">by Ada Lovelace</p>',
+      "</section>",
+      '<section class="book-matter-sheet">',
+      '  <div class="book-matter-sheet__dedication">',
+      "    <p>For Sara,<br />who asked for a dragon.</p>",
+      "  </div>",
+      '  <div class="book-matter-sheet__publication">',
+      "    <p>© 2026 Ada Lovelace</p>",
+      "    <p>All rights reserved.</p>",
+      "    <p>ISBN 978-0-00-000000-0</p>",
+      '    <p class="book-matter-sheet__credit">Made with Tomeza</p>',
+      "  </div>",
+      "</section>",
+      "",
+      paragraphs(3, "Chapter"),
+      "",
+      "## About the Author",
+      "",
+      '<div class="book-about-author"></div>',
+      "",
+      "Ada Lovelace writes about engines, and the people who would rather they stayed quiet\\.",
+      "",
+      "ada\\.example"
+    ].join("\n")
+  },
+  {
+    // A dedication too long for the house 13pt, set one size down exactly as
+    // `formatBookMatter` writes it (`matterSheetLayout` picks the size), so it
+    // keeps to the one sheet `bookMatterSheetCount` counts for it.
+    name: "long-dedication",
+    language: "en",
+    markdown: [
+      '<section class="book-title-page">',
+      '  <h1 class="book-title-page__title">The Quiet Engine</h1>',
+      '  <p class="book-title-page__byline">by Ada Lovelace</p>',
+      "</section>",
+      "",
+      '<section class="book-matter-sheet book-matter-sheet--long">',
+      '  <div class="book-matter-sheet__dedication">',
+      "    <p>For Sara, who asked for a dragon.</p>",
+      `    <p>${LOREM.repeat(15).trim()}</p>`,
+      "  </div>",
+      '  <div class="book-matter-sheet__publication">',
+      "    <p>© 2026 Ada Lovelace</p>",
+      "    <p>All rights reserved.</p>",
+      "    <p>ISBN 978-0-00-000000-0</p>",
+      "  </div>",
+      "</section>",
+      "",
+      paragraphs(2, "Chapter")
+    ].join("\n")
+  },
+  {
+    // About the Author too long for its house size, as `formatBookMatter`
+    // writes it: sixty one-line paragraphs and a website, which
+    // `aboutAuthorLayout` sets at its smallest size and counts as two sheets
+    // (`bookMatterSheetCount`). The biography is set in points on
+    // `@page pdf-back`, so these two sheets are the same at any fitter step.
+    name: "long-about-author",
+    language: "en",
+    markdown: [
+      '<section class="book-title-page">',
+      '  <h1 class="book-title-page__title">The Quiet Engine</h1>',
+      '  <p class="book-title-page__byline">by Ada Lovelace</p>',
+      "</section>",
+      "",
+      paragraphs(2, "Chapter"),
+      "",
+      "## About the Author",
+      "",
+      '<div class="book-about-author book-about-author--longest"></div>',
+      "",
+      Array.from({ length: 60 }, (_, index) => `A short paragraph ${index + 1}\\.`).join("\n\n"),
+      "",
+      "ada\\.example"
+    ].join("\n")
+  },
+  {
+    // The matter pages of a right-to-left book, as `formatBookMatter` writes
+    // them: the © year in the book's own digits, the rights line and the
+    // credit in its language, and its About the Author at the house size.
+    name: "matter-pages-fa",
+    language: "fa",
+    markdown: [
+      '<section class="book-title-page">',
+      '  <h1 class="book-title-page__title">ساعت‌ساز</h1>',
+      '  <p class="book-title-page__subtitle">پیشه‌ای صبور</p>',
+      '  <p class="book-title-page__byline">نوشتهٔ آدا لاولیس</p>',
+      "</section>",
+      "",
+      '<section class="book-matter-sheet">',
+      '  <div class="book-matter-sheet__dedication">',
+      "    <p>برای سارا،<br />که اژدها خواست.</p>",
+      "  </div>",
+      '  <div class="book-matter-sheet__publication">',
+      "    <p>© ۲۰۲۶ آدا لاولیس</p>",
+      "    <p>همهٔ حقوق محفوظ است.</p>",
+      '    <p class="book-matter-sheet__credit">ساخته‌شده با Tomeza</p>',
+      "  </div>",
+      "</section>",
+      "",
+      `## فصل ۱\n\n${"این متن آزمایشی برای بررسی چیدمان راست‌به‌چپ است و باید در چند خط بشکند. ".repeat(12)}`,
+      "",
+      "## دربارهٔ نویسنده",
+      "",
+      '<div class="book-about-author"></div>',
+      "",
+      "آدا لاولیس دربارهٔ ماشین‌ها می‌نویسد و با دو گربه در لندن زندگی می‌کند\\.",
+      "",
+      "ada\\.example"
     ].join("\n")
   },
   {

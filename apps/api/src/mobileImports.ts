@@ -2,7 +2,9 @@ import type { FastifyPluginAsync } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
   MANUSCRIPT_MAX_BYTES,
+  BOOK_MATTER_TEXT_FIELDS,
   ManuscriptImportError,
+  bookMatterForImportedManuscript,
   deriveManuscriptTitle,
   detectCreationAttachmentType,
   loadConfig,
@@ -19,6 +21,9 @@ import {
 } from "@book-maker/db/billing";
 import { z } from "zod";
 import { saveCreationAttachmentFile } from "./attachmentStorage.js";
+import { authorDefaultsForNewBook } from "./mobile/authorProfile.js";
+import { enforceMatterFieldRestrictions } from "./mobile/matterContentScreen.js";
+import { manuscriptContentRestrictedError } from "./mobile/manuscript/manuscriptContentScreen.js";
 import {
   hitAuthenticatedLimit,
   loadMobileProjectDetail,
@@ -29,6 +34,8 @@ import {
   serializeProjectDetail,
   type MobileProjectDetailDto
 } from "./mobileProjects.js";
+import { requireAiCapacity } from "./mobile/aiCapacity.js";
+import { requireBooksInProgressCapacity } from "./mobile/booksInProgress.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "./queue.js";
 import { InMemoryRateLimiter, type RateLimitConfig } from "./rateLimit.js";
 
@@ -109,7 +116,7 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
       bodyLimit: MANUSCRIPT_MAX_BYTES + 64 * 1024,
       schema: {
         tags: ["mobile"],
-        response: { 200: {}, 201: {}, 401: mobileAuthError, 403: mobileAuthError, 422: mobileAuthError }
+        response: { 200: {}, 201: {}, 401: mobileAuthError, 403: mobileAuthError, 422: manuscriptContentRestrictedError }
       }
     },
     async (request, reply) => {
@@ -142,7 +149,7 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
               where: { dedupeKey: `import-book:${replayed.projectId}` }
             });
             return reply.code(200).send({
-              project: await serializeProjectDetail(project, appConfig, auth.user.id),
+              project: await serializeProjectDetail(project, appConfig),
               import: serializeBookImport(replayed),
               operation: job
                 ? { kind: "import_queued" as const, jobId: job.id, message: "Importing your book." }
@@ -160,6 +167,18 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
           "IMPORT_REQUEST_ALREADY_USED",
           "That upload already finished and its book was since deleted. Import the file again to make a new book."
         );
+      }
+
+      // After the replay above (that book is already imported) and before the
+      // free-tier import slot: the import job reads the manuscript's style
+      // with a model, so a new import asks the AI spend breaker.
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "standard"))) {
+        return;
+      }
+      // The import job takes the long lane, so it counts against this account's
+      // share of it; asked before the upload is stored or a free slot claimed.
+      if (!(await requireBooksInProgressCapacity(reply, auth.user.id))) {
+        return;
       }
 
       const data = request.body;
@@ -180,10 +199,19 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
       }
 
       // Cheap local parse for instant feedback; the worker re-parses when the
-      // import job runs (local extraction is fast even at the 20 MB cap).
+      // import job runs (local extraction is fast even at the 20 MB cap). The
+      // profile's pen name is a name the manuscript's title page may print
+      // unlabelled. Freeze those hints in the durable job: the book's byline
+      // can change before the worker reads the same bytes, even during import.
+      const profile = await authorDefaultsForNewBook(auth.user.id);
+      const knownAuthors = profile.authorName ? [profile.authorName] : [];
       let parsed: ParsedManuscript;
       try {
-        parsed = await parseManuscript({ data, format: detected.format as ManuscriptImportFormat });
+        parsed = await parseManuscript({
+          data,
+          format: detected.format as ManuscriptImportFormat,
+          knownAuthors
+        });
       } catch (error) {
         if (error instanceof ManuscriptImportError) {
           return sendMobileError(reply, 422, error.code, error.message);
@@ -199,6 +227,16 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
         sections: parsed.sections,
         fileName: query.data.filename
       });
+      // These words left the manuscript's pages and now print as matter. Screen
+      // the exact merged snapshot (including profile defaults) before any write
+      // or quota claim, with the same printed-text policy as the matter editor.
+      const author = bookMatterForImportedManuscript(profile, parsed.matter);
+      if (!await enforceMatterFieldRestrictions(reply, {
+        title,
+        subtitle: author.subtitle,
+        authorName: author.authorName,
+        ...Object.fromEntries(BOOK_MATTER_TEXT_FIELDS.map((field) => [field, author.bookMatter?.[field]]))
+      })) return;
       const targetPages = Math.min(
         IMPORT_MAX_PAGES,
         Math.max(1, Math.round(parsed.charCount / IMPORT_PAGE_CHARS_ESTIMATE))
@@ -257,10 +295,16 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
           }
           importQuotaPeriodKey = claim.periodKey;
         }
+        // The manuscript's own title page, © page, dedication and About the
+        // Author came out of its pages (`parseManuscript`); its words win here
+        // and the profile fills the rest, so the book prints each once.
         const project = await tx.project.create({
           data: {
             userId: auth.user.id,
             title,
+            ...(author.subtitle ? { subtitle: author.subtitle } : {}),
+            ...(author.authorName ? { authorName: author.authorName } : {}),
+            ...(author.bookMatter ? { bookMatter: author.bookMatter } : {}),
             prompt: `Imported manuscript: ${title}. The author's uploaded text is the canonical book content.`,
             category: "CUSTOM",
             targetPages,
@@ -298,6 +342,7 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
           payload: {
             importId,
             language: query.data.language ?? null,
+            knownAuthors,
             ...(importQuotaPeriodKey ? { importQuota: { userId: auth.user.id, periodKey: importQuotaPeriodKey } } : {})
           }
         });
@@ -331,7 +376,7 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
         return sendMobileError(reply, 422, "IMPORT_FAILED", "The imported book could not be loaded. Try again.");
       }
       return reply.code(201).send({
-        project: await serializeProjectDetail(detail, appConfig, auth.user.id),
+        project: await serializeProjectDetail(detail, appConfig),
         import: serializeBookImport(created.bookImport),
         operation: {
           kind: "import_queued" as const,

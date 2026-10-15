@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { ensureProjectExportEntitlementOrSpend } from "@book-maker/db/billing";
+import { spendCredits } from "@book-maker/db/billing";
 import { EXPORT_REPAIR_FORMAT } from "@book-maker/core";
 import { seedObject } from "../testing/objectStorage.js";
 
@@ -72,8 +72,8 @@ describe("mobile export repair queueing", () => {
         })
       })
     );
-    // Nothing was charged for a file that was not delivered.
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    // A download never charges, delivered or not.
+    expect(vi.mocked(spendCredits)).not.toHaveBeenCalled();
     await app.close();
   });
 

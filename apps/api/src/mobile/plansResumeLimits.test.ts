@@ -70,7 +70,7 @@ describe("generation retry limit responses", () => {
           imageQuota: { used: 3, limit: 3, resetsAt: "2026-07-01T00:00:00.000Z" }
         } : {
           code: "PAGE_LIMIT_EXCEEDED", message: expect.stringContaining("60-page book"),
-          pageLimit: { limit: 30, requestedPages: 60, maxPages: 600 }
+          pageLimit: { limit: 30, requestedPages: 60, maxPages: 200 }
         }
       });
       expect(mockBilling.reserveCredits).not.toHaveBeenCalled();

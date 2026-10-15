@@ -41,6 +41,8 @@ class _Transcript extends StatelessWidget {
     this.onRetryGeneration,
     this.onEditCreationMessage,
     this.onSwitchCreationBranch,
+    this.onReportCreationMessage,
+    this.onReportProjectMessage,
   });
 
   final CreationChatState state;
@@ -102,6 +104,11 @@ class _Transcript extends StatelessWidget {
   final void Function(MobileCreationMessage message)? onEditCreationMessage;
   final void Function(MobileCreationMessage message, String direction)?
   onSwitchCreationBranch;
+
+  /// Reports an AI reply for review (Google Play's AI-generated content
+  /// policy): one for the interview before the book, one for the book chat.
+  final void Function(MobileCreationMessage message)? onReportCreationMessage;
+  final void Function(MobileProjectChatMessage message)? onReportProjectMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -272,6 +279,7 @@ class _Transcript extends StatelessWidget {
         activeProjectId: activeProjectId,
         onSwitchBranch: onSwitchProjectBranch,
         onEdit: onEditProjectMessage,
+        onReport: onReportProjectMessage,
         onReply: onReplyToMessage == null
             ? null
             : (message) => onReplyToMessage!(
@@ -373,6 +381,7 @@ class _Transcript extends StatelessWidget {
               ),
             ),
       onSwitchBranch: onSwitchCreationBranch,
+      onReport: onReportCreationMessage,
       switchingBranch: state.switchingBranch || state.isBusy,
     );
   }
@@ -488,6 +497,7 @@ class _MessageBubble extends StatelessWidget {
     this.onEdit,
     this.onReply,
     this.onSwitchBranch,
+    this.onReport,
     this.switchingBranch = false,
     super.key,
   });
@@ -504,6 +514,9 @@ class _MessageBubble extends StatelessWidget {
   final void Function(MobileCreationMessage message)? onReply;
   final void Function(MobileCreationMessage message, String direction)?
   onSwitchBranch;
+
+  /// Reports this reply for review; never offered on the reader's own words.
+  final void Function(MobileCreationMessage message)? onReport;
   final bool switchingBranch;
 
   @override
@@ -533,6 +546,8 @@ class _MessageBubble extends StatelessWidget {
     final canReply =
         !failed && (message.id?.isNotEmpty ?? false) && onReply != null;
     final startReply = canReply ? () => onReply!(message) : null;
+    // Only a reply the server holds can be reported: the route finds it by id.
+    final canReport = !isUser && canReply && onReport != null;
     final shell = _ChatBubbleShell(
       isUser: isUser,
       background: background,
@@ -547,6 +562,7 @@ class _MessageBubble extends StatelessWidget {
         message: chatBubbleCopyText(message.content, role: message.role),
         onEdit: canEdit ? () => onEdit!(message) : null,
         onReply: startReply,
+        onReport: canReport ? () => onReport!(message) : null,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   anchorModelPageIndex,
   imagePlacementFromMessage,
+  isRedoRequestMessage,
+  isUndoRequestMessage,
   pageAnchorFromMessage,
   pageIndexesFromMessage,
   replanTargetPagesFromMessage,
@@ -105,6 +107,151 @@ describe("targetLanguageFromLanguageVersionRequest", () => {
       targetLanguageFromLanguageVersionRequest("create a chapter on jazz in French colonial Africa")
     ).toBeNull();
     expect(targetLanguageFromLanguageVersionRequest("make the ending more hopeful")).toBeNull();
+  });
+});
+
+describe("language-version requests after the clause guard was made linear", () => {
+  // Captured before `LANGUAGE_CLAUSE_END_GUARD` (core) gave its comma and
+  // conjunction their own trailing whitespace; the answers may not move.
+  const CORPUS: ReadonlyArray<readonly [string, string | null]> = [
+    ["make a Spanish version", "Spanish"],
+    ["rewrite in thai", "Thai"],
+    ["rewrite in thai\n", "Thai"],
+    ["rewrite in thai\n\t\n", "Thai"],
+    ["translate it to French, and Spanish", null],
+    ["translate it to French , or Spanish", null],
+    ["translate it to French please", "French"],
+    ["regenerate it in Korean cuisine", null],
+    ["change the language to Japanese", "Japanese"],
+    ["make chapter 2 about how aliens are portrayed in Chinese media", null],
+    ["convert the book into German  and  Dutch", null],
+    ["translate it into persian", "Persian"]
+  ];
+
+  it("reads every request the way it did before", () => {
+    const moved = CORPUS.flatMap(([text, before]) => {
+      const after = targetLanguageFromLanguageVersionRequest(text);
+      return after === before ? [] : [{ text, before, after }];
+    });
+    expect(moved).toEqual([]);
+  });
+});
+
+describe("undo and redo requests across the linear rewrite", () => {
+  // Captured before "last" was given its own trailing whitespace; a request
+  // must read as undo, redo or neither exactly as it did.
+  const UNDO_REDO_CORPUS: ReadonlyArray<readonly [string, boolean, boolean]> = [
+    ["undo", true, false],
+    ["Undo.", true, false],
+    ["undo!!!", true, false],
+    ["please undo", true, false],
+    ["can you undo that", true, false],
+    ["could you undo", true, false],
+    ["undo the last edit", true, false],
+    ["undo my last change", true, false],
+    ["undo that change", true, false],
+    ["undo the previous revision", true, false],
+    ["undo latest", true, false],
+    ["undo the  last   edit", true, false],
+    ["undo   that", true, false],
+    ["roll back", true, false],
+    ["rollback", true, false],
+    ["roll  back the last edit", true, false],
+    ["revert the last rewrite", true, false],
+    ["please revert that", true, false],
+    ["I want to undo the last edit", true, false],
+    ["undo page 3", true, false],
+    ["undo the edit on page 3", true, false],
+    ["can you undo the cover change", true, false],
+    ["redo", false, true],
+    ["Redo.", false, true],
+    ["redo!!", false, true],
+    ["reapply", false, true],
+    ["please redo", false, true],
+    ["can you redo", false, true],
+    ["redo the last edit", false, true],
+    ["redo my last change", false, true],
+    ["redo that", false, false],
+    ["reapply the previous revision", false, true],
+    ["redo the plan", false, false],
+    ["redo chapter 3", false, false],
+    ["redo the book", false, false],
+    ["redo page 2", false, false],
+    ["redo the outline", false, false],
+    ["redo the table of contents", false, false],
+    ["redo the last  change", false, true],
+    ["redo the", false, false],
+    ["x redo the", false, false],
+    ["now redo", false, false],
+    ["redo it", false, false],
+    ["undo it", true, false],
+    ["redo the last edit please", false, false],
+    ["undo... redo", true, false],
+    ["redo.?!", false, true],
+    ["قبلی را برگردان", false, false],
+    ["deshacer", false, false],
+    ["rückgängig", false, false]
+  ];
+
+  it("reads every request the way it did before", () => {
+    const moved = UNDO_REDO_CORPUS.flatMap(([text, undoBefore, redoBefore]) => {
+      const after = [isUndoRequestMessage(text), isRedoRequestMessage(text)];
+      return after[0] === undoBefore && after[1] === redoBefore ? [] : [{ text, undoBefore, redoBefore, after }];
+    });
+    expect(moved).toEqual([]);
+  });
+});
+
+describe("chat readers on adversarial input", () => {
+  // These run on every finished-book chat message, on the API's only thread.
+  // The language guard's three `\s*` in a row took 23 s on "rewrite in thai"
+  // and a 4,000-character run of tabs and newlines; the redo reader's `\s+`
+  // beside an optional word's `\s*` was quadratic. Timed at 1k before 10k.
+  const fill =
+    (head: string, filler: string, tail = "x") =>
+    (length: number): string => {
+      const room = length - head.length - tail.length;
+      return head + filler.repeat(Math.ceil(room / filler.length)).slice(0, room) + tail;
+    };
+  const ADVERSARIAL: ReadonlyArray<readonly [string, (length: number) => string]> = [
+    ["a version request + tabs and newlines", fill("rewrite in thai\n", "\t\n", "")],
+    ["a version request + spaces", fill("translate it into thai", " ")],
+    ["a version request + spaced commas", fill("translate it into thai", " , ")],
+    ["redo the + spaces", fill("redo the", " ")],
+    ["redo + spaces", fill("redo", " ")],
+    ["redo the last + spaces", fill("redo the last", " ")],
+    ["undo the + spaces, not at the start", fill("x undo the", " ")],
+    ["roll + spaces", fill("x roll", " ")],
+    ["repeated redos", fill("", "redo the ")],
+    ["a run of full stops", fill("redo", ".", "x")]
+  ];
+  const readMs = (run: () => unknown): number => {
+    // Best of two, so one slow read under load is not a failure.
+    let best = Number.POSITIVE_INFINITY;
+    for (let read = 0; read < 2; read += 1) {
+      const start = performance.now();
+      run();
+      best = Math.min(best, performance.now() - start);
+    }
+    return best;
+  };
+
+  it("stays linear on long runs of whitespace", () => {
+    for (const [length, budgetMs] of [
+      [1_000, 200],
+      [10_000, 1_000]
+    ] as const) {
+      for (const [label, build] of ADVERSARIAL) {
+        const text = build(length);
+        expect(text).toHaveLength(length);
+        const ms = readMs(() => [
+          targetLanguageFromLanguageVersionRequest(text),
+          isUndoRequestMessage(text),
+          isRedoRequestMessage(text)
+        ]);
+        expect(ms, `${label} at ${length} chars: ${ms.toFixed(1)} ms`).toBeLessThan(budgetMs);
+      }
+    }
   });
 });
 

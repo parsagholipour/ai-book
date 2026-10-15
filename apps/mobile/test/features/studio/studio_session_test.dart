@@ -231,7 +231,7 @@ void main() {
 
     testWidgets('dismissed, it stays open until chosen', (tester) async {
       final repo = _repo();
-      final (:session, :delegate, drafts: _) = _session(repo);
+      final (:session, :delegate, :drafts) = _session(repo);
       await session.start(chapterId: 'c1');
       repo.chapters.first
         ..markdown = 'Other.'
@@ -245,6 +245,8 @@ void main() {
       _type(session, 'Mine, and more.');
       await tester.pump(const Duration(milliseconds: 1300));
       expect(repo.saves, hasLength(sent), reason: 'paused until chosen');
+      expect(drafts.drafts['p1/c1']!.markdown, 'Mine, and more.');
+      expect(drafts.drafts['p1/c1']!.baseRevision, 3);
 
       // The indicator reopens the choice.
       delegate.choice = StudioConflictChoice.keepMine;
@@ -256,10 +258,137 @@ void main() {
   });
 
   group('a buffer left from an earlier sitting', () {
-    testWidgets('from the same revision is restored quietly and saved', (
+    testWidgets('a status-only change at the same revision is saved', (
       tester,
     ) async {
       final repo = _repo();
+      final drafts = MemoryStudioLocalDrafts();
+      await drafts.write(
+        StudioLocalDraft(
+          projectId: 'p1',
+          chapterId: 'c1',
+          baseRevision: 3,
+          title: 'The Lamp',
+          markdown: 'Every evening Mara climbed the stairs.',
+          notes: '',
+          status: ManuscriptChapterStatus.finalDraft,
+          savedAt: DateTime.utc(2026, 9, 29),
+        ),
+      );
+      final (:session, :delegate, drafts: _) = _session(repo, drafts: drafts);
+      await session.start(chapterId: 'c1');
+      await tester.pump();
+      expect(session.status, ManuscriptChapterStatus.finalDraft);
+      expect(delegate.conflicts, isEmpty);
+      expect(repo.saves.single.baseRevision, 3);
+      expect(repo.saves.single.status, ManuscriptChapterStatus.finalDraft);
+      expect(repo.chapters.first.status, ManuscriptChapterStatus.finalDraft);
+      expect(drafts.drafts, isEmpty);
+    });
+
+    for (final choice in StudioConflictChoice.values) {
+      testWidgets(
+        'a status-only change from an older revision: ${choice.name}',
+        (tester) async {
+          final repo = _repo();
+          final drafts = MemoryStudioLocalDrafts();
+          await drafts.write(
+            StudioLocalDraft(
+              projectId: 'p1',
+              chapterId: 'c1',
+              baseRevision: 2,
+              title: 'The Lamp',
+              markdown: 'Every evening Mara climbed the stairs.',
+              notes: '',
+              status: ManuscriptChapterStatus.finalDraft,
+              savedAt: DateTime.utc(2026, 9, 29),
+            ),
+          );
+          final (:session, :delegate, drafts: _) = _session(
+            repo,
+            drafts: drafts,
+          );
+          await session.start(chapterId: 'c1');
+          expect(delegate.conflicts, hasLength(1));
+          expect(delegate.conflicts.single.fromBuffer, isTrue);
+          expect(session.saveState, StudioSaveState.conflict);
+          expect(repo.saves, isEmpty);
+          expect(
+            drafts.drafts['p1/c1']!.status,
+            ManuscriptChapterStatus.finalDraft,
+          );
+
+          await session.resolveConflict(choice);
+          switch (choice) {
+            case StudioConflictChoice.keepMine:
+              expect(repo.saves.single.baseRevision, 3);
+              expect(
+                repo.saves.single.status,
+                ManuscriptChapterStatus.finalDraft,
+              );
+              expect(
+                repo.chapters.first.status,
+                ManuscriptChapterStatus.finalDraft,
+              );
+              expect(session.status, ManuscriptChapterStatus.finalDraft);
+            case StudioConflictChoice.useOther:
+              expect(repo.saves, isEmpty);
+              expect(
+                repo.chapters.first.status,
+                ManuscriptChapterStatus.drafting,
+              );
+              expect(session.status, ManuscriptChapterStatus.drafting);
+            case StudioConflictChoice.keepBoth:
+              expect(repo.chapters, hasLength(3));
+              expect(repo.chapters[1].title, 'The Lamp (copy)');
+              expect(
+                repo.chapters[1].status,
+                ManuscriptChapterStatus.finalDraft,
+              );
+              expect(
+                repo.chapters.first.status,
+                ManuscriptChapterStatus.drafting,
+              );
+              expect(session.status, ManuscriptChapterStatus.drafting);
+          }
+          expect(drafts.drafts, isEmpty);
+        },
+      );
+    }
+
+    for (final status in [null, ManuscriptChapterStatus.finalDraft]) {
+      testWidgets('matching status $status clears a redundant buffer', (
+        tester,
+      ) async {
+        final repo = _repo()
+          ..chapters.first.status = ManuscriptChapterStatus.finalDraft;
+        final drafts = MemoryStudioLocalDrafts();
+        await drafts.write(
+          StudioLocalDraft(
+            projectId: 'p1',
+            chapterId: 'c1',
+            baseRevision: 2,
+            title: 'The Lamp',
+            markdown: 'Every evening Mara climbed the stairs.',
+            notes: '',
+            status: status,
+            savedAt: DateTime.utc(2026, 9, 29),
+          ),
+        );
+        final (:session, :delegate, drafts: _) = _session(repo, drafts: drafts);
+        await session.start(chapterId: 'c1');
+        expect(session.status, ManuscriptChapterStatus.finalDraft);
+        expect(delegate.conflicts, isEmpty);
+        expect(repo.saves, isEmpty);
+        expect(drafts.drafts, isEmpty);
+      });
+    }
+
+    testWidgets('from the same revision is restored quietly and saved', (
+      tester,
+    ) async {
+      final repo = _repo()
+        ..chapters.first.status = ManuscriptChapterStatus.finalDraft;
       final drafts = MemoryStudioLocalDrafts();
       await drafts.write(
         StudioLocalDraft(
@@ -279,11 +408,13 @@ void main() {
       expect(session.document!.markdown, 'The words the crash almost took.');
       expect(repo.saves.single.baseRevision, 3);
       expect(repo.chapters.first.markdown, 'The words the crash almost took.');
+      expect(repo.chapters.first.status, ManuscriptChapterStatus.finalDraft);
       expect(drafts.drafts, isEmpty);
     });
 
     testWidgets('from an older revision asks which to keep', (tester) async {
-      final repo = _repo();
+      final repo = _repo()
+        ..chapters.first.status = ManuscriptChapterStatus.finalDraft;
       final drafts = MemoryStudioLocalDrafts();
       await drafts.write(
         StudioLocalDraft(
@@ -304,6 +435,97 @@ void main() {
       expect(delegate.conflicts.single.deviceMarkdown, 'Offline words.');
       expect(repo.saves.single.baseRevision, 3);
       expect(repo.chapters.first.markdown, 'Offline words.');
+      expect(repo.chapters.first.status, ManuscriptChapterStatus.finalDraft);
+    });
+
+    testWidgets('unresolved recovery survives flushing, switching and exit', (
+      tester,
+    ) async {
+      final repo = _repo();
+      final drafts = MemoryStudioLocalDrafts();
+      final recovered = StudioLocalDraft(
+        projectId: 'p1',
+        chapterId: 'c1',
+        baseRevision: 2,
+        title: 'Offline title',
+        markdown: 'The only copy of these offline words.',
+        notes: 'Offline notes.',
+        status: ManuscriptChapterStatus.finalDraft,
+        savedAt: DateTime.utc(2026, 9, 29),
+      );
+      await drafts.write(recovered);
+      final delegate = _Delegate();
+      final session = StudioSession(
+        projectId: 'p1',
+        repository: repo,
+        drafts: drafts,
+      )..delegate = delegate;
+      try {
+        await session.start(chapterId: 'c1');
+        expect(session.conflict!.fromBuffer, isTrue);
+        expect(session.document!.markdown, repo.chapters.first.markdown);
+
+        // App pause flushes even though the editor displays the server copy.
+        expect(await session.flush(), isFalse);
+        expect(drafts.drafts['p1/c1']!.toJson(), recovered.toJson());
+
+        await session.switchChapter('missing-chapter');
+        expect(session.chapterId, 'c1');
+        expect(session.conflict!.fromBuffer, isTrue);
+        expect(drafts.drafts['p1/c1']!.toJson(), recovered.toJson());
+
+        await session.switchChapter('c2');
+        expect(session.chapterId, 'c2');
+        expect(drafts.drafts['p1/c1']!.toJson(), recovered.toJson());
+        await session.switchChapter('c1');
+        expect(session.conflict!.deviceMarkdown, recovered.markdown);
+        expect(session.saveState, StudioSaveState.conflict);
+        expect(await session.flush(), isFalse, reason: 'leaving the Studio');
+      } finally {
+        session.dispose();
+      }
+
+      final reopened = _session(repo, drafts: drafts);
+      await reopened.session.start(chapterId: 'c1');
+      expect(reopened.session.conflict!.fromBuffer, isTrue);
+      expect(reopened.session.conflict!.deviceTitle, recovered.title);
+      expect(reopened.session.conflict!.deviceMarkdown, recovered.markdown);
+      expect(reopened.session.conflict!.deviceNotes, recovered.notes);
+      expect(drafts.drafts['p1/c1']!.toJson(), recovered.toJson());
+      expect(repo.saves, isEmpty, reason: 'no choice has been made');
+    });
+
+    testWidgets('a failed keep-both still preserves the unresolved recovery', (
+      tester,
+    ) async {
+      final repo = _repo()..failSaves = 1;
+      final drafts = MemoryStudioLocalDrafts();
+      final recovered = StudioLocalDraft(
+        projectId: 'p1',
+        chapterId: 'c1',
+        baseRevision: 2,
+        title: 'Offline title',
+        markdown: 'Offline words.',
+        notes: 'Offline notes.',
+        status: ManuscriptChapterStatus.finalDraft,
+        savedAt: DateTime.utc(2026, 9, 29),
+      );
+      await drafts.write(recovered);
+      final (:session, :delegate, drafts: _) = _session(repo, drafts: drafts);
+      await session.start(chapterId: 'c1');
+      expect(repo.saves, isEmpty);
+
+      await session.resolveConflict(StudioConflictChoice.keepBoth);
+      expect(delegate.messages, isNotEmpty);
+      expect(session.conflict!.fromBuffer, isTrue);
+      expect(await session.flush(), isFalse);
+      expect(drafts.drafts['p1/c1']!.toJson(), recovered.toJson());
+      expect(repo.saves, hasLength(1), reason: 'only the chosen copy was sent');
+      expect(repo.saves.single.markdown, recovered.markdown);
+      expect(
+        repo.chapters.first.markdown,
+        'Every evening Mara climbed the stairs.',
+      );
     });
 
     testWidgets('that matches the server is simply cleared', (tester) async {

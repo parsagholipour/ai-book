@@ -15,6 +15,7 @@ import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../../projects/presentation/ai_content_report.dart';
 import '../data/character_image_share.dart';
 import '../data/characters_repository.dart';
 import '../domain/character_image_models.dart';
@@ -388,6 +389,19 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
         await _generatePortrait(character);
       case CharacterImageAction.share:
         await _share(image);
+      case CharacterImageAction.report:
+        await reportAiContent(
+          context: context,
+          title: 'Report this AI-drawn picture',
+          submit: (reason, comment) => ref
+              .read(aiContentReportsApiProvider)
+              .reportCharacterPicture(
+                characterId: character.id,
+                imageId: image.id,
+                reason: reason,
+                comment: comment,
+              ),
+        );
       case CharacterImageAction.delete:
         await _deleteImage(character, image, images);
     }
@@ -689,6 +703,13 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                       busy: _busy,
                       useLeads: pictureStatus == CharacterPictureStatus.ready,
                       onCall: () => _call(character),
+                      callLocked:
+                          !(ref
+                                  .watch(billingProvider)
+                                  .asData
+                                  ?.value
+                                  .hasCreatorSubscription ??
+                              true),
                       onEdit: () => _editDetails(character),
                       onUse: () => _copyMention(character),
                     ),

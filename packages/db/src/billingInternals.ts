@@ -99,6 +99,11 @@ export function effectivePlanCredits(
   return Math.max(0, account.planCredits);
 }
 
+/** Both pools, as a reservation is checked against them and every ledger stamp records them. */
+export function spendableCredits(account: PlanAccountRow, now: Date = new Date()): number {
+  return account.availableCredits + effectivePlanCredits(account, now);
+}
+
 export type CreditLedgerEntryRecord = {
   id: string;
   userId: string;

@@ -33,6 +33,7 @@ class ReaderSelectionMenu extends StatelessWidget {
     required this.editingEnabled,
     required this.onAction,
     this.sourceCurrent = true,
+    this.offline = false,
     super.key,
   });
 
@@ -46,6 +47,9 @@ class ReaderSelectionMenu extends StatelessWidget {
   /// False for unknown provenance, a loader from another project, or an exact
   /// PDF whose revision differs from the screen's current export snapshot.
   final bool sourceCurrent;
+
+  /// The server is out of reach, and every one of these actions needs it.
+  final bool offline;
 
   final void Function(ReaderSelectionAction action) onAction;
 
@@ -64,7 +68,9 @@ class ReaderSelectionMenu extends StatelessWidget {
           _bookActions(context),
           // The only thing worth a second row: three of the four actions have
           // just greyed out and nothing else on screen says why.
-          if (!sourceCurrent)
+          if (offline)
+            _notice(context, 'Offline — these need a connection')
+          else if (!sourceCurrent)
             _staleNotice(context)
           else if (!editingEnabled)
             _busyNotice(context),
@@ -82,7 +88,7 @@ class ReaderSelectionMenu extends StatelessWidget {
           child: _BookAction(
             icon: Icons.chat_bubble_outline,
             label: 'Ask',
-            enabled: sourceCurrent,
+            enabled: sourceCurrent && !offline,
             onTap: () => onAction(ReaderSelectionAction.ask),
           ),
         ),
@@ -114,14 +120,17 @@ class ReaderSelectionMenu extends StatelessWidget {
     );
   }
 
-  Widget _busyNotice(BuildContext context) {
+  Widget _busyNotice(BuildContext context) =>
+      _notice(context, 'The book is busy — editing paused');
+
+  Widget _notice(BuildContext context, String text) {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
       color: theme.colorScheme.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: Text(
-        'The book is busy — editing paused',
+        text,
         textAlign: TextAlign.center,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -132,23 +141,8 @@ class ReaderSelectionMenu extends StatelessWidget {
     );
   }
 
-  Widget _staleNotice(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      color: theme.colorScheme.surfaceContainerHighest,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      child: Text(
-        'Reload to use book actions',
-        textAlign: TextAlign.center,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
+  Widget _staleNotice(BuildContext context) =>
+      _notice(context, 'Reload to use book actions');
 }
 
 class _BookAction extends StatelessWidget {

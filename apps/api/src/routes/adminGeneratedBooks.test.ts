@@ -20,6 +20,29 @@ vi.mock("@book-maker/db", () => ({
   Prisma: { raw: (sql: string) => sql }
 }));
 
+// Each charge's dollars come from the valuation (`admin/creditValuation.test.ts`
+// covers how); these suites test what the routes do with them.
+const mockValuation = vi.hoisted(() => ({ loadValuedSpends: vi.fn() }));
+vi.mock("../admin/creditValuation.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../admin/creditValuation.js")>()),
+  loadValuedSpends: mockValuation.loadValuedSpends
+}));
+
+/** One valued charge on a book, as the valuation returns it for a paying reader. */
+function valuedCharge(projectId: string, usd: number, operation = "FULL_BOOK_GENERATION") {
+  return {
+    userId: "payer",
+    createdAt: new Date("2026-08-20T00:00:00.000Z"),
+    operation,
+    projectId,
+    grossCredits: 0,
+    refundedCredits: 0,
+    usd,
+    refundedUsd: 0,
+    paidCredits: 0
+  };
+}
+
 const originalEnv = { ...process.env };
 let app: FastifyInstance;
 
@@ -43,6 +66,7 @@ beforeEach(() => {
   mockDb.prisma.generationQualityRevision.findMany.mockResolvedValue([]);
   mockDb.prisma.$queryRawUnsafe.mockResolvedValue([]);
   mockDb.prisma.$queryRaw.mockResolvedValue([]);
+  mockValuation.loadValuedSpends.mockResolvedValue([]);
 });
 
 afterEach(async () => {
@@ -73,6 +97,8 @@ describe("GET /api/admin/operations/books", () => {
         provider_cost_usd: 1.2345674
       }
     ]);
+    // The book's 1,000 kept credits came out of a Creator allowance.
+    mockValuation.loadValuedSpends.mockResolvedValue([valuedCharge("book-newest", 2.0), valuedCharge("book-newest", 0.83)]);
     app = await buildApp();
 
     const response = await app.inject({
@@ -94,10 +120,10 @@ describe("GET /api/admin/operations/books", () => {
           grossCredits: 1200,
           refundedCredits: 200,
           netCredits: 1000,
-          revenueUsd: 10,
+          revenueUsd: 2.83,
           providerCostUsd: 1.234567,
-          marginUsd: 8.765433,
-          marginPercent: 87.7
+          marginUsd: 1.595433,
+          marginPercent: 56.4
         }
       ],
       total: 31,
@@ -123,6 +149,30 @@ describe("GET /api/admin/operations/books", () => {
     });
     const [economicsSql] = mockDb.prisma.$queryRawUnsafe.mock.calls[0]!;
     expect(economicsSql).not.toContain('"createdAt"');
+    // Lifetime: the charges are chosen by book, never by the window.
+    expect(mockValuation.loadValuedSpends).toHaveBeenCalledWith({ kind: "projects", projectIds: ["book-newest"] });
+  });
+
+  it("shows a book a free reader made on welcome credits as earning nothing", async () => {
+    mockDb.prisma.project.count.mockResolvedValue(1);
+    mockDb.prisma.project.findMany.mockResolvedValue([
+      {
+        id: "welcome-book",
+        title: "On the House",
+        status: "COMPLETE",
+        updatedAt: new Date("2026-08-25T14:00:00.000Z"),
+        user: { email: "free@example.com" },
+        _count: { pages: 30, images: 4 }
+      }
+    ]);
+    mockDb.prisma.$queryRawUnsafe.mockResolvedValue([
+      { project_id: "welcome-book", charge_count: 1n, gross_credits: 900n, refund_count: 0n, refunded_credits: 0n, provider_cost_usd: 0.5 }
+    ]);
+    app = await buildApp();
+
+    const book = (await app.inject({ method: "GET", url: "/api/admin/operations/books" })).json().books[0];
+
+    expect(book).toMatchObject({ netCredits: 900, revenueUsd: 0, marginUsd: -0.5, marginPercent: null });
   });
 
   it("shows an uncharged operator book as zero revenue and a negative lifetime margin", async () => {

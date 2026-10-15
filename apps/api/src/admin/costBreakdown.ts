@@ -24,17 +24,20 @@
  * `estimatedCalls` row still carries token counts, and those are a guess with a
  * stated error bar — see the field's own comment before reading tokens off one.
  *
- * **Image and audio calls can only ever appear priced.** `recordProviderImageCost`
+ * **Image and narration calls can only ever appear priced.** `recordProviderImageCost`
  * and `recordProviderAudioCost` return early rather than writing a row they
- * cannot price, so an unrated image model is invisible here by construction and
- * `unratedCalls` is a text-only signal.
+ * cannot price, so an unrated image model is invisible here by construction.
+ * `unratedCalls` is therefore a text signal plus one audio one: a voice call's
+ * usage report the Live rate card could not price is written unpriced rather
+ * than dropped (`mobile/voiceRelayUsage.ts`), because those tokens were billed.
  *
  * **`purpose` is left verbatim.** It is the key the run logs under
  * `<BOOK_STORAGE_DIR>/<projectId>/runs/` are written with, and prettifying
  * "book.final_qa.chapter_transitions" into title case makes it ungreppable.
  */
 
-import { prisma } from "@book-maker/db";
+import { VOICE_CALL_OPERATION, VOICE_CALL_PURPOSE } from "@book-maker/core";
+import { Prisma, prisma } from "@book-maker/db";
 import type { AdminWindow } from "./metrics.js";
 import { loadSearchGroundingSummary, type SearchGroundingSummary } from "./searchGrounding.js";
 
@@ -60,7 +63,7 @@ export type CostUsage = {
    * character count standing in for a tokenizer nobody ran.
    */
   estimatedCalls: number;
-  /** Settled with real tokens, but no rate card knew the model. Text only. */
+  /** Settled with real tokens, but no rate card knew the model. Text, and voice-call segments. */
   unratedCalls: number;
   usd: number;
   promptTokens: number;
@@ -130,22 +133,34 @@ export async function loadAdminCostBreakdown(window: AdminWindow): Promise<Admin
 }
 
 /**
- * Every counter the page needs in one pass.
+ * A provider row's `kind`, as SQL over the row alias given.
  *
- * `kind` mirrors `isImageProviderLog`/`isAudioProviderLog` in
- * `packages/core/src/costs.ts`: both the column and `metadata.operation` are
- * checked, because a row written before `purpose` carried the operation name
- * only has the metadata copy. Counts and sums are cast to `double precision` so
- * Prisma hands back numbers rather than a mix of `BigInt` and `number`.
+ * Mirrors `isImageProviderLog`/`isAudioProviderLog` in
+ * `packages/core/src/costs.ts`: narration (`tts.*`) and voice calls are audio,
+ * image generation is image, everything else is text. Both the column and
+ * `metadata.operation` are checked, because a row written before `purpose`
+ * carried the operation name only has the metadata copy. Every query that
+ * groups provider spend by kind splices this one spelling, so a new audio
+ * purpose cannot land in one tab's bucket and another tab's text.
+ */
+export function providerCostKindSql(alias: "l" | "a"): string {
+  return `CASE
+        WHEN ${alias}.purpose LIKE 'tts.%' OR COALESCE(${alias}.metadata ->> 'operation', '') LIKE 'tts.%'
+          OR ${alias}.purpose = '${VOICE_CALL_PURPOSE}' OR ${alias}.metadata ->> 'operation' = '${VOICE_CALL_OPERATION}' THEN 'audio'
+        WHEN ${alias}.purpose = 'image.generate' OR ${alias}.metadata ->> 'operation' = 'image.generate' THEN 'image'
+        ELSE 'text'
+      END`;
+}
+
+/**
+ * Every counter the page needs in one pass, `kind` by {@link providerCostKindSql}.
+ * Counts and sums are cast to `double precision` so Prisma hands back numbers
+ * rather than a mix of `BigInt` and `number`.
  */
 async function loadProviderCostRows(window: AdminWindow): Promise<ProviderCostRow[]> {
   return prisma.$queryRaw<ProviderCostRow[]>`
     SELECT
-      CASE
-        WHEN l.purpose LIKE 'tts.%' OR COALESCE(l.metadata ->> 'operation', '') LIKE 'tts.%' THEN 'audio'
-        WHEN l.purpose = 'image.generate' OR l.metadata ->> 'operation' = 'image.generate' THEN 'image'
-        ELSE 'text'
-      END AS kind,
+      ${Prisma.raw(providerCostKindSql("l"))} AS kind,
       l.purpose AS purpose,
       l.provider AS provider,
       l.model AS model,

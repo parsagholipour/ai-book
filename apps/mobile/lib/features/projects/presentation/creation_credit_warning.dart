@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../../auth/presentation/verify_email_banner.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../billing/domain/billing_models.dart';
 import '../data/creation_prefs_store.dart';
 import '../domain/creation_credit_budget.dart';
 import '../domain/creation_models.dart';
@@ -32,7 +34,10 @@ Future<int?> confirmCreationCredits(
 
   final choice = await showDialog<_CreditWarningChoice>(
     context: context,
-    builder: (_) => _CreationCreditWarning(affordablePages: affordablePages),
+    builder: (_) => _CreationCreditWarning(
+      affordablePages: affordablePages,
+      billing: billing,
+    ),
   );
   if (choice == null) return null;
   if (choice.dontShowAgain) {
@@ -47,9 +52,17 @@ Future<int?> confirmCreationCredits(
 typedef _CreditWarningChoice = ({bool confirmed, bool dontShowAgain});
 
 class _CreationCreditWarning extends StatefulWidget {
-  const _CreationCreditWarning({required this.affordablePages});
+  const _CreationCreditWarning({
+    required this.affordablePages,
+    required this.billing,
+  });
 
   final int affordablePages;
+
+  /// Read for the welcome grant: while it waits on this reader's email, the
+  /// free way to the credits leads the warning. Verify closes it, which
+  /// abandons this build.
+  final MobileBilling billing;
 
   @override
   State<_CreationCreditWarning> createState() => _CreationCreditWarningState();
@@ -73,6 +86,10 @@ class _CreationCreditWarningState extends State<_CreationCreditWarning> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            VerifyEmailCreditsLead(
+              billing: widget.billing,
+              padding: const EdgeInsets.only(bottom: 12),
+            ),
             Text(
               pages > 0
                   ? 'With your current credits, you can make up to $pageLabel '

@@ -7,9 +7,12 @@
  * detail view is the opposite — one reader, so it can afford to be generous.
  */
 
-import { CREDIT_USD_VALUE } from "@book-maker/core";
+import { playServiceFeeRate } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { getImageQuota, resolvePlanTier } from "@book-maker/db/billing";
+import { loadAccountModeration, type AccountModerationDto } from "../accountModerationView.js";
+import { loadUserPayments, summarizePayments } from "./cashRevenue.js";
+import { loadValuedSpends } from "./creditValuation.js";
 import { SETTLED_CHARGE, SETTLED_REFUND, netSettledCredits, round2, titleCase } from "./metrics.js";
 
 export type AdminUserRow = {
@@ -27,7 +30,13 @@ export type AdminUserRow = {
   lifetimeSpent: number;
   projects: number;
   booksCompleted: number;
+  /** Catalog USD of every payment less refunds, before Google's fee. */
   cashUsd: number;
+  /**
+   * `cashUsd` less Google's fee per payment's product type — the figure the
+   * inspector leads with (`summarizePayments`) and the list's Paid column shows.
+   */
+  cashNetUsd: number;
   subscriptionStatus: string | null;
   lastActivityAt: string | null;
 };
@@ -55,7 +64,8 @@ type UserRollupRow = {
   lifetimeSpent: bigint | null;
   projects: bigint | null;
   books_completed: bigint | null;
-  cash_micros: bigint | null;
+  cash_micros: number | bigint | null;
+  cash_net_micros: number | null;
   subscription_status: string | null;
   last_activity: Date | null;
   total: bigint;
@@ -64,7 +74,7 @@ type UserRollupRow = {
 const USER_SORT_SQL: Record<AdminUserSort, string> = {
   recent: 'u."createdAt" DESC',
   spend: 'COALESCE(a."lifetimeCreditsSpent", 0) DESC',
-  cash: "cash_micros DESC NULLS LAST",
+  cash: "cash_net_micros DESC NULLS LAST",
   credits: 'COALESCE(a."availableCredits", 0) DESC',
   projects: "projects DESC"
 };
@@ -75,6 +85,12 @@ const USER_SORT_SQL: Record<AdminUserSort, string> = {
  * The `COUNT(*) OVER ()` window rides along with the page so the total and the
  * rows can never disagree about which users matched — a separate count query
  * can race a signup between the two.
+ *
+ * Cash is summed the way `summarizePayments` (`cashRevenue.ts`) sums one
+ * reader's for the inspector — each payment's catalog USD less its refund,
+ * clamped to the order, and its net less Google's fee for its product type —
+ * so the list's Paid column and the inspector's cash agree. The two fee rates
+ * are core's `playServiceFeeRate`, passed in rather than restated here.
  */
 export async function listAdminUsers(options: {
   query?: string | undefined;
@@ -103,8 +119,16 @@ export async function listAdminUsers(options: {
       COALESCE(a."lifetimeCreditsSpent", 0) AS "lifetimeSpent",
       (SELECT COUNT(*) FROM "Project" p WHERE p."userId" = u.id) AS projects,
       (SELECT COUNT(*) FROM "Project" p WHERE p."userId" = u.id AND p.status = 'COMPLETE') AS books_completed,
-      (SELECT SUM(pr."amountMicros" - pr."refundedAmountMicros") FROM "PurchasePayment" pr
+      (SELECT SUM(pr."amountMicros" - LEAST(GREATEST(pr."refundedAmountMicros", 0), pr."amountMicros"))
+        FROM "PurchasePayment" pr
         WHERE pr."userId" = u.id) AS cash_micros,
+      (SELECT SUM(
+          (pr."amountMicros" - LEAST(GREATEST(pr."refundedAmountMicros", 0), pr."amountMicros"))::float8
+          * (1 - CASE WHEN cat."productType"::text = 'SUBSCRIPTION' THEN $4::float8 ELSE $5::float8 END))
+        FROM "PurchasePayment" pr
+        LEFT JOIN "PurchaseRecord" rec ON rec.id = pr."purchaseRecordId"
+        LEFT JOIN "ProductCatalog" cat ON cat.id = rec."productId"
+        WHERE pr."userId" = u.id) AS cash_net_micros,
       (SELECT s.status::text FROM "SubscriptionState" s
         WHERE s."userId" = u.id ORDER BY s."updatedAt" DESC LIMIT 1) AS subscription_status,
       (SELECT MAX(e."createdAt") FROM "CreditLedgerEntry" e WHERE e."userId" = u.id) AS last_activity,
@@ -117,7 +141,9 @@ export async function listAdminUsers(options: {
   `,
     search,
     limit,
-    offset
+    offset,
+    playServiceFeeRate("SUBSCRIPTION"),
+    playServiceFeeRate(null)
   );
 
   return {
@@ -135,7 +161,8 @@ export async function listAdminUsers(options: {
       lifetimeSpent: Number(row.lifetimeSpent ?? 0),
       projects: Number(row.projects ?? 0),
       booksCompleted: Number(row.books_completed ?? 0),
-      cashUsd: round2(Number(row.cash_micros ?? 0n) / 1_000_000),
+      cashUsd: round2(Number(row.cash_micros ?? 0) / 1_000_000),
+      cashNetUsd: round2(Number(row.cash_net_micros ?? 0) / 1_000_000),
       subscriptionStatus: row.subscription_status,
       lastActivityAt: row.last_activity?.toISOString() ?? null
     })),
@@ -203,18 +230,26 @@ export type AdminUserDetail = {
     creditsCharged: number;
   }>;
   deletionRequests: Array<{ id: string; status: string; requestedAt: string }>;
+  /**
+   * Every payment the reader made: catalog USD less refunds, then less
+   * Google's fee (`cashRevenue.ts`), so it reads against provider spend.
+   */
+  cash: { orders: number; collectedUsd: number; feeUsd: number; netUsd: number };
+  /** Suspension, the sharing switch, and every operator action with its reason (`accountModeration.ts`). */
+  moderation: AccountModerationDto;
 };
 
 export async function loadAdminUserDetail(userId: string): Promise<AdminUserDetail | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, displayName: true, status: true, createdAt: true, disabledAt: true }
+    select: { id: true, email: true, displayName: true, status: true, createdAt: true, disabledAt: true, sharingDisabledAt: true }
   });
   if (!user) {
     return null;
   }
 
   const now = new Date();
+  const [cash, moderation] = await Promise.all([loadUserPayments(userId).then(summarizePayments), loadAccountModeration(user)]);
   const [account, tier, imageQuota, spendGroups, refundGroups, purchases, subscriptions, ledger, projects, deletionRequests] = await Promise.all([
     prisma.userCreditAccount.findUnique({ where: { userId } }),
     resolvePlanTier(userId, now),
@@ -313,10 +348,15 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
 
   return {
     user: {
-      ...user,
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      status: user.status,
       createdAt: user.createdAt.toISOString(),
       disabledAt: user.disabledAt?.toISOString() ?? null
     },
+    cash: { orders: cash.orders, collectedUsd: cash.collectedUsd, feeUsd: cash.feeUsd, netUsd: cash.netUsd },
+    moderation,
     credits: {
       // Same rule as the list query: an allowance past its period is not
       // spendable, so it is not reported as available either.
@@ -448,7 +488,7 @@ export async function loadAdminProjectDetail(projectId: string): Promise<AdminPr
     return null;
   }
 
-  const [providerTotal, unpricedCalls, byPurpose, jobs, ledger, creditTotal, refundTotal] = await Promise.all([
+  const [providerTotal, unpricedCalls, byPurpose, jobs, ledger, creditTotal, refundTotal, valued] = await Promise.all([
     prisma.providerCallLog.aggregate({ _sum: { costHint: true }, where: { projectId, costHint: { not: null } } }),
     prisma.providerCallLog.count({ where: { projectId, costHint: null } }),
     prisma.providerCallLog.groupBy({
@@ -493,7 +533,8 @@ export async function loadAdminProjectDetail(projectId: string): Promise<AdminPr
     prisma.creditLedgerEntry.aggregate({
       _sum: { amountCredits: true },
       where: { ...SETTLED_REFUND, projectId }
-    })
+    }),
+    loadValuedSpends({ kind: "projects", projectIds: [projectId] })
   ]);
 
   // Net delivered value. The full ledger above still exposes both rows, so an
@@ -502,7 +543,8 @@ export async function loadAdminProjectDetail(projectId: string): Promise<AdminPr
     creditTotal._sum.amountCredits ?? 0,
     refundTotal._sum.amountCredits ?? 0
   );
-  const revenueUsd = round2(creditsCharged * CREDIT_USD_VALUE);
+  // Valued by where the credits came from (`creditValuation.ts`): a free reader's book earned nothing.
+  const revenueUsd = round2(valued.reduce((sum, spend) => sum + spend.usd, 0));
   const providerUsd = round2(providerTotal._sum.costHint ?? 0);
 
   return {

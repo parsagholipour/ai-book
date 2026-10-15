@@ -276,14 +276,14 @@ void main() {
       const VoiceCallState(
         character: marlow,
         phase: VoiceCallPhase.ended,
-        elapsedSeconds: 1800,
-        maxCallSeconds: 1800,
+        elapsedSeconds: 900,
+        maxCallSeconds: 900,
         endedBecause: VoiceCallEndingReason.limit,
       ),
     );
 
     expect(
-      find.text('Calls stop at 30 minutes. Call again to keep talking.'),
+      find.text('Calls stop at 15 minutes. Call again to keep talking.'),
       findsOneWidget,
     );
     expect(find.text('Add credits'), findsNothing);

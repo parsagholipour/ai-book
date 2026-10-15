@@ -67,7 +67,7 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
         {props.list ? <span className="muted admin-count">{count(props.list.total)} total</span> : null}
       </div>
       <p className="muted chart-subtitle">
-        Books completed in this window. Revenue and provider cost include each book&apos;s full lifetime, including later
+        Books completed in this window. Earnings and provider cost include each book&apos;s full lifetime, including later
         edits, images, replans, and audiobook work.
       </p>
       {props.listError ? (
@@ -90,7 +90,9 @@ export function GeneratedBooksView(props: GeneratedBooksViewProps) {
                 <th>Book</th>
                 <th>Owner</th>
                 <th className="numeric">Pages</th>
-                <th className="numeric">Revenue</th>
+                <th className="numeric" title="The kept credits valued by where they came from, after Google's fee; welcome and operator credits earn $0">
+                  Earned
+                </th>
                 <th className="numeric">Provider cost</th>
                 <th className="numeric">Margin</th>
                 <th>Completed</th>

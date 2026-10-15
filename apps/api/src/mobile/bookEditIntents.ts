@@ -1,12 +1,16 @@
 import type { SourceService } from "@book-maker/core";
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { editProposalMessage, editProposalSummary } from "./bookEditCopy.js";
+import { busyEditMessage } from "./bookEditBusyCopy.js";
+import { matterChatLanguage } from "./bookMatterChatLanguage.js";
 import { numberingForProject, MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { proposeAddImageEdit } from "./addImageOperations.js";
 import { proposeImageLayoutEdit } from "./imageLayoutOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
 import { refuseAuthorBookReplan } from "./authorBookReplan.js";
+import { applyBookMatterChatEdit } from "./bookMatterChatEdits.js";
 import { applyBookTitleEdit } from "./bookTitleEdits.js";
+import { applyTomezaCreditEdit } from "./tomezaCreditEdits.js";
 import { applyPresentationIntent } from "./presentationIntents.js";
 import {
   affectedPagesForIntent,
@@ -31,6 +35,7 @@ import {
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import {
   continuedBookPages,
+  pageCeilingChatReply,
   pageLimitChatText,
   pageLimitMetadata,
   pageLimitRefusal,
@@ -194,8 +199,36 @@ export async function handleProjectChatIntent(options: {
       executeProposal: options.executeProposal,
       executionCommandId: options.executionCommandId,
       quotedCredits: options.quotedCredits,
-      pendingEditMetadata: pendingEditMetadataFromState
+      pendingEditMetadata: pendingEditMetadataFromState,
+      activeMessages: options.activeMessages
     });
+  }
+
+  // Free and answered at once — the book's matter pages, never a page of text —
+  // so it never reaches the proposal path below. Composed from the message and
+  // the book's matter as it stands now.
+  if (intent.kind === "book_matter") {
+    const reply = await applyBookMatterChatEdit({
+      userId,
+      project,
+      intent,
+      userMessageId,
+      message,
+      pendingRequest,
+      textModel: options.textModel,
+      // The route hands over the stored request only on the turn that spent
+      // the request's one question (`resolvePendingEditTurn`).
+      clarifyExhausted: options.clarifyExhausted ?? options.pendingRequest !== undefined,
+      activeMessages: options.activeMessages
+    });
+    return { reply, operation: null };
+  }
+
+  // The free tier's credit line: a free reprint on a plan, an offer of the
+  // plans on a free account, and never a card.
+  if (intent.kind === "tomeza_credit") {
+    const reply = await applyTomezaCreditEdit({ project, intent, userMessageId, message, activeMessages: options.activeMessages });
+    return { reply, operation: null };
   }
 
   const presentation = await applyPresentationIntent(project, intent, userMessageId);
@@ -300,6 +333,9 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
       const proposalIntent = { ...intent, clarification: "none" as const };
       const grownTo = restructuredBookPages(project, resolved.plan.totalPages);
       const pageLimit = grownTo === null ? null : await pageLimitRefusal(project.userId, grownTo);
+      if (pageLimit?.kind === "ceiling") {
+        return { reply: await pageCeilingChatReply(project.id, userMessageId, proposalIntent, pageLimit), operation: null };
+      }
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
@@ -348,6 +384,9 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
     const cost = bookEditCreditCost(intent.kind, newPageCount, project);
     const proposalIntent = { ...intent, clarification: "none" as const };
     const pageLimit = await pageLimitRefusal(project.userId, continuedBookPages(project, newPageCount));
+    if (pageLimit?.kind === "ceiling") {
+      return { reply: await pageCeilingChatReply(project.id, userMessageId, proposalIntent, pageLimit), operation: null };
+    }
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
@@ -384,6 +423,9 @@ export async function proposeBookEdit(options: ProposedChatEdit & {
     const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings: intent.replanSettings });
     const proposalIntent = { ...intent, clarification: "none" as const };
     const pageLimit = await pageLimitRefusal(project.userId, replannedBookPages(intent, project));
+    if (pageLimit?.kind === "ceiling") {
+      return { reply: await pageCeilingChatReply(project.id, userMessageId, proposalIntent, pageLimit), operation: null };
+    }
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
@@ -625,6 +667,8 @@ export async function busyEditReply(options: {
   pendingState?: PendingEditState | undefined;
   /** Mentioned character sheets, kept on the saved pending edit for the resume. */
   characterContext?: string | undefined;
+  /** Prior assistant language decisions, used if this turn has no valid one. */
+  activeMessages?: readonly { role: string; metadata?: unknown }[] | undefined;
 }): Promise<MobileProjectChatMessageRecord> {
   const pendingState: PendingEditState = {
     ...(options.pendingState ?? {
@@ -635,15 +679,15 @@ export async function busyEditReply(options: {
     clarification: "busy"
   };
   const resumesWithoutProposal =
-    ["back_matter", "chapter_heading", "page_design", "book_title"].includes(options.intent.kind);
+    ["back_matter", "chapter_heading", "page_design", "book_title", "book_matter", "tomeza_credit"].includes(options.intent.kind);
+  const replyLanguage = matterChatLanguage(options.intent.responseLanguage, options.activeMessages);
   return createAssistantChatMessage({
     projectId: options.projectId,
     parentId: options.parentMessageId,
-    content: pendingState.proposalId || resumesWithoutProposal
-      ? "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll run it. You can keep asking questions in the meantime."
-      : "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll set it up for you to confirm. You can keep asking questions in the meantime.",
+    content: busyEditMessage(replyLanguage, Boolean(pendingState.proposalId) || resumesWithoutProposal),
     metadata: {
       intent: options.intent,
+      replyLanguage,
       blockedByActiveJob: true,
       charged: false,
       pendingEdit: pendingEditMetadataFromState(pendingState)

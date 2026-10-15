@@ -98,6 +98,7 @@ flutter:
   assets:
     - assets/brand/launch-book.svg
     - assets/fonts/OFL-NotoSerif.txt
+    - assets/fonts/OFL-Manrope.txt
     - assets/brand/tomeza-promptbook-symbol.png
     - assets/brand/google-g.png
 

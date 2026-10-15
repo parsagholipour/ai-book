@@ -60,12 +60,51 @@ export function interiorIllustrationSlotCount(input: CreateProjectInput, pageCou
  * cannot import billing.
  */
 export function interiorIllustrationLaunchCap(input: CreateProjectInput): number {
-  const bookType = mobileBookType(input) ?? inferredBookType(input.category, input.subcategory);
+  const appBookType = mobileBookType(input);
+  if (isPictureBook(input, appBookType)) {
+    return pictureBookIllustrationCap(input.targetPages);
+  }
+  const bookType = appBookType ?? inferredBookType(input.category, input.subcategory);
   return bookType === "workbook"
     ? 6
     : bookType === "lead_magnet" || bookType === "short_story"
       ? 4
       : Math.max(1, Math.ceil(input.targetPages / 8));
+}
+
+/** The most interior pictures a picture book is drawn and billed. */
+export const PICTURE_BOOK_MAX_PICTURES = 12;
+
+/**
+ * **A children's picture book has a picture on every page up to twelve pages,
+ * and twelve pictures spread across any longer one: `min(pages, 12)`.** It was
+ * capped at four whatever its length — a 12-page bedtime book printed eight
+ * sheets of words alone — and the picture book is what the store listing leads
+ * with (launch review, 2026-10-13). The first rule after that, a picture a page
+ * to twelve and then one per two pages, stepped *down* at thirteen (12 pages
+ * drew 12, 13 drew 7), so a longer book got fewer pictures than a shorter one;
+ * the count is now monotonic, and every picture book of 12 pages or more gets
+ * twelve, at the tier's ordinary image rate (coordinator's decision,
+ * 2026-10-13). Past twelve pages the slots are the existing even spread, so 24
+ * pages draw pages 1, 3 … 23. The typesetter already gives every KIDS scene its
+ * own sheet from 5 to 40 pages and sets a picture scene's words under a capped
+ * picture (`pdfStoryPages.ts`), so no layout changed; past 40 pages the house
+ * layout prints them inline. With a drawn cover, the largest free picture book
+ * (30 pages, twelve pictures) is 1,175 plus its 40-credit plan, inside the
+ * 1,250 welcome grant (`welcomeCredits.test.ts`). Mirrored by
+ * `pictureBookIllustrationCount` in the app's `project_models.dart`.
+ */
+export function pictureBookIllustrationCap(pages: number): number {
+  return Math.min(PICTURE_BOOK_MAX_PICTURES, Math.max(0, Math.round(pages)));
+}
+
+/**
+ * A KIDS book the app made as a children's story (stored as `short_story`), or
+ * a KIDS book with no app type at all. An Auto book (`custom`) keeps Auto's own
+ * cap, because the app quotes Auto before its lane is known.
+ */
+function isPictureBook(input: CreateProjectInput, appBookType: LaunchBookType | undefined): boolean {
+  return input.category === "KIDS" && (appBookType === "short_story" || appBookType === undefined);
 }
 
 function billedInteriorIllustrationCap(input: CreateProjectInput): number | undefined {

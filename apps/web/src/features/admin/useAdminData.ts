@@ -3,6 +3,7 @@ import { apiGet, apiPatch, apiPost } from "../../api.js";
 import { readError } from "../shared/formatters.js";
 import { shareModerationBody } from "./shareModeration.js";
 import type {
+  ProductFunnel,
   AdminCostBreakdown,
   AdminGeneratedBookDetail,
   AdminGeneratedBookList,
@@ -57,6 +58,10 @@ function useResource<T>(path: string | null) {
 
 export function useAdminOverview(days: number) {
   return useResource<AdminOverview>(`/api/admin/overview?days=${days}`);
+}
+
+export function useAdminGrowth(days: number) {
+  return useResource<ProductFunnel>(`/api/admin/growth?days=${days}`);
 }
 
 export function useAdminCosts(days: number) {

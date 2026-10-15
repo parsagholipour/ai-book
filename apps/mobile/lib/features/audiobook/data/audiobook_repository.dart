@@ -11,6 +11,9 @@ abstract interface class AudiobookRepository {
   /// The narration manifest, or null when the book has never been narrated.
   Future<MobileAudiobook?> fetch(String projectId);
 
+  /// What narrating the book would cost now.
+  Future<AudiobookQuote> quote(String projectId);
+
   Future<MobileAudiobook?> start({
     required String projectId,
     required String voice,
@@ -53,6 +56,14 @@ class HttpAudiobookRepository implements AudiobookRepository {
   }
 
   @override
+  Future<AudiobookQuote> quote(String projectId) async {
+    final data = await apiClient.getMap(
+      '/api/mobile/projects/$projectId/audiobook/quote',
+    );
+    return AudiobookQuote.fromJson(data['quote'] as Map<String, dynamic>);
+  }
+
+  @override
   Future<MobileAudiobook?> start({
     required String projectId,
     required String voice,
@@ -81,3 +92,13 @@ final audiobookRepositoryProvider = Provider<AudiobookRepository>((ref) {
 final narratorVoicesProvider = FutureProvider<List<NarratorVoice>>((ref) {
   return ref.watch(audiobookRepositoryProvider).listVoices();
 });
+
+/// The price on the narrator sheet's confirm line. A failed read is not
+/// retried behind the reader's back: the sheet shows no price and the server
+/// still checks the balance when they confirm.
+final audiobookQuoteProvider = FutureProvider.autoDispose
+    .family<AudiobookQuote, String>(
+      (ref, projectId) =>
+          ref.watch(audiobookRepositoryProvider).quote(projectId),
+      retry: (_, _) => null,
+    );

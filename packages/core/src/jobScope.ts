@@ -124,21 +124,57 @@ export function isMarkdownRecompileWithoutVerdict(payload: unknown): boolean {
 }
 
 /**
+ * Payload flag for the recompile of an edit nobody paid for: a manual Edit Mode
+ * save, an Undo or a Redo (`queueUserEditExportRecompile`), a Writing Studio
+ * publish or takeover. Its settled status to fall back to rides
+ * `PRE_EDIT_PROJECT_STATUS` beside it.
+ *
+ * The prose really moved, so unlike `PRESENTATION_ONLY_RECOMPILE` this compile
+ * still owns the quality verdict and publishes the status that verdict earns,
+ * exactly like the outcome compile it used to be. What it does not own is the
+ * paid book's *failure*: the book was delivered and paid for before the edit,
+ * and the edit cost nothing. Without the flag a failed recompile marked the book
+ * FAILED and `refundFailedProjectCredits` walked its `planId` to the book's own
+ * `FULL_BOOK_GENERATION` charge, and a delete while it was queued sent it through
+ * the API's legacy stop settlement to the same charge — a one-word edit then a
+ * delete refunded a book the reader had already downloaded (launch review
+ * 2026-10-13, B3). It fails or stops alone and puts the book back.
+ */
+export const FREE_EDIT_RECOMPILE = "freeEditRecompile";
+
+export function isFreeEditRecompile(payload: unknown): boolean {
+  return payloadFlag(payload, FREE_EDIT_RECOMPILE);
+}
+
+/**
  * Whether this payload belongs to work whose outcome is the paid book's own.
  *
- * False for the three payload-shaped kinds that settle alone — a detached export
- * repair, a presentation-only recompile and a revision-owned cover. Every
- * surface that settles, reports or resumes a row on the book's behalf must ask
- * this one question, and ask it here: a site that checks one flag by hand misses
- * the other, which is exactly how a non-owning row ends up refunding a delivered
- * book or painting a COMPLETE one as failed.
+ * False for the four payload-shaped kinds that settle alone — a detached export
+ * repair, a presentation-only recompile, a free edit's recompile and a
+ * revision-owned cover. Every surface that settles, reports or resumes a row on
+ * the book's behalf must ask this one question, and ask it here: a site that
+ * checks one flag by hand misses the other, which is exactly how a non-owning
+ * row ends up refunding a delivered book or painting a COMPLETE one as failed.
  */
 export function payloadOwnsProjectOutcome(payload: unknown): boolean {
   return (
     !isDetachedFromProjectLifecycle(payload) &&
     !isPresentationOnlyRecompile(payload) &&
+    !isFreeEditRecompile(payload) &&
     !isRevisionOwnedCoverPayload(payload)
   );
+}
+
+/**
+ * The settled status a free recompile puts the book back to when it fails or
+ * is stopped — a presentation reprint's or a free edit's — and null for every
+ * other row, which either owns the book's outcome or owns no status at all.
+ */
+export function freeRecompileFallbackStatus(payload: unknown): SettledProjectStatus | null {
+  if (isDetachedFromProjectLifecycle(payload)) return null;
+  if (isPresentationOnlyRecompile(payload)) return presentationRecompileFallbackStatus(payload);
+  if (isFreeEditRecompile(payload)) return preEditProjectStatus(payload);
+  return null;
 }
 
 /**
@@ -182,6 +218,20 @@ export const COVER_PURCHASE = "coverPurchase";
 
 export function isCoverPurchasePayload(payload: unknown): boolean {
   return payloadFlag(payload, COVER_PURCHASE) && (payload as Record<string, unknown>).assetType === "COVER";
+}
+
+/**
+ * Payload flag for a cover set again over the picture it already wears — new
+ * words, no model call, no charge (`coverTypeset.ts`). Its handler never
+ * draws: a cover with nothing to re-set from keeps the cover it has, and no
+ * failure of the re-set may fail the book, because the book it serves is
+ * either still being written (where a cover job's failure is the book's) or
+ * already published.
+ */
+export const COVER_RETYPESET = "coverRetypeset";
+
+export function isCoverRetypesetPayload(payload: unknown): boolean {
+  return payloadFlag(payload, COVER_RETYPESET) && (payload as Record<string, unknown>).assetType === "COVER";
 }
 
 /** The settled status a free presentation reprint must return to on failure. */
@@ -283,10 +333,10 @@ export function exportPublicationProjectStatusFromPayload(
 /**
  * Whether failure/stopping this durable row owns the paid book's outcome.
  *
- * Presentation recompiles still own their successful EDITING -> settled status
- * transition, but they are free derivative work on an already delivered book.
- * They therefore share neither the generation compile's refund nor its FAILED
- * transition. Detached repairs are even narrower: they own no project status
+ * Presentation recompiles and free edits' recompiles still own their successful
+ * EDITING -> settled status transition, but they are free derivative work on an
+ * already delivered book. They therefore share neither the generation compile's
+ * refund nor its FAILED transition; they put back `freeRecompileFallbackStatus`. Detached repairs are even narrower: they own no project status
  * on success either.
  */
 export function generationJobOwnsFailureLifecycle(type: string, payload: unknown): boolean {
@@ -317,13 +367,19 @@ export function workerJobOwnsFailureLifecycle(name: string, payload: unknown): b
  * touched no prose. Letting any of them speak replaces real model QA — chapter
  * coherence, transitions, the `affectedPageIndexes` the card's "Fix page N"
  * button is built from — with a report that never asked a model anything.
+ *
+ * A free edit's recompile (`FREE_EDIT_RECOMPILE`) owns no failure but does own
+ * the verdict: its prose moved, and findings about text the reader just
+ * replaced may not outlive it.
  */
 export function jobOwnsQualityVerdict(type: string, payload: unknown): boolean {
-  return (
-    type === "COMPILE_EXPORT" &&
-    payloadOwnsProjectOutcome(payload) &&
-    !isMarkdownRecompileWithoutVerdict(payload)
-  );
+  const ownsVerdictWork =
+    payloadOwnsProjectOutcome(payload) ||
+    (isFreeEditRecompile(payload) &&
+      !isDetachedFromProjectLifecycle(payload) &&
+      !isPresentationOnlyRecompile(payload) &&
+      !isRevisionOwnedCoverPayload(payload));
+  return type === "COMPILE_EXPORT" && ownsVerdictWork && !isMarkdownRecompileWithoutVerdict(payload);
 }
 
 /**

@@ -108,6 +108,47 @@ describe("mobile page rewrite retries", () => {
     expect(dispatchGenerationJob).toHaveBeenCalledWith("job-paid-page-retry");
     await app.close();
   });
+
+  it("holds the retry of a whole-book rewrite to the account's share of the long lane, before the charge", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const failed = failedPageRewriteOperationRecord();
+    // 120 pages to rewrite: the lane map sends this payload to the long lane.
+    const wholeBook = Array.from({ length: 120 }, (_, index) => index + 1);
+    failed.affectedPageIndexes = wholeBook;
+    failed.generationJob.payload.affectedPageIndexes = wholeBook;
+    state.bookEditOperations.push(failed);
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1", status: "COMPLETE" });
+    // Another of this free account's books is being written.
+    const fallback = mockPrisma.generationJob.findMany.getMockImplementation();
+    mockPrisma.generationJob.findMany.mockImplementation(async (args: { where?: { project?: { userId?: string } } }) =>
+      args?.where?.project?.userId
+        ? [{ projectId: "project-other", type: "GENERATE_BOOK", payload: {} }]
+        : fallback
+          ? fallback(args)
+          : []
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/operations/operation-failed-rewrite/retry",
+      headers: bearer("token-a"),
+      payload: {
+        requestId: "retry-page-rewrite-0002",
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+      }
+    });
+
+    expect(response.statusCode).toBe(429);
+    expect(response.json().error).toMatchObject({
+      code: "BOOKS_IN_PROGRESS_LIMIT",
+      booksInProgress: { limit: 1, inProgress: 1 }
+    });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    expect(failed.status).toBe("FAILED");
+    await app.close();
+  });
 });
 
 function failedPageRewriteOperationRecord() {

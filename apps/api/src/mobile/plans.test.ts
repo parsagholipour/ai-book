@@ -129,14 +129,9 @@ describe("mobile plan lifecycle", () => {
         amountCredits: expect.any(Number)
       })
     );
-    expect(vi.mocked(grantProjectEntitlement)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: "user-a",
-        projectId: "project-1",
-        type: "EXPORT_UNLOCK",
-        relatedLedgerEntryId: "ledger-FULL_BOOK_GENERATION"
-      })
-    );
+    // No approval grants an export unlock: every finished book downloads free
+    // (2026-10-15; the paid reader is pinned in creditTierPricing.test.ts).
+    expect(vi.mocked(grantProjectEntitlement)).not.toHaveBeenCalled();
     expect(
       vi.mocked(reserveCredits).mock.calls.filter(([input]) => input.operation === "PLAN_GENERATION")
     ).toHaveLength(1);
@@ -341,7 +336,7 @@ describe("free tier illustrated book limit", () => {
     expect(response.statusCode).toBe(403);
     expect(response.json().error).toMatchObject({
       code: "PAGE_LIMIT_EXCEEDED",
-      pageLimit: { limit: 30, requestedPages: 40, maxPages: 600 }
+      pageLimit: { limit: 30, requestedPages: 40, maxPages: 200 }
     });
     expect(reserveCredits).not.toHaveBeenCalled();
     expect(consumeIllustratedBookUse).not.toHaveBeenCalled();
@@ -486,11 +481,11 @@ describe("free tier illustrated book limit", () => {
       url: "/api/mobile/plans/plan-1/approve",
       headers: bearer("token-a")
     });
+    // A free reader's book: no export unlock in the price.
     const expectedCredits =
       DEFAULT_CREDIT_COSTS.fullBookBase +
       coverOnly.targetPages * DEFAULT_CREDIT_COSTS.fullBookPerPage +
-      DEFAULT_CREDIT_COSTS.imageGeneration +
-      DEFAULT_CREDIT_COSTS.exportUnlock;
+      DEFAULT_CREDIT_COSTS.imageGeneration;
 
     expect(response.statusCode).toBe(202);
     expect(getImageQuota).not.toHaveBeenCalled();

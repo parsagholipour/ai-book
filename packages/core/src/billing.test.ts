@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  CREDIT_USD_VALUE,
+  DEFAULT_BILLING_PRODUCTS,
   PROVIDER_COST_ASSUMPTIONS_USD,
+  SUBSCRIPTION_INTRO_OFFERS,
   buildMarginEstimate,
   creditCostForOperation,
   estimateAudiobookCreditCost,
+  narrationWordCount,
+  estimateBookReplanCreditCost,
   estimateFullBookCreditCost,
   estimateInteriorImageCount,
   estimateProviderCostForProject,
@@ -12,6 +15,37 @@ import {
 } from "./billing.js";
 import { DEFAULT_CREDIT_COSTS } from "./creditPricing.js";
 import { createProjectSchema } from "./schemas/book.js";
+
+/** What a credit brings in after Google Play's 15%. */
+const creditUsd = (priceMicros: number, credits: number) => (priceMicros / 1_000_000) * 0.85 / credits;
+
+/** The Max plan's rate: $199.99 for 80,000 credits, the floor every per-page price rests on. */
+const MAX_PLAN_CREDIT_USD = creditUsd(199_990_000, 80_000);
+
+/**
+ * The least a credit is ever sold for — every product and every intro offer.
+ * The margin tests price against this rather than Max's rate by name, because
+ * the intro offer used to grant a whole month for $9.99 and sold credits a
+ * third under the floor while every test here still said Max was the cheapest.
+ */
+const CHEAPEST_CREDIT_USD = Math.min(
+  ...DEFAULT_BILLING_PRODUCTS.map((product) => creditUsd(product.priceMicros, product.creditAmount)),
+  ...SUBSCRIPTION_INTRO_OFFERS.map((offer) => creditUsd(offer.priceMicros, offer.creditAmount))
+);
+
+describe("the cheapest credit", () => {
+  it("is never sold under the Max plan's floor, intro offers included, beyond rounding the credit count", () => {
+    // 4,000 credits for the $9.99 intro is $0.0021229 against Max's $0.0021249.
+    expect(CHEAPEST_CREDIT_USD).toBeGreaterThanOrEqual(MAX_PLAN_CREDIT_USD * 0.999);
+    for (const offer of SUBSCRIPTION_INTRO_OFFERS) {
+      const plan = DEFAULT_BILLING_PRODUCTS.find((product) => product.sku === offer.sku);
+      expect(plan).toBeDefined();
+      // An intro grants less than the plan it discounts, never the whole allowance.
+      expect(offer.creditAmount).toBeLessThan(plan!.creditAmount);
+      expect(creditUsd(offer.priceMicros, offer.creditAmount)).toBeGreaterThanOrEqual(MAX_PLAN_CREDIT_USD * 0.999);
+    }
+  });
+});
 
 describe("billing credit assumptions", () => {
   it("itemizes a standard workbook package including its initial cover", () => {
@@ -34,7 +68,8 @@ describe("billing credit assumptions", () => {
 
     const estimate = estimateFullBookCreditCost(input);
 
-    expect(estimate.totalCredits).toBe(1_039);
+    // No export unlock: the finished book downloads free (2026-10-15).
+    expect(estimate.totalCredits).toBe(889);
     expect(estimate.lineItems).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "FULL_BOOK_GENERATION", credits: 574 }),
@@ -44,10 +79,10 @@ describe("billing credit assumptions", () => {
           label: "Cover image generation",
           quantity: 1,
           credits: DEFAULT_CREDIT_COSTS.imageGeneration
-        }),
-        expect.objectContaining({ code: "EXPORT_UNLOCK", credits: DEFAULT_CREDIT_COSTS.exportUnlock })
+        })
       ])
     );
+    expect(estimate.lineItems.map((line) => line.code)).not.toContain("EXPORT_UNLOCK");
   });
 
   it("prices an initial cover as one image generation, never as a cover regeneration", () => {
@@ -195,13 +230,14 @@ describe("billing credit assumptions", () => {
     // cover — four image units. Spelled out rather than recomputed from the
     // price table: the app mirrors this formula and there is no server quote
     // route to fall back on, so a change here has to be a visible change here.
-    expect(estimateFullBookCreditCost(inputForTier("fast")).totalCredits).toBe(220 + 18 * 5 + 4 * 45 + 150);
-    expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(350 + 18 * 8 + 4 * 45 + 150);
+    // No tier carries an export unlock: the finished book downloads free.
+    expect(estimateFullBookCreditCost(inputForTier("fast")).totalCredits).toBe(220 + 18 * 5 + 4 * 45);
+    expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(350 + 18 * 8 + 4 * 45);
     expect(estimateFullBookCreditCost(inputForTier("premium")).totalCredits).toBe(
-      500 + 18 * 30 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
+      500 + 18 * 30 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview
     );
     expect(estimateFullBookCreditCost(inputForTier("ultra")).totalCredits).toBe(
-      650 + 18 * 71 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
+      650 + 18 * 130 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview
     );
 
     // A book from before tiers existed pays the balanced rates, because that
@@ -238,13 +274,12 @@ describe("billing credit assumptions", () => {
     expect(credits("premium")).toBeLessThan(credits("ultra"));
 
     // The property that matters is not the ordering but the margin: every tier
-    // has to clear its own provider cost at the *Max* plan's credit value
-    // ($199.99 for 80,000 credits, less Google Play's 15%), which is the
-    // cheapest a credit is ever sold for and the plan someone can burn 80,000
-    // of on long premium books.
-    const maxPlanUsdPerCredit = (199.99 * 0.85) / 80_000;
+    // has to clear its own provider cost at the cheapest a credit is ever sold
+    // for — the Max plan's rate ($199.99 for 80,000 credits, less Google Play's
+    // 15%), the plan someone can burn 80,000 of on long premium books, or the
+    // intro offer priced at that floor, whichever is lower.
     for (const tier of ["fast", "balanced", "premium", "ultra"] as const) {
-      expect(credits(tier) * maxPlanUsdPerCredit).toBeGreaterThan(cost(tier));
+      expect(credits(tier) * CHEAPEST_CREDIT_USD).toBeGreaterThan(cost(tier));
     }
   });
 
@@ -373,10 +408,12 @@ describe("billing credit assumptions", () => {
     });
 
     expect(estimateInteriorImageCount(input)).toBe(3);
-    expect(margin.estimatedRevenueUsd).toBe(8.08);
+    // A margin values credits at the cheapest a paid credit is sold for, never
+    // at the notional cent (`CREDIT_USD_VALUE`), which read 4.7× too rosy.
+    const revenueUsd = creditEstimate.totalCredits * CHEAPEST_CREDIT_USD;
+    expect(margin.estimatedRevenueUsd).toBeCloseTo(revenueUsd, 6);
     expect(margin.actualProviderCostUsd).toBe(1.25);
-    expect(margin.actualMarginUsd).toBe(6.83);
-    expect(margin.actualMarginPercent).toBeGreaterThan(80);
+    expect(margin.actualMarginUsd).toBeCloseTo(revenueUsd - 1.25, 6);
   });
 });
 
@@ -437,41 +474,62 @@ describe("interior illustration billing matches generation slots", () => {
 });
 
 describe("audiobook pricing", () => {
-  it("charges a base plus the real page count", () => {
-    const estimate = estimateAudiobookCreditCost(60);
-    expect(estimate.totalCredits).toBe(
-      DEFAULT_CREDIT_COSTS.audiobookBase + 60 * DEFAULT_CREDIT_COSTS.audiobookPerPage
-    );
+  // What a credit is worth at its cheapest: the plan that can spend the most of
+  // them ($199.99 for 80,000, less Google Play's 15%), or an intro offer at that floor.
+  const CHEAPEST_USD = CHEAPEST_CREDIT_USD;
+  // $0.00025 a second of audio at ~155 spoken words a minute.
+  const speechUsd = (words: number) => (words / 155) * 60 * 0.00025;
+
+  it("charges a base plus every hundred narrated words, rounded up", () => {
+    const estimate = estimateAudiobookCreditCost({ pageCount: 20, wordCount: 9_001 });
+    expect(estimate.totalCredits).toBe(DEFAULT_CREDIT_COSTS.audiobookBase + 91 * DEFAULT_CREDIT_COSTS.audiobookPer100Words);
     expect(estimate.lineItems).toHaveLength(1);
     expect(estimate.lineItems[0]).toMatchObject({
       code: "AUDIOBOOK_GENERATION",
-      quantity: 60,
-      unitCredits: DEFAULT_CREDIT_COSTS.audiobookPerPage
+      quantity: 91,
+      unitCredits: DEFAULT_CREDIT_COSTS.audiobookPer100Words
     });
   });
 
-  it("does not bundle an export unlock, because narrating is not downloading", () => {
-    expect(estimateAudiobookCreditCost(20).assumptions.includesExportUnlock).toBe(false);
+  it("clears the speech bill on the Max plan for a prose-heavy book", () => {
+    // A composed nonfiction book: ~450 words a page.
+    const wordCount = 20 * 450;
+    const revenueUsd = estimateAudiobookCreditCost({ pageCount: 20, wordCount }).totalCredits * CHEAPEST_USD;
+    expect(revenueUsd).toBeGreaterThan(speechUsd(wordCount) * 1.2);
   });
 
-  it("prices a book with no pages at the base alone rather than going negative", () => {
-    expect(estimateAudiobookCreditCost(0).totalCredits).toBe(DEFAULT_CREDIT_COSTS.audiobookBase);
-    expect(estimateAudiobookCreditCost(-5).totalCredits).toBe(DEFAULT_CREDIT_COSTS.audiobookBase);
+  it("charges a short picture book less than the old flat 12 credits a page did", () => {
+    const estimate = estimateAudiobookCreditCost({ pageCount: 16, wordCount: 16 * 60 });
+    expect(estimate.totalCredits).toBeLessThan(80 + 16 * 12);
+    expect(estimate.totalCredits * CHEAPEST_USD).toBeGreaterThan(speechUsd(16 * 60));
   });
 
-  it("honours operator overrides instead of the compiled defaults", () => {
-    const pricing = { ...DEFAULT_CREDIT_COSTS, audiobookBase: 500, audiobookPerPage: 20 };
-    expect(estimateAudiobookCreditCost(10, pricing).totalCredits).toBe(700);
+  it("prices a book with no words at the base alone rather than going negative", () => {
+    expect(estimateAudiobookCreditCost({ pageCount: 0, wordCount: 0 }).totalCredits).toBe(DEFAULT_CREDIT_COSTS.audiobookBase);
+    expect(estimateAudiobookCreditCost({ pageCount: -5, wordCount: -50 }).totalCredits).toBe(DEFAULT_CREDIT_COSTS.audiobookBase);
+  });
+
+  it("honours operator overrides, a per-page rate included", () => {
+    const pricing = { ...DEFAULT_CREDIT_COSTS, audiobookBase: 500, audiobookPerPage: 20, audiobookPer100Words: 3 };
+    const estimate = estimateAudiobookCreditCost({ pageCount: 10, wordCount: 1_000 }, pricing);
+    expect(estimate.totalCredits).toBe(500 + 200 + 30);
+    expect(estimate.lineItems).toHaveLength(2);
     expect(creditCostForOperation("AUDIOBOOK_GENERATION", pricing)).toBe(500);
   });
+});
 
-  it("keeps a comfortable margin over the provider's per-second TTS rate", () => {
-    // ~14.5 characters/second of speech, ~1,800 characters/page, so a page is
-    // roughly two minutes of audio at $0.00025/second.
-    const pages = 60;
-    const providerUsd = pages * ((1800 / 14.5) * 0.00025);
-    const revenueUsd = estimateAudiobookCreditCost(pages).totalCredits * CREDIT_USD_VALUE;
-    expect(revenueUsd).toBeGreaterThan(providerUsd * 2);
+describe("narrated word count", () => {
+  it("counts the words the narrator reads and nothing it skips", () => {
+    const pages = [
+      "# The Harbour\n\nMina walked to the **old** pier.\n\n![a boat](/assets/images/p/boat.png)",
+      "```js\nconst ignored = true;\n```\n\n| a | b |\n| - | - |\n\nShe waved."
+    ];
+    // "The Harbour" (2) + "Mina walked to the old pier" (6) + "She waved" (2).
+    expect(narrationWordCount(pages)).toBe(10);
+  });
+
+  it("estimates unspaced scripts from their characters", () => {
+    expect(narrationWordCount(["月光照在海面上。"])).toBeGreaterThan(1);
   });
 });
 
@@ -486,7 +544,7 @@ describe("creditCostForOperation message quotes", () => {
     messageResetCreditsPro: 33,
     messageCreditsMax: 4,
     messageResetCreditsMax: 44,
-    exportUnlock: 777
+    premiumReview: 777
   };
 
   it("quotes Free message keys when the plan tier is omitted", () => {
@@ -508,7 +566,36 @@ describe("creditCostForOperation message quotes", () => {
   });
 
   it("ignores planTier for operations that are not message-priced", () => {
-    expect(creditCostForOperation("EXPORT_UNLOCK", pricing, "max")).toBe(777);
-    expect(creditCostForOperation("EXPORT_UNLOCK", pricing)).toBe(777);
+    expect(creditCostForOperation("PREMIUM_REVIEW", pricing, "max")).toBe(777);
+    expect(creditCostForOperation("PREMIUM_REVIEW", pricing)).toBe(777);
+  });
+
+  it("prices the retired export unlock at nothing, whatever a price list says", () => {
+    expect(creditCostForOperation("EXPORT_UNLOCK", { ...pricing, exportUnlock: 150 })).toBe(0);
+    expect(creditCostForOperation("EXPORT_UNLOCK")).toBe(0);
+  });
+});
+
+describe("estimateBookReplanCreditCost", () => {
+  it("itemises the rebuild base ahead of the copy's full-book quote and adds up to both", () => {
+    const input = createProjectSchema.parse({
+      title: "The Lighthouse",
+      prompt: "A small book about a lighthouse keeper",
+      category: "STORY",
+      targetPages: 12
+    });
+    const book = estimateFullBookCreditCost(input, DEFAULT_CREDIT_COSTS);
+    const replan = estimateBookReplanCreditCost(input, DEFAULT_CREDIT_COSTS);
+
+    expect(replan.totalCredits).toBe(DEFAULT_CREDIT_COSTS.bookReplanBase + book.totalCredits);
+    expect(replan.lineItems[0]).toEqual({
+      code: "BOOK_REPLAN",
+      label: "Book rebuild",
+      quantity: 1,
+      unitCredits: DEFAULT_CREDIT_COSTS.bookReplanBase,
+      credits: DEFAULT_CREDIT_COSTS.bookReplanBase
+    });
+    expect(replan.lineItems.slice(1)).toEqual(book.lineItems);
+    expect(replan.lineItems.reduce((total, line) => total + line.credits, 0)).toBe(replan.totalCredits);
   });
 });

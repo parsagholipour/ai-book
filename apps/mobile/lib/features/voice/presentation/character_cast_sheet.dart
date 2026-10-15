@@ -10,6 +10,7 @@ import '../data/voice_repository.dart';
 import '../domain/voice_models.dart';
 import 'voice_call_avatar.dart';
 import 'voice_call_launcher.dart';
+import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 
 /// "Who do you want to talk to?"
@@ -62,6 +63,11 @@ class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet>
   Widget build(BuildContext context) {
     final castValue = ref.watch(voiceCastProvider(widget.projectId));
     castValue.whenData(_pollWhilePreparing);
+    // Calls are a plan perk: a free reader still sees the cast, each row
+    // wearing a lock, and a tap opens the plans instead of the call.
+    final planLocked = voiceCallsLockedByPlan(
+      ref.watch(billingProvider).asData?.value,
+    );
 
     return SafeArea(
       child: ConstrainedBox(
@@ -88,6 +94,7 @@ class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet>
                     cast: cast,
                     projectId: widget.projectId,
                     pageIndex: widget.pageIndex,
+                    planLocked: planLocked,
                   ),
           ),
         ),
@@ -101,11 +108,15 @@ class _CastList extends StatelessWidget {
     required this.cast,
     required this.projectId,
     this.pageIndex,
+    this.planLocked = false,
   });
 
   final VoiceCast cast;
   final String projectId;
   final int? pageIndex;
+
+  /// Calls are a plan perk this reader does not have yet.
+  final bool planLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -160,6 +171,7 @@ class _CastList extends StatelessWidget {
               cast: cast,
               projectId: projectId,
               pageIndex: pageIndex,
+              planLocked: planLocked,
             ),
           ),
         ),
@@ -168,6 +180,9 @@ class _CastList extends StatelessWidget {
   }
 
   String _costLine(VoiceCast cast) {
+    if (planLocked) {
+      return '$voiceCallsPlanMessage Tap a character to see plans.';
+    }
     if (!cast.canAfford) {
       return creditsNeededToStartCallMessage(cast.creditsToStart);
     }
@@ -183,12 +198,16 @@ class _CastRow extends ConsumerWidget {
     required this.cast,
     required this.projectId,
     this.pageIndex,
+    this.planLocked = false,
   });
 
   final VoiceCharacter character;
   final VoiceCast cast;
   final String projectId;
   final int? pageIndex;
+
+  /// Draws the call button as a lock; the tap opens the plans.
+  final bool planLocked;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -200,7 +219,7 @@ class _CastRow extends ConsumerWidget {
     // The toast is what names the number.
     final enabled = character.callable;
 
-    final ready = enabled && affordable;
+    final ready = enabled && (affordable || planLocked);
     final VoidCallback? placeCall = enabled
         ? () => _placeCall(context, ref)
         : null;
@@ -271,7 +290,10 @@ class _CastRow extends ConsumerWidget {
                           : colors.surfaceContainerHigh,
                     ),
                     child: Icon(
-                      Icons.call,
+                      planLocked ? Icons.lock_outline : Icons.call,
+                      key: planLocked
+                          ? const ValueKey('voice-cast-call-locked')
+                          : null,
                       size: 22,
                       color: ready
                           ? colors.onPrimaryContainer

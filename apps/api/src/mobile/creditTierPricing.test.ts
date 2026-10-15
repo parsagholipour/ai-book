@@ -5,7 +5,9 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
+import { InsufficientCreditsError, grantProjectEntitlement, hasActiveSubscriptionEntitlement, reserveCredits } from "@book-maker/db/billing";
+import { DEFAULT_CREDIT_COSTS, resetCreditPricing, setCreditPricing } from "@book-maker/core";
+import { ULTRA_TIER_UNAVAILABLE_MESSAGE } from "./ultraTier.js";
 import { enqueueGenerationJob } from "../queue.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import {
@@ -54,9 +56,20 @@ function projectAtTier(tier: Tier, overrides: Record<string, unknown> = {}) {
   });
 }
 
+/** Ultra launches switched off; the tier ladder below is priced as an operator who turned it on. */
+function withUltraOn() {
+  resetMobileHarness();
+  setCreditPricing({ ...DEFAULT_CREDIT_COSTS, ultraTierEnabled: 1 });
+}
+
+function teardown() {
+  resetCreditPricing();
+  teardownMobileHarness();
+}
+
 describe("direct project planning prices by quality tier", () => {
-  beforeEach(resetMobileHarness);
-  afterEach(teardownMobileHarness);
+  beforeEach(withUltraOn);
+  afterEach(teardown);
 
   for (const tier of TIERS) {
     it(`reserves and stamps the ${tier} plan quote`, async () => {
@@ -275,11 +288,13 @@ describe("plan revisions price by quality tier", () => {
 });
 
 describe("plan approval prices by quality tier", () => {
-  beforeEach(resetMobileHarness);
-  afterEach(teardownMobileHarness);
+  beforeEach(withUltraOn);
+  afterEach(teardown);
 
-  async function approveAtTier(tier: Tier) {
+  /** A reader on a plan unless told otherwise; the price is the same either way. */
+  async function approveAtTier(tier: Tier, paid = true) {
     mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(paid);
     mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
       id: "plan-1",
       projectId: "project-1",
@@ -299,12 +314,13 @@ describe("plan approval prices by quality tier", () => {
     return response;
   }
 
-  // 12 pages, 2 interior illustrations plus a cover.
+  // 12 pages, 2 interior illustrations plus a cover. No export unlock: the
+  // finished book downloads free (2026-10-15).
   const totals = {
-    fast: 220 + 12 * 5 + 3 * 45 + 150,
-    balanced: 350 + 12 * 8 + 3 * 45 + 150,
-    premium: 500 + 12 * 30 + 3 * 85 + 200 + 150,
-    ultra: 650 + 12 * 71 + 3 * 85 + 200 + 150
+    fast: 220 + 12 * 5 + 3 * 45,
+    balanced: 350 + 12 * 8 + 3 * 45,
+    premium: 500 + 12 * 30 + 3 * 85 + 200,
+    ultra: 650 + 12 * 130 + 3 * 85 + 200
   } as const;
 
   for (const tier of TIERS) {
@@ -337,8 +353,29 @@ describe("plan approval prices by quality tier", () => {
     );
   });
 
+  it.each([
+    ["a free reader", false],
+    ["a subscriber", true]
+  ])("charges %s the same single price, once, and grants nothing beside it", async (_reader, paid) => {
+    // Spelled out, like the totals above: the app mirrors it with no quote route.
+    const response = await approveAtTier("balanced", paid);
+
+    expect(response.statusCode).toBe(202);
+    expect(reserveCredits).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ operation: "FULL_BOOK_GENERATION", amountCredits: 350 + 12 * 8 + 3 * 45 })
+    );
+    const { metadata } = vi.mocked(reserveCredits).mock.calls[0]![0];
+    const estimate = (metadata as { creditEstimate: { lineItems: Array<{ code: string }>; assumptions: object } }).creditEstimate;
+    expect(estimate.lineItems.map((line) => line.code)).not.toContain("EXPORT_UNLOCK");
+    expect(estimate.assumptions).not.toHaveProperty("includesExportUnlock");
+    expect(grantProjectEntitlement).not.toHaveBeenCalled();
+    // The plan is no longer asked at all: it changes nothing about the price.
+    expect(hasActiveSubscriptionEntitlement).not.toHaveBeenCalled();
+  });
+
   it("charges a book with no tier recorded at the balanced rates", async () => {
     mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);
     // The harness project carries the app's `qualityPreset` echo and no tier —
     // the shape of every row written before tier routing existed. Those books
     // run the legacy single model, which is balanced work.
@@ -376,8 +413,30 @@ describe("book edits price by the book's own quality tier", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
 
-  // 2 chapters × 5 estimated pages, at each tier's page-rewrite rate.
-  const continuationCredits = { fast: 10 * 40, balanced: 10 * 80, premium: 10 * 220, ultra: 10 * 280 } as const;
+  // 2 chapters × 5 estimated pages, priced like the book they join: the flat
+  // 100-credit base plus each tier's own writing rate per page added. At the
+  // old page-rewrite rate (40 / 80 / 220 / 280) ten more pages cost more than a
+  // new ten-page book.
+  const continuationCredits = { fast: 100 + 10 * 5, balanced: 100 + 10 * 8, premium: 100 + 10 * 30, ultra: 100 + 10 * 130 } as const;
+
+  it("prices inserted pages like a continuation and leaves a page rewrite at the rewrite rate", () => {
+    const totals = (kind: "restructure_pages" | "page_rewrite", pages: number) =>
+      TIERS.map((tier) => bookEditCreditCost(kind, pages, projectAtTier(tier) as never));
+    // Three new pages: the base plus 3 × the tier's writing rate.
+    expect(totals("restructure_pages", 3)).toEqual([100 + 3 * 5, 100 + 3 * 8, 100 + 3 * 30, 100 + 3 * 130]);
+    // A delete or a move writes no page, so it costs nothing — base included.
+    expect(totals("restructure_pages", 0)).toEqual([0, 0, 0, 0]);
+    // Rewriting existing pages keeps its own rate.
+    expect(totals("page_rewrite", 3)).toEqual([3 * 40, 3 * 80, 3 * 220, 3 * 280]);
+  });
+
+  it("quotes a chat rebuild through the same function the charge stores its quote from", () => {
+    // 12 pages, 2 interior illustrations and a cover at balanced, plus the 120
+    // rebuild base — and no export unlock, for any reader.
+    expect(bookEditCreditCost("book_replan", 0, projectAtTier("balanced") as never)).toBe(
+      120 + 350 + 12 * 8 + 3 * 45
+    );
+  });
 
   for (const tier of TIERS) {
     it(`quotes and charges a continuation at the ${tier} rate`, async () => {
@@ -425,4 +484,80 @@ describe("book edits price by the book's own quality tier", () => {
       await app.close();
     });
   }
+});
+
+/**
+ * While the operator has Ultra off (the launch default), no *new* book starts
+ * at Ultra — and a book that already did keeps its tier for every edit (the
+ * continuation suite above runs with the switch off).
+ */
+describe("the Ultra switch", () => {
+  beforeEach(resetMobileHarness);
+  afterEach(teardown);
+
+  it("refuses a first plan at Ultra before anything is reserved", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectAtTier("ultra"));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toEqual({ error: { code: "QUALITY_TIER_UNAVAILABLE", message: ULTRA_TIER_UNAVAILABLE_MESSAGE } });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses to approve an Ultra plan, and approves a Premium one", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.planVersion.updateMany.mockResolvedValue({ count: 1 });
+    mockPrisma.project.updateMany.mockResolvedValue({ count: 1 });
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-generate" }));
+    const app = await buildMobileApp();
+
+    mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
+      id: "plan-1",
+      projectId: "project-1",
+      status: "DRAFT",
+      project: projectAtTier("ultra")
+    });
+    const ultra = await app.inject({ method: "POST", url: "/api/mobile/plans/plan-1/approve", headers: bearer("token-a") });
+    expect(ultra.statusCode).toBe(422);
+    expect(ultra.json().error.code).toBe("QUALITY_TIER_UNAVAILABLE");
+    expect(reserveCredits).not.toHaveBeenCalled();
+
+    mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
+      id: "plan-1",
+      projectId: "project-1",
+      status: "DRAFT",
+      project: projectAtTier("premium")
+    });
+    const premium = await app.inject({ method: "POST", url: "/api/mobile/plans/plan-1/approve", headers: bearer("token-a") });
+    expect(premium.statusCode).toBe(202);
+    await app.close();
+  });
+
+  it("lets an Ultra plan through once the operator switches Ultra on", async () => {
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, ultraTierEnabled: 1 });
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectAtTier("ultra"));
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan-ultra" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(202);
+    await app.close();
+  });
 });

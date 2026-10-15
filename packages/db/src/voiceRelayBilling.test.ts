@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_CREDIT_COSTS, resetCreditPricing, setCreditPricing } from "@book-maker/core";
+import { DEFAULT_CREDIT_COSTS, resetCreditPricing, setCreditPricing, VOICE_CALL_POLICY } from "@book-maker/core";
 
 const db = await vi.hoisted(async () => (await import("./testing/voiceRelayTestDb.ts")).createVoiceRelayTestDb());
 vi.mock("./client.ts", () => ({ prisma: db.prisma, Prisma: db.Prisma }));
@@ -32,8 +32,8 @@ async function connect() {
   await authorizeVoiceRelay(claim.lease);
   return claim;
 }
-async function runUntil(lease: Parameters<typeof authorizeVoiceRelay>[0], seconds: number) {
-  for (let second = 5; second <= seconds; second += 5) {
+async function runUntil(lease: Parameters<typeof authorizeVoiceRelay>[0], seconds: number, from = 5) {
+  for (let second = from; second <= seconds; second += 5) {
     vi.setSystemTime(at(second));
     await authorizeVoiceRelay(lease);
   }
@@ -141,12 +141,73 @@ describe("funded provider access", () => {
     expect(await readVoiceRelayMeter(call.id, "user-a")).toMatchObject({ chargedCredits: 0, secondsRemaining: 0 });
   });
 
-  it("caps even free-price calls at thirty minutes", async () => {
+  it("caps even free-price calls at fifteen minutes", async () => {
     setCreditPricing({ ...DEFAULT_CREDIT_COSTS, voiceCallPerMinute: 0, welcomeCreditsEnabled: 0 });
     const { lease } = await connect();
-    await runUntil(lease, 1795);
-    await expect(authorizeVoiceRelay(lease, at(1800))).rejects.toMatchObject({ code: "VOICE_CALL_CLOSED" });
-    await finishVoiceRelay(lease, at(1800), "limit");
+    await runUntil(lease, 895);
+    await expect(authorizeVoiceRelay(lease, at(900))).rejects.toMatchObject({ code: "VOICE_CALL_CLOSED" });
+    await finishVoiceRelay(lease, at(900), "limit");
     expect(await balance()).toMatchObject({ availableCredits: 1000, reservedCredits: 0, lifetimeCreditsSpent: 0 });
+  });
+
+  it("funds a paid call to exactly fifteen minutes and charges every one of them", async () => {
+    expect(VOICE_CALL_POLICY.maxCallMinutes).toBe(15);
+    const { lease } = await connect();
+    await runUntil(lease, 895);
+    const call = db.voice.calls.get(lease.callId)!;
+    // No minute past the cap is ever held, and the socket's deadline is the cap.
+    expect(call.relayReservedMinutes).toBe(15);
+    expect(call.relayLeaseExpiresAt).toEqual(at(900));
+    expect(await balance()).toMatchObject({ availableCredits: 850, reservedCredits: 0, lifetimeCreditsSpent: 150 });
+    await expect(authorizeVoiceRelay(lease, at(900))).rejects.toMatchObject({ code: "VOICE_CALL_CLOSED" });
+    // A stop reported late is still settled at the cap.
+    expect(await finishVoiceRelay(lease, at(960), "connection_expired")).toMatchObject({ chargedCredits: 150, elapsedSeconds: 900 });
+    expect(await balance()).toMatchObject({ availableCredits: 850, reservedCredits: 0, lifetimeCreditsSpent: 150 });
+  });
+});
+
+describe("the runway the app counts down", () => {
+  async function meterAt(lease: Parameters<typeof authorizeVoiceRelay>[0], second: number) {
+    vi.setSystemTime(at(second));
+    return readVoiceRelayMeter(lease.callId, "user-a");
+  }
+
+  it("never reads a funded call as running out of credits between its minute holds", async () => {
+    const { lease } = await connect();
+    // The relay holds one minute ahead, so its reservation alone dips to 10–20 s
+    // every minute; these are the seconds a heartbeat used to be told "credits".
+    for (let second = 5; second <= 700; second += 5) {
+      vi.setSystemTime(at(second));
+      await authorizeVoiceRelay(lease);
+      for (const offset of [0, 1, 3]) {
+        const meter = await meterAt(lease, second + offset);
+        expect(meter).toMatchObject({ endingReason: null, endingSoon: false });
+        expect(meter!.secondsRemaining).toBe(900 - (second + offset) - VOICE_CALL_POLICY.endingLeadSeconds);
+      }
+    }
+  });
+
+  it("names the length cap for the last block and reaches zero before the relay's deadline", async () => {
+    const { lease } = await connect();
+    await runUntil(lease, 710);
+    expect(await meterAt(lease, 710)).toMatchObject({ secondsRemaining: 185, endingReason: null });
+    await runUntil(lease, 715, 715);
+    expect(await meterAt(lease, 715)).toMatchObject({ secondsRemaining: 180, endingReason: "limit" });
+    await runUntil(lease, 895, 720);
+    expect(await meterAt(lease, 895)).toMatchObject({ secondsRemaining: 0, endingReason: "limit", endingSoon: true });
+    // The app hangs up at zero; the relay still holds the socket open until 900.
+    expect(db.voice.calls.get(lease.callId)?.relayLeaseExpiresAt).toEqual(at(900));
+  });
+
+  it("counts down to the minute the balance runs out, and says it is the credits", async () => {
+    db.state.accounts.get("user-a")!.availableCredits = 60; // six minutes at 10 a minute
+    const { lease } = await connect();
+    await runUntil(lease, 20);
+    expect(await meterAt(lease, 20)).toMatchObject({ secondsRemaining: 335, endingReason: null });
+    await runUntil(lease, 175, 25);
+    expect(await meterAt(lease, 175)).toMatchObject({ secondsRemaining: 180, endingReason: "credits" });
+    await runUntil(lease, 355, 180);
+    expect(await meterAt(lease, 355)).toMatchObject({ secondsRemaining: 0, endingReason: "credits" });
+    expect(db.voice.calls.get(lease.callId)?.relayLeaseExpiresAt).toEqual(at(360));
   });
 });

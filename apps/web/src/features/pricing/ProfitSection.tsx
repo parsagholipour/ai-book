@@ -19,6 +19,11 @@ const LABELS: Record<string, string> = Object.fromEntries(
  * numbers in the form above, and pairs the result with what the providers
  * really billed over the same days. So the answer is "these prices would have
  * turned last quarter into $X", not "a typical book might cost $Y".
+ *
+ * Credits become dollars at `creditUsdValue`, which the API sends as the
+ * cheapest paid credit net of Google's fee (`CHEAPEST_PAID_CREDIT_USD_VALUE`),
+ * never the notional $0.01 no credit sells at — so this is a floor on revenue,
+ * and every dollar figure says so (`creditValueNote`).
  */
 export function ProfitSection(props: {
   draftValues: CreditPricingValues | null;
@@ -102,6 +107,7 @@ function ProfitBody(props: {
                 {money(proposed.revenueUsd)} revenue − {money(providerUsd)} provider cost ·{" "}
                 {proposed.marginPercent === null ? "—" : `${proposed.marginPercent}%`} margin
               </span>
+              <span className="stat-note">Revenue {creditValueNote(props.creditUsdValue)}.</span>
             </div>
             {current ? (
               <div className="profit-compare">
@@ -118,7 +124,11 @@ function ProfitBody(props: {
           </div>
 
           <div className="stat-grid stat-grid-dense profit-tiles">
-            <Tile label="Revenue" value={money(proposed.revenueUsd)} note={`${fmtInt(proposed.credits)} credits`} />
+            <Tile
+              label="Revenue"
+              value={money(proposed.revenueUsd)}
+              note={`${fmtInt(proposed.credits)} credits ${creditValueNote(props.creditUsdValue)}`}
+            />
             <Tile label="Provider cost" value={money(providerUsd)} note="actually billed, settled calls" />
             <Tile
               label="Profit per book"
@@ -241,6 +251,14 @@ function Tile(props: { label: string; value: string; note: string }) {
       <span className="stat-note">{props.note}</span>
     </div>
   );
+}
+
+/**
+ * How a credit was turned into dollars, said wherever it was: the cheapest paid
+ * credit after Google's fee, so the figure is a floor rather than list revenue.
+ */
+export function creditValueNote(creditUsdValue: number): string {
+  return `at the cheapest paid credit ($${creditUsdValue.toFixed(4)}), net of Google`;
 }
 
 function money(value: number): string {

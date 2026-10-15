@@ -57,6 +57,7 @@ export type Entitlement = {
   purchaseRecordId: string | null;
   startsAt: Date;
   expiresAt: Date | null;
+  metadata?: unknown;
 };
 
 export type Product = {
@@ -84,6 +85,8 @@ export type Purchase = {
   purchasedAt: Date | null;
   verifiedAt: Date | null;
   metadata: unknown;
+  localPriceMicros?: bigint | null;
+  localCurrency?: string | null;
 };
 
 export type Payment = {
@@ -96,6 +99,9 @@ export type Payment = {
   refundedAmountMicros: bigint;
   currency: string;
   paidAt: Date;
+  localPriceMicros?: bigint | null;
+  localCurrency?: string | null;
+  localPriceSource?: string | null;
 };
 
 export type Subscription = {
@@ -181,6 +187,12 @@ export function createBillingTestDb() {
     subscriptions: new Map<string, Subscription>(),
     usage: new Map<string, Usage>(),
     welcomeGrants: new Map<string, WelcomeGrant>(),
+    /**
+     * Users whose `User.emailVerifiedAt` is null. Everyone else reads as
+     * verified, so the suites written before verification gated the welcome
+     * grant keep describing a grant that can settle.
+     */
+    unverifiedEmailUsers: new Set<string>(),
     messageReservations: new Map<string, Record<string, any>>(),
     projectChatMessages: new Map<string, Record<string, any>>(),
     creationDrafts: new Map<string, Record<string, any>>(),
@@ -406,7 +418,9 @@ export function createBillingTestDb() {
           currency: data.currency,
           purchasedAt: data.purchasedAt ?? null,
           verifiedAt: data.verifiedAt ?? null,
-          metadata: data.metadata
+          metadata: data.metadata,
+          localPriceMicros: data.localPriceMicros ?? null,
+          localCurrency: data.localCurrency ?? null
         };
         state.purchases.set(row.id, row);
         return row;
@@ -437,6 +451,12 @@ export function createBillingTestDb() {
         if (!row || (where.refundedAmountMicros?.lt !== undefined && row.refundedAmountMicros >= where.refundedAmountMicros.lt)) return { count: 0 };
         Object.assign(row, data);
         return { count: 1 };
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const row = [...state.payments.values()].find((entry) => entry.id === where.id);
+        if (!row) throw new Error("Payment missing");
+        Object.assign(row, data);
+        return row;
       })
     },
     subscriptionState: {
@@ -646,7 +666,17 @@ export function createBillingTestDb() {
       })
     },
     welcomeCreditGrant: {
-      findUnique: vi.fn(async ({ where }: any) => state.welcomeGrants.get(where.userId) ?? null),
+      // The owning user's verification rides the row when it is asked for, as
+      // the `include` / nested `select` of the real read returns it.
+      findUnique: vi.fn(async ({ where, include, select }: any) => {
+        const row = state.welcomeGrants.get(where.userId);
+        if (!row) {
+          return null;
+        }
+        return include?.user || select?.user
+          ? { ...row, user: { emailVerifiedAt: state.unverifiedEmailUsers.has(row.userId) ? null : new Date(0) } }
+          : row;
+      }),
       count: vi.fn(async ({ where }: any) =>
         [...state.welcomeGrants.values()].filter((row) => welcomeGrantMatchesWhere(row, where ?? {})).length
       ),
@@ -760,7 +790,8 @@ export function createBillingTestDb() {
           relatedLedgerEntryId: data.relatedLedgerEntryId ?? null,
           purchaseRecordId: data.purchaseRecordId ?? null,
           startsAt: new Date("2026-06-15T12:00:00.000Z"),
-          expiresAt: data.expiresAt ?? null
+          expiresAt: data.expiresAt ?? null,
+          metadata: data.metadata
         };
         state.entitlements.set(row.id, row);
         return row;
@@ -799,6 +830,7 @@ export function createBillingTestDb() {
     state.subscriptions.clear();
     state.usage.clear();
     state.welcomeGrants.clear();
+    state.unverifiedEmailUsers.clear();
     state.messageReservations.clear();
     state.projectChatMessages.clear();
     state.creationDrafts.clear();

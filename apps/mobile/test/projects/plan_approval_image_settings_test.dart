@@ -47,6 +47,7 @@ void main() {
     await tester.tap(find.text('Start approval'));
     await tester.pumpAndSettle();
 
+    // The book's one price: once written, its files download free.
     final expected = estimateApprovalCredits(project, _creditCosts);
     expect(find.text('Out of illustrated books'), findsNothing);
     expect(find.text('Approve this plan?'), findsOneWidget);
@@ -61,6 +62,54 @@ void main() {
 
     expect(result, isNotNull);
   });
+
+  testWidgets(
+    'an exhausted illustration quota never promises unlimited illustrations',
+    (tester) async {
+      // Illustrations still cost credits on a plan; only the number of
+      // illustrated books a month stops being capped.
+      final project = plannedProject(
+        coverEnabled: true,
+        illustrationsEnabled: true,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            billingRepositoryProvider.overrideWithValue(
+              _ExhaustedIllustrationBillingRepository(),
+            ),
+            projectsRepositoryProvider.overrideWithValue(
+              PlanProjectsRepository(project: project),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (context, ref, _) => FilledButton(
+                  onPressed: () => confirmAndApprovePlan(context, ref, project),
+                  child: const Text('Start approval'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Start approval'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Out of illustrated books'), findsOneWidget);
+      expect(
+        find.textContaining('no monthly cap on illustrated books'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('unlimited'), findsNothing);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+    },
+  );
 }
 
 const _creditCosts = <String, dynamic>{

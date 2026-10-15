@@ -21,6 +21,7 @@ import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import {
   bookPlanSchema,
   createProviders,
+  editRecompilePolicy,
   imageRenderProvenance,
   jsonRecord,
   markdownLabels,
@@ -465,11 +466,14 @@ async function refreshExports(
     missingPlanMessage:
       `Cannot replay APPLIED image insertion ${operationId} for project ${projectId}: no plan version is available`,
     enqueueFailureMessage: `Failed to enqueue the export refresh for illustrated project ${projectId}:`,
+    // The picture's charge settled with the edit, so the render owns no FAILED
+    // of the delivered book: it puts `fallbackStatus` back (`editRecompilePolicy`).
     enqueue: ({ planVersionId: compilePlanVersionId }) =>
-      maybeEnqueueCompile(projectId, compilePlanVersionId, {
-        skipFinalReview: true,
-        withoutQualityVerdict: true
-      })
+      maybeEnqueueCompile(
+        projectId,
+        compilePlanVersionId,
+        editRecompilePolicy(fallbackStatus, { skipFinalReview: true, withoutQualityVerdict: true })
+      )
   });
 }
 

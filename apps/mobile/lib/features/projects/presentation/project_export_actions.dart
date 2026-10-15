@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_error.dart';
-import '../../../shared/ui/design_system/app_dialogs.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
@@ -54,19 +53,8 @@ bool projectExportLockedBySubscription(
 String projectExportSubscriptionMessage(MobileExportAvailability export) =>
     '${projectExportFormatLabel(export)} export is part of the Creator plan.';
 
-bool projectExportNeedsCredits(
-  MobileExportAvailability export,
-  int? availableCredits,
-) {
-  return export.available &&
-      !export.unlocked &&
-      availableCredits != null &&
-      availableCredits < export.creditsRequired;
-}
-
 String projectExportStateText(
-  MobileExportAvailability export,
-  int? availableCredits, {
+  MobileExportAvailability export, {
   bool lockedBySubscription = false,
 }) {
   if (!export.available) {
@@ -75,18 +63,11 @@ String projectExportStateText(
   if (lockedBySubscription) {
     return projectExportSubscriptionMessage(export);
   }
-  if (export.unlocked) {
-    return 'Ready to open or download.';
-  }
-  if (availableCredits != null && availableCredits < export.creditsRequired) {
-    return 'Ready after export unlock. You need ${export.creditsRequired} credits and have $availableCredits.';
-  }
-  return 'Ready after export unlock. This uses ${export.creditsRequired} credits if not already included.';
+  return 'Ready to open or download.';
 }
 
 String projectExportDownloadLabel(
-  MobileExportAvailability export,
-  bool needsCredits, {
+  MobileExportAvailability export, {
   bool lockedBySubscription = false,
 }) {
   final format = projectExportFormatLabel(export);
@@ -96,20 +77,14 @@ String projectExportDownloadLabel(
   if (lockedBySubscription) {
     return 'Upgrade for $format';
   }
-  if (export.unlocked) {
-    return 'Open $format';
-  }
-  if (needsCredits) {
-    return 'Get credits';
-  }
-  return 'Unlock $format';
+  return 'Open $format';
 }
 
-MobileExportAvailability? primaryUnlockedAvailableExport(
-  MobileExportSet exports,
-) {
+/// The file a finished book offers first: its PDF, else its EPUB, whichever is
+/// on disk. Both download free once the book is written.
+MobileExportAvailability? primaryAvailableExport(MobileExportSet exports) {
   for (final export in [exports.pdf, exports.epub]) {
-    if (export.available && export.unlocked) {
+    if (export.available) {
       return export;
     }
   }
@@ -195,17 +170,14 @@ Future<bool> _reportExportFailure({
     return false;
   }
   if (isSubscriptionRequired(error)) {
-    await showBillingPaywall(
-      context,
+    await openProjectExportPlanOffer(
+      context: context,
+      ref: ref,
       projectId: projectId,
-      title: 'Export to ${projectExportFormatLabel(export)}',
-      message: projectExportSubscriptionMessage(export),
-      exportFormatLabel: projectExportFormatLabel(export),
+      export: export,
+      isMounted: isMounted,
+      onRefresh: onRefresh,
     );
-    if (isMounted()) {
-      ref.invalidate(billingProvider);
-      onRefresh?.call();
-    }
     return false;
   }
   AppHaptics.error();
@@ -226,33 +198,6 @@ Future<bool> _reportExportFailure({
   return false;
 }
 
-/// Asks before an export spends this book's unlock.
-///
-/// Reading a book in the app is free — the reader has its own route — so the
-/// unlock is only ever spent by taking the file out: opening it in another
-/// app, sharing or saving it. A generated book's unlock comes with its
-/// generation; a Studio book or an import has none, and every surface that
-/// opens or shares a file used to spend it the moment it was tapped.
-Future<bool> confirmProjectExportUnlock(
-  BuildContext context,
-  MobileExportAvailability export,
-) {
-  if (export.unlocked || export.creditsRequired <= 0) {
-    return Future.value(true);
-  }
-  final credits = export.creditsRequired;
-  return showAppConfirmationDialog(
-    context,
-    title: 'Unlock exports for this book?',
-    message:
-        'Opening or sharing the ${projectExportFormatLabel(export)} uses '
-        '$credits credits, once for this book and every format. Reading it '
-        'here in the app stays free.',
-    confirmLabel: 'Unlock for ${formatCredits(credits)} credits',
-    icon: Icons.lock_open_outlined,
-  );
-}
-
 Future<bool> openProjectExport({
   required BuildContext context,
   required WidgetRef ref,
@@ -262,11 +207,6 @@ Future<bool> openProjectExport({
   VoidCallback? onRefresh,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  if (!await confirmProjectExportUnlock(context, export) ||
-      !context.mounted ||
-      !isMounted()) {
-    return false;
-  }
   try {
     final outcome = await ref
         .read(projectsRepositoryProvider)
@@ -284,7 +224,6 @@ Future<bool> openProjectExport({
       );
     }
     AppHaptics.success();
-    ref.invalidate(billingProvider);
     onRefresh?.call();
     return true;
   } catch (error) {
@@ -315,11 +254,6 @@ Future<bool> downloadProjectExport({
   VoidCallback? onRefresh,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  if (!await confirmProjectExportUnlock(context, export) ||
-      !context.mounted ||
-      !isMounted()) {
-    return false;
-  }
   try {
     final file = await ref
         .read(projectsRepositoryProvider)
@@ -336,7 +270,6 @@ Future<bool> downloadProjectExport({
       ),
     );
     AppHaptics.success();
-    ref.invalidate(billingProvider);
     onRefresh?.call();
     return true;
   } catch (error) {
@@ -358,7 +291,9 @@ Future<bool> downloadProjectExport({
   }
 }
 
-Future<void> openProjectExportPaywall({
+/// The plan offer for a format only a plan includes (the Word file), opened
+/// from a locked row. PDF and EPUB never come here: they have no lock.
+Future<void> openProjectExportPlanOffer({
   required BuildContext context,
   required WidgetRef ref,
   required String projectId,
@@ -366,31 +301,13 @@ Future<void> openProjectExportPaywall({
   required bool Function() isMounted,
   VoidCallback? onRefresh,
 }) async {
-  // Reached two ways. A format this account's plan does not include is an
-  // offer — the sheet leads with the plan. A credit shortfall on an ordinary
-  // format is not: the sheet leads with what the unlock costs.
-  final billing = ref.read(billingProvider).asData?.value;
-  if (projectExportLockedBySubscription(export, billing)) {
-    await showBillingPaywall(
-      context,
-      projectId: projectId,
-      title: 'Export to ${projectExportFormatLabel(export)}',
-      message: projectExportSubscriptionMessage(export),
-      exportFormatLabel: projectExportFormatLabel(export),
-    );
-  } else {
-    await showBillingPaywall(
-      context,
-      projectId: projectId,
-      title: null,
-      creditsNeeded: PaywallCreditsNeeded(
-        credits: export.creditsRequired,
-        reason:
-            'Your ${projectExportFormatLabel(export)} is ready. Credits unlock '
-            'protected downloads for this book.',
-      ),
-    );
-  }
+  await showBillingPaywall(
+    context,
+    projectId: projectId,
+    title: 'Export to ${projectExportFormatLabel(export)}',
+    message: projectExportSubscriptionMessage(export),
+    exportFormatLabel: projectExportFormatLabel(export),
+  );
   if (!isMounted()) {
     return;
   }

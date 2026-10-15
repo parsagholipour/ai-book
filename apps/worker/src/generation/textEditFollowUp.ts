@@ -1,4 +1,4 @@
-import { jsonPayloadToRecord, type SettledProjectStatus } from "@book-maker/core";
+import { editRecompilePolicy, jsonPayloadToRecord, type SettledProjectStatus } from "@book-maker/core";
 import {
   MANUSCRIPT_PUBLICATION_TRANSACTION_OPTIONS,
   Prisma,
@@ -152,10 +152,13 @@ async function runFollowUp(
     await assertLease();
     let compileOutcome: CompileDispatchOutcome;
     try {
+      // The edit's charge settled when its pages published, so the render owns
+      // its verdict and never the delivered book's failure: a failed one puts
+      // the pre-edit status back (`editRecompilePolicy`).
       compileOutcome = await maybeEnqueueCompile(
         identity.projectId,
         identity.planVersionId,
-        { skipFinalReview: true },
+        editRecompilePolicy(identity.fallbackStatus),
         { contentRevision: identity.publicationRevision, requireContentRevisionMatch: true }
       );
     } catch (error) {

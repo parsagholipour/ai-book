@@ -7,6 +7,8 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../../sharing/data/pending_remix.dart';
+import '../data/pending_location.dart';
 import '../domain/legal_gate.dart';
 import 'auth_controller.dart';
 import 'auth_widgets.dart';
@@ -136,6 +138,10 @@ class _LegalAcceptanceScreenState extends ConsumerState<LegalAcceptanceScreen> {
   }
 
   Future<void> _accept() async {
+    // Read before agreeing: the accepted session refreshes the router, whose
+    // own landing can reach the screen the app was opened on — and let it go —
+    // before this resumes.
+    final landing = _landing();
     setState(() {
       _busy = true;
       _error = null;
@@ -144,7 +150,7 @@ class _LegalAcceptanceScreenState extends ConsumerState<LegalAcceptanceScreen> {
       await ref
           .read(authControllerProvider.notifier)
           .acceptCurrentLegalDocuments();
-      if (mounted) context.go('/home');
+      if (mounted) context.go(landing);
     } catch (error) {
       if (mounted) {
         setState(() => _error = userFacingError(error));
@@ -157,9 +163,17 @@ class _LegalAcceptanceScreenState extends ConsumerState<LegalAcceptanceScreen> {
   /// Reading stays available without agreeing; creating and editing do not.
   /// The server enforces that split, so this only steps out of the way.
   void _notNow() {
+    final landing = _landing();
     ref.read(legalGateDismissedProvider.notifier).dismiss();
-    context.go('/home');
+    context.go(landing);
   }
+
+  /// Where the reader was going before the terms stood in the way — a remix
+  /// link or the screen the app was opened on — or home.
+  String _landing() => landingLocation(
+    ref.read(pendingRemixProvider),
+    ref.read(pendingLocationProvider),
+  );
 
   Future<void> _open(Uri uri) async {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&

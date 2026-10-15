@@ -111,6 +111,120 @@ Anything that launches Chromium must go through the shared browser pool and must
   dry run prints the bytes an `--apply` adds.
 - `check_alibaba_credentials.py` — standalone Python probe; redacts secrets.
 
+## Production deploy
+
+`deploy-production.sh` runs on the EC2 host through SSM (`deploy-via-ssm.py` ships it beside the
+compose file); `check-production-docker.sh` is CI's smoke test of the same images. One disk holds
+the OS, every Docker image, and the PostgreSQL and Redis volumes, so image bytes are a database
+availability question. The whole story is in `docs/deployment.md`, "Image retention and the disk
+guard". The host scripts have Python tests that stub docker and aws through `BASH_ENV` and touch
+nothing real: `python3 -m unittest discover -s scripts -p 'test_*.py'` runs them all, and the
+Terraform workflow's validate job runs the same line before every apply and deploy.
+`test_deploy_production.py` holds the cutover order and every failure path below;
+`test_worker_healthcheck.py` the healthcheck against a fake Redis.
+
+**The dependency layer is built from manifests alone, or every deploy ships a new gigabyte.** The
+Dockerfile's `manifests` stage reduces `apps/` and `packages/` to their `package.json` files, and
+both installs, `build`'s full one and `runtime-deps`' production one, see only that, the lockfile,
+`pnpm-workspace.yaml`, the root `package.json` and `.npmrc`. Until 2026-10 the sources were copied
+before `pnpm install`: every commit re-ran it, the new ~1 GB layer had a new digest, and the host
+pulled and kept another gigabyte per deploy until launch week's hotfixes filled the disk. Anything
+the install reads (a patch file, a `pnpm` field, a `postinstall` input) has to reach it through
+those copies, never after them. The app image installs `--prod` for `@book-maker/api...` and
+`@book-maker/worker...` only, so a package a production process loads must be in its own
+workspace's `dependencies`. That is why `tsx` (every process runs TypeScript through it) and
+`prisma` (`migrate` runs `prisma migrate deploy`, then seeds through tsx) are dependencies, not
+devDependencies. A devDependency imported at runtime passes `pnpm check`, because the host has a
+full install, and fails only in the image.
+
+**The host keeps the current and previous release's images by name; `docker image prune` would delete the rollback.**
+Compose pulls by digest, so release images carry no tag, and Docker counts an untagged image as
+dangling once no container uses it. That is the previous release the moment
+the new one starts. `prune_images` keeps the images named by `/opt/book-maker/current/images.env`
+and `previous/images.env` (and, before the pull, the incoming release's) plus every image a
+container uses, deletes every other image, and deletes nothing if a read fails. It never touches
+volumes. `previous` moves only when the outgoing release ran different images, so a rerun does not
+make the rollback the release itself. The pull is refused under 4 GiB free (a base-image change
+brings the whole ~2 GiB app image) and the cutover under 2 GiB, measured on the fuller of
+DockerRootDir and `/var/lib/containerd`, because the containerd image store keeps its layers
+outside DockerRootDir.
+
+**Postgres and Redis are the last things the kernel may kill, and every Node process knows its heap ceiling.**
+Until 2026-10 production was a t3.small, 2 GiB with no swap and no limits (infra review): one
+large illustrated compile could wake the OOM killer, and a single killed Postgres backend makes
+the postmaster reset every connection, so billing transactions roll back mid-flight and running
+jobs fail; or the box thrashes until SSM stops answering while EC2's status checks still pass.
+`docker-compose.production.yml` now gives postgres and redis `oom_score_adj: -900` (every backend
+inherits it) and **no** `mem_limit`, because a cgroup kill inside Postgres is the same reset; they
+are bounded by their own settings instead, Redis by `maxmemory 256mb` under the `noeviction`
+BullMQ requires, where a full Redis refuses writes loudly rather than eating a host it is
+protected on. The api and worker get hard ceilings with no swap of their own (`memswap_limit`
+equal to `mem_limit`: 1 GiB and 2 GiB, sized for `main.tf`'s t3.medium), the worker
+`oom_score_adj: 500`, and `--max-old-space-size` on each Node command line (512 and 768 MiB) so V8
+collects, or fails with a heap error, before the cgroup SIGKILLs it. Chromium is a child process in
+the same cgroup, which is why the worker's heap is well under half its ceiling; left alone, Node 22
+takes half. The flag is on the command line because a per-service `environment:` would replace the
+`x-app` anchor's whole map. `prepare-production-swap.sh` (`aws_ssm_association.swap` in `swap.tf`,
+tested by `test_prepare_production_swap.py`) adds the 2 GiB `/swapfile` with `vm.swappiness = 10`
+for everything that has no ceiling. It never switches off or rewrites an active swapfile on a
+rerun, and refuses to create one that would leave less than the deploy's 4 GiB pull floor.
+`deploy-production.sh` brings postgres and redis up only after the worker has drained and the API
+has stopped, because a changed definition recreates them. Change any of these numbers and redo the
+sum in `docs/deployment.md`, "Memory budget and swap"; a second worker container is a new row there,
+not a copy of the worker service.
+
+**The worker drains while the API still serves, so a deploy's outage is the API's stop, the dump, the migration and the start.**
+Until 2026-10 the deploy stopped worker, api and web in one command, so the whole site answered
+502 for the worker's drain (up to `stop_grace_period`, five minutes) as well, about 6–8 minutes
+a push (launch review H1). Now `stop worker` runs alone first: the worker keeps beating while it
+drains (`apps/worker/CLAUDE.md`, "Liveness"), so `/api/ready` and the alert sweep stay quiet, and
+work the API queues meanwhile waits in Redis for the new worker. Only then `stop api web`. The
+preflight (`checkProductionConfig`) and the disk guard still run before anything stops. Pushes
+that change only `docs/`, `apps/mobile/`, `.scratch/`, `.claude/` or Markdown no longer deploy at
+all (`paths-ignore` in `.github/workflows/terraform.yml`; a push is skipped only when every file
+it changes matches).
+
+**Nothing is migrated until the database it changes is in S3.** A migration that adds enum values
+the running images cannot read (`000075`–`000102` do) has no rollback but a restore, and until
+2026-10 there was nothing to restore from (launch review B5). After the API stops and postgres is
+up, `dump_database` streams `pg_dump --format custom` from the postgres container straight into
+`s3://<assets bucket>/db-backups/<UTC time>-<release>.dump`, never through this disk, and writes
+the URI to the release directory's `database-dump` file. Taken with every writer stopped, it is
+exactly the state the migration starts from. pg_dump's exit status is the proof the dump is whole
+(pipefail); a failed dump or upload removes the partial object and restarts the containers the
+deploy stopped, exactly as they were (`docker start` on their ids, no image or configuration
+decision), with nothing migrated. A failed migration or an unhealthy new release is **not**
+rolled back: the schema may have changed, so the script leaves the applications stopped and prints
+the dump's URI, and `docs/deployment.md`, "Restoring the database before a release", is the way
+back. `on_exit` reads `phase` (`preflight`, `stopping`, `migrating`, `starting`, `live`) to tell
+those apart; a new step between the stop and `migrate` belongs to `stopping`. The instance role
+already writes the bucket; `storage.tf`'s `expire-database-dumps` rule expires the prefix after 30
+days. CI's smoke test (`check-production-docker.sh`) restores a dump with the same flags into a
+scratch database on every release, so the restore is rehearsed against the real schema.
+
+**The worker's healthcheck counts only its own container's heartbeat, because a lane's key outlives the worker that wrote it.**
+The compose healthcheck was a `node -e` that imported bullmq and asked each queue for consumers:
+about 0.55 s of CPU and 76 MB every 15 s, some 8% of a t3 vCPU. `worker-healthcheck.sh` asks
+Redis over bash's `/dev/tcp` for both lanes' heartbeat keys (`packages/core/src/workerHeartbeat.ts`)
+and passes only if each was last written by this container's hostname, which the worker records
+as `os.hostname()` and Docker changes with every recreate. The host test is the point: a key lives
+90 s after its worker stops, and the new worker often starts sooner than that after the old one
+drained, so without it `up --wait` passed on the old worker's beat. It also sees a wedged event
+loop, which BullMQ's consumer list never could. It reads `REDIS_URL` and understands only
+`redis://host[:port]`; a password or TLS needs AUTH and TLS added to it first. The queue names
+are copied from `jobLanes.ts`, and `test_worker_healthcheck.py` fails if they drift.
+
+**A deleted or overwritten object stays recoverable for 30 days, and no longer.** The assets
+bucket had no versioning, and books are promised forever, so one wrong `deletePrefix` lost them for
+good. `storage.tf` turns versioning on: a delete or an overwrite leaves a noncurrent version that
+`expire-noncurrent-versions` removes after 30 days (and the delete marker after it), so the app's
+deletes (a book, an account, retention sweeps) still remove data, a month later rather than at
+once. Database dumps keep their expired version one day. That is what the privacy text may promise:
+deleted files persist up to ~30 days in versions, dumps ~31, EBS snapshots 14 (`backups.tf`), plus
+the day or so AWS takes to run a lifecycle action. A noncurrent version is restored with
+`aws s3api list-object-versions` and a copy of that version over the key. `putIfAbsent`'s
+`If-None-Match` still works: a delete marker counts as absent.
+
 ## Process entry points
 
 `start-production.sh`, `docker-dev-entrypoint.sh` and `tsx-dev.mjs` are part of the Chromium
@@ -123,5 +237,3 @@ the app holding the browser. See `packages/core/src/generation/CLAUDE.md`.
 `docker-dev-entrypoint.sh` sets `umask 0000` so the host user can write into directories the
 container created first. Durable application bytes are in S3; bind-mounted files are development
 artifacts and scratch only.
-
-<!-- gotcha-index: pointer-only -->

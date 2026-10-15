@@ -18,7 +18,7 @@ describe("source-grounded book answers", () => {
       id: "book", userId: "owner", title: "Archive", prompt: "An archive story", category: "STORY",
       targetPages: 3, complexity: 2, temperature: 0.3, language: "en", mediaSettings: {}, status: "COMPLETE",
       contentRevision: 0, exportInvalidationRevision: null, pdfPageMap: null, storyState: null,
-      templateId: null, currentPlanId: null, subcategory: null, subtitle: null, authorName: null, coverTagline: null,
+      templateId: null, currentPlanId: null, subcategory: null, subtitle: null, authorName: null, bookMatter: null, coverTagline: null,
       createdAt: new Date(0), updatedAt: new Date(0), pages: [], chapters: [], research: [], currentPlan: null
     };
     const answer = await generateGroundedProjectAnswer(project, "What is the archive code?", "Unavailable", model, undefined, [], service);
@@ -37,7 +37,7 @@ describe("grounded book answers", () => {
     id: "book", userId: "owner", title: "Balcony Garden", prompt: "A balcony guide", category: "CUSTOM",
     targetPages: 3, complexity: 2, temperature: 0.3, language: "en", mediaSettings: {}, status: "COMPLETE",
     contentRevision: 0, exportInvalidationRevision: null, pdfPageMap: null, storyState: null,
-    templateId: null, currentPlanId: null, subcategory: null, subtitle: null, authorName: null, coverTagline: null,
+    templateId: null, currentPlanId: null, subcategory: null, subtitle: null, authorName: null, bookMatter: null, coverTagline: null,
     createdAt: new Date(0), updatedAt: new Date(0), pages, research: [], currentPlan: null,
     chapters: [
       { id: "c1", index: 1, title: "Set Up the Balcony", summary: "" },

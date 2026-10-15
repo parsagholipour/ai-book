@@ -29,6 +29,7 @@ class BillingProductOption extends StatelessWidget {
     this.recommendation,
     this.savingsPercent,
     this.detailed = false,
+    this.creditCosts,
     required this.onSelect,
     super.key,
   });
@@ -45,6 +46,10 @@ class BillingProductOption extends StatelessWidget {
   /// worth saying. Comes from `billingPlanValue`, never computed here.
   final int? savingsPercent;
   final bool detailed;
+
+  /// The live price list. With it, a plan says how many books its credits buy
+  /// rather than who it is for.
+  final Map<String, dynamic>? creditCosts;
   final VoidCallback? onSelect;
 
   @override
@@ -62,21 +67,38 @@ class BillingProductOption extends StatelessWidget {
                   : bestValue
                   ? 'Best per credit'
                   : null);
-    final price = storeProduct?.price ?? fallbackPrice(product);
+    // Only Play's price is ever shown; a row it gave none for says so.
+    final regularPrice = storeProduct?.price ?? billingPriceUnavailable;
+    final intro = introOfferFor(product, storeProduct);
+    final price = intro?.price ?? regularPrice;
+    final priced = storeProduct != null;
     final enabled = onSelect != null && storeProduct != null && !isCurrent;
     // A row Play cannot sell is never drawn as chosen: the ring would promise a
     // purchase the checkout bar cannot make.
     final chosen = selected && (storeProduct != null || isCurrent);
     final subscription = product.isSubscription;
-    final tagline = detailed && subscription ? style.tagline : null;
+    final costs = creditCosts;
+    final tagline = detailed && subscription
+        ? (costs == null ? style.tagline : planBooksLine(product, costs))
+        : null;
     final creditsLine = subscription
-        ? '${formatCredits(product.creditAmount)} credits / month'
+        ? planCreditsLine(product, intro)
         : 'Yours until you use them';
     final savings = savingsPercent == null
         ? null
         : 'Save $savingsPercent% per credit';
     final large = billingLargeText(context);
-    final period = subscription ? '/ month' : 'one time';
+    final period = !priced
+        ? 'No price yet'
+        : intro != null
+        ? intro.termLabel
+        : subscription
+        ? '/ ${product.periodNoun}'
+        : 'one time';
+    // An offer's price is never shown without the price it renews at.
+    final renewsAt = intro == null
+        ? null
+        : 'Then $regularPrice / ${product.periodNoun}';
 
     // The name the row shows, and the one a screen reader says. A pack's
     // catalog title ("One extra credit") dates from when one credit was one
@@ -110,6 +132,14 @@ class BillingProductOption extends StatelessWidget {
           Text(
             tagline,
             style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        if (renewsAt != null)
+          Text(
+            renewsAt,
+            style: text.bodySmall?.copyWith(
+              color: colors.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         Text(
           creditsLine,
@@ -159,8 +189,12 @@ class BillingProductOption extends StatelessWidget {
       inMutuallyExclusiveGroup: true,
       onTap: enabled ? onSelect : null,
       label:
-          '$name, $price ${subscription ? 'per month' : 'one time'}'
-          '${subscription ? ', ${formatCredits(product.creditAmount)} credits' : ''}'
+          '$name, ${!priced
+              ? 'price unavailable from Google Play'
+              : intro != null
+              ? '$price for the ${intro.termLabel}, then $regularPrice per ${product.periodNoun}'
+              : '$price ${subscription ? 'per ${product.periodNoun}' : 'one time'}'}'
+          '${subscription ? ', ${planCreditsLine(product, intro, per: 'per')}' : ''}'
           '${tagline == null ? '' : ', $tagline'}'
           '${savings == null ? '' : ', $savings'}'
           '${format == null ? '' : ', $format export included'}'
@@ -347,10 +381,24 @@ class _OptionBadge extends StatelessWidget {
   }
 }
 
-String billingPlanName(MobileBillingProduct product) =>
-    switch (billingTierForSku(product.sku)) {
-      'creator' => 'Creator',
-      'pro' => 'Pro',
-      'max' => 'Max',
-      _ => product.title,
-    };
+String billingPlanName(MobileBillingProduct product) {
+  final name = switch (billingTierForSku(product.sku)) {
+    'creator' => 'Creator',
+    'pro' => 'Pro',
+    'max' => 'Max',
+    _ => product.title,
+  };
+  return product.isYearly ? '$name yearly' : name;
+}
+
+/// [billingPlanName] for a plan known only by its id, read from [products]
+/// when it is there — a yearly plan says so — and from its tier otherwise.
+String billingPlanNameForSku(
+  String sku,
+  Iterable<MobileBillingProduct> products,
+) {
+  for (final product in products) {
+    if (product.sku == sku) return billingPlanName(product);
+  }
+  return billingTierLabel(billingTierForSku(sku));
+}

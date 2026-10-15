@@ -39,7 +39,7 @@ export function usePricing() {
     void load();
   }, [load]);
 
-  const parsed = draft ? parseDraft(draft) : null;
+  const parsed = draft ? parseDraft(draft, state?.minimums) : null;
   const dirtyKeys =
     state && parsed
       ? (Object.keys(parsed.values) as CreditPricingKey[]).filter((key) => parsed.values[key] !== state.values[key])
@@ -156,7 +156,15 @@ function asText(values: Record<CreditPricingKey, number>): Record<CreditPricingK
   >;
 }
 
-function parseDraft(draft: Record<CreditPricingKey, string>): {
+/** The lowest value a key may be saved at; the API sends the table, an older one sends nothing. */
+export function pricingMinimum(key: CreditPricingKey, minimums: Partial<Record<CreditPricingKey, number>> | undefined): number {
+  return minimums?.[key] ?? (key === "messageCreditsFree" ? 1 : 0);
+}
+
+function parseDraft(
+  draft: Record<CreditPricingKey, string>,
+  minimums: Partial<Record<CreditPricingKey, number>> | undefined
+): {
   values: Record<CreditPricingKey, number>;
   invalidKeys: CreditPricingKey[];
 } {
@@ -165,7 +173,7 @@ function parseDraft(draft: Record<CreditPricingKey, string>): {
   for (const [key, raw] of Object.entries(draft) as Array<[CreditPricingKey, string]>) {
     const trimmed = raw.trim();
     const parsedValue = Number(trimmed);
-    if (trimmed === "" || !Number.isInteger(parsedValue) || parsedValue < (key === "messageCreditsFree" ? 1 : 0)) {
+    if (trimmed === "" || !Number.isInteger(parsedValue) || parsedValue < pricingMinimum(key, minimums)) {
       invalidKeys.push(key);
       values[key] = Number.NaN;
       continue;

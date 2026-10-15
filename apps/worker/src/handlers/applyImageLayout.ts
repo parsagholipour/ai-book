@@ -11,7 +11,7 @@ import {
 } from "../generation/imageLayoutPlan.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { jsonRecord, preEditProjectStatus, type SettledProjectStatus } from "@book-maker/core";
+import { editRecompilePolicy, jsonRecord, preEditProjectStatus, type SettledProjectStatus } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import type { ApplyBookEditJob } from "../runtime/jobPayloads.js";
 
@@ -406,11 +406,14 @@ async function refreshExports(
     missingPlanMessage:
       `Cannot replay APPLIED image layout ${operationId} for project ${projectId}: no plan version is available`,
     enqueueFailureMessage: `Failed to enqueue the export refresh for layout-edited project ${projectId}:`,
+    // A free edit's recompile (`editRecompilePolicy`): its failure puts
+    // `fallbackStatus` back rather than failing the delivered book.
     enqueue: ({ planVersionId: compilePlanVersionId }) =>
-      maybeEnqueueCompile(projectId, compilePlanVersionId, {
-        skipFinalReview: true,
-        withoutQualityVerdict: true
-      })
+      maybeEnqueueCompile(
+        projectId,
+        compilePlanVersionId,
+        editRecompilePolicy(fallbackStatus, { skipFinalReview: true, withoutQualityVerdict: true })
+      )
   });
 }
 

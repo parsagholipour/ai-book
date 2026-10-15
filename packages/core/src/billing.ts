@@ -3,10 +3,23 @@ import { type CreditPricing, creditPricing } from "./creditPricing.js";
 import { messagePolicy } from "./messagePricing.js";
 import { coverArtSourceFor } from "./generation/coverSource.js";
 import { interiorIllustrationLaunchCap, interiorIllustrationSlotCount } from "./generation/illustrationSlots.js";
+import { narrationParagraphs } from "./audiobook/narration.js";
+import { countReadableWords } from "./generation/proseShape.js";
 import { modelTierSchema } from "./schemas/book.js";
 import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
 import { jsonRecord } from "./schemas/jsonCoercion.js";
 
+/**
+ * A notional list rate, **not what a credit earns**: no credit is sold at a
+ * cent, and after Google's fee a plan credit earns $0.0021–0.0028 and a pack
+ * credit $0.0064–0.0068 (`netUsdPerCredit`), while welcome credits earn
+ * nothing. It survives only as the figure quotes record in their assumptions.
+ * Nothing that reports revenue or a margin may multiply by it: the dashboard
+ * values spend by where its credits came from
+ * (`apps/api/src/admin/creditValuation.ts`), and a projection with no ledger
+ * behind it — the pricing editor's preview and projected profit among them —
+ * uses `CHEAPEST_PAID_CREDIT_USD_VALUE`.
+ */
 export const CREDIT_USD_VALUE = 0.01;
 export const STANDARD_EXPORT_CREDIT_AMOUNT = 1_000;
 
@@ -121,9 +134,8 @@ export function modelTierFromMediaSettings(mediaSettings: unknown): ModelTier {
  * A tier changes which models run, so a price follows it exactly as far as the
  * model spend does: the initial plan and every revision of it, the writing
  * rate, the images, and the per-page rate every post-generation rewrite is
- * billed at. Everything else is flat on purpose — `exportUnlock` compiles the
- * same PDF whatever wrote it, an audiobook and a voice call reach a tier-blind
- * provider, and the `…Base` charges (`fullBookBase`'s siblings
+ * billed at. Everything else is flat on purpose — an audiobook and a voice
+ * call reach a tier-blind provider, and the `…Base` charges (`fullBookBase`'s siblings
  * `bookTextEditBase`, `bookReplanBase`) are request overhead rather than model
  * spend. A revision runs the planner the first plan ran, so it follows the
  * same ladder: a flat 40 made a Quick Draft revision cost twice the plan it
@@ -244,6 +256,7 @@ export const PLAN_TIER_ORDER: PlanTier[] = ["free", "creator", "pro", "max"];
 /** Subscription SKU → tier. The single place that mapping is written down. */
 export const PLAN_TIER_BY_SKU: Record<string, Exclude<PlanTier, "free">> = {
   "tomeza.creator_monthly": "creator",
+  "tomeza.creator_yearly": "creator",
   "tomeza.pro_monthly": "pro",
   "tomeza.max_monthly": "max"
 };
@@ -285,24 +298,48 @@ export function highestPlanTier(tiers: readonly PlanTier[]): PlanTier {
   );
 }
 
+/**
+ * Products the app no longer sells. `ensureDefaultProductCatalog` marks their
+ * catalog rows inactive, so a purchase of one is refused at verification and an
+ * old app build cannot sell it either.
+ *
+ * `tomeza.one_book_export` granted the same 1,000 credits as `credit_pack_1`
+ * for $9.99 against $7.99 — a worse deal listed first. Every generated book
+ * already includes its export, so it bought nothing a pack does not.
+ */
+export const RETIRED_BILLING_PRODUCT_SKUS = ["tomeza.one_book_export"] as const;
+
 export const DEFAULT_BILLING_PRODUCTS = [
-  {
-    sku: "tomeza.one_book_export",
-    title: "One book export",
-    description: "One standard export credit for a bounded PDF/EPUB book package.",
-    productType: "ONE_TIME_UNLOCK",
-    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT,
-    priceMicros: 9_990_000,
-    currency: "USD"
-  },
   {
     sku: "tomeza.creator_monthly",
     title: "Creator",
-    description: "6,000 credits a month, unlimited illustrated books, and manuscript import.",
+    description: "6,000 credits a month. Illustrated books with no monthly cap (they use credits), and manuscript import.",
     productType: "SUBSCRIPTION",
     creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 6,
     priceMicros: 19_990_000,
-    currency: "USD"
+    currency: "USD",
+    billingPeriod: "P1M"
+  },
+  {
+    // A year of Creator, paid once, granted a month at a time: 6,000 credits at
+    // the start of each month of the paid year, each month's lapsing at its end
+    // exactly as Creator monthly's does (`monthlyPlanCredits`, and the month
+    // schedule in packages/db/src/subscriptionAllowance.ts). It used to grant
+    // all 72,000 at once, so a reader could spend the year in days and then
+    // refund inside Play's window (launch review, 2026-10-15). `creditAmount`
+    // stays what one payment buys in all, which is what a credit's value is
+    // measured against: $179.99 is 25% under twelve months and still earns
+    // $0.002125 a credit after Play's cut — the Max plan's rate, which every
+    // per-page price is floored at. Cheaper, and an ultra book bought with
+    // these credits would cost more than it brought in.
+    sku: "tomeza.creator_yearly",
+    title: "Creator yearly",
+    description: "6,000 credits every month, billed yearly. Illustrated books with no monthly cap (they use credits), and manuscript import.",
+    productType: "SUBSCRIPTION",
+    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 72,
+    priceMicros: 179_990_000,
+    currency: "USD",
+    billingPeriod: "P1Y"
   },
   {
     sku: "tomeza.pro_monthly",
@@ -311,16 +348,18 @@ export const DEFAULT_BILLING_PRODUCTS = [
     productType: "SUBSCRIPTION",
     creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 15,
     priceMicros: 39_990_000,
-    currency: "USD"
+    currency: "USD",
+    billingPeriod: "P1M"
   },
   {
     sku: "tomeza.max_monthly",
     title: "Max",
-    description: "80,000 credits a month — effectively unlimited for one person.",
+    description: "80,000 credits a month for the heaviest writers.",
     productType: "SUBSCRIPTION",
     creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 80,
     priceMicros: 199_990_000,
-    currency: "USD"
+    currency: "USD",
+    billingPeriod: "P1M"
   },
   {
     sku: "tomeza.credit_pack_1",
@@ -329,7 +368,8 @@ export const DEFAULT_BILLING_PRODUCTS = [
     productType: "CREDIT_PACK",
     creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT,
     priceMicros: 7_990_000,
-    currency: "USD"
+    currency: "USD",
+    billingPeriod: null
   },
   {
     sku: "tomeza.credit_pack_2",
@@ -338,9 +378,140 @@ export const DEFAULT_BILLING_PRODUCTS = [
     productType: "CREDIT_PACK",
     creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 2,
     priceMicros: 14_990_000,
-    currency: "USD"
+    currency: "USD",
+    billingPeriod: null
   }
 ] as const;
+
+/**
+ * Calendar months one billing period covers: 1 for "P1M", 12 for "P1Y". Null
+ * for a one-time product, or a period not counted in months or years.
+ */
+export function billingPeriodMonths(billingPeriod: string | null | undefined): number | null {
+  const match = /^P(\d+)([MY])$/.exec(billingPeriod ?? "");
+  if (!match) return null;
+  const count = Number(match[1]);
+  return count > 0 ? (match[2] === "Y" ? count * 12 : count) : null;
+}
+
+/**
+ * What one month of a plan grants. Every plan's allowance is granted a month
+ * at a time whatever its billing period, so the yearly plan's `creditAmount` —
+ * what one payment buys in all — arrives as 6,000 at the start of each month
+ * of its paid year. Null for anything that is not a plan.
+ */
+export function monthlyPlanCredits(product: { creditAmount: number; billingPeriod: string | null }): number | null {
+  const months = billingPeriodMonths(product.billingPeriod);
+  return months ? Math.floor(product.creditAmount / months) : null;
+}
+
+/**
+ * Introductory prices configured in Play Console, by the offer ID given there.
+ *
+ * Google reports *that* a subscription is in its introductory phase
+ * (`lineItems[].offerPhase`) but not what that phase cost, so the cash a
+ * payment records comes from here. An intro offer under any other ID still
+ * grants its allowance and is recorded at the catalog price, marked as such
+ * (`amountSource`), so the dashboard can tell an estimate from a known price.
+ * A free trial needs no entry: it grants the plan but no credits, and records
+ * no payment (`billingSubscriptions.ts`).
+ *
+ * **An intro period grants `creditAmount`, not the plan's allowance.** It used
+ * to grant all 6,000: $9.99 for 6,000 credits is $0.00142 a credit after Play's
+ * 15%, a third under the Max plan's $0.002125 that every per-page price is
+ * floored at, so a reader could buy the intro, spend it on long premium books,
+ * cancel, and leave a loss (pre-launch review, 2026-10). 4,000 is that floor at
+ * the intro's price (9.99 × 0.85 / 4,000 = $0.0021229, 0.1% under Max's own
+ * rate, which is rounding). The full-price renewal that follows grants the
+ * plan's allowance as usual. An intro offer under an unknown ID still grants
+ * the full allowance, since nothing here says what it cost: add it here first.
+ */
+export const SUBSCRIPTION_INTRO_OFFERS: ReadonlyArray<{
+  sku: string;
+  offerId: string;
+  priceMicros: number;
+  creditAmount: number;
+}> = [
+  { sku: "tomeza.creator_monthly", offerId: "creator-intro-first-month", priceMicros: 9_990_000, creditAmount: 4_000 }
+];
+
+/**
+ * Google Play's service fee on an auto-renewing subscription: 15% from the
+ * first payment. Every net figure the dashboard shows for a subscription, and
+ * the value of every allowance credit, is the catalog price less this.
+ */
+export const PLAY_SUBSCRIPTION_FEE_RATE = 0.15;
+
+/**
+ * Google Play's service fee on a one-time product (a credit pack). **15% only
+ * while the developer account is enrolled in Play's 15% service-fee tier** (the
+ * first $1M of earnings a year); an account that is not enrolled pays 30%. The
+ * owner must enrol in that tier, or set this to 0.3 — every pack credit's value
+ * and every net cash figure for a pack reads it.
+ */
+export const PLAY_ONE_TIME_PRODUCT_FEE_RATE = 0.15;
+
+/** Google's cut of a payment for a product of this type. Anything but a subscription is a one-time product. */
+export function playServiceFeeRate(productType: string | null | undefined): number {
+  return productType === "SUBSCRIPTION" ? PLAY_SUBSCRIPTION_FEE_RATE : PLAY_ONE_TIME_PRODUCT_FEE_RATE;
+}
+
+/**
+ * What one credit of a product brings in once Google has taken its fee:
+ * catalog price × (1 − fee) ÷ the credits one purchase grants. 0 for a product
+ * with no price or no credits — nothing says what such a credit earned.
+ */
+export function netUsdPerCredit(product: {
+  priceMicros: number | bigint | null | undefined;
+  creditAmount: number | null | undefined;
+  productType: string | null | undefined;
+}): number {
+  const priceUsd = product.priceMicros === null || product.priceMicros === undefined ? 0 : Number(product.priceMicros) / 1_000_000;
+  const credits = product.creditAmount ?? 0;
+  if (!(priceUsd > 0) || !(credits > 0)) {
+    return 0;
+  }
+  return (priceUsd * (1 - playServiceFeeRate(product.productType))) / credits;
+}
+
+/**
+ * The intro offer an `allowanceBasis: "intro_offer"` grant of `sku` was sold
+ * under. The grant names its plan but not its offer, so the offer that grants
+ * exactly that many credits wins, then the plan's only offer.
+ */
+export function introOfferForGrant(sku: string, grantedCredits: number): (typeof SUBSCRIPTION_INTRO_OFFERS)[number] | null {
+  const offers = SUBSCRIPTION_INTRO_OFFERS.filter((offer) => offer.sku === sku);
+  return offers.find((offer) => offer.creditAmount === grantedCredits) ?? offers[0] ?? null;
+}
+
+/**
+ * The least any credit sold for money earns after Google's fee — every product
+ * and every intro offer (today the intro month, $0.0021229, a hair under Max's
+ * $0.0021249). The conservative value of a credit when nothing says where it
+ * came from: a projection or an estimate with no ledger behind it.
+ */
+export const CHEAPEST_PAID_CREDIT_USD_VALUE = Math.min(
+  ...DEFAULT_BILLING_PRODUCTS.map((product) => netUsdPerCredit(product)),
+  ...SUBSCRIPTION_INTRO_OFFERS.map((offer) => netUsdPerCredit({ ...offer, productType: "SUBSCRIPTION" }))
+);
+
+/**
+ * The plans a reader on each tier is shown. Every product stays sellable — the
+ * catalog row is active and restore still finds it — this only decides what the
+ * paywall lists.
+ *
+ * Max ($199.99) is offered at launch only to someone already on Pro, who can
+ * outgrow 15,000 credits, or on Max itself. Shown to a first-time buyer beside
+ * $19.99 it reads as the price of the app rather than an upgrade.
+ */
+const PLAN_OFFERED_TO_TIERS: Readonly<Partial<Record<string, readonly PlanTier[]>>> = {
+  "tomeza.max_monthly": ["pro", "max"]
+};
+
+export function billingProductOfferedTo(sku: string, planTier: PlanTier): boolean {
+  const tiers = PLAN_OFFERED_TO_TIERS[sku];
+  return tiers === undefined || tiers.includes(planTier);
+}
 
 export type BillingOperation =
   | "CHAT_MESSAGE"
@@ -380,7 +551,6 @@ export type CreditCostEstimate = {
     creditUsdValue: number;
     estimatedInteriorImages: number;
     includesCover: boolean;
-    includesExportUnlock: boolean;
     includesPremiumReview: boolean;
     /**
      * The tier these prices came from. Recorded rather than derived, because
@@ -439,7 +609,9 @@ export function creditCostForOperation(
     case "PREMIUM_REVIEW":
       return pricing.premiumReview;
     case "EXPORT_UNLOCK":
-      return pricing.exportUnlock;
+      // Retired 2026-10-15: every finished book downloads free. The operation
+      // stays so old ledger rows keep their title; nothing charges it.
+      return 0;
     case "PLAN_REVISION":
       return pricing.planRevision;
     case "BOOK_TEXT_EDIT":
@@ -467,7 +639,15 @@ export function creditCostForOperation(
   }
 }
 
-/** See {@link creditCostForOperation} for why `pricing` is a parameter. */
+/**
+ * What a generated book costs: one charge, taken when its plan is approved,
+ * whoever approves it. The finished book downloads free, so no line here is
+ * for taking its file out — the per-book export unlock was removed on
+ * 2026-10-15 (`apps/api/src/mobile/CLAUDE.md`). A quote stored before then may
+ * still carry an `EXPORT_UNLOCK` line; its readers find lines by code.
+ *
+ * See {@link creditCostForOperation} for why `pricing` is a parameter.
+ */
 export function estimateFullBookCreditCost(
   input: CreateProjectInput,
   pricing: CreditPricing = creditPricing()
@@ -512,13 +692,6 @@ export function estimateFullBookCreditCost(
       quantity: includesPremiumReview ? 1 : 0,
       unitCredits: pricing.premiumReview,
       credits: premiumCredits
-    },
-    {
-      code: "EXPORT_UNLOCK",
-      label: "PDF/EPUB export unlock",
-      quantity: 1,
-      unitCredits: pricing.exportUnlock,
-      credits: pricing.exportUnlock
     }
   ];
 
@@ -529,7 +702,6 @@ export function estimateFullBookCreditCost(
       creditUsdValue: CREDIT_USD_VALUE,
       estimatedInteriorImages,
       includesCover,
-      includesExportUnlock: true,
       includesPremiumReview,
       modelTier
     }
@@ -537,34 +709,79 @@ export function estimateFullBookCreditCost(
 }
 
 /**
+ * What a chat `book_replan` (a rebuild or a translated copy) is charged: the
+ * flat `bookReplanBase` for re-planning, then a fresh full book of the copy it
+ * creates. The same total `bookEditCreditCost` quotes, itemised, so the charge
+ * can store it as its `creditEstimate` and a reader's own stop of the copy can
+ * be priced by what was delivered (`packages/db/src/userStopSettlement.ts`).
+ */
+export function estimateBookReplanCreditCost(
+  input: CreateProjectInput,
+  pricing: CreditPricing = creditPricing()
+): CreditCostEstimate {
+  const book = estimateFullBookCreditCost(input, pricing);
+  return {
+    ...book,
+    totalCredits: pricing.bookReplanBase + book.totalCredits,
+    lineItems: [
+      {
+        code: "BOOK_REPLAN",
+        label: "Book rebuild",
+        quantity: 1,
+        unitCredits: pricing.bookReplanBase,
+        credits: pricing.bookReplanBase
+      },
+      ...book.lineItems
+    ]
+  };
+}
+
+/**
  * What narrating a finished book costs.
  *
- * Priced off the real page count rather than `targetPages`, because by the time
- * anyone can ask for an audiobook the book exists and its length is a fact.
+ * Priced off the finished book rather than `targetPages`, because by the time
+ * anyone can ask for an audiobook the book exists and its length is a fact —
+ * and off its narrated **words**, because the speech provider bills by the
+ * second of audio. A page is no unit of that: a picture-book page is sixty
+ * words and a composed nonfiction page four hundred and fifty. Words are
+ * counted by {@link narrationWordCount}, over the text the narrator reads.
  * See {@link creditCostForOperation} for why `pricing` is a parameter.
  */
 export function estimateAudiobookCreditCost(
-  pageCount: number,
+  book: { pageCount: number; wordCount: number },
   pricing: CreditPricing = creditPricing()
 ): CreditCostEstimate {
-  const pages = Math.max(0, Math.round(pageCount));
-  const credits = pricing.audiobookBase + pages * pricing.audiobookPerPage;
+  const pages = Math.max(0, Math.round(book.pageCount));
+  const hundreds = Math.ceil(Math.max(0, Math.round(book.wordCount)) / 100);
+  const pageCredits = pages * pricing.audiobookPerPage;
+  const wordCredits = hundreds * pricing.audiobookPer100Words;
+  const credits = pricing.audiobookBase + pageCredits + wordCredits;
   return {
     totalCredits: credits,
     lineItems: [
       {
         code: "AUDIOBOOK_GENERATION",
         label: "Audiobook narration",
-        quantity: pages,
-        unitCredits: pricing.audiobookPerPage,
-        credits
-      }
+        quantity: hundreds,
+        unitCredits: pricing.audiobookPer100Words,
+        credits: pricing.audiobookBase + wordCredits
+      },
+      ...(pageCredits > 0
+        ? [
+            {
+              code: "AUDIOBOOK_GENERATION" as const,
+              label: "Audiobook narration per page",
+              quantity: pages,
+              unitCredits: pricing.audiobookPerPage,
+              credits: pageCredits
+            }
+          ]
+        : [])
     ],
     assumptions: {
       creditUsdValue: CREDIT_USD_VALUE,
       estimatedInteriorImages: 0,
       includesCover: false,
-      includesExportUnlock: false,
       includesPremiumReview: false,
       // Narration reaches a tier-blind speech provider, so this estimate is the
       // same at every tier. Recorded as balanced rather than left out because
@@ -572,6 +789,22 @@ export function estimateAudiobookCreditCost(
       modelTier: "balanced"
     }
   };
+}
+
+/**
+ * The words an audiobook of these pages reads aloud: the same reduction the
+ * narrator applies (`narrationParagraphs` — no code, tables or images), counted
+ * the way every length rule in the pipeline counts (`countReadableWords`, which
+ * estimates unspaced scripts from their characters).
+ */
+export function narrationWordCount(pageMarkdowns: readonly string[]): number {
+  let words = 0;
+  for (const markdown of pageMarkdowns) {
+    for (const paragraph of narrationParagraphs(markdown)) {
+      words += countReadableWords(paragraph);
+    }
+  }
+  return words;
 }
 
 export function estimateProviderCostForProject(input: CreateProjectInput): ProviderCostEstimate {
@@ -603,7 +836,8 @@ export function buildMarginEstimate(options: {
   providerEstimate: ProviderCostEstimate;
   actualProviderCostUsd?: number | null | undefined;
 }): MarginEstimate {
-  const estimatedRevenueUsd = roundUsd(options.creditEstimate.totalCredits * CREDIT_USD_VALUE);
+  // A margin, so what the credits earn at the cheapest they are sold — never the list cent.
+  const estimatedRevenueUsd = roundUsd(options.creditEstimate.totalCredits * CHEAPEST_PAID_CREDIT_USD_VALUE);
   const estimatedProviderCostUsd = options.providerEstimate.estimatedUsd;
   const actualProviderCostUsd =
     typeof options.actualProviderCostUsd === "number" && Number.isFinite(options.actualProviderCostUsd)

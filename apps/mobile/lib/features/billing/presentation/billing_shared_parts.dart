@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
+import '../domain/billing_models.dart';
+import 'billing_product_option.dart';
 import 'billing_tier_style.dart';
 
 /// Small pieces the paywall, the plan screen and the cancel sheet share, so a
@@ -14,6 +16,69 @@ import 'billing_tier_style.dart';
 /// the developer was in. Money-adjacent dates must not be.
 String billingDate(BuildContext context, DateTime value) {
   return MaterialLocalizations.of(context).formatMediumDate(value.toLocal());
+}
+
+/// [billingDate] for a sentence composed away from any widget — a purchase's
+/// result message. The app ships only the default localizations, so the words
+/// are the ones every billing surface prints.
+String billingMessageDate(DateTime value) {
+  return const DefaultMaterialLocalizations().formatMediumDate(value.toLocal());
+}
+
+/// "Switches to Creator on Wed, Nov 4": a downgrade Play deferred to the
+/// renewal date (`plan.pendingChange`), or null when nothing is scheduled.
+/// Until then the reader keeps — and `productSku` names — the plan being run
+/// out, so every plan surface says when that changes rather than "Renews".
+String? billingPlanChangeLine(BuildContext context, MobileBilling? billing) {
+  final plan = billing?.plan;
+  final sku = plan?.pendingChangeSku;
+  if (billing == null || plan == null || sku == null) return null;
+  final name = billingPlanNameForSku(sku, billing.products);
+  final at = plan.pendingChangeAt;
+  return at == null
+      ? 'Switches to $name when your ${plan.label} plan renews'
+      : 'Switches to $name on ${billingDate(context, at)}';
+}
+
+/// Said above a list of plans or packs whose prices Play did not send: Play
+/// is unreachable ([storeDown]), its product query failed, or a product is not
+/// active in Play Console yet. The rows are greyed out either way; this says
+/// why and carries the retry. Without it the list was a column of
+/// "Unavailable" over a disabled button, with nothing to press.
+class BillingStorePricesNotice extends StatelessWidget {
+  const BillingStorePricesNotice({
+    required this.storeDown,
+    required this.allUnpriced,
+    required this.onRetry,
+    super.key,
+  });
+
+  final bool storeDown;
+
+  /// Nothing on offer has a price, as against a few rows without one.
+  final bool allUnpriced;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppInlineNotice(
+      key: const ValueKey('billing-store-prices-notice'),
+      tone: AppTone.warning,
+      icon: storeDown ? Icons.cloud_off_outlined : Icons.sync_problem_outlined,
+      title: storeDown
+          ? 'Google Play is unavailable'
+          : allUnpriced
+          ? 'Couldn’t load prices from Google Play'
+          : 'Some prices didn’t load from Google Play',
+      message: storeDown
+          ? 'Purchases are temporarily unavailable. Your current credits and books are still here.'
+          : allUnpriced
+          ? 'Nothing can be bought until Google Play sends its prices. Your current credits and books are still here.'
+          : 'Options without a price can’t be bought until it loads.',
+      actionLabel: storeDown ? 'Try again' : 'Retry',
+      onAction: onRetry,
+    );
+  }
 }
 
 /// True once the reader has asked for larger type. Rows that put a price

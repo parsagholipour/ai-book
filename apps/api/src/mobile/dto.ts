@@ -299,7 +299,8 @@ export type FinalizeOutcome =
   | { ok: true; project: MobileProjectDetailDto; output: MobileCreationOutputDto; operation: MobilePlanOperationDto | null; sessionRevision: number }
   | { ok: false; status: number; code: string; message: string }
   | { ok: false; insufficient: InsufficientCreditsError }
-  | { ok: false; pageLimit: import("./bookPageLimit.js").PageLimitRefusal };
+  | { ok: false; pageLimit: import("./bookPageLimit.js").PageLimitRefusal }
+  | { ok: false; aiRefusal: Exclude<import("../spendBreaker.js").AiAccessDecision, { allowed: true }> };
 
 export type MobilePageCountResolution =
   | { resolved: true; targetPages: number; source: MobilePageCountSource; mode: MobilePageCountMode }
@@ -578,6 +579,14 @@ export type MobileProjectStatusDto = {
   currentAction: string;
   /** Measured active time for the current plan and its full-book attempt. */
   generationTimings: { planningMs: number | null; bookMs: number | null };
+  /**
+   * How many other books the worker's long lane runs before this book's
+   * waiting work (`longLaneQueuePosition.ts`). Null whenever none of its long
+   * work is waiting — nothing queued, or some already running. The app says
+   * "Starting soon" for 0. Named without "queue", which the status payload's
+   * leak tests forbid as raw queue state: this is a count of books, not a job.
+   */
+  waitingInLine: { booksAhead: number } | null;
   planningProgress: {
     percent: number;
     steps: Array<{
@@ -663,22 +672,31 @@ export type MobileExportAvailabilityDto = {
   /** Reader-facing name from the export registry (`exportFormatLabel`). */
   label: string;
   available: boolean;
-  unlocked: boolean;
+  /**
+   * Always true since 2026-10-15: a finished book downloads free, so there is
+   * no per-book unlock left to report. Kept because installed apps read it
+   * before they download.
+   */
+  unlocked: true;
   /**
    * True when the format is gated on an active plan (the Word export). The app
    * draws the lock from this beside its own billing state rather than asking
-   * for a second read; the download route enforces it regardless.
+   * for a second read; the download route enforces it regardless. A gate on
+   * the format, never a charge.
    */
   requiresSubscription: boolean;
-  creditsRequired: number;
+  /** Always 0, for the same installed apps (they require the key). */
+  creditsRequired: 0;
+  /**
+   * Always false: no plan is needed to unlock a file that is already free.
+   * Installed apps offered a plan beside the old credit unlock only where this
+   * was true.
+   */
+  planIncludesUnlock: false;
   downloadUrl: string;
   /**
-   * The PDF the in-app reader opens, served without the export unlock — only
-   * the PDF has one. Reading a book in the app is free; the unlock is for
-   * taking the file out of it (open in another app, share, save), which goes
-   * through `downloadUrl`. Before this the reader downloaded through
-   * `downloadUrl` too, so the first open of a book whose unlock was not part
-   * of a generation — a Studio book, an import — spent 150 credits silently.
+   * The PDF the in-app reader opens, served inline. Free like `downloadUrl`;
+   * kept because installed apps open their reader from it.
    */
   readUrl?: string;
   filename: string;
@@ -720,6 +738,13 @@ export type MobileAudiobookChapterDto = {
   /** Null until the chapter is ready to download. */
   audioUrl: string | null;
   timelineUrl: string | null;
+};
+
+/** What narrating the book would cost now, priced exactly as the start route charges. */
+export type MobileAudiobookQuoteDto = {
+  credits: number;
+  pageCount: number;
+  wordCount: number;
 };
 
 export type MobileAudiobookDto = {
@@ -867,3 +892,5 @@ export type MobileVoiceCallMeterDto = {
 
 /** `PUT` and `DELETE /api/mobile/push-device`. */
 export type MobilePushDeviceResponseDto = { ok: true };
+
+export type MobileProductEventResponseDto = { ok: true };

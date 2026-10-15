@@ -17,6 +17,9 @@ invariants below are grouped. Read the group that covers what you are touching.
 4. Auth: `requireMobileAuth(request, reply)` and bail when it returns null.
 5. Anything priced goes through the credit reserve/commit/refund flow in `@book-maker/db/billing`
    — see the `add-priced-operation` skill, and close the loop on the failure path too.
+6. Anything that starts AI work asks the spend breaker (`requireAiCapacity` / `assertAiCapacity`
+   in `aiCapacity.ts`) after any replay and before the first reservation, slot claim or limiter
+   hit — "AI spend breaker" in `../../CLAUDE.md`.
 
 Route groups are registered **directly on the same Fastify instance**, not via `fastify.register`,
 so they share one encapsulation context — the `application/octet-stream` parser registered there
@@ -49,6 +52,44 @@ reads a `qualityPreset` rather than a `modelTier`.
   over new bytes. That window is rare and not closed.) The routes ignore the query and authorize
   as before, and the app uses the URL exactly as it arrives (`cacheBuster: null`). That is why the
   Studio's per-session cover epoch is gone.
+
+- **A failed book says which step failed, and says its credits came back only when the ledger
+  does.** `failureMessage` used to be `We hit a problem while ${phase}: ${error}` with the job's
+  raw `GenerationJob.error` — the worker's `errorMessage(error)`, so a provider's 429 body, a
+  Prisma code or a model id reached the reader (launch review H4, 2026-10-13).
+  `failureMessageForJob` (`projectFailureCopy.ts`) now sends the phase sentence alone, and the raw
+  text only when it is one of the sentences written for the reader (`READER_FAILURE_SENTENCES`:
+  core's `editFailure` copy and the import handler's two) — an allowlist, so a sentence reworded
+  where it is thrown falls back to the phase sentence rather than leaking. The column itself is
+  unchanged: the operator console and the logs still read it. "Credits for this attempt were
+  returned." is appended only when `attemptChargeReturned` reads the failed job's attempt as
+  FAILED or CANCELED, not `refundPending`, and its charge released (`REFUNDED`) or reversed in
+  full — presence of a reversal is not enough, it may be partial. An attempt-less row, a pending
+  or partial refund and a read that fails all say nothing about credits; a curated sentence that
+  already mentions credits is not told twice. `loadSerializedProjectStatus` makes that one read,
+  for the same row `currentOwningFailedJob` reports. `projectFailureCopy.test.ts` pins it.
+- **A status stream sends what changed, proves it is alive with a comment, and answers to the
+  session it was opened with — three to an account.** `GET …/status/events` re-read the whole
+  status (about nine queries, a HEAD per export format, an entitlement read) every second for
+  every open stream, wrote it whether or not it changed — and each write rebuilt the app's chat
+  screen — had no cap per account, and checked auth only at connect (launch review, 2026-10-13).
+  Now it polls every 3 s and writes an `event: status` only when the serialized status differs
+  from the last one sent; a `: ping` comment line every 15 s proves the socket (the app's parser,
+  `_decodeServerSentEvents`, skips comment lines, so a client's idle timeout must be measured on
+  received bytes or lines, never on yielded events); every 60 s it re-runs
+  `verifyMobileAccessToken` on the token it opened with and ends on a revoked session, a disabled
+  account or an expired token. That end is `event: error` with `STATUS_STREAM_SESSION_ENDED`,
+  never `SESSION_REVOKED`: an ordinary refresh revokes the session row its old token belongs to,
+  so a client that signed out on it would sign out every 15 minutes — the next HTTP request is
+  what decides. An account holds `STATUS_STREAMS_PER_USER` (3) per process; a fourth *ends the
+  oldest* with `STATUS_STREAM_REPLACED` rather than refusing the new one, because the app opens a
+  stream per screen and the newest is the screen in front of the reader
+  (`statusStreams.ts`). Every `error` event is informational: the app ignores events that are not
+  `status`, and a stream that ends while the book is live drops to its three-second poll. And
+  `loadSerializedProjectStatus` skips the export HEADs while the book is PLANNING or GENERATING
+  (it cannot have gained a file; the push sweep reads the same function every 15 s), reporting
+  every format unavailable — EDITING keeps them, since the reader is still reading its file.
+  `statusStreams.test.ts` drives real sockets.
 
 ## A finished book prices every edit as a proposal first
 
@@ -84,6 +125,7 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
 - [Writing Studio](#writing-studio)
 - [Book notes](#book-notes)
 - [Book sharing](#book-sharing)
+- [Reporting AI output](#reporting-ai-output)
 
 ## Billing surfaces
 
@@ -118,6 +160,42 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   Google's remaining quantity, and ordinary cancellation keeps the paid period. Refund markers and
   purchase grants share serializable transactions so duplicates and late claims cannot restore credits.
   Setup and retry behaviour: `docs/google-play-rtdn.md`.
+  The one product a token may be verified as besides its own line item is a deferred downgrade's
+  target, because Play files that token under the replaced plan until it takes effect
+  (`packages/db/CLAUDE.md`).
+- **A blank order id is no order id.** `in_app_purchase_android` hands over a purchase Google has
+  not given an order id yet — a slow card still pending, a promo-code redemption — as `''`, and the
+  verify body took `transactionId` as `min(1)` in a `.strict()` object, so that purchase answered
+  400. That was the app's "record the pending purchase" step failing quietly: nothing recorded the
+  token, nothing acknowledged it, and Play refunded a paid purchase three days later (pre-launch
+  review H5). `mobileGooglePlayVerificationBodySchema` now reads a blank (or null) `transactionId`
+  as absent, its JSON-schema copy accepts it, and the app sends one only when it is non-empty, so
+  every installed build and every newer one both work. The same body takes `localPriceMicros` +
+  `localCurrency` (both or neither, analytics only — `packages/db/CLAUDE.md`). `billing.test.ts`.
+- **The renewal sweep wakes at every month of a paid period, a check that grants nothing is pushed
+  back, and a deleted account is never renewed into.** A plan's allowance is granted a month at a
+  time (`packages/db/CLAUDE.md`): the yearly plan's 6,000 every month, and the months of carried
+  time a plan switch adds to a period. Google says nothing at a month boundary inside a period it
+  was paid for, so the recording path sets `nextCreditGrantAt` to the next month's start while the
+  period has months left — or, for a deferred downgrade, to the old plan's next paid month on the
+  new token's row — and `runSubscriptionRenewalSweep` (`src/subscriptionRenewal.ts`) is what grants
+  months two to twelve, one grant per order and month however the app's verify and RTDN race it.
+  It takes the 25 oldest-due rows an hour, and a check that failed, found the subscription paused or
+  on hold, or found Google had not renewed yet used to leave `nextCreditGrantAt` in the past — so 25
+  stuck rows came first on every pass and starved every real renewal behind them. Each such check
+  now moves the row to `now + clamp(overdue / 2, 1 h, 24 h)`, overdue counted from the period end
+  Google last reported, which a recheck does not move, so the wait grows on its own: a renewal
+  Google is slow to report is asked about within the hour, a subscription paused for months once a
+  day, and a month inside a paid year — nothing overdue yet — within the hour. A month the app
+  already granted grants nothing here, and the recording has already moved the row to the next one.
+  The write only ever moves the date forward and never from null, so a recording that expired the
+  row or set a new period end wins. A paused or on-hold subscription with Google's `autoResumeTime`
+  is due then instead (on hold is recorded as `PAUSED`; as `INACTIVE` it had dropped out of the
+  sweep for good). The query skips a deleted account (`DISABLED`): its subscriptions are cancelled
+  by the deletion sweep (`apps/api/CLAUDE.md`), and a renewal that slips through has nobody to grant
+  to. A suspended one is swept, because Google keeps charging it. `subscriptionRenewal.test.ts`, and
+  the db package's `subscriptionYearlyPlan.test.ts`, which drives the real recording path the way
+  the sweep does.
 - **The free tier's illustrated-book limit is claimed at plan approval, chat `add_image`, and illustrated rebuilds.**
   `POST /api/mobile/plans/:id/approve` claims the `UsageCounter` slot for a
   generation planned with images (403 `IMAGE_LIMIT_REACHED` when it is gone — never a silent
@@ -137,36 +215,136 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   charge, copy, and job share the generation-attempt transaction; a refusal creates no copy and
   returns a fresh Apply card for an upgrade or the next period. A failed rebuild refunds its slot;
   confirmed retries re-claim from the copy's settings, including retries of downstream page jobs.
-- **The free tier's book length is a rule asked at every door that starts generating a book, not a
-  quota.** A free account gets books of up to `freeMaxBookPages` (30, operator-tunable at `/pricing`);
-  longer, up to the 600 every schema allows, is a plan perk. `bookPageLimit.ts` owns the check
-  (`pageLimitRefusal`), the one sentence and the 403 `PAGE_LIMIT_EXCEEDED` body, whose
-  `pageLimit: { limit, requestedPages, maxPages }` is what the app draws its long-book offer from —
-  so a route that *declares* its 403 must use `pageLimitExceededError`, or the serializer ships the
-  sentence without the numbers. The doors: the creation Build and `/projects/:id/plan` (before
-  planning is charged, on the built input's `targetPages`, which covers a legacy draft's
+- **A generated book's length is a rule asked at every door that starts generating one, not a
+  quota: the free tier's limit first for a free account, and a ceiling every plan shares.** A free
+  account gets books of up to `freeMaxBookPages` (30, operator-tunable at `/pricing`); longer is a
+  plan perk, up to `paidMaxBookPages` (200 at launch, 30–600) — the longest book *any* account may
+  have generated until a long illustrated compile is measured on the production host (launch
+  review, 2026-10-13; the schemas' own `max(600)` sits above it). `bookPageLimit.ts` owns the check
+  (`pageLimitRefusal`), both sentences and both 403 bodies, which share
+  `pageLimit: { limit, requestedPages, maxPages }` — so a route that *declares* its 403 must use
+  `pageLimitExceededError`, or the serializer ships the sentence without the numbers. **The ceiling
+  is asked first**, before the plan read, so a free account asking for 300 pages is told nothing
+  that long is available rather than sold a plan that would refuse it too. The two refusals are told
+  apart by their code because the app answers them differently: `PAGE_LIMIT_EXCEEDED` (`kind:
+  "free"`, `maxPages` = the ceiling) opens the long-book offer, while `BOOK_LENGTH_UNAVAILABLE`
+  (`kind: "ceiling"`, `limit` = `maxPages` = the ceiling) is a sentence with nothing to buy — every
+  shipped app shows an unknown code's message, and `pageLimitFromError` reads only the first code, so
+  an older build never offers a plan for it. The doors: the creation Build and `/projects/:id/plan`
+  (before planning is charged, on the built input's `targetPages`, which covers a legacy draft's
   book-type default), plan approval and the paid full-book `/resume` (the authoritative two — a plan
   sized while subscribed is refused once the plan lapses), and the chat's `book_replan`,
-  `continue_book` and `restructure_pages`, gated at the proposal (the reply says why, the priced card
-  still follows, `metadata.pageLimit` draws the unlock row) and again at Apply, which answers like
-  `imageLimitChatMessage` with a fresh resume pair so the card's Apply works once they upgrade.
-  Nothing is claimed, so a refusal has nothing to hand back. Only *generation* is held to it: an
-  author's or imported book is theirs at any length, a page change is refused only when it makes the
-  book longer (`restructuredBookPages`), and deleting from or rewriting a long book stays open. The
-  preflight's `maxPages` and the billing payload's `maxBookPages` (null on any plan) are how the app
-  locks the longer lengths before anything is sent.
-- **Reading a book in the app spends nothing; only taking its file out spends the export unlock,
-  and the app asks first.** A generated book's unlock is granted by its generation charge
-  (`grantExportEntitlement` on the plan approval attempt), so its reader never met the price. A
-  Studio book and an import have no such charge, and the reader downloaded through the same
-  `/export/pdf` route that settles the unlock — so the first open of an author's own book spent 150
-  credits without a word, and every Open/Share in the menu, the book page and the saved-export card
-  spent it on the tap. The reader now fetches `readUrl` (`GET /api/mobile/projects/:id/read/pdf`,
-  PDF only, owner-scoped, the same provenance headers and repair as the download, no entitlement),
-  and `confirmProjectExportUnlock` (`project_export_actions.dart`) asks before any surface spends the
-  unlock. The read route hands the owner bytes the unlock would otherwise sell — their own book, in
-  the app they made it in — which is the trade: public reach still goes through the share preview's
-  cap and the full share's unlock.
+  `continue_book` and `restructure_pages`, gated at the proposal and again at Apply. Past the free
+  limit the reply says why, the priced card still follows and `metadata.pageLimit` draws the unlock
+  row, and Apply answers like `imageLimitChatMessage` with a fresh resume pair so the card's Apply
+  works once they upgrade. Past the ceiling the reply is the sentence alone — no card, no
+  `pageLimit`, the pending edit closed (`pageCeilingChatReply`) — because no plan and no Apply could
+  run it; a card quoted before an operator lowered the ceiling gets the same reply at Apply. Nothing
+  is claimed, so a refusal has nothing to hand back. Only *generation* is held to it: an author's or
+  imported book is theirs at any length, a page change is refused only when it makes the book longer
+  (`restructuredBookPages`), and deleting from or rewriting a long book stays open — but continuing
+  or inserting into a long import *is* generation, so it is refused once the result passes the
+  limit that applies. The model's page-count recommendations are offered only at or under the
+  ceiling (`normalizePageCountRecommendations` falls back to the deterministic ones otherwise), and a
+  share remix copies a longer book's format at the ceiling. The preflight's `maxPages` and the
+  billing payload's `maxBookPages` (the free cap, null on any plan) and `paidMaxBookPages` (the
+  ceiling, every account) are how the app locks the free lengths and stops its pickers at the
+  ceiling before anything is sent.
+- **A new book may not start on Ultra while the operator has it switched off, and a book already
+  on Ultra keeps it.** Ultra is unmeasured on today's routing — its one measured run failed and cost
+  $8 — so it launched hidden behind `ultraTierEnabled` (a non-price key in the price list, default 0,
+  outside `CREDIT_PRICE_KEYS`; edited at `/pricing`, "Generation limits"). The billing payload ships
+  it as `ultraTierEnabled` and the app's Effort picker drops Ultra while it is false; the server does
+  not trust the picker. `ultraTier.ts` owns the rule and the one sentence (422
+  `QUALITY_TIER_UNAVAILABLE`, which every installed app shows as it shows any refusal), asked where a
+  book *starts*: the creation Build, its preflight and the legacy create (`prepareMobileCreationBuild`,
+  on the presets' tier, before the breaker and the advisor's calls), a draft created directly
+  (`POST /api/mobile/projects`, free, but one that could never be planned), the first plan of a draft
+  (`queueInitialMobilePlan`, inside its replay check, as `UltraTierUnavailableError` answered by
+  `sendGenerationAttemptError`) and plan approval (never its replay). Everything on a book that
+  already started at Ultra keeps its tier — chat edits and rebuilds (a rebuild copies its source's
+  tier, and `ReplanSettings` cannot change one), retries, Studio assists, narration — because the
+  reader chose it, and the set of such books is whatever was approved while the switch was on. A
+  draft priced at Ultra before the switch went off is refused at plan and approval; its plan
+  revisions are not gated. A share remix of an Ultra book is offered at Premium while the switch is
+  off. The spend breaker's soft-cap rule for Ultra (`AI_BUSY` for free accounts) still applies once
+  an operator turns it on.
+- **One account holds at most its share of the long lane, asked at every door that starts long
+  work, after the breaker and before anything is claimed.** The worker's long lane runs one book
+  at a time in production (`apps/worker/CLAUDE.md`, the lanes), and nothing stopped one account
+  approving ten plans in a row and holding every other reader's book behind its own for a day.
+  `booksInProgress.ts` counts the account's books with long-lane work QUEUED or ACTIVE — read off
+  the `GenerationJob` rows and classified by the same `JOB_LANES` map the enqueue sides route by,
+  so an edit's recompile does not count and a generation's waiting compile does, and the book
+  being started never counts against itself — and refuses past one on a free account, three on
+  any plan (`hasActiveSubscriptionEntitlement`, the spend breaker's notion of paid; an
+  unreadable plan counts as paid). The doors: plan approval (not its replay), a paid `/resume`
+  whose jobs take the long lane, audiobook start, manuscript import, and the chat Apply of a
+  `continue_book` or `book_replan` card — the button and a typed confirmation both, before the
+  "Apply" row is written. A text edit that rewrites more than `LONG_LANE_EDIT_PAGE_THRESHOLD`
+  pages takes the long lane too (`apps/worker/CLAUDE.md`, the lanes), so its card's Apply and the
+  page-rewrite paid retry (`bookEditOperationRetries.ts`) are doors as well; both ask the lane map
+  itself — the Apply with the card's pages and a free `local_patch` read as the verified
+  `mode: "exact"` it is, the retry with the very payload it is about to enqueue — never a copy of
+  the threshold. Where it sits is the spend breaker's rule, right after it: after auth,
+  validation and any replay, before every reservation, slot claim, upload write or row, so a
+  refusal costs and claims nothing. The answer is 429 `BOOKS_IN_PROGRESS_LIMIT` with
+  `booksInProgress: { limit, inProgress }`; the sentence lives with the code
+  (`booksInProgressMessage`) and every app surface that starts a book already snackbars
+  `error.message`, so no screen changed. It is a check, not a lock: two approvals in the same
+  instant can both pass, which costs one more book in line, never money.
+- **A waiting book is told how many books are ahead of it, counted in the order the long lane
+  really runs.** `waitingInLine: { booksAhead }` on the status payload (null while none of the
+  book's long work waits) comes from `longLaneQueuePosition.ts`, which reads open long-lane rows —
+  durable rows, because a row whose Redis dispatch is still deferred is still in line — once per
+  three seconds per process, adds the asking book's own fresh rows, and counts books with core's
+  `booksAheadInLongLane`, the rule that sits beside the placement that makes it true (continuations
+  before starts, FIFO within each). The key has no "queue" in it on purpose: the status payload's
+  leak tests forbid raw queue state, and this is a count of books. A failed read answers null,
+  never a failed status. The app's words for it — "Waiting in line — 2 books ahead of yours",
+  "Starting soon" — are in `waitingInLineLabel` (`project_status_models.dart`).
+- **A finished book downloads free — every book a reader owns, PDF and EPUB, with no charge, no
+  entitlement row and no 402; the export wire stays only for installed builds.** Parsa, 2026-10-15:
+  "Charge once he approves the plan, a single cost for the book that we take before, and once the
+  book is ready it is simply downloadable without any locks." Until then a per-book 150-credit
+  `EXPORT_UNLOCK` was settled by the download route: bundled into a subscriber's book price *and*
+  "covered" by their plan, so subscribers paid it twice, while a free reader's price left it out and
+  the download almost never sold it. It went in three steps — bundled into every price, then split
+  out for free readers on 2026-10-13, then removed — and nothing of it charges any more.
+  `routes/exports.ts` hands the owner the bytes of a generated book, a Studio book, an import, a
+  book made before the change or made while free alike: no `spendCredits`, no entitlement, never
+  `INSUFFICIENT_CREDITS`. `readUrl` (`GET …/read/pdf`, inline) stays, because installed apps open
+  their reader from it. **The export DTO's three unlock fields are constants now, kept for the
+  builds already on phones**: `unlocked: true`, `creditsRequired: 0` (the app's parser requires the
+  key) and `planIncludesUnlock: false` (the app offered a plan beside the credit unlock only where it
+  was true) — `serializeExport` (`projectArtifactSerializers.ts`) writes them and reads no
+  entitlement, which took a query off every status read. Old `EXPORT_UNLOCK` entitlements and
+  ledger rows stay: the billing payload still lists them and the credit log still titles them
+  "Export unlock". The Word file stays a plan perk — a gate on the format, never a charge (the Word
+  entry below). `accessAndExports.test.ts` downloads each book kind with no credits and no plan.
+- **A book is one charge, taken when its plan is approved and the same for a free reader and a
+  subscriber; a retry of an attempt charged before that keeps its stored price.** Plan approval,
+  the chat rebuild's card and its Apply, and every preview price a book through core's
+  `estimateFullBookCreditCost` / `estimateBookReplanCreditCost`, which carry no export line
+  (`packages/core/CLAUDE.md`), and none of them asks whether the reader holds a plan.
+  `startGenerationAttempt` writes no entitlement beside the charge (`packages/db/CLAUDE.md`).
+  **Installed apps quote books themselves** — `estimateProjectCredits` adds
+  `creditCosts.exportUnlock` for a subscriber and falls back to 150 when the key is missing — so the
+  billing payload keeps shipping that key, at 0 (core `RETIRED_CREDIT_PRICING_KEYS`), and an old
+  build's subscriber quote matches the charge without a release. **The paid `/resume` re-charges
+  exactly its source attempt's `quotedCredits`**, the `credits` the retry quote showed the reader
+  before they confirmed. An attempt charged before 2026-10-15 stored a price with the 150 inside it
+  (for every reader, before the 2026-10-13 split), and its retry keeps it: the retry repeats the
+  approval the reader agreed to, the quote and the charge stay one number, and
+  `startGenerationAttempt` refuses a retry priced apart from its source. Dropping the old line
+  instead would have needed a second price read on every failed book's status, a looser equality
+  in the shared attempt check, and a quote the user-stop settlement could no longer add up
+  (`quotedFullBookRates`), for a handful of retries; a stop or failure of that retry still returns
+  the 150, which no run delivers. Nothing is granted for it. A *replayed* approval (the same plan
+  approved again) of a book charged before the change re-quotes without the line and answers the
+  attempt conflict, exactly as a price save in between does; the first approval's book is already
+  generating. The dashboard counts no export unlock at all (`admin/pricingDrivers.ts`).
+  `creditTierPricing.test.ts`, `projectChatReplan.test.ts`, `plansResumeExportUnlock.test.ts`.
 - **Chat replies never name a credit price.** The number travels as
   `metadata.creditsCharged` (queued work) or `metadata.editProposal.credits` (a proposal), and the
   app draws it as the tappable badge in `credit_cost_badge.dart` — one place that also explains what
@@ -190,14 +368,17 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
 - **The edit chat gets one clarifying question per request, and it is enforced three times.**
   A second question is a loop the user cannot escape: a `scope` clarification whose scope is
   `"none"` is satisfied by no reply, so "just add" is met with the same question forever. Once
-  `findPendingScopeClarification` reports an open `scope` clarification that the new message
-  neither answers nor cancels, `apps/api/src/mobile/routes/projectChat.ts` merges the stored
+  `findPendingScopeClarification` reports an open `scope` (or the matter composer's `matter`)
+  clarification that the new message neither answers nor cancels, `apps/api/src/mobile/routes/projectChat.ts` merges the stored
   request with the follow-up (`messageWithFollowUp`) and sets `clarifyExhausted`. That flag drops
   `clarify` from the router's action enum (`decideActionsFor`), *skips* the
   `BOOK_EDIT_CONFIDENCE_THRESHOLD` demotion — which would otherwise turn the hesitant decision
   straight back into the question — and finally `forcedDecision` coerces any surviving `clarify`
   into a whole-book `page_rewrite`. All three are needed: the prompt covers the model, the
   coercion covers a router timeout and the model-free heuristics, whose catch-all is a clarify.
+  **A question is open for one reply only**: once an assistant message follows it, it is spent and
+  never re-found — before, nothing marked the turn that spent it, so every later message was merged
+  with the old request ("make page 3 funnier" reached the router as a follow-up to "add an ISBN").
   Defaulting this aggressively is safe **only** because a completed book prices every edit as a
   proposal card first — nothing is reserved or written until Apply, so a wrong guess is one Cancel
   away. For the same reason the confidence demotion never applies to the proposal-gated edit kinds
@@ -215,6 +396,20 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   `bookEditRouterPrompt.ts` (the action list, the decide schema and the prose — everything the
   model is *told*, as opposed to how its answer is read), which is why those import types back
   from it but never values.
+- **A regex over chat text gives each optional word its own whitespace and starts a run at its first character, because the API reads it on its only thread.**
+  Every recogniser the chat runs is synchronous on the API's event loop, so one slow pattern is
+  every user's outage, and no time box around a model call can interrupt it. Six were found on
+  2026-10-06/07, each from one message under the 5,000-character limit: the matter composer's
+  style-instruction pattern (97 s), a byline name pattern on joined capitals (1.3 s), the page-count
+  reader `explicitTargetPagesFromText` (57 s on "page" and spaces), the language guard (23 s), the
+  page-design recogniser (22 s on 809 characters) and the swap recogniser (2.7 s on 98). The shapes
+  were always the same — two quantifiers that can split one run of whitespace or separators
+  (`\s*,?\s*`, three optional words each with `\s*` around it), overlapping adjacent classes, an
+  unbounded tail started inside a word, an end-anchored run retried from every position — and the
+  rewrites are exact: each optional word carries its own trailing `\s*`, adjacent classes are
+  disjoint, a run starts at its first character (`(?<!\s)\s+`, `(?<![.!?])[.!?]+$`), and a
+  recogniser applied to every word of a chain skips in code. Each fixed recogniser keeps a corpus
+  pinned to its old answers and a timing battery read at 1,000 characters before 10,000.
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.**
   A reader saying "page 10" means the number on the PDF page in front of them — the printed
   footer, the Contents column and the pdfrx chrome, which skip the cover sheet — while every
@@ -627,11 +822,12 @@ edit instead.
   status reads to one repair while ensuring a transient conversion failure does not permanently
   spend the manuscript revision's key. The hook belongs on that per-project
   route and not in `serializeExportSet`, which the project *list* shares; from there one poll would
-  queue a compile per listed book. The file is **read before the unlock is spent**, and the bytes it hands back are
-  the ones already in memory — `stat`, charge, then read left a window where that same edit could
-  delete the file mid-charge and answer 404 with the reader's credits gone. The entitlement is per
-  project and idempotent, so nothing was double-charged and a retry did deliver, but the first unlock
-  still settled against nothing. What it queues is a **repair**, and it must
+  queue a compile per listed book. The file is **read whole before anything is answered**, and the
+  bytes it hands back are the ones already in memory — when a download still settled the export
+  unlock, `stat`, charge, then read left a window where that same edit could delete the file
+  mid-charge and answer 404 with the reader's credits gone; nothing settles now (downloads are
+  free), and the read-first order still keeps a found file from turning into a 404 half-way through.
+  What it queues is a **repair**, and it must
   not borrow the edit recompile's normalized revision-and-policy dedupe key: `enqueueGenerationJob` returns any
   existing row for a key and only re-dispatches one still QUEUED, so the moment that row goes
   COMPLETED or FAILED the key is spent and every later repair for that revision enqueues *nothing*.
@@ -680,7 +876,12 @@ edit instead.
   leads to the same `GENERATE_BOOK` charge — so deleting a finished book whose PDF had gone missing
   refunded the purchase, because the status poll had queued a repair a moment earlier. The filter
   that builds `legacyJobs` excludes detached rows for that reason; they are stopped like anything
-  else, they just settle nothing. **The charge is only half of what a stop must not touch**: the
+  else, they just settle nothing. A free edit's recompile (a manual save, Undo, Redo, a Studio
+  publish or takeover), and since 2026-10-13 a paid chat edit's too (its attempt settled when the
+  edit published), is excluded by the same `payloadOwnsProjectOutcome` test and restored like a
+  presentation reprint — "A free edit's recompile owns its verdict, never the paid book's failure"
+  in `apps/worker/src/handlers/CLAUDE.md` — and the ledger refuses a delivered attempt's charge
+  whatever walks to it (`packages/db/CLAUDE.md`). **The charge is only half of what a stop must not touch**: the
   same function's project write was unconditional, so stopping a repair marked the finished book
   FAILED — terminal, because `ensureExportRepairQueued` only queues for COMPLETE and
   REVIEW_REQUIRED and `canRecoverGenerationJob` refuses detached rows, so neither the self-repair
@@ -776,18 +977,51 @@ listening to, and a book whose EPUB is now on disk may not keep saying the expor
 historical job row — and nothing else, because every other issue is about prose no later compile
 of the same manuscript can have fixed.
 
+- **A reader's own stop or delete refunds only what was not delivered, and an ended month's
+  allowance lapses instead of turning permanent.** The ledger half — what counts as delivered, how
+  it is priced, the ceiling and the lapse — is in `packages/db/CLAUDE.md`. The API half is *when*
+  it is decided: inside the stop's own transaction. `stopProjectGenerationJobs` calls
+  `recordUserStopSettlementTx` for each attempt that transaction claimed (`count === 1`), right
+  after stamping its `refundPending` and before commit. Both delete routes delete the project the
+  moment the stop returns, and the cascade takes the pages with it, so a settlement that counted
+  later — the reconciler, after the post-commit `failGenerationAttempt` failed — would find nothing
+  delivered and refund whole. An attempt the stop did not claim already belongs to the settlement
+  that got there first, a failure the reader did not cause, and is left unstamped. Every caller is
+  the reader's own: the mobile delete, account deletion (the owner asked for it), and the operator
+  console's stop and delete, which reach only the operator's own books (`ownedProjectWhere`). The
+  worker needs no twin of this: `markStopped`, the reconciler and the legacy fallbacks all settle
+  the one stamped charge, so the stop and the worker cannot disagree about what a user stop is
+  owed. What the stamp can price depends on the quote stored beside the charge, and that is this
+  directory's half too: plan approval stores the full book's, the chat rebuild
+  (`replanCopyOperations.ts`) stores `estimateBookReplanCreditCost`'s — only when it is the price
+  being charged, so a price save between the two reads leaves none and the stop refunds whole —
+  and the audiobook start stores the narration's (launch review 2026-10-13, H3: a rebuild's copy and
+  a narration are read while they are made, and both came back whole on a delete). The attempt-less
+  rows still settle whole through `settleLegacyStoppedJobs`
+  (`apps/api/src/stopLegacySettlement.ts`, split out of `queue.ts` at its size budget), and the
+  ledger's ceiling stops that walk reaching past a stamp on an attempt's charge, or into a charge
+  whose attempt SUCCEEDED at all. The reader is told
+  before and after: the delete dialog (`deleteProjectConfirmationMessage` in `book_screen.dart`)
+  says a book still being written keeps what was made and an ended month's credits do not come
+  back, and the credit log titles the refund `… stopped: unused credits returned` and a lapsed
+  share `Returned monthly credits expired` (`creditLog.ts`). Not settled yet: a paid retry
+  (`/resume`) of an attempt a stop settled in part re-charges the whole quote and claims another
+  illustrated-book slot while the generator keeps the pages already written. Today only the
+  operator console can reach it, because the app's only stop is a delete.
+
 - **The Word route refuses a free account before it reads a byte or queues a repair, and charges
-  the unlock only after the bytes are in hand.** The Word file (shipped 2026-09-06) is a plan perk:
+  a subscriber nothing.** The Word file (shipped 2026-09-06) is a plan perk:
   `routes/exports.ts` registers one route per format in the core registry, and a format whose
   `exportRequiresSubscription` is true asks `hasActiveSubscriptionEntitlement` — a fresh read, never
   the 60-second `isSubscriberForRateLimit` cache, which reads a lookup failure as "free" — right
   after the owner lookup and *before* `readProjectExportArtifact` and `ensureExportRepairQueued`,
   because a repair compile for a file the reader cannot download is spend for nothing. The answer
   is `sendSubscriptionRequired`, 403 `SUBSCRIPTION_REQUIRED`: the manuscript-import route's code,
-  so every shipped app already opens the paywall on it. The subscription gates the *format*; the
-  per-book `EXPORT_UNLOCK` in `sendUnlocked` gates the *book* and applies to every format alike, so
-  a subscriber who unlocked the PDF gets the Word file at no further charge, and a subscriber who
-  has not pays the same unlock the PDF would have cost — after the bytes, as always.
+  so every shipped app already opens the paywall on it. The subscription gates the *format* and is
+  never a price: until 2026-10-15 the per-book `EXPORT_UNLOCK` also gated the *book*, so a
+  subscriber who had not unlocked the PDF paid 150 for the Word file after the bytes were read;
+  now a subscriber's Word download, like every PDF and EPUB, charges nothing and writes nothing
+  ("A finished book downloads free" above).
   `missingExportFormat` answers in registry order (pdf, epub, docx), so a book compiled before the
   Word export existed queues one detached Word repair on its next status read — Chromium-free and
   model-free, at most one per five-minute window, keyed `repair-docx-…` so it never shares the
@@ -855,7 +1089,8 @@ of the same manuscript can have fixed.
   "Change the book title to …" was quoted as a 550-credit whole-book rebuild (2026-10-02): nothing
   recognised it, the router prompt had no target for it, and the model-free battery listed "title"
   beside the premise and the ending. It is a `book_title` intent now (`bookEditBookTitle.ts` reads a
-  title the reader spelled out before the router; the router's `book_title` target writes one when
+  title the reader spelled out before the router — past the matter guard too when the whole message
+  is the rename (`isWholeBookTitleRename`), so "Rename the book to 'The Dedication'" stays free; the router's `book_title` target writes one when
   they asked for it to be invented; the heuristics ask "What should the new title be?" instead of
   rebuilding). `bookTitleEdits.ts` writes the title to the project row *and* the current plan — the
   app, cover typesetting and file names read the first, the compile's title page, cover alt text and
@@ -864,8 +1099,9 @@ of the same manuscript can have fixed.
   cover row. **What it costs is the cover's**: a designed cover is re-set free in the design it
   wears (a revision-owned cover row, with `coverArtSource: "design"` written into the plan snapshot
   too, because the cover job reads its source there); no cover, or an uploaded one, has nothing to
-  redraw; an AI cover holds the old title in its pixels and its artwork is not stored apart, so the
-  change is a card priced at `coverRegeneration`, charged and settled like the Studio's paid cover,
+  redraw; a drawn cover that kept its artwork (`ai-kept`, every cover drawn since 2026-10-06) is
+  re-set over it free (`drawCover.retypeset`); an older AI cover holds the old title in its pixels
+  and its artwork is not stored apart, so the change is a card priced at `coverRegeneration`, charged and settled like the Studio's paid cover,
   and claimed by a `BOOK_TITLE` operation row so Cancel and Apply cannot both win. A cover row that
   names neither a design nor an upload is read as AI — a cover from before the source was recorded
   was drawn by a model, and read as a design it would be swapped for a fresh pick, free. A
@@ -873,6 +1109,308 @@ of the same manuscript can have fixed.
   new title could re-dress it. An author's book (a Studio book or an import) is sent to the Studio's
   settings, whose publish already re-typesets its cover; a chat write would leave the Studio's
   published record behind.
+- **A book's matter pages are its own copy of the author profile, and changing them is free.**
+  The pen name, bio, website, copyright holder, imprint and rights toggle live on `AuthorProfile`
+  (`authorProfile.ts`, `GET/PUT /api/mobile/author-profile`); every new book — generated, imported,
+  Studio — copies them into `Project.authorName` and `Project.bookMatter` at creation
+  (`authorDefaultsForNewBook`), and the creation route asks nothing. A book made from a share remix
+  is the remixer's own new book and takes the remixer's profile; nothing of the shared book's matter
+  crosses. Editing the profile
+  never reprints a published book. `PATCH /api/mobile/projects/:id/book-matter`
+  (`bookMatterEdits.ts`) changes one book: on a finished book through `commitCoverChange`, the
+  title edit's transaction, with a free reprint and a free re-set of a design or `ai-kept` cover
+  (an older drawn cover answers `keeps_old_name` rather than a price nobody asked for); on a book
+  still being written as a plain row write the first compile prints — **refused while a
+  `COMPILE_EXPORT` is open**, because that compile read the row when it started and would publish
+  without the change; refused while EDITING. An ISBN is checked on this PATCH as in the chat (check
+  digit; `INVALID_ISBN`, stored as typed with a leading "ISBN" label dropped, since the page prints
+  it; the label comes off before the 24-character limit is checked). The whole decision is taken under the Project row's
+  `FOR UPDATE`, re-reading status and matter there, so a first compile that publishes while the
+  request waits sends it down the reprint path instead of writing behind the published files.
+  Cover reads inside that lock use the same transaction client (`currentCoverKind(projectId, tx)`);
+  reaching for the global Prisma client there needs a second pooled connection and can stall
+  concurrent saves while each transaction holds its first connection.
+  A new compile row's Project foreign key takes `FOR KEY SHARE`, which conflicts with that lock:
+  insertion waits for the save to commit, or the save waits and sees the open compile. Keep the
+  explicit `FOR UPDATE`; a non-key column update alone takes a weaker lock. Fan-in can still read
+  the old byline before insertion, so `compileExport` rechecks cover drift against its fresh snapshot.
+  **The chat reaches the same write, and a model composes it.** Every matter field — the printed
+  author name, the dedication, About the Author, the website, the © holder, the publisher, the
+  ISBN, the "All rights reserved" toggle — is one free `book_matter` intent: no operation, no ledger
+  entry, no card, never a page rewrite (the byline rule tells writers never to put a dedication in
+  page text). *Whether* is the router's `book_matter` target, shown the book's matter
+  (`bookMatterForRouter`), with `mentionsBookMatter` (`bookEditMatter.ts`) as the model-free
+  detector for an outage and as the guard that keeps a matter request off the fast paths (the
+  Sources recogniser read "add a dedication: For my sources of strength" as Sources; the exact
+  replacement read "replace the dedication with a poem"). Bare "dedicated" and "dedicate a chapter
+  to…" are content, and so is a matter word in a request that names a page by number ("rewrite
+  page 4 so the publisher sounds meaner") — except the dedication, dedicating the book, the ISBN and
+  "All rights reserved", which stay matter there (`evenOnAPage`). It is decided per request, not
+  per sentence — a message splits where a new request starts (an edit verb, "can you", "page N"),
+  never at every comma — so "Change the publisher to Lantern and make page 2 shorter" is a matter
+  edit whose reply names the page edit as separate. Prose-word exclusions apply to the cue's own
+  clause too; another clause's "chapter" cannot suppress a publisher or byline change. Translated
+  boundaries are shared with the composer and work in either request order. A whole-message rename is let past
+  the guard (above); an unquoted new title with a matter word after a break still goes to the router. *What* is composed at apply time (`bookMatterChatEdits.ts`, prompt and decisions in
+  core `authoring/bookMatterChatEdit.ts`, the field cues, folding, ISBN check and quote test beside it
+  in `authoring/bookMatterWords.ts`, which fields may change in `authoring/bookMatterAskedFor.ts`, the
+  left-over and `runs_on` reading in `authoring/bookMatterRequests.ts`) by one time-boxed call on the
+  chat's routing model, shown
+  the message, the last turns, the book's language and the **current** matter, because a matter
+  edit is an edit: the regex extractor this replaced (2026-10-06 review) printed "For mention my
+  sister too", the tail of "and redo the cover", "For a poem", and deleted a whole dedication for
+  "remove my ex's name from the dedication" — it never saw the dedication it was editing. Code then
+  keeps only fields the reader asked for, and **what that gate exists to stop is a second field
+  nobody asked for** (a Persian dedication request once also turned on "All rights reserved" and
+  deleted the bio). A change is kept when its quote — whole words of the message — names its field
+  by cue, or by the value the field prints now (a publisher, holder or author name whole, an ISBN by
+  its digits, a website by its host, a dedication or bio by three running words of it: "Remove
+  Lantern Press", "take Ruiz Media off the book"), unless another change in the answer prints that
+  value as its own content; when a name change's quote holds both the old and the new name ("Change
+  Ana Ruiz to Ana Park, my publisher prefers it"); when its quote
+  names no field and the last matter reply changed or asked about that field (follow-ups point back:
+  "mention my sister in it too", "make it shorter"); or when it is the answer's only change and the
+  message names no other field ("Sam Lee wrote this book"). A cue word that the change itself prints
+  is its content, not a request for another field ("add that I'm a proud dog owner" is not the ©
+  holder), and a rider that quotes only words another change prints is that change's content, not
+  a second field. This includes a cue inside unspaced text: a Chinese dedication to a mother who
+  works at a publishing house names no publisher to remove. A separate removal still counts when
+  the request names the publisher again outside the supplied dedication.
+  Never "All rights reserved", and never the removal of a field nothing named, by
+  either of the last two. A gate that kept only cue-named fields dropped 38 of 40
+  follow-ups and 48 of 76 bylines (`bookMatterAskedFor.measured.test.ts`, written before the gate:
+  40/40, 76/76 and 24/24 single-field requests that never name the field kept; 25/25 unasked riders
+  dropped; then 70/70 follow-ups whose content holds another field's cue word, and 0 of 38 riders
+  kept, including byline removals quoting the whole message; then 34/37 changes named by value and
+  18/18 renames quoted whole kept, and 0 of 28 removals that rode on a cue word the asked bio or
+  dedication prints). The cues (in English, Persian,
+  Arabic and the major European and Asian languages; "copyright" never names "All rights
+  reserved", which only an explicit request sets; "author", "writer", "co-author", "make the author
+  X", "X is the author", "the author needs to be X", "the book is by X", "credit the book to X",
+  "list me as X", "put X on the title page", "publish it as / under the name X", "credited to X",
+  "sign it as X", "X wrote this book", "my real/full/legal/maiden name", "written by" in five
+  languages, Persian "X نویسنده‌ی
+  کتاب است" and the European nouns (autor, auteur, Autorin, autore…) in the same shapes name the
+  byline, while "about the author", "author bio", "the author's note", "as the author would",
+  "writers block", "the author of two novels", "publish it as an ebook", "credited to the publisher"
+  (the imprint), "Ich arbeite als Autorin" and "نویسنده رو معرفی کن" never do; "owner" names the ©
+  holder and "site"/"web" the website only in request shapes — "copyright owner", "Owner:", "my
+  site" — never as content) still decide a
+  message that changes several fields. Turkish bylines recognize name and pen-name phrases with
+  possessive/object suffixes and dotted-I forms, while a profession or biography mention alone
+  names no byline; compound requests keep each explicitly named field.
+  **They read whitespace-folded text, and no pattern puts an
+  optional separator inside a repetition, and no name or stem pattern reads an unbounded tail from a
+  start inside a word**: one did the first, and a single 5,000-character message held the API's
+  event loop for 97 s; a name tail did the second for 1.3 s on joined capitals (`Ab’Ab’…`). The
+  10k-character timing batteries in `bookMatterWords.test.ts` and `bookEditMatter.test.ts` are the
+  guard; the page-count reader (`replanSettings.ts`, 57 s on "page" and spaces) and the
+  end-anchored trims in `bookEditScopeText.ts`/`bookEditMessage.ts` were fixed for the same reason. Code also holds `BOOK_MATTER_LIMITS`, refuses an ISBN that
+  fails its check digit or was never typed, and refuses facts nobody gave: a name, publisher or
+  holder matched on whole words, a website equal to one the reader typed, and in a dedication or bio
+  every number, address and capitalised name found nowhere in the reader's words or the current
+  matter. Translated mother/father terms and finite grammatical forms in the book's language also
+  pass when the source supplies that relationship (`bookMatterKinship.ts`); this exception applies
+  to prose, never to identity fields. A capital inside a sentence is otherwise a name unless it is
+  a closed-class word; **one that opens a
+  sentence or a line is never checked by the capital heuristic**, whatever follows it — the rules
+  that tried to tell "Sarah teaches math." from "Fittingly, gardening is how she recharges." refused
+  about one honest bio in eight. Novel biographies and dedications instead require a complete-text
+  grounding review, including sentence-initial names and credentials, in every language. Words joining names
+  ("and", "with") may join a byline,
+  holder or publisher the reader typed as separate names. Attached localized connectors are checked
+  across the whole value before tokenization, trimming spaces only at connector boundaries; the
+  original name spelling and internal spaces survive. The independent grounding review lives in
+  `bookMatterProseGrounding.ts`. Complete text already supplied by the reader or current matter,
+  and finite dedication wrappers whose complete recipient is supplied or a provable parent term,
+  need no extra call. The
+  reviewer sees the complete candidate and the reader's sources, including current matter;
+  the composer's own claims cannot approve it. Its receipt is bound to the exact field, text and
+  sources. Missing, malformed, incomplete or failed reviews leave the candidate unapproved and
+  use the existing localized `not_given` reply, retaining any separate request. This one extra
+  call takes at most 10 seconds within the composer's existing 20.5-second total envelope, with
+  no repair or network retry. `MOCK_AI` leaves novel prose unapproved. Measured in
+  `bookMatterChatEdit.measured.test.ts`: 86 bios and 50 dedications written for the test, none
+  refused and none given a spurious left-over note (novel biographies and dedications supply a
+  positive grounding-review fixture, testing normalization rather than model accuracy;
+  a second batch of 33 passed on its first run);
+  then 46 bios with "I also…" and refinements, 33 dedications and 45 bylines in seven languages,
+  written before running: all passed but one byline and one of 36 negatives on the first run, both
+  then fixed.
+  Every reply names
+  a left-over request — quoting it when the model returned the reader's words, generically when it
+  paraphrased or code found an unreported "and redo the cover" — so nothing is dropped silently.
+  Everything after the first field-naming colon (read with its colon, so "Author: J. R. Ellis.
+  Redo the cover." names the cover, and initials like "S. J." or "Dr." end no sentence), the first
+  "say"/"read" after a field's name, or a field's name followed by "to" ("change the dedication to
+  For my students. Please keep asking questions.") is the field's own words, where only a request
+  aimed at the editor counts: a book reference after an editor's verb ("redo the cover", "change the
+  pictures in the book" — never "keep the pictures in this book close to your heart", spoken to the
+  dedicatee) or a sentence-initial also/plus/lastly/finally — never a bare content noun, and never
+  "then", "please" or "can you" alone, which leave it to what was printed. After "to", a clause the
+  change did not print is still named back ("change the dedication to my mom and fix the typos").
+  A translated cover noun must belong to this book: supplied Italian, Spanish or French prose about
+  changing the cover of someone's notebook remains biography text, even when its verb also
+  spells an imperative. An actual book-cover request beside that prose still needs a left-over note.
+  "Add a dedication: For my daughter. Keep drawing." and "…Please write to me." print, "…For my mom.
+  Also redo the cover." names the cover, and a value that runs on into an editor's request is
+  refused as `runs_on`, never printed. A mid-sentence also/then/plus starts a new clause only at a
+  boundary — sentence start, comma, semicolon, dash, "and"/"but", past an aside — and never after a
+  subject, so "She and her husband also make cheese" and "Good stories also make good people" are
+  the reader's own sentences (47/47 such values, 25/25 dedication lines about the book, 24/24
+  unquoted "change X to …" and 25/25 compound messages measured in
+  `bookMatterChatEdit.measured.test.ts`). Anywhere, a style instruction
+  about the field ("use third person", "keep my age out of it"), a refinement whose object the
+  change printed ("Also add my dad" beside "For my mom and dad"), a request clause the change
+  printed (light stemming, pronouns swapped) or one continuing the reader's own "I …" is content,
+  not a left-over; "None." or "N/A" as `unhandled` is nothing left over;
+  then it screens, splits off the Studio-owned fields of an author's book, and calls
+  `applyBookMatterPatch`. A failed or timed-out call writes nothing and says so (and points at the
+  Title & credits sheet). Under `MOCK_AI` the composer is `fakeBookMatterChatEdit` (core
+  `adapters/`), a deterministic stand-in that answers in the composer's own schema, so the
+  normalizer above runs on its reply: it changes only shapes whose matter part visibly ends — a
+  quoted dedication, "dedicate it to <short noun phrase>" closing the message (English books only),
+  a bare "remove the dedication", "the ISBN is <digits>" — names back what follows a sentence break
+  or "and/also/then" as `unhandled`, word for word, and asks the question for everything else. It
+  guesses nothing, because its first regex printed "For my mom and redo the cover". A missing
+  value is the request's one question, stored as `clarification: "matter"` so the answer always
+  merges as the follow-up — never read as a scope ("For my mom, who stood by me throughout") — and a
+  second is never asked: once it has been, every
+  reply — refusals included — is a statement saying what to send in one message or pointing at Title
+  & credits, and sets no `pendingEdit`. What the message asked
+  beyond the matter is named back ("… is a separate change — send it as its own message"), never
+  silently dropped; the reply's `bookMatterEdit: { before, after }` keeps what an
+  undo would need, and every value the reply quotes is kept literal (`chatMarkdownLiteral`), because
+  the bubble is light markdown and the page prints "For *Mom*" with its asterisks. Its invisible
+  marks are the bubble's alone: the router and the composer read saved replies through
+  `withoutChatMarkdownLiteral`, and `cleanMatterText` drops any a model copied anyway, because
+  stored they print invisibly and split the words grounding compares. Replies use the
+  conversation language, independently of the book language. The router selects `responseLanguage`
+  from the request and recent conversation; the matter composer can refine it in its existing call.
+  The conversation-language vocabulary covers all 25 app languages, independently of the narrower
+  deterministic matter-request grammars. The schema and fixed matter, credit and busy replies share
+  that vocabulary, so a supported language cannot silently fall back to English — and so do the
+  chat's own cancel and busy undo/redo replies (`projectChatReplyCopy.ts`) and every book-title
+  reply (`bookTitleChatCopy.ts`), which record `replyLanguage` the same way.
+  `matterChatLanguage` validates that model decision, falling back to the latest saved assistant
+  `replyLanguage` or `intent.responseLanguage`, then English. It never infers language from words or
+  scripts. The saved language reaches the router and composer as `conversationLanguage`, so bare
+  values retain context; with none saved the field is omitted (`establishedChatLanguage`), never
+  the English default, which told both prompts a pre-language Persian chat was English. Quoted values keep their exact spelling. Localized copy derives every
+  saved-change, refusal, cover and export claim from the validated decision and actual outcome.
+  Busy replies use the same decision and persist `replyLanguage` with the saved request, so its
+  later resumption keeps the conversation language. The quoted `apply it` command remains literal
+  because the pending-edit confirmation parser accepts that spelling.
+  "Remove the title
+  page" is answered: every book keeps one — and so is a removal inside a compound message
+  (`asksToRemoveTitlePage`, which carries a "don't" across a comma and shares a removal verb with a
+  verbless "and the title page"), whose change reply adds that the title page stays. The instant
+  answer is refused whenever the rest of the message names a field by core's own cues
+  (`bookMatterFieldsNamedIn`), so "Author: Sam Lee. Remove the title page." reaches the composer. The demotion to a
+  question is skipped for `book_matter` — its composer asks, and the router's text is a
+  confirmation. **Front matter is named to the router** (`readerPageContext.frontMatter`, from
+  `frontMatterForProject`): a covered book's title page precedes its matter sheet, which can span
+  several pages. The map's cover flag also names an unnumbered fallback title, so front-matter
+  page counts cannot identify the first numbered sheet. Ambiguous pages, and maps without a
+  matching revision stamp, get neutral labels. `withoutFurniturePageEdit` takes a page edit the router still aimed only at printed
+  furniture off it — a text edit of front matter to `book_matter`; a delete or move of it, and any
+  edit of the Contents or back matter, to the furniture answer. Both replacements retain the
+  router's `responseLanguage`, including when a later composer call fails before it can refine the
+  language. And since About the Author can now be the first back
+  matter, the chat names that page by what the book prints there (`bookPageNumbering.ts`), and the
+  router is sent `backMatterStartPage`, never `sourcesStartPage`. An author's book takes its byline and dedication from
+  the Studio (`SET_IN_STUDIO`): publish writes the Studio's dedication onto `bookMatter`, and a
+  takeover seeds the Studio's from it. Every field is screened on its own, as printed text
+  (`matterContentScreen.ts`, `assessContentRestrictions(…, { printed: true })`), because it is
+  printed and shared: the child-exploitation names and the operator's copyright rule apply, while
+  the request-shaped rules — "how to" beside an attack, "fake" beside a passport — do not, because
+  they refused memorial dedications and history bios, and screened together two fields that passed
+  alone were refused as a pair. The 422's `fields` names exactly the fields refused by their own
+  words. The chat message itself is still screened as a request before routing, so a memorial
+  dedication typed into the chat can be refused there; the Title & credits sheet takes it. The account's display name is only ever
+  `suggestedPenName` — books are public through `/s/`, and printing a real name is the reader's call.
+  "Made with Tomeza" is the free tier's (Parsa, 2026-10-06), decided per compile, never stored.
+  Subscribing re-renders nothing — a library reprinted on one purchase is a compile burst for books
+  nobody opened — so a subscriber takes the line off one book at a time, free:
+  `POST …/book-matter/remove-credit` and the chat's `tomeza_credit` intent share `removeTomezaCredit`
+  (`tomezaCredit.ts`), a fresh plan read then a no-change `commitCoverChange` reprint, while a free
+  account gets 403 `SUBSCRIPTION_REQUIRED` (the chat: a plan offer). Whether there is anything to
+  take off is read from the published `book.md` (`creditPrinted`), never from the plan, because a
+  book compiled before the purchase still prints it. While the book is EDITING it reads false and a
+  removal answers that the book is being updated — and promises nothing, because not every EDITING
+  window ends in a recompile: "if the line is still there once it's ready, ask again". A
+  subscriber's book still being written needs nothing: its first compile leaves the line out, and
+  the chat and the route say the same.
+  Credit-removal replies use `matterChatLanguage` above and save `replyLanguage` for follow-ups.
+  A precise removal (`isTomezaCreditRemoval`) never reaches the router: its language was the
+  router's only contribution, a paid tool loop per request. Those shapes are English alone, so any
+  other language still routes; a recognised request keeps the established `conversationLanguage`
+  (the fallback a failed router call takes), else English — an English removal no longer switches
+  a Persian chat back to English, while the next message the router reads still can. Localized copy in
+  `tomezaCreditChatCopy.ts` follows the actual removal outcome, including the plan offer.
+- **An imported manuscript's own matter is lifted into the book's matter and out of its pages, so it prints once.**
+  The compiler prints a title page, the matter sheet and About the Author for every book, and an
+  import used to keep the manuscript's own as chapters beside them — a .docx ending "About the
+  Author" printed two bios, its © page two © statements. `separateManuscriptMatter` (core
+  `ingestion/manuscriptMatter.ts`) runs in every import format: only standalone sections at the very
+  front or back (a heading's section, an EPUB file, a page the author ended with a page break) are
+  read, as whole-line headings in the compiler's languages, so a mid-book "About the Author" chapter
+  stays content. Plain text and RTF also split at localized numbered chapter headings through
+  core's `manuscriptHeadingLines.ts`; otherwise a middle bio heading can swallow the following
+  chapter and look like back matter. Written chapter numbers need the same boundary protection
+  beyond ten, including compounds such as Persian «فصل بیست و یکم» and French «Chapitre vingt-deux».
+  Translated chapter words alone are too broad to split prose.
+  Older story EPUBs combined Sources and the biography in one file. `epubMatterBlocks` recognizes
+  the compiler's empty `book-about-author` marker immediately after its heading as a boundary;
+  ordinary body subheadings remain in their original section.
+  The manuscript's words win and the profile fills only what it does not say
+  (`bookMatterForImportedManuscript`, called from `mobileImports.ts`): its bio and dedication are
+  lifted into `bookMatter` (left in the pages when too long for the field, and then the profile's
+  bio is left out); its © page gives the holder, `copyrightYear`, the rights line, the ISBN and the
+  publisher, and is dropped only when nothing else is left on it (a "Cover design by …" line keeps
+  it); a title page is dropped only when every line maps to something the house title page prints
+  (title, `Project.subtitle`, byline, publisher). The compiler's colonless localized author labels
+  require a matching known author, supplied by DOCX core properties, EPUB creator metadata or the
+  upload's saved hints; document metadata corroborates a printed byline rather than supplying one.
+  An unheaded sheet combining a dedication and publication details is split at its recognized
+  publication boundary: the dedication-shaped prefix is lifted, then the existing copyright rules
+  read the remainder. Explicit dedication headings and EPUB hints keep their entire text literal.
+  A Contents page is dropped only when every entry names a
+  heading in the book. Nothing is removed that does not land in `bookMatter` or is the legal
+  boilerplate the compiler reprints. The API persists its upload-time `knownAuthors` in the durable
+  import payload, including an empty array, and the worker reuses it so later byline edits cannot
+  change which manuscript lines become body text. Legacy jobs without hints keep the prior byline
+  fallback. The merged manuscript/profile matter is screened field by field as printed text before
+  upload storage or an import quota claim. Legacy worker restoration screens the fields it will
+  write under the Project lock, using the same pure policy from core, and drops a refused field
+  alone rather than failing the import: no reader is there to fix it, and the old import never
+  lifted it (`screenRestoredImportMatter`; run-log `import.matter_refused` names field and
+  reason, never the words). Sharing screens the stored
+  byline and matter too, so older records pass the policy before publication.
+  The old EPUB rule — any section under 1,500 characters whose title began like matter was
+  deleted, a bio included — is gone; it also deleted short chapters.
+- **A chat matter change is kept when the reader named it, pointed back to it, or asked for it alone — never a second field nobody named.**
+  "Named" is by a cue or by the value the field prints now. `changesAskedFor` (core
+  `authoring/bookMatterAskedFor.ts`) is the whole rule, fed by
+  `matterFieldsOfLastReply` (`bookMatterChatEdits.ts`), which reads the nearer of the last two
+  assistant turns. Its job is the incident in the bullet above — a model that also turned on "All
+  rights reserved" and deleted the bio — and nothing else: a gate that kept only cue-named fields
+  dropped follow-ups that point back ("mention my sister in it too") and a third of bylines, which is
+  a check refusing the reader's input far past the ~99% bar. So a quote naming no field may change
+  the field the last matter reply changed or asked about, and a lone change may stand when the
+  message names no other field beyond the words that change prints; a rider repeating another
+  change's printed content is not a second field; neither door opens for "All rights reserved" or
+  for removing a field nothing named. A clarification inherits its original request through these
+  same content-ownership checks: "Write my bio: I am a publisher" authorizes the biography, while
+  "publisher" inside its supplied prose authorizes no imprint removal. Terse answers still inherit
+  genuine requests, including separate compound changes and fields named by their current value.
+- **Every model call the book chat makes inline writes its cost row.** `routes/projectChat.ts`
+  wraps the routing model with `withInlineProviderUsage` (`../inlineProviderUsage.ts`) for the
+  message route and the proposal Apply/Cancel routes, so the edit router, the book-matter composer
+  and every follow-up call write a `ProviderCallLog` row under the book (`generationJobId: null`,
+  which the Operations tab reads as unbilled inline spend), priced only from token counts the
+  provider reported. Before, none of them did, and the Costs tab could not see the chat at all.
+  Streamed text passes through unrecorded, as everywhere inline: it is priced from no guess.
 - **A request about one kind of content is an edit of the pages that carry it, and the router is
   told what each page carries.** The router sees page titles and summaries, and a summary does not
   say whether a page has a code block; "Use JavaScript in the codes" therefore routed as
@@ -1408,6 +1946,25 @@ the write binds has to be one all three of them can still find.
 
 ## Voice and audiobook routes
 
+- **Voice calls and audiobooks are plan perks, refused to a free account before the spend breaker
+  and before anything is held.** Both reach a tier-blind provider that bills real money per second:
+  a busy ten-minute call was modelled at $0.57–2.60 and never measured, so at the old 60 credits a
+  minute it lost money on every plan, and a free account could spend its welcome grant on calls or
+  narrate an import on it (launch review, 2026-10-13). `planPerks.ts` holds the gate,
+  `requirePaidPlanPerk`, and the two sentences: 403 `SUBSCRIPTION_REQUIRED` — the Word export's and
+  the import's code, so every shipped app already opens the paywall on it or shows the sentence — with
+  "Voice calls are part of the Creator plan." / "Audiobooks are part of the Creator plan.". "Paid" is
+  `hasActiveSubscriptionEntitlement`, a fresh read like the Word route's; a read that fails is a 500,
+  never a free pass. Where it sits: both call routes (book cast and library) after the character
+  lookup, its status checks and the provider-key check, and before the breaker, the persona build,
+  the rate limiter and the minute hold; the audiobook start after the replay of a narration already
+  running (paid for when it started) and before the breaker, the books-in-progress limit and the
+  charge — a resumed failed narration is a new paid start, so it asks too. Before the breaker on
+  purpose: a free reader is told what unlocks the perk rather than that Tomeza is busy, which makes
+  the breaker's soft-cap `AI_BUSY` for voice and audiobooks unreachable by a free account. Reading
+  an audiobook already made, the cast list and the narrator samples stay open. The app draws both
+  entry points as plan perks from the billing payload's plan (`apps/mobile`), and the rate is
+  `voiceCallPerMinute` 120 until a call is measured on the Operations tab.
 - **Voice provider access is controlled by a funded server relay.** `routes/voice.ts` requires
   `transport: "relay-v1"` and returns a single-use relay ticket; Gemini credentials and session
   handles stay server-side. `voiceRelayConnection.ts` accepts only rate-limited PCM audio, renews
@@ -1419,11 +1976,53 @@ the write binds has to be one all three of them can still find.
   marks ENDING and retains the hold until the owner stops or its lease expires. Recovery waits
   past the lease deadline; every forwarded frame checks that deadline too. The legacy sweep
   must exclude relay rows and preserve holds belonging to ENDING calls.
+  The relay is also the only process that sees the call's provider spend: it meters every Gemini
+  Live `usageMetadata` into `ProviderCallLog` segments under the caller (`voiceRelayUsage.ts`; the
+  rule is "Every provider call row names the user it was spent for" in `../admin/CLAUDE.md`).
   The app still uploads transcript batches into `VoiceCall.transcript`; `voiceCallHistory.ts`
   reads them into the next call as memory. Overlap is dropped on a retried batch.
   Deploy migration `000092_voice_relay`, API/proxy WebSocket support and the matching mobile app.
   Already-issued direct Gemini tokens remain usable for up to 30 minutes after issuance; stop
   old API instances and allow that window to drain before treating the rollout as fully protected.
+- **A call ends at 15 minutes, and its Live context is compacted from the top of the persona,
+  because every turn re-bills the whole window.** Gemini Live bills each turn for everything in the
+  context, so a minute of call costs more the longer the call has run. At the old 30-minute cap and
+  a fixed 24k/12k compaction, a busy call was modelled at $0.21 a minute at 10 minutes and $0.34
+  at 30, against $0.25 of revenue a minute at the cheapest credit (120 × $0.00212, intro, yearly
+  and Max): a 30-minute call lost 24–32% on those plans (launch review, 2026-10-15). The cap is
+  `VOICE_CALL_POLICY.maxCallMinutes` (`packages/core/src/voiceCallMetering.ts`), and every bound
+  derives from it: the minutes `authorizeVoiceRelay` will fund and the `VOICE_CALL_CLOSED` past
+  them (`packages/db/src/voiceRelayBilling.ts`), the settlement, the legacy path's clamps in
+  `voiceCalls.ts`, the provider token's expiry (`voiceProviders.ts`: the open window, the cap and a
+  minute, so the relay's funded deadline always comes first), and the `maxCallSeconds` both the
+  cast and the session send — which is all the app reads for "up to 15 min" and "Calls stop at 15
+  minutes", so the change needed no app release. The compaction is the other half (→
+  `packages/core/CLAUDE.md`, "Voice calls"): modelled the same way, a 15-minute call now costs
+  $0.14–0.17 a minute across the persona sizes a call can carry, a margin of at least 33% on the
+  cheapest credit. **That margin is a model, not a measurement**: busy talk both ways, 8 turns a
+  minute, 25 audio tokens a second. Check the Operations tab's `VOICE_CALL_MINUTE` margin in the
+  first week; the relay costs every call from the provider's own token counts
+  (`../admin/CLAUDE.md`).
+- **A relayed call's runway is its holds plus what the balance can still hold, and it reaches
+  zero before the relay closes the socket.** The app counts the meter's `secondsRemaining` down and
+  hangs up at zero, naming the end from `endingReason` ("Out of credits" or "Calls stop at 15
+  minutes"). The relay holds only about a minute ahead, so `secondsRemaining` used to be that hold
+  alone: it fell to 10–20 s every minute and read as `credits` with a full balance. A heartbeat that
+  landed in that window had the app count down and hang up on the reader as out of credits; with a
+  heartbeat every 20 s that is about half of all calls, three minutes in (found by replaying the
+  meter, 2026-10-15; no live call had been measured). And at the real
+  end, the app's zero and the relay's socket close landed within a second of each other; when the
+  close won, the app showed "The call was disconnected." rather than the ending it was counting
+  toward. `voiceRelayCallRunway` (core) now answers both: the runway is the reserved minutes plus
+  the whole minutes the spendable balance could still hold at the call's own price
+  (`readVoiceRelayMeter` reads the account row, without settling the period), capped at the length
+  cap and less `endingLeadSeconds` (5), so the app's hang-up always lands first. `endingReason`
+  names the last three minutes (`reserveBlockMinutes`), `limit` when the cap ends the call and
+  `credits` when the balance does, as `voiceCallEndingReason` already did on the legacy path. No
+  billing changed: the holds, the commits and the deadline are where they were. A row that is not
+  ACTIVE answers as before. The session's opening `secondsRemaining` is still the first hold (180),
+  corrected by the first heartbeat 20 s in. `voiceRelayBilling.test.ts` ("the runway the app counts
+  down") walks a whole call.
 - **A call names one callee, and a library character is the callee with no book.** `VoiceCall`
   carries either `projectId` + `characterId` (a book's cast row, cascading with it as before) or
   `libraryCharacterId` alone (one of the reader's saved characters, `SetNull` on delete so the
@@ -1461,6 +2060,12 @@ Authors write their own books in the app (`manuscript/`, `routes/manuscript.ts`)
 and only **publish** (`manuscript/manuscriptPublish.ts`) turns one into the other. Spec and wire
 contract: `.scratch/writing-studio/spec.md`.
 
+- **A publish is free, and rationed per account.** It queues a whole Chromium compile, a cover and
+  the embedding and style passes, and nothing bounded how often a client could ask (launch review,
+  2026-10-13). `POST …/manuscript/publish` takes `STUDIO_PUBLISH_RATE_LIMIT` (20 an hour per
+  account, `routes/manuscript.ts`) after the dry-run branch — a checklist read costs nothing and
+  counts nothing — and answers `RATE_LIMITED` like every other limited route; the 429 is in its
+  declared statuses. `manuscriptPublishRateLimit.test.ts`.
 - **A publish seals every earlier edit, because undo writes text without a revision check.**
   `undoLastBookEdit` restores a `PageEditSnapshot`'s before-text and redo its after-text onto the page
   as it stands; neither asks whether the page changed since. After a publish that text is the
@@ -1685,38 +2290,154 @@ spec and measurement in `.scratch/book-sharing/`.
   in the option wording: fix the words, never the threshold, and re-run the set. Every physical
   attempt writes a `ProviderCallLog` row through `../inlineDecisionUsage.ts`, the API twin of the
   worker's `recordDecisionAttempt`.
-- **The preview cap is the export loophole's only lock, and it is applied again at serve time.** A preview is a real PDF, free to
-  anyone holding the link, so without `maxPreviewPages` (`shares/sharePageRange.ts`, half the
-  book's reading pages, at least one) a 29-of-30 preview is the whole book for nothing and the
-  export unlock — what a full share and the PDF download both cost — buys nothing. The cap is
-  checked when the author saves and **again at serve time**, because a later edit can shrink the
-  book under a preview that was legal when saved. N counts reading pages, not sheets: the cover,
+- **The preview cap is the author's choice of how much a stranger reads, and it is applied again at
+  serve time.** A preview is a real PDF, free to anyone holding the link, and it is what an author
+  picks who wants to show the opening and keep the rest; `maxPreviewPages`
+  (`shares/sharePageRange.ts`, half the book's reading pages, at least one) is what keeps "a
+  preview" meaning that, so a 29-of-30 preview is refused rather than being the whole book under
+  another name. It used to be argued as the export loophole's only lock, while a full share and the
+  download both cost the export unlock; that unlock is gone (2026-10-15) and a full share is free,
+  so the cap guards the author's intent, not a price. The cap is checked when the author saves and
+  **again at serve time**, because a later edit can shrink the book under a preview that was legal
+  when saved. N counts reading pages, not sheets: the cover,
   title sheet and Contents are always shown and never counted, measured from the published page
-  map only when its `pdfDigest` and sheet count describe the bytes being served; every fallback
-  counts a furniture sheet as a reading page, which shows less, never more. The slice is cut
+  map only when its `pdfDigest` and sheet count describe the bytes being served, which also leaves
+  the back matter (Sources, About the Author) out of the count and the slice. Without a measured
+  map for the current bytes, the reading count is unknown and the preview cap is one sheet after
+  any digest-verified cover. The owner response, save validation and public slice use that same
+  cap: a long biography can otherwise inflate half the total sheets into the entire manuscript.
+  The slice is cut
   server-side (`shares/sharePreviewPdf.ts`, pdf-lib) and cached under the book's own
   `books/<projectId>/share-previews/`, keyed by the compile's digest. `copyPages` follows every
   reference a page holds and `save` writes every object it copied, so a kept page's internal
   links, article beads and additional actions are cut from the *source* before the copy — only
   URI links survive — or the rest of the book rides along unseen.
-- **A full share settles the export unlock last, through the download's own helper and key.** `PUT` runs every
-  check first — the published PDF, the rights and likeness confirmations, the cap, the book text
-  screen (the Studio's windowed `assessManuscriptText`, page by page, at create and at every mode
-  change), the note's link check and its verdict — and only then calls
-  `ensureExportEntitlementForDownload` with the download's idempotency key, the rule `sendUnlocked`
-  documents. A locked book without `acceptExportUnlock` is answered 402 `EXPORT_UNLOCK_REQUIRED`
-  with the live price and charges nothing; an unlocked one shares in full for free; a downgrade
-  refunds nothing because the unlock is the book's. A write that fails after the charge leaves
-  the book unlocked, so the retry is free.
+- **A full share is free, and the share routes keep the unlock's wire only for installed builds.**
+  A full share used to settle the book's export unlock last, through the download's own helper,
+  idempotency key and plan rule; the per-book unlock was removed on 2026-10-15 ("Charge once he
+  approves the plan … once the book is ready it is simply downloadable without any locks"), so a
+  share of any book — generated, Studio, imported, made while free — charges nothing in either
+  mode. `PUT` runs its checks — the published PDF, the rights and likeness confirmations, the cap,
+  the book text screen (the deterministic screens, then the sexual-content filter's model screen —
+  "Content safety" in `../../CLAUDE.md`), the note's link check and its verdict — and writes. It
+  reads no entitlement and calls nothing in `@book-maker/db/billing`, and `shareRoutes.test.ts`
+  asserts exactly that. For the app builds already installed, which branch on the old fields: the
+  body's `acceptExportUnlock` is still accepted and ignored, the share state reports
+  `exportUnlocked: true` and `exportUnlockCredits: 0` for every book, a save answers
+  `exportUnlockCharged: false`, and the route never answers 402 (`EXPORT_UNLOCK_REQUIRED` and the
+  402 schema are gone).
+- **A share serves only text screened at the book's current revision, and a refused re-screen
+  turns the link off for the author to share again, never takes it down.** A share was screened when it was created or changed mode, and
+  `/s/<slug>/book.pdf` serves the book's *current* compile, so every later edit — Edit Mode
+  (`routes/book.ts`, which screens nothing, not even the CSAM regex), a chat edit, undo and redo,
+  matter, a Studio publish, a takeover — reached strangers unread (launch review 2026-10-15, C2):
+  share a clean book, rewrite it, and the rewrite was public. Every screen now stamps the
+  `contentRevision` it read the text at on `BookShare.screenedContentRevision` (migration 000113),
+  and `readSharedBookText` reads that revision and the title, matter and pages in one REPEATABLE
+  READ snapshot, because every edit writes its text and bumps the revision in one commit — read
+  apart, an edit landing between them would be stamped as screened. `shareServesCurrentText`
+  (`shares/shareRecords.ts`) is the whole test: the stamp equals the book's revision, and a null
+  stamp (every share from before 000113) never does. A share that fails it is a book being updated
+  to strangers: the page shows the being-updated state and names neither the title, subtitle nor
+  author (`A book on Tomeza`, `A Tomeza author`; the note stays, being the author's own and
+  moderated on its own), the PDF answers the 503 — before any preview slice, cached or not, is
+  read — the cover is the generic image, no view is counted, and the remix route sends an empty
+  `title` (the app then writes its opening line without one). `PUT` screens a live share whose
+  stamp is stale even in the same mode, and stamps forward only (`writeShare` keeps the larger of
+  the two, since a concurrent re-screen may have read a later revision and revisions never go back).
+  `shares/shareRescreen.ts` brings a stale share back with `screenSharedBook` — the two screens
+  the create path runs, with the create path's three meanings: passed stamps the new revision and
+  the share serves again; a confident refusal (deterministic or model) **turns the link off, it
+  does not take the share down**: `REVOKED` with `SHARE_TEXT_OFFLINE_REASON`
+  (`shares/shareCopy.ts`), no report, nothing public (strangers get the plain "no longer shared"
+  410), and the cached preview slices cleared. It was briefly an operator-style `TAKEN_DOWN`, which
+  is permanent, and the coordinator reversed it the same day: the model screen's wording is
+  unmeasured, so one false positive would have locked sharing for that book for good, and the
+  refused text was never served — the share was already "being updated" — so this is the create
+  path's 422 arriving later, not a moderator's verdict. The reason lives in the `takedownReason`
+  column, which every return to ACTIVE clears and an author's own stop never sets, and reaches the
+  author as the share DTO's `stoppedReason` (non-null only while revoked; `takedownReason` stays
+  the operator's, only while taken down). Installed builds show a revoked share as the normal form
+  with its old settings, which is "share again"; they do not read `stoppedReason` yet. Sharing
+  again is an ordinary re-share: `rightsConfirmed`, the full create-time screen with its 422 if
+  the text still fails, and a new slug. An operator's `TAKEN_DOWN` is never written or touched
+  here and stays permanent. No verdict stamps it and keeps it live with a `book_text_review` report, at most one pending per
+  share so an author editing a held book does not file one per edit. The outcome is applied under
+  the project's row lock (`FOR SHARE`, so the revision cannot move) and then `writeShare`'s own
+  share lock, in a project delete's order: a book that moved again while it was read is
+  `superseded` and nothing is applied, and a share revoked, taken down or already stamped at that
+  revision or later is left alone. Two doors start one. The `share_rescreen` background sweep
+  (`server.ts`, every two minutes from 30 s after listen) re-screens at most ten stale ACTIVE
+  shares a pass, oldest first on the `(status, createdAt)` index, one after another, with a 60 s
+  model budget because no request is waiting. And a public request for a stale page or PDF asks
+  the rescreener without waiting for it — **at most once per share and revision** in this
+  process, never while one runs for that share, and at most `PUBLIC_RESCREEN_CONCURRENCY` (two) at
+  once across all shares; whatever it declines, the sweep reaches. The model screen's verdict cache
+  means the windows an edit left alone are not paid for again. Not covered: bytes a cache already
+  holds (share bytes say `max-age=300`, as for a revoke), and a published PDF older than the stamp —
+  a share made while an edit's recompile is still landing serves that compile's text until the new
+  one publishes, as the download does. `shares/shareRescreen.test.ts`, `shareRoutes.test.ts` ("the
+  screened revision") and `shares/publicShareRoutes.test.ts` pin it.
 - **The share follows the book's current compile, and there is no older copy to fall back on.**
   An Edit Mode save deletes the published PDF until its recompile lands
   (`invalidateCompiledProjectExports`), so a share in that window serves a "being updated" page
-  and a 503 for the PDF, and queues the same export repair the status watch does.
+  and a 503 for the PDF, and queues the same export repair the status watch does — and the same
+  save moves the book's revision past the share's stamp, so the share stays "being updated" after
+  the recompile lands until it has been screened again (above).
 - **A slug is never reissued because every slug ever minted is a row in `ShareSlug`.** Nothing
   deletes from it — not a revoke, a re-share (which mints a new slug) or a project delete — so its
   primary key is the guarantee, and a slug found there but on no live share answers 410, not 404.
+- **An account an operator turned sharing off shares nothing and remixes nothing, and the share
+  write asks again under the user row's lock.** A takedown used to block one book, while the Terms
+  promise the operator can disable sharing for an account (launch review, 2026-10-13). Turning it
+  off (`../accountModeration.ts`, from the user inspector) takes every live share down and sets
+  `User.sharingDisabledAt`; a suspension takes the shares down too. `PUT …/share` asks
+  `accountMayShare` after the body and before it reads the book, and refuses with 403
+  `SHARING_DISABLED` (`shares/shareCopy.ts`) — a 403 the share
+  sheet shows as a refusal, because only `SESSION_REVOKED` and `ACCOUNT_DISABLED` sign the app out.
+  `GET /api/mobile/shares/:slug/remix` refuses the same account the same way. Neither route check
+  is the lock: `writeShare` reads the account again `FOR SHARE` before its share-row lock, and the
+  operator's action takes the row `FOR NO KEY UPDATE` before it reads the account's shares, so a
+  share either commits first and is taken down, or waits and refuses (`SharingDisabledError`). A
+  share an account action took down carries `ACCOUNT_SHARE_TAKEDOWN_REASON` and comes back REVOKED,
+  never live, once the account is clear on both counts ("Account moderation" in `../../CLAUDE.md`).
 - **"Make a book like this" returns the format and nothing else.** `shares/shareRemix.ts` reads
   the preset echo, the category and the page count; it never loads the brief, plan, chat, cast or
   text. The chat it starts records `MobileCreationDraft.originShareId` — a column, because every
   chat turn rebuilds the draft payload from scratch and a payload key would be gone by the second
   message — and the Overview's sharing funnel (`../admin/shareFunnel.ts`) counts from it.
+- **An install from a share page finds its remix through Play's install referrer, so the link's
+  keys are a wire contract.** `playStoreUrl` (`shares/sharePage.ts`) puts
+  `utm_source=share&utm_content=<slug>` on the Play link; the app reads it once per install, posts
+  `install_attributed` (source, medium, the slug) to `POST /api/mobile/events`, and offers the remix
+  once on its home screen (`apps/mobile/CLAUDE.md`, "Install attribution"). Every share link already
+  out there carries those keys, so renaming either strands those installs; a new key is safe.
+
+## Reporting AI output
+
+- **Every surface that shows AI output has a Report action, and a route that snapshots what it
+  showed.** Google Play's AI-generated content policy requires in-app reporting of AI output, and a
+  reviewer meets the creation chat first. Until 2026-10-12 its replies, the plan card, a drawn
+  saved-character picture and every Writing Studio suggestion had none — "Report book" appears only
+  once a manuscript exists, so nothing covered the chat that comes before it. Books, book pictures,
+  voice calls and book-chat replies report through `../mobileSafety.ts`; creation-chat replies
+  (`/creation-sessions/:id/messages/:messageId/reports`), plans (`/projects/:id/plans/:planId/reports`),
+  character pictures (`/characters/:id/images/:imageId/reports`), stored Studio assists
+  (`/projects/:id/manuscript/assists/:aid/reports`) and quick Studio suggestions
+  (`/projects/:id/manuscript/assist/reports`) through `../aiOutputReports.ts`. Every one is the
+  owner's only (another reader's row is a 404, never a 403), shares the one report limiter, writes
+  a `ModerationReport` through `../moderationReports.ts`, and snapshots what the reader was shown,
+  read field by field rather than spread, because a plan package or an illustration's result
+  carries provider provenance. A chat branches, a plan is revised and a suggestion is discarded long
+  before anyone reviews it, so the snapshot is the evidence, not the row. A quick suggestion is
+  never stored, so its report carries the app's text and says `origin: "app"`. A target the reader
+  made is refused 422 `NOT_AI_GENERATED`: an uploaded or adopted character picture, the plan of an
+  author's book. A picture report names its file, which is what lets the operator route
+  `GET /api/admin/moderation/reports/:id/picture` serve it and what keeps a Studio picture out of
+  the image sweep (`studioImageReferences.ts` reads report snapshots). A new AI surface needs all
+  three halves: the app's Report through `reportAiContent`
+  (`apps/mobile/lib/features/projects/presentation/ai_content_report.dart`), a route here that
+  snapshots it, and a target type the operator queue renders
+  (`apps/web/src/features/admin/ReportSnapshot.tsx`). A new target type is
+  an `ALTER TYPE` migration on its own, as `000097_report_ai_output` is: Postgres will not use an
+  enum value in the transaction that added it.

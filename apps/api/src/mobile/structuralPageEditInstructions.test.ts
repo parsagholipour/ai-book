@@ -435,7 +435,7 @@ describe("what survives the structural clause", () => {
   });
 
   /**
-   * `isInsideQuotedSpan` makes a quoted span opaque so a page reference the
+   * `quotedSpanReader` makes a quoted span opaque so a page reference the
    * reader is *writing about* is never mistaken for a placement. Its straight
    * apostrophe was a plain toggle, and a plural possessive is shaped exactly
    * like a closing quote — so `dogs'` opened a span nothing could close, the
@@ -465,5 +465,137 @@ describe("what survives the structural clause", () => {
   ] as const)("keeps a placement inside a quoted span: %#", (request, requirement) => {
     const { instruction } = contractFor(write(null), request);
     expect(instruction).toBe(`Add 1 new page at the end of the book. Content requirements: ${requirement}`);
+  });
+});
+
+describe("the content requirement's trim across the linear rewrite", () => {
+  // Captured from the instruction builder as it stood before its trims, its
+  // placement strips and its quoted-span scan were made linear: the string the
+  // card prints and the replan briefs from may not move by a byte.
+  const CORPUS: ReadonlyArray<readonly [StructuralPageEdit, string, string, string | null]> = [
+    [write(2), "add a page about the storm", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm,", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm, , ,", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm —", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm –-", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm:;", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm;  ", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm ,,, x", "Add 1 new page after page 2. Content requirements: About the storm,,, x.", null],
+    [write(2), "add a page about the storm, then", "Add 1 new page after page 2. Content requirements: About the storm, then.", null],
+    [write(2), "add a page about the storm - and the rescue -", "Add 1 new page after page 2. Content requirements: About the storm - and the rescue.", null],
+    [write(2), "add a page about the storm!", "Add 1 new page after page 2. Content requirements: About the storm!", null],
+    [write(2), "add a page about the storm?,", "Add 1 new page after page 2. Content requirements: About the storm?", null],
+    [write(2), "add a page about the storm .", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm , .", "Add 1 new page after page 2. Content requirements: About the storm,.", null],
+    [write(2), "add a page, about the storm", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page: about the storm", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page — about the storm", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page and then about the storm", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page that explains the storm,", "Add 1 new page after page 2. Content requirements: The new page explains the storm.", null],
+    [write(2), "add a page after page 2, that explains the storm;", "Add 1 new page after page 2. Content requirements: The new page explains the storm.", null],
+    [write(2), "add a page after page 2 (the final page) about the storm,", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(null), "add a page about the storm after page 4,", "Add 1 new page at the end of the book. Content requirements: About the storm.", null],
+    [write(null), "add a page about 'the storm, the rain' -", "Add 1 new page at the end of the book. Content requirements: About 'the storm, the rain'.", null],
+    [write(null, 2), "add 2 pages about the storm and the rescue :", "Add 2 new pages at the end of the book. Content requirements: About the storm and the rescue.", null],
+    [write(0), "add a page at the front about the cover story ;;", "Add 1 new page at the front of the book. Content requirements: About the cover story.", null],
+    [write(2), "add a page about the storm\t,\t", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm\n,\n", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm ,\u00a0", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page about the storm，", "Add 1 new page after page 2. Content requirements: About the storm，.", null],
+    [write(2), "add a page about the storm،", "Add 1 new page after page 2. Content requirements: About the storm،.", null],
+    [write(2), "add a page about the storm،،", "Add 1 new page after page 2. Content requirements: About the storm،،.", null],
+    [write(2), "صفحه‌ای درباره طوفان اضافه کن،", "Add 1 new page after page 2. Content requirements: صفحه‌ای درباره طوفان اضافه کن،.", null],
+    [write(2), "یک صفحه درباره مینا اضافه کن -", "Add 1 new page after page 2. Content requirements: یک صفحه درباره مینا اضافه کن.", null],
+    [write(2), "añade una página sobre la tormenta,", "Add 1 new page after page 2. Content requirements: Añade una página sobre la tormenta.", null],
+    [write(2), "ajoute une page sur l'orage —", "Add 1 new page after page 2. Content requirements: Ajoute une page sur l'orage.", null],
+    [remove(3), "delete page 3 and make it funny,", "Remove page 3. Content requirements: Make it funny.", "book_replan"],
+    [remove(3), "delete page 3, and make page 4 funnier ;", "Remove page 3. Content requirements: Make page 4 funnier.", "book_replan"],
+    [remove(3), "delete page 3 then rewrite page 4 –", "Remove page 3. Content requirements: Rewrite page 4.", "book_replan"],
+    [remove(3), "delete page 3 from the book, and add a joke:", "Remove page 3. Content requirements: Add a joke.", "book_replan"],
+    [remove(3), "delete page 3,,,", "Remove page 3", null],
+    [remove(3), "delete page 3 -", "Remove page 3", null],
+    [carry(4, 2), "move page 2 after page 4 and rewrite it,", "Move page 2 after page 4. Content requirements: Rewrite it.", "book_replan"],
+    [carry(4, 2), "move page 2 after page 4, then shorten it -;", "Move page 2 after page 4. Content requirements: Shorten it.", "book_replan"],
+    [carry(4, 2), "move page 2 from page 2 to after page 4, and add a title :", "Move page 2 after page 4. Content requirements: Add a title.", "book_replan"],
+    [carry(1, 3), "move page 3 to the front and make it sad,—", "Move page 3 after page 1. Content requirements: Make it sad.", "book_replan"],
+    // The placement strips, the relative clause and the quoted-span scan.
+    [write(2), "add a page after page 2 , and before page 3 about the storm", "Add 1 new page after page 2. Content requirements: About the storm.", null],
+    [write(2), "add a page after page 2  and  before page 3, that explains the storm", "Add 1 new page after page 2. Content requirements: The new page explains the storm.", null],
+    [write(2), "add a page after page 2  that explains the storm", "Add 1 new page after page 2. Content requirements: The new page explains the storm.", null],
+    [write(2), "add a page after page 2 - that explains the storm", "Add 1 new page after page 2. Content requirements: The new page explains the storm.", null],
+    [write(2), "add a page after page 2,,, ;  that explains the storm", "Add 1 new page after page 2. Content requirements: The new page explains the storm.", null],
+    [write(null), "add a page about the storm after page 4 after page 2", "Add 1 new page at the end of the book. Content requirements: About the storm after page 2.", null],
+    [write(null), "add a page about 'the storm after page 4' after page 2", "Add 1 new page at the end of the book. Content requirements: About 'the storm after page 4'.", null],
+    [write(null), "add a page about the quote after page 4 and the storm after page 2", "Add 1 new page at the end of the book. Content requirements: About the quote after page 4 and the storm after page 2.", null],
+    [write(null), "add a page about the storm   after page 4", "Add 1 new page at the end of the book. Content requirements: About the storm.", null],
+    [carry(4, 2), "move page 2 after page 4 , and before page 5", "Move page 2 after page 4", null],
+    [carry(4, 2), "move page 2 after page 4   and shorten it", "Move page 2 after page 4. Content requirements: Shorten it.", "book_replan"]
+  ];
+
+  it("builds every instruction, and every repricing, the way it did before", () => {
+    const moved = CORPUS.flatMap(([edit, request, instructionBefore, replanBefore]) => {
+      const { instruction, replan } = contractFor(edit, request);
+      return instruction === instructionBefore && (replan?.kind ?? null) === replanBefore
+        ? []
+        : [{ request, instructionBefore, instruction, replanBefore, replan: replan?.kind ?? null }];
+    });
+    expect(moved).toEqual([]);
+  });
+});
+
+describe("the canonical instruction on adversarial input", () => {
+  // The trailing trim was tried from every character of a run of commas that
+  // did not reach the end: 10,000 of them took 170 ms of the API's only thread.
+  // The insert's strip took one separator a pass, its placement scan tried a
+  // run of spaces from every space, every placement re-read the quotes from the
+  // start, and `\s*,?\s*` after a placement and before "that" split one run of
+  // spaces two ways — each quadratic, 40–150 ms at 10k. Timed at 1k before 10k,
+  // so a quadratic regression fails fast.
+  const fill =
+    (head: string, filler: string, tail = "y") =>
+    (length: number): string => {
+      const room = length - head.length - tail.length;
+      return head + filler.repeat(Math.ceil(room / filler.length)).slice(0, room) + tail;
+    };
+  const ADVERSARIAL: ReadonlyArray<readonly [StructuralPageEdit, string, (length: number) => string]> = [
+    [write(2), "an insert + a run of commas", fill("add a page about x", ",")],
+    [write(2), "an insert + a run of dashes", fill("add a page about x", "-")],
+    [write(2), "an insert + spaced semicolons", fill("add a page about x", " ;")],
+    [write(2), "an insert + spaces", fill("add a page about x", " ")],
+    [write(2), "an insert + spaced commas and tabs", fill("add a page", " ,\t ")],
+    [write(2), "an insert + a run of separators", fill("add a page", ",")],
+    [write(2), "an insert + repeated placements", fill("add a page", " after page 2")],
+    [write(2), "quoted placements", fill('add a page about "x', " after page 1", '"')],
+    [write(2), "placements after a cue", fill("add a page about the quote", " after page 1")],
+    [write(2), "a placement + whitespace", fill("add a page after page 2", "\t  \t", "x")],
+    [carry(4, 2), "a move's placement + whitespace", fill("move page 2 after page 4", " \t\n", "x")],
+    [write(2), "an insert + a long number", fill("add a page about x", "21", "x")],
+    [carry(4, 2), "a move + a long number", fill("move page 2 after page 4", "1", "x")],
+    [remove(3), "a compound delete + a run of commas", fill("delete page 3 and make it funny", ",")],
+    [carry(4, 2), "a compound move + dashes and spaces", fill("move page 2 after page 4 and shorten it", " -")]
+  ];
+  const readMs = (run: () => unknown): number => {
+    // Best of two, so one slow read under load is not a failure.
+    let best = Number.POSITIVE_INFINITY;
+    for (let read = 0; read < 2; read += 1) {
+      const start = performance.now();
+      run();
+      best = Math.min(best, performance.now() - start);
+    }
+    return best;
+  };
+
+  it("stays linear on long runs of punctuation", () => {
+    for (const [length, budgetMs] of [
+      [1_000, 200],
+      [10_000, 1_000]
+    ] as const) {
+      for (const [edit, label, build] of ADVERSARIAL) {
+        const text = build(length);
+        expect(text).toHaveLength(length);
+        const ms = readMs(() => contractFor(edit, text));
+        expect(ms, `${label} at ${length} chars: ${ms.toFixed(1)} ms`).toBeLessThan(budgetMs);
+      }
+    }
   });
 });

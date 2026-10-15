@@ -82,7 +82,7 @@ export const mobileCreationBriefSchema = z
     tone: optionalText(180),
     mustInclude: optionalText(1200),
     distributionUse: optionalText(220),
-    title: optionalNamedText(2, 160),
+    title: optionalNamedText(1, 160),
     authorName: optionalNamedText(1, 120),
     sourceNotes: optionalText(12000)
   })
@@ -168,7 +168,7 @@ export function mergeMobileCreationPresets(
 
 export const mobileCreationOptionalDetailsSchema = z
   .object({
-    title: optionalNamedText(2, 160),
+    title: optionalNamedText(1, 160),
     authorName: optionalNamedText(1, 120),
     mustInclude: optionalText(1200),
     tone: optionalText(180)

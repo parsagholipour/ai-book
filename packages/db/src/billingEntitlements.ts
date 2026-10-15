@@ -1,19 +1,19 @@
 /**
  * Entitlements: the durable "this user may do X" rows credits buy. Project
- * entitlements (export unlock, premium review) are granted next to the ledger
- * entry that paid for them, so a refund can revoke them again.
+ * entitlements are granted next to the ledger entry that paid for them, so a
+ * refund can revoke them again. No new `EXPORT_UNLOCK` is written since
+ * 2026-10-15 — every finished book downloads free — but the type stays, because
+ * rows granted before then still exist and a refund still revokes them.
  */
-import { PLAN_ENTITLEMENT_TYPES, creditCostForOperation } from "@book-maker/core";
+import { PLAN_ENTITLEMENT_TYPES } from "@book-maker/core";
 import { prisma } from "./client.ts";
 import {
   type BillingTx,
-  type CreditLedgerEntryRecord,
   type UserEntitlementRecord,
   activeEntitlementWhere,
   entitlementSelect,
   jsonInput
 } from "./billingInternals.ts";
-import { spendCredits } from "./billingLedger.ts";
 
 export type ProjectEntitlementType = "EXPORT_UNLOCK" | "PREMIUM_PRESET" | "PREMIUM_REVIEW" | "EXTRA_IMAGES";
 
@@ -110,42 +110,4 @@ export async function hasActiveSubscriptionEntitlement(userId: string, now = new
     select: { id: true }
   });
   return Boolean(entitlement);
-}
-
-export async function ensureProjectExportEntitlementOrSpend(options: {
-  userId: string;
-  projectId: string;
-  idempotencyKey: string;
-}): Promise<{ entitlement: UserEntitlementRecord; chargedLedgerEntry: CreditLedgerEntryRecord | null }> {
-  const existing = await prisma.userEntitlement.findFirst({
-    where: {
-      ...activeEntitlementWhere(options.userId, new Date()),
-      projectId: options.projectId,
-      type: "EXPORT_UNLOCK"
-    },
-    select: entitlementSelect
-  });
-  if (existing) {
-    return { entitlement: existing, chargedLedgerEntry: null };
-  }
-
-  const amountCredits = creditCostForOperation("EXPORT_UNLOCK");
-  const entry = await spendCredits({
-    userId: options.userId,
-    projectId: options.projectId,
-    operation: "EXPORT_UNLOCK",
-    amountCredits,
-    idempotencyKey: options.idempotencyKey,
-    description: "PDF/EPUB export unlock"
-  });
-  const entitlement = await grantProjectEntitlement({
-    userId: options.userId,
-    projectId: options.projectId,
-    type: "EXPORT_UNLOCK",
-    source: "credits",
-    creditsCost: amountCredits,
-    relatedLedgerEntryId: entry?.id ?? null,
-    metadata: { operation: "EXPORT_UNLOCK" }
-  });
-  return { entitlement, chargedLedgerEntry: entry };
 }

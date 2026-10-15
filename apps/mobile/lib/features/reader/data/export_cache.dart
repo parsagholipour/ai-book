@@ -4,10 +4,51 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../../../shared/api/api_error.dart';
 import '../../projects/domain/project_models.dart';
 import '../domain/export_provenance.dart';
 import '../domain/reader_models.dart';
 import 'reader_storage.dart';
+
+/// What a download that was not the book reports.
+const unreadableExportError = ApiException(
+  code: 'EXPORT_UNREADABLE',
+  message: "The book didn't download properly. Try again.",
+);
+
+/// How far into a file the PDF header may start. The format allows leading
+/// bytes before it, and readers look for it within the first kilobyte.
+const _pdfHeaderWindow = 1024;
+
+/// Whether [head] — a file's first bytes — holds the `%PDF-` header.
+bool isPdfHeader(List<int> head) {
+  const marker = [0x25, 0x50, 0x44, 0x46, 0x2D]; // %PDF-
+  final last = head.length - marker.length;
+  for (var start = 0; start <= last; start++) {
+    var matches = true;
+    for (var i = 0; i < marker.length; i++) {
+      if (head[start + i] != marker[i]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
+}
+
+/// Whether [file] holds a PDF: its first kilobyte carries the `%PDF-` header.
+///
+/// A 200 is not proof of a book — a captive portal or a proxy answers one with
+/// its own page — and pdfrx can only say so afterwards, as an error.
+Future<bool> fileHasPdfHeader(File file) async {
+  final handle = await file.open();
+  try {
+    return isPdfHeader(await handle.read(_pdfHeaderWindow));
+  } finally {
+    await handle.close();
+  }
+}
 
 /// Downloads a compiled export once and reuses it on later opens.
 ///
@@ -64,6 +105,39 @@ class ExportCache {
     return cached;
   }
 
+  /// The file on disk for [export]'s format, whatever compile [export] names —
+  /// or null when none is stored whole.
+  ///
+  /// For a reader with no connection: the descriptor they have may name a
+  /// newer compile than the one they downloaded, and the older book is still
+  /// the one on this phone. Only the manifest speaks for these bytes — their
+  /// own revision, digest and cover-skip stamp — so nothing about the
+  /// descriptor is filed onto them, and a file whose manifest was withheld (a
+  /// download the server could not vouch for) is not offered at all.
+  Future<CachedExport?> stored({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {
+    try {
+      final directory = await storage.projectDirectory(projectId);
+      final file = File('${directory.path}/${_filename(export)}');
+      final manifest = await _storedManifest(directory, export);
+      if (manifest == null || !await file.exists()) return null;
+      final json = jsonDecode(await manifest.readAsString());
+      if (json is! Map<String, dynamic>) return null;
+      final cached = CachedExport.fromJson(json, file.path);
+      if (cached == null || cached.revision == null) return null;
+      if (await file.length() != cached.byteSize) return null;
+      return cached;
+    } on FileSystemException {
+      return null;
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+  }
+
   /// Returns the cached export, downloading it when absent or stale.
   ///
   /// The download lands in a temporary file that is renamed into place only
@@ -107,8 +181,8 @@ class ExportCache {
 
     final DownloadedFile received;
     try {
-      // The reader's own route when the server offers one: reading is free,
-      // and the download route spends the book's export unlock.
+      // The reader's own route when the server offers one; an older server
+      // serves the reader through the download route.
       received = await apiClient.downloadFile(
         export.readUrl ?? export.downloadUrl,
         partial.path,
@@ -123,6 +197,20 @@ class ExportCache {
         return cached;
       }
       rethrow;
+    }
+
+    // A 200 is not a PDF. A captive portal, a proxy's error page or a body
+    // cut short before its header all arrive as a successful response, and
+    // once renamed into place the viewer could only show its own developer
+    // error over them. Bytes that do not open as a PDF are a failed download.
+    if (!await _looksLikeExport(partial, export)) {
+      if (await partial.exists()) {
+        await partial.delete();
+      }
+      if (cached != null) {
+        return cached;
+      }
+      throw unreadableExportError;
     }
 
     final byteSize = await partial.length();
@@ -175,6 +263,38 @@ class ExportCache {
       await _writeManifest(_manifestFile(directory, export), entry);
     }
     return entry;
+  }
+
+  /// Forgets the cached file for [export] and every manifest describing it,
+  /// so the next [ensure] downloads it afresh.
+  ///
+  /// For bytes that arrived whole and still will not open: nothing about them
+  /// is worth keeping, and a cache hit would hand the same broken file back.
+  Future<void> discard({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {
+    final directory = await storage.projectDirectory(projectId);
+    try {
+      await _clearManifests(directory, export);
+      final file = File('${directory.path}/${_filename(export)}');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } on FileSystemException {
+      // A file that cannot be removed is overwritten by the next download's
+      // rename anyway; with its manifest gone it is never served as a hit.
+    }
+  }
+
+  /// Whether [file] starts the way [export]'s format does. Only the PDF is
+  /// checked: it is the one this cache opens in a viewer.
+  Future<bool> _looksLikeExport(
+    File file,
+    MobileExportAvailability export,
+  ) async {
+    if (export.format != 'pdf') return true;
+    return fileHasPdfHeader(file);
   }
 
   /// Writes [hasCoverPage] onto a matching cache whose manifest never had it.

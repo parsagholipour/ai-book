@@ -176,6 +176,7 @@ class CreationChatController extends Notifier<CreationChatState>
       content: trimmed,
       localId: localId,
       requestId: serverRequestId,
+      editMessageId: editMessageId,
       createdAt: DateTime.now(),
       sendStatus: CreationMessageSendStatus.sending,
       includedSourceNotes: includedSourceNotes,
@@ -476,6 +477,7 @@ class CreationChatController extends Notifier<CreationChatState>
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              editMessageId: failed.editMessageId,
               // A retry keeps the quote the failed send carried, or it would
               // reach the model as a bare fragment the second time — and the
               // mentions, for the same reason.

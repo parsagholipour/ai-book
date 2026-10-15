@@ -122,8 +122,9 @@ void main() {
   test('each quality tier is quoted at its own rates', () {
     // The same three totals `apps/api/src/mobile/creditTierPricing.test.ts`
     // asserts for a 12-page illustrated lead magnet: 2 interior illustrations
-    // plus a cover. Two implementations of one formula, and no server quote
-    // route between them, so both have to spell the numbers out.
+    // plus a cover, and no export line for anyone. Two implementations of one
+    // formula, and no server quote route between them, so both have to spell
+    // the numbers out.
     int estimate(String qualityPreset) => estimateProjectCredits(
       bookType: 'lead_magnet',
       qualityPreset: qualityPreset,
@@ -133,10 +134,10 @@ void main() {
       creditCosts: const {},
     );
 
-    expect(estimate('fast'), 220 + 12 * 5 + 3 * 45 + 150);
-    expect(estimate('balanced'), 350 + 12 * 8 + 3 * 45 + 150);
-    expect(estimate('premium'), 500 + 12 * 30 + 3 * 85 + 200 + 150);
-    expect(estimate('ultra'), 650 + 12 * 71 + 3 * 85 + 200 + 150);
+    expect(estimate('fast'), 220 + 12 * 5 + 3 * 45);
+    expect(estimate('balanced'), 350 + 12 * 8 + 3 * 45);
+    expect(estimate('premium'), 500 + 12 * 30 + 3 * 85 + 200);
+    expect(estimate('ultra'), 650 + 12 * 130 + 3 * 85 + 200);
 
     // "custom" is what the server sends for a book it has no preset for, and
     // it charges such a book the balanced rates.
@@ -169,7 +170,7 @@ void main() {
     );
     expect(
       estimate('ultra', costs),
-      estimate('ultra', const {}) + 10 * (50 - 71),
+      estimate('ultra', const {}) + 10 * (50 - 130),
     );
   });
 
@@ -310,17 +311,22 @@ void main() {
     );
   });
 
-  test('a children\'s story is quoted for every page up to its cap', () {
-    // It is written as a KIDS book, which illustrates every page; the server
-    // bills min(4, pages) for it, while page 1 + every 8th quoted two.
+  test('a children\'s story is quoted min(pages, 12) pictures', () {
+    // It is written as a KIDS picture book: the server bills min(pages, 12)
+    // pictures (`pictureBookIllustrationCap`), so a longer book never draws
+    // fewer. An adult story keeps page 1 + every 8th.
     int count(String? choice, int pages) => estimatedInteriorImageCount(
       bookType: 'short_story',
       bookTypeChoice: choice,
       illustrationsEnabled: true,
       targetPages: pages,
     );
-    expect(count('children_story', 12), 4);
+    expect(count('children_story', 12), 12);
     expect(count('children_story', 3), 3);
+    expect(count('children_story', 13), 12);
+    expect(count('children_story', 16), 12);
+    expect(count('children_story', 24), 12);
+    expect(count('children_story', 30), 12);
     expect(count('short_story', 12), 2);
     // Auto stays custom, ceil(pages / 8), whatever lane the chat resolved.
     expect(

@@ -7,8 +7,10 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
+import '../../auth/presentation/verify_email_banner.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../studio/presentation/start_writing_sheet.dart';
+import '../data/offline_library_store.dart';
 import '../data/projects_repository.dart';
 import '../domain/book_library.dart';
 import '../domain/project_models.dart';
@@ -30,6 +32,10 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
   final _searchController = TextEditingController();
   BookLibraryFilter _filter = BookLibraryFilter.all;
   BookLibrarySort _sort = BookLibrarySort.updated;
+
+  /// The interval the running poll was started with, so a change of reason
+  /// (a live book, or reconnecting) can restart it at its own pace.
+  Duration? _pollInterval;
 
   @override
   void initState() {
@@ -64,24 +70,40 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
     if (mounted) ref.invalidate(projectsProvider);
   }
 
+  void _pollEvery(Duration? interval) {
+    if (interval == _pollInterval) return;
+    stopPolling();
+    _pollInterval = interval;
+    if (interval == null) return;
+    startPolling(interval, () {
+      if (ModalRoute.of(context)?.isCurrent != true ||
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused ||
+          ref.read(projectsProvider).isLoading) {
+        return;
+      }
+      ref.invalidate(projectsProvider);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final projects = ref.watch(projectsProvider);
     final billing = ref.watch(billingProvider).asData?.value;
-    if (!projects.hasError &&
-        (projects.value?.any((book) => book.isLive) ?? false)) {
-      startPolling(const Duration(seconds: 6), () {
-        if (ModalRoute.of(context)?.isCurrent != true ||
-            WidgetsBinding.instance.lifecycleState ==
-                AppLifecycleState.paused ||
-            ref.read(projectsProvider).isLoading) {
-          return;
-        }
-        ref.invalidate(projectsProvider);
-      });
-    } else {
-      stopPolling();
-    }
+    // Set by `projectsProvider` with the answer being shown: the phone's copy
+    // of the library, read because the server could not be reached.
+    final offlineSince = projects.hasValue && !projects.hasError
+        ? ref.read(offlineLibraryMarkerProvider).savedAt
+        : null;
+    // Offline, a running book's progress is a memory, not news: the list asks
+    // again now and then to reconnect, never at a live book's pace.
+    _pollEvery(
+      offlineSince != null
+          ? const Duration(seconds: 30)
+          : !projects.hasError &&
+                (projects.value?.any((book) => book.isLive) ?? false)
+          ? const Duration(seconds: 6)
+          : null,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Your books')),
@@ -129,6 +151,22 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     slivers: [
+                      // The welcome credits waiting on the reader's email.
+                      SliverToBoxAdapter(
+                        child: VerifyEmailBanner(
+                          padding: EdgeInsets.fromLTRB(side, 12, side, 0),
+                        ),
+                      ),
+                      if (offlineSince != null)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(side, 12, side, 0),
+                            child: OfflineLibraryNotice(
+                              savedAt: offlineSince,
+                              onRetry: () => ref.invalidate(projectsProvider),
+                            ),
+                          ),
+                        ),
                       if (books.isEmpty)
                         SliverFillRemaining(
                           hasScrollBody: false,
@@ -206,6 +244,7 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
                                 return BookLibraryCard(
                                   key: ValueKey(book.id),
                                   book: book,
+                                  offline: offlineSince != null,
                                   onOpen: () => _openBook(book),
                                   onOptions: (position) => showBookActionsMenu(
                                     context: context,
@@ -229,6 +268,39 @@ class _BookLibraryScreenState extends ConsumerState<BookLibraryScreen>
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Says the library on screen is the phone's copy: from when, what still
+/// works, and a way to ask the server again. Calm rather than an error —
+/// nothing is wrong with the books, only with the connection.
+class OfflineLibraryNotice extends StatelessWidget {
+  const OfflineLibraryNotice({
+    required this.savedAt,
+    required this.onRetry,
+    super.key,
+  });
+
+  final DateTime savedAt;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final local = MaterialLocalizations.of(context);
+    final at = savedAt.toLocal();
+    final when =
+        '${local.formatMediumDate(at)}, '
+        '${local.formatTimeOfDay(TimeOfDay.fromDateTime(at))}';
+    return AppInlineNotice(
+      key: const ValueKey('offline-library-notice'),
+      icon: Icons.cloud_off_outlined,
+      title: "You're offline",
+      message:
+          'Showing your books as of $when. Books and audiobooks downloaded '
+          'to this phone still open; the rest waits for a connection.',
+      actionLabel: 'Try again',
+      onAction: onRetry,
     );
   }
 }

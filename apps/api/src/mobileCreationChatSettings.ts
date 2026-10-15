@@ -15,7 +15,7 @@ import type {
 export function isBuildRequestMessage(message: string): boolean {
   const normalized = message
     .toLowerCase()
-    .replace(/[.!?]+$/g, "")
+    .replace(/(?<![.!?])[.!?]+$/g, "")
     .replace(/^(ok|okay|yes|yeah|alright|great|perfect|sounds good|looks good)[,.\s]*/i, "")
     .trim();
   if (!normalized) {

@@ -38,8 +38,6 @@ class MobileExportAvailability {
   const MobileExportAvailability({
     required this.format,
     required this.available,
-    required this.unlocked,
-    required this.creditsRequired,
     required this.downloadUrl,
     required this.filename,
     required this.contentType,
@@ -56,18 +54,19 @@ class MobileExportAvailability {
   /// Reader-facing name from the export registry, when the server sent one.
   final String? label;
   final bool available;
-  final bool unlocked;
 
   /// True when the format is gated on an active plan (the Word export). The
   /// lock is drawn from this beside the billing state; the server enforces it
   /// on the download regardless.
+  ///
+  /// It is the only lock a file has. A book's PDF and EPUB download free once
+  /// it is written, so the per-book unlock fields an older server still sends
+  /// (`unlocked`, `creditsRequired`, `planIncludesUnlock`) are not read.
   final bool requiresSubscription;
-  final int creditsRequired;
   final String downloadUrl;
 
-  /// Where the in-app reader fetches this file, free of the export unlock —
-  /// the PDF only. Reading a book here costs nothing; [downloadUrl] is for
-  /// taking the file out of the app, which is what the unlock buys.
+  /// Where the in-app reader fetches this file — the PDF only. [downloadUrl] is
+  /// for taking the file out of the app.
   final String? readUrl;
   final String filename;
   final String contentType;
@@ -87,9 +86,7 @@ class MobileExportAvailability {
       format: json['format'] as String,
       label: json['label'] as String?,
       available: json['available'] as bool,
-      unlocked: json['unlocked'] as bool,
       requiresSubscription: json['requiresSubscription'] as bool? ?? false,
-      creditsRequired: json['creditsRequired'] as int,
       downloadUrl: json['downloadUrl'] as String,
       readUrl: json['readUrl'] as String?,
       filename: json['filename'] as String,

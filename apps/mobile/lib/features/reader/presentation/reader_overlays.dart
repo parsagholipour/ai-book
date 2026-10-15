@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/motion.dart';
+import '../../projects/data/offline_library_store.dart';
 import 'reader_document_loader.dart';
 import 'reader_opening_state.dart';
 
@@ -121,14 +122,12 @@ class ReaderDownloadState extends StatelessWidget {
   const ReaderDownloadState({
     required this.loader,
     required this.onRetry,
-    required this.onOpenPaywall,
     this.title,
     super.key,
   });
 
   final ReaderDocumentLoader loader;
   final VoidCallback onRetry;
-  final VoidCallback onOpenPaywall;
 
   /// The book's name, shown on the opening screen so the wait is about
   /// something.
@@ -144,21 +143,6 @@ class ReaderDownloadState extends StatelessWidget {
         title: title,
         receivedBytes: loader.receivedBytes,
         totalBytes: loader.totalBytes,
-      );
-    }
-    // A download the balance could not pay for is not something retrying
-    // fixes — the same call refuses again — so it offers the paywall instead.
-    // The screen decided credits were enough before starting, so this is the
-    // balance moving underneath the reader rather than a locked book. It is a
-    // question for the reader, not a fault, so it wears the calm tone of the
-    // other locked states rather than the error one.
-    if (_isPaymentFailure(error)) {
-      return AppEmptyState(
-        icon: Icons.lock_outline,
-        title: 'Credits needed to open this book',
-        message: userFacingError(error),
-        actionLabel: 'Get credits',
-        onAction: onOpenPaywall,
       );
     }
     // The file is being rebuilt, not missing. This is reachable in the window
@@ -182,6 +166,21 @@ class ReaderDownloadState extends StatelessWidget {
         onAction: onRetry,
       );
     }
+    // Nothing to fall back to and no way to fetch it: the book was never
+    // downloaded to this phone. Said as a fact about the phone, with the way
+    // to fix it, rather than as a download that broke.
+    if (isOfflineFailure(error)) {
+      return AppEmptyState(
+        key: const Key('reader-not-downloaded'),
+        icon: Icons.cloud_off_outlined,
+        title: 'Not on this phone yet',
+        message:
+            "This book hasn't been downloaded to this phone. Connect to the "
+            'internet to open it — after that it reads without a connection.',
+        actionLabel: 'Try again',
+        onAction: onRetry,
+      );
+    }
     return AppErrorState(
       title: 'Could not download this book',
       message: userFacingError(error),
@@ -189,18 +188,51 @@ class ReaderDownloadState extends StatelessWidget {
     );
   }
 
-  /// Whether [error] is the export refusing to unlock for want of credits.
-  ///
-  /// A download's error body arrives as a stream, so the 402 does not always
-  /// survive as a parsed code — the status is checked as well.
-  bool _isPaymentFailure(Object error) {
-    return error is ApiException &&
-        (error.code == 'INSUFFICIENT_CREDITS' || error.statusCode == 402);
-  }
-
   /// Whether [error] is the export not being on disk yet.
   bool _isRebuilding(Object error) {
     return error is ApiException && error.code == 'EXPORT_NOT_READY';
+  }
+}
+
+/// What stands in for the book when its file arrived but will not open.
+///
+/// pdfrx's own error banner is a developer's: a stack trace and a note to set
+/// `PdfViewerParams.errorBannerBuilder`. A reader can do one useful thing
+/// here — fetch the file again — so that is the whole screen. The top bar
+/// still lies over it, so the book stays leavable.
+///
+/// The sample book (`SampleBookScreen`) draws the same state; its app bar sits
+/// above the page rather than over it, so it passes a [topInset] of 0.
+class ReaderOpenErrorState extends StatelessWidget {
+  const ReaderOpenErrorState({
+    required this.onDownloadAgain,
+    this.topInset = kToolbarHeight,
+    super.key,
+  });
+
+  final VoidCallback onDownloadAgain;
+
+  /// Room left for a bar drawn over the top of the state.
+  final double topInset;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(16, topInset + 16, 16, 16),
+        child: AppErrorState(
+          key: const Key('reader-open-error'),
+          icon: Icons.menu_book_outlined,
+          title: "This book couldn't be opened",
+          message:
+              'The copy on this phone looks damaged or incomplete. '
+              'Downloading it again usually fixes this.',
+          actionLabel: 'Download again',
+          actionIcon: Icons.download_outlined,
+          onRetry: onDownloadAgain,
+        ),
+      ),
+    );
   }
 }
 

@@ -7,15 +7,19 @@ import '../../features/account/presentation/account_plan_screen.dart';
 import '../../features/account/presentation/account_privacy_screen.dart';
 import '../../features/account/presentation/account_screen.dart';
 import '../../features/account/presentation/archived_chats_screen.dart';
+import '../../features/book_matter/presentation/author_profile_screen.dart';
 import '../../features/billing/presentation/credit_log_screen.dart';
 import '../../features/app_update/domain/app_update.dart';
 import '../../features/app_update/presentation/app_update_required_screen.dart';
+import '../../features/auth/data/pending_location.dart';
 import '../../features/auth/domain/legal_gate.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/legal_acceptance_screen.dart';
 import '../../features/auth/presentation/sample_book_screen.dart';
+import '../../features/auth/presentation/verify_email_location.dart';
+import '../../features/auth/presentation/verify_email_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
 import '../../features/projects/presentation/book_library_screen.dart';
 import '../../features/projects/presentation/book_screen.dart';
@@ -208,23 +212,41 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // and wherever the reader would have landed afterwards is that screen
       // instead. It is only ever peeked here, never taken: one navigation can
       // run this redirect twice for the same location, and the second run has
-      // to reach the same answer as the first.
+      // to reach the same answer as the first. Any other screen a cold start
+      // was opened on (`/books`, `/projects/<id>`) is held the same way by
+      // [PendingLocation], and let go once a page past the gates is shown
+      // (the delegate listener below).
       final pendingRemix = ref.read(pendingRemixProvider);
+      final pendingLocation = ref.read(pendingLocationProvider);
       final remixSlug = remixSlugFromPath(path);
       String detour(String location) {
-        if (remixSlug != null) pendingRemix.remember(remixSlug);
+        if (remixSlug != null) {
+          pendingRemix.remember(remixSlug);
+        } else {
+          pendingLocation.remember(state.uri);
+        }
         return location;
       }
 
       String landing() {
-        final slug = pendingRemix.slug;
-        return slug == null ? '/home' : remixLocation(slug);
+        // A new email account opens on its code first; the verify screen
+        // walks on to the remix, the opened screen or home when the reader
+        // is done there.
+        if (ref.read(verifyEmailAfterSignUpProvider).pending &&
+            currentSession?.user.emailVerified == false) {
+          return verifyEmailLocation(codeSent: true);
+        }
+        return landingLocation(pendingRemix, pendingLocation);
       }
 
       if (authState.isLoading && currentSession == null) {
         return isAuthRoute || isSplash ? null : detour('/splash');
       }
 
+      // Only a restore with nothing on this phone to fall back on errors
+      // here: one that merely could not reach the server opens the stored
+      // session offline instead (`MobileAuthRepository.restoreSession`), so
+      // downloaded books and narrations open on a plane.
       if (authState.hasError && currentSession == null) {
         return isAuthRoute || isSplash ? null : detour('/splash');
       }
@@ -318,6 +340,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/account/archived-chats',
         pageBuilder: (context, state) =>
             _appPage(state, const ArchivedChatsScreen()),
+      ),
+      GoRoute(
+        path: authorProfileLocation,
+        pageBuilder: (context, state) =>
+            _appPage(state, const AuthorProfileScreen()),
+      ),
+      GoRoute(
+        path: verifyEmailPath,
+        pageBuilder: (context, state) => _appPage(
+          state,
+          VerifyEmailScreen(
+            codeAlreadySent: state.uri.queryParameters['sent'] == '1',
+          ),
+        ),
       ),
       GoRoute(
         path: '/account/credit-history',
@@ -491,7 +527,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ),
   );
-  ref.onDispose(router.dispose);
+  // The detour is over once a page past the gates has been shown with a
+  // session: the screen the app was opened on, or whatever took priority over
+  // it. Settled here, after the navigation committed, rather than in the
+  // redirect, which may run twice for one location.
+  void settlePendingLocation() {
+    if (ref.read(authControllerProvider).asData?.value == null) return;
+    final configuration = router.routerDelegate.currentConfiguration;
+    if (configuration.isEmpty) return;
+    if (isDetourPath(configuration.uri.path)) return;
+    ref.read(pendingLocationProvider).settle();
+  }
+
+  router.routerDelegate.addListener(settlePendingLocation);
+  ref.onDispose(() {
+    router.routerDelegate.removeListener(settlePendingLocation);
+    router.dispose();
+  });
   return router;
 });
 

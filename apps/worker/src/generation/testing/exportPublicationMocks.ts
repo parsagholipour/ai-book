@@ -13,6 +13,7 @@ import { vi } from "vitest";
 export const mocks = {
   prisma: {
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    imageAsset: { findMany: vi.fn() },
     generationJob: { count: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
     generationAttempt: { updateMany: vi.fn(), findUnique: vi.fn() },
     bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
@@ -87,6 +88,7 @@ export function resetExportPublicationMocks(): void {
     return { count: claimMatchesBarrier(where, publicationState.barrier) ? 1 : 0 };
   });
   mocks.prisma.project.update.mockResolvedValue({});
+  mocks.prisma.imageAsset.findMany.mockResolvedValue([]);
   mocks.prisma.generationJob.updateMany.mockImplementation(async () => {
     mocks.events.push("claim job");
     return { count: 1 };

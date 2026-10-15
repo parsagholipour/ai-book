@@ -74,6 +74,9 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-.terraform.tfvars
+# Terraform loads these by name; they hold variable values, often secrets.
+terraform.tfvars
+terraform.tfvars.json
 *.auto.tfvars
+*.auto.tfvars.json
 .env.production

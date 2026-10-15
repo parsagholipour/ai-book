@@ -18,8 +18,13 @@ class CharacterProfileActions extends StatelessWidget {
     required this.onCall,
     required this.onEdit,
     required this.onUse,
+    this.callLocked = false,
     super.key,
   });
+
+  /// Calls are a plan perk this reader does not have yet: the tile wears a
+  /// lock, and its tap opens the plans (`callLibraryCharacter`).
+  final bool callLocked;
 
   /// The cast read that precedes a call is in flight.
   final bool calling;
@@ -43,7 +48,7 @@ class CharacterProfileActions extends StatelessWidget {
     final tiles = [
       _ActionTile(
         key: const ValueKey('character-profile-call'),
-        icon: Icons.call_outlined,
+        icon: callLocked ? Icons.lock_outline : Icons.call_outlined,
         label: 'Call',
         loading: calling,
         stacked: stacked,

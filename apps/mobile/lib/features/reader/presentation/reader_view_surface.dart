@@ -165,6 +165,7 @@ extension _ReaderViewSurface on _ReaderViewState {
               selection: _menuSelection!,
               editingEnabled: _editingEnabled,
               sourceCurrent: _canUseCurrentBook,
+              offline: widget.offline,
               onAction: (action) => unawaited(_runAction(action)),
             ),
           ),
@@ -275,7 +276,33 @@ extension _ReaderViewSurface on _ReaderViewState {
       loader: loader,
       title: _title,
       onRetry: () => unawaited(_retryDownload()),
-      onOpenPaywall: widget.onOpenPaywall,
+    );
+  }
+
+  /// Drawn by the viewer in place of a document it could not open.
+  Widget _buildOpenError(
+    BuildContext context,
+    Object error,
+    StackTrace? stackTrace,
+    PdfDocumentRef documentRef,
+  ) {
+    return ReaderOpenErrorState(
+      onDownloadAgain: () => unawaited(_downloadAgain()),
+    );
+  }
+
+  /// Replaces a file the viewer could not open with a fresh download.
+  ///
+  /// The cache entry goes first — otherwise the "download" is a cache hit that
+  /// hands the same bytes back — and the descriptor is re-read for the same
+  /// reason [_retryDownload] re-reads it. The fresh file has a new identity
+  /// (see [readerDocumentRef]), so the viewer opens it rather than its memory
+  /// of the failure.
+  Future<void> _downloadAgain() {
+    return widget.loader.redownload(
+      widget.export,
+      refresh: widget.onRefreshExport,
+      pageNumbering: widget.status.pdfPageNumbering,
     );
   }
 

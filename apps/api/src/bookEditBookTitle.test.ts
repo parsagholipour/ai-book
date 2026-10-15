@@ -5,6 +5,7 @@ import { classifyWithDegradedHeuristics } from "./bookEditHeuristics.js";
 import { classifyProjectChatMessage } from "./bookEditIntent.js";
 import type { DecideActionPayload } from "./bookEditRouterPrompt.js";
 import { coverKindFromMetadata } from "./mobile/bookTitleEdits.js";
+import { fakeDecideModel, fakeFailingTextModel, pages } from "./testing/bookEditIntentFixtures.js";
 
 /**
  * "Change the book title to Dinner Made Simple" was quoted as a 550-credit
@@ -35,7 +36,10 @@ describe("reading a new book title out of a message", () => {
     "change the chapter title to The Market",
     "change the title to Supper Club and make page 3 funnier",
     "change the title to \"Supper Club\" and rewrite page 3",
-    "rename the main character to Sam"
+    "rename the main character to Sam",
+    // A second request after the title, even one about the book's matter.
+    "rename the book to Moonrise and add a dedication to my mom",
+    "rename the book to 'Moonrise' and add a dedication to my mom"
   ])("leaves %s to the router", (message) => {
     expect(bookTitleFromMessage(message)).toBeNull();
   });
@@ -53,6 +57,77 @@ describe("reading a new book title out of a message", () => {
       pages: []
     });
     expect(intent).toMatchObject({ kind: "book_title", bookTitle: "Dinner Made Simple" });
+  });
+});
+
+/**
+ * Review finding 7 (2026-10-06): the matter guard that keeps "add a
+ * dedication: …" off the fast paths also took these renames off the free
+ * title path — to the router, which once quoted a rename as a rebuild, and
+ * with the router down to a matter edit that failed. The matter word is the
+ * new title's text.
+ */
+describe("a rename whose new title names a matter page", () => {
+  const RENAMES = [
+    ["Rename the book to 'The Dedication'", "The Dedication"],
+    ["Rename the book to Letters to My Publisher", "Letters to My Publisher"],
+    ["Change the title to The ISBN Mystery", "The ISBN Mystery"],
+    ["Can you rename the book to The Dedication?", "The Dedication"],
+    ["new title: The Publisher's Daughter", "The Publisher's Daughter"],
+    ["Change the title to The Dedication: A Novel", "The Dedication: A Novel"],
+    // Quoted, the reader drew the title's edges, so a break inside it is the title's.
+    ["Change the title to “Love, Loss and the Publisher”", "Love, Loss and the Publisher"]
+  ] as const;
+
+  it.each(RENAMES)("takes %j as the free title change without asking the router", async (message, title) => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.9,
+      reasoning: "Should never be used.",
+      assistantMessage: "I’ll change the publisher.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null,
+      editTarget: "book_matter"
+    });
+    const intent = await classifyProjectChatMessage({ message, stage: "complete", pages, textModel: model });
+    expect(model.generateWithTools).not.toHaveBeenCalled();
+    expect(intent).toMatchObject({ kind: "book_title", bookTitle: title, scope: "none", affectedPageIndexes: [] });
+  });
+
+  it.each(RENAMES)("retitles the book for %j with the router down or absent", async (message, title) => {
+    for (const textModel of [fakeFailingTextModel(), undefined]) {
+      const intent = await classifyProjectChatMessage({ message, stage: "complete", pages, textModel });
+      expect(intent).toMatchObject({ kind: "book_title", bookTitle: title });
+    }
+  });
+
+  it.each([
+    "rename the book to Moonrise and add a dedication to my mom",
+    "change the title to Moonrise and the dedication to my mom",
+    "Change the title to 'Moonrise' and the dedication to 'For Mom'",
+    "Change the title to Moonrise. Dedication: For Mom",
+    "Change the title to Moonrise, and put my pen name as Sam",
+    "Change the title to Moonrise but keep the dedication"
+  ])("sends %j, which also changes the matter, on to the router and the matter edit", async (message) => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.92,
+      reasoning: "The reader wants the book's matter changed.",
+      assistantMessage: "I’ll change that on the title and credits pages.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null,
+      editTarget: "book_matter"
+    });
+    const routed = await classifyProjectChatMessage({ message, stage: "complete", pages, textModel: model });
+    expect(model.generateWithTools).toHaveBeenCalledTimes(1);
+    expect(routed.kind).toBe("book_matter");
+
+    const routerDown = await classifyProjectChatMessage({ message, stage: "complete", pages, textModel: fakeFailingTextModel() });
+    expect(routerDown.kind).toBe("book_matter");
   });
 });
 
@@ -103,6 +178,8 @@ describe("what a cover is, for the price of a title change", () => {
     expect(coverKindFromMetadata({ coverDesignId: "night-sky" })).toBe("design");
     expect(coverKindFromMetadata({ source: "upload" })).toBe("upload");
     expect(coverKindFromMetadata({ coverArtSource: "ai", model: "imagen" })).toBe("ai");
+    // A drawn cover that kept its artwork is re-set over it for free, like a design.
+    expect(coverKindFromMetadata({ coverArtSource: "ai", artworkObjectKey: "images/p/cover-art.jpg" })).toBe("ai-kept");
     // A cover from before the source was recorded was drawn by an image model;
     // read as a design it would be replaced by a fresh pick, for free.
     expect(coverKindFromMetadata({ model: "gpt-image-1", revisedPrompt: "A lighthouse" })).toBe("ai");

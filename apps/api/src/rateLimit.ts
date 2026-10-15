@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { clientNetworkKey } from "./clientNetwork.js";
 
 export type RateLimitConfig = {
   maxAttempts: number;
@@ -62,6 +63,20 @@ export class InMemoryRateLimiter {
 
 export function rateLimitKey(request: FastifyRequest, ...parts: string[]): string {
   return [request.ip || "unknown", ...parts].join(":");
+}
+
+/**
+ * A key with the client's network in it and nothing the client typed, for
+ * limits on the caller rather than on a target.
+ *
+ * Sign-in, sign-up and the password-reset routes were limited per address and
+ * email, or per email alone, so one address spraying invented emails met a
+ * fresh bucket on every request — and each of those requests ran scrypt.
+ * `rateLimitKey` also counts the full address, which an IPv6 client rotates
+ * within its /64 for free; this one counts the /64 (`clientNetworkKey`).
+ */
+export function clientNetworkRateLimitKey(request: FastifyRequest, ...parts: string[]): string {
+  return ["network", clientNetworkKey(request.ip || "unknown"), ...parts].join(":");
 }
 
 /**

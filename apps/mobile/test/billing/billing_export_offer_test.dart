@@ -220,13 +220,19 @@ void main() {
     },
   );
 
-  testWidgets('store unavailable leaves prices visible and checkout disabled', (
-    tester,
-  ) async {
+  testWidgets('store unavailable keeps the plans, shows no catalog price, and '
+      'offers a retry', (tester) async {
     await openOffer(tester, store: ExportOfferStore(available: false));
     expect(find.text('Creator'), findsOneWidget);
-    expect(tester.widget<FilledButton>(upgrade).onPressed, isNull);
-    expect(find.text('Plan unavailable'), findsOneWidget);
+    // The server's dollar price is not Play's: nothing is priced at all.
+    expect(find.textContaining(r'$19.99'), findsNothing);
+    expect(find.textContaining('USD'), findsNothing);
+    expect(find.text('Google Play is unavailable'), findsOneWidget);
+    expect(tester.widget<FilledButton>(upgrade).onPressed, isNotNull);
+    expect(
+      find.descendant(of: checkout, matching: find.text('Try again')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -285,9 +291,13 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('Restore purchases'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Restore purchases'));
     await tester.pump();
     expect(store.restoreCalls, 1);
+    await tester.ensureVisible(find.text('Keep Free'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Keep Free'));
     await tester.pumpAndSettle();
     expect(find.byType(BillingPaywall), findsNothing);

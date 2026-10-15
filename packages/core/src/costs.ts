@@ -3,6 +3,7 @@ import {
   type TextRate, type TieredTextRate, type PeakOffPeakRate
 } from "./textCostRates.js";
 import { OPENROUTER_GLM_53_FLASH_MODEL } from "./adapters/openrouterModels.js";
+import { VOICE_CALL_OPERATION, VOICE_CALL_PURPOSE } from "./liveVoiceUsage.js";
 import { qwen37FlashCostRates, qwen37FlashRateForPrompt } from "./qwen37FlashPricing.js";
 
 export type ProviderCostLog = {
@@ -497,7 +498,11 @@ function isImageProviderLog(log: ProviderCostLog): boolean {
 
 function isAudioProviderLog(log: ProviderCostLog): boolean {
   const operation = metadataString(log.metadata, "operation");
-  return operation?.startsWith("tts.") === true || log.purpose?.startsWith("tts.") === true;
+  // A voice call is audio spend too, priced by the relay from the provider's
+  // own per-modality token counts (`liveVoiceUsage.ts`); its `costHint` is the
+  // whole answer, and a null one is an unpriced audio call.
+  return operation?.startsWith("tts.") === true || log.purpose?.startsWith("tts.") === true ||
+    operation === VOICE_CALL_OPERATION || log.purpose === VOICE_CALL_PURPOSE;
 }
 
 function imageSizeTier(metadata: unknown): string {

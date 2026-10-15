@@ -10,11 +10,13 @@ import {
 import { Prisma, prisma } from "@book-maker/db";
 import { claimAppliedEditPublication } from "./editProjectStatus.js";
 import { characterPreparationDedupeKey } from "./characterPreparation.js";
+import { currentCoverAsset } from "./currentCover.js";
 import {
   artifactPublications,
   discardSupersededArtifacts,
   formatsTouchedByPublication,
   installArtifacts,
+  installProvenanceArtifacts,
   pendingExportDigests,
   provenancePublications,
   restoreSupersededArtifacts,
@@ -88,6 +90,8 @@ export type ExportPublicationResult = {
   published: boolean;
   /** Publication claim matched, but a page/cover image job still owns fan-in. */
   blockedByOpenImageJobs: boolean;
+  /** The cover this candidate rendered was replaced or removed before publication. */
+  blockedByChangedCover: boolean;
   /** Optional derivative row committed with the export, ready for Redis dispatch. */
   characterPreparationJobId: string | null;
 };
@@ -312,6 +316,12 @@ export async function publishCompiledExports(options: {
    * have an exact `book.md` source again.
    */
   publishReconstructedMarkdown?: boolean;
+  /**
+   * The COVER row selected for freshly compiled Markdown; null means no cover.
+   * Exact published-manuscript repairs omit it: their historical image URLs are
+   * part of the document they reproduce, rather than a read of the current cover.
+   */
+  renderedCoverId?: string | null;
   contentRevision: number | null;
   /**
    * Where each model page landed in the PDF this publication installs.
@@ -378,6 +388,7 @@ export async function publishCompiledExports(options: {
   let restoredInsideTransaction = false;
   let published: boolean;
   let blockedByOpenImageJobs = false;
+  let blockedByChangedCover = false;
   let characterPreparationJobId: string | null = null;
   try {
     published = await prisma.$transaction(
@@ -477,6 +488,26 @@ export async function publishCompiledExports(options: {
           return false;
         }
 
+        // A cover can publish and finish between the compile's independent
+        // project/image-job reads, or while it renders. Its old URL now names
+        // immutable predecessor bytes, so an empty job count cannot validate
+        // the cover selected by that earlier snapshot. Cover publication takes
+        // this same Project lock: once the ids match, no cover can change until
+        // these artifacts commit. A mismatch needs a successor even when the
+        // replacement's completion already found this compile ACTIVE. The
+        // compile chose its cover with the same selector, so a project holding
+        // two COVER rows matches here instead of deferring forever.
+        if (options.renderedCoverId !== undefined) {
+          const covers = await tx.imageAsset.findMany({
+            where: { projectId: options.projectId, type: "COVER" },
+            select: { id: true, type: true, createdAt: true }
+          });
+          if ((currentCoverAsset(covers)?.id ?? null) !== options.renderedCoverId) {
+            blockedByChangedCover = true;
+            return false;
+          }
+        }
+
         // Bind the filesystem move to the durable ACTIVE row. Marking it
         // COMPLETED in this transaction closes both race directions: a stop
         // that won already makes this claim miss, while a stop that follows the
@@ -566,7 +597,8 @@ export async function publishCompiledExports(options: {
         publications = [...exportPublications, ...metadataPublications];
         publicationStarted = true;
         try {
-          await installArtifacts(publications);
+          await installArtifacts(exportPublications);
+          await installProvenanceArtifacts(metadataPublications);
         } catch (error) {
           await restoreSupersededArtifacts(publications);
           restoredInsideTransaction = true;
@@ -591,6 +623,7 @@ export async function publishCompiledExports(options: {
   return {
     published,
     blockedByOpenImageJobs,
+    blockedByChangedCover,
     characterPreparationJobId: published ? characterPreparationJobId : null
   };
 }

@@ -7,6 +7,7 @@ import {
   chapterHeadingStylePreference,
   chapterPresentationFor,
   compileBookMarkdown,
+  compileBookMarkdownWithPageAnchors,
   findBookLikeMarkdownIssues,
   type MarkdownPage
 } from "./markdown.js";
@@ -39,7 +40,7 @@ describe("compileBookMarkdown", () => {
       ])
     });
 
-    expect(markdown).toMatch(/^# /);
+    expect(markdown).toMatch(/^<section class="book-title-page">/);
     expect(markdown).not.toMatch(/^---/);
     expect(markdown).not.toContain("generatedAt");
     expect(markdown).not.toMatch(/^pages:\s*\d+/m);
@@ -620,28 +621,29 @@ describe("compileBookMarkdown title page", () => {
   const cover = { imagePath: "/assets/images/project/cover.png", imageAlt: "Cover for the book" };
   const pages: MarkdownPage[] = [{ index: 1, title: "First", markdown: "The first page." }];
 
-  it("does not repeat the cover metadata on a second title page", () => {
+  it("prints a title page behind the cover, on the unnumbered front page", () => {
     const plan = { ...storyPlan(), title: "The Clockmaker", subtitle: "A patient trade" };
 
-    const markdown = compileBookMarkdown({ plan, cover, pages, authorName: "Ada Lovelace" });
+    const compiled = compileBookMarkdownWithPageAnchors({ plan, cover, pages, authorName: "Ada Lovelace" });
+    const { markdown } = compiled;
 
     expect(markdown).toMatch(/^!\[Cover for the book]/);
-    expect(markdown).not.toContain("book-title-page");
-    expect(markdown).not.toContain("The Clockmaker");
-    expect(markdown).not.toContain("A patient trade");
-    expect(markdown).not.toContain("Ada Lovelace");
-    expect(markdown.indexOf("cover.png")).toBeLessThan(markdown.indexOf("The first page."));
+    // Behind a cover it must not reset the page counter a second time (`@page pdf-front`).
+    expect(markdown).toContain('<section class="book-title-page book-title-page--after-cover">');
+    expect(markdown).toContain('<p class="book-title-page__byline">by Ada Lovelace</p>');
+    expect(markdown.indexOf("cover.png")).toBeLessThan(markdown.indexOf("book-title-page"));
+    expect(markdown.indexOf("book-title-page")).toBeLessThan(markdown.indexOf("The first page."));
+    expect(compiled.hasCoverPage).toBe(true);
     expect(findBookLikeMarkdownIssues(markdown)).toEqual([]);
   });
 
-  it("leaves the front matter untouched when no author is named", () => {
-    // The guarantee that no book written before title pages existed gains a
-    // page on its next recompile.
+  it("prints the title page without a byline when no author is named", () => {
     const plan = { ...storyPlan(), title: "The Clockmaker", subtitle: "A patient trade" };
 
     for (const authorName of [undefined, "", "   "]) {
       const markdown = compileBookMarkdown({ plan, cover, pages, authorName });
-      expect(markdown, String(authorName)).not.toContain("book-title-page");
+      expect(markdown, String(authorName)).toContain('<h1 class="book-title-page__title">The Clockmaker</h1>');
+      expect(markdown, String(authorName)).not.toContain("book-title-page__byline");
       expect(markdown, String(authorName)).toBe(compileBookMarkdown({ plan, cover, pages }));
     }
   });

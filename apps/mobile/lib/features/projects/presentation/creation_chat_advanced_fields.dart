@@ -104,6 +104,10 @@ class _BookTypePicker extends StatelessWidget {
 /// tap from the offer that unlocks it. A locked chip opens that offer instead
 /// of selecting ([onLocked]); a typed count past it is kept — the field is the
 /// reader's own words — and the caption turns into the way to unlock it.
+///
+/// Past [ceilingPages] nothing is offered at all: no plan writes a book that
+/// long yet, so a preset past it is left out and a typed count past it is
+/// refused like any other out-of-range number, never locked.
 class _PageCountControl extends StatefulWidget {
   const _PageCountControl({
     required this.title,
@@ -113,6 +117,7 @@ class _PageCountControl extends StatefulWidget {
     required this.onCustom,
     this.estimateCredits,
     this.maxPages,
+    this.ceilingPages = maxPlanBookPages,
     this.onLocked,
   });
 
@@ -125,6 +130,9 @@ class _PageCountControl extends StatefulWidget {
 
   /// The longest book this reader may build; null on a paid plan.
   final int? maxPages;
+
+  /// The longest book any plan writes (`paidMaxBookPages`).
+  final int ceilingPages;
 
   /// Opens the long-book offer for a count past [maxPages].
   final Future<void> Function(int targetPages)? onLocked;
@@ -181,7 +189,7 @@ class _PageCountControlState extends State<_PageCountControl> {
 
   int? _validPages(String value) {
     final pages = int.tryParse(value.trim());
-    if (pages == null || pages < 1 || pages > 600) return null;
+    if (pages == null || pages < 1 || pages > widget.ceilingPages) return null;
     return pages;
   }
 
@@ -230,7 +238,7 @@ class _PageCountControlState extends State<_PageCountControl> {
     if (auto) return 'Ask me before building if the chat does not say pages.';
     final estimate = widget.estimateCredits;
     if (pages == null || estimate == null) {
-      return 'Enter a number from 1 to 600.';
+      return 'Enter a number from 1 to ${widget.ceilingPages}.';
     }
     return 'Book after approval: ≈ ${estimate(pages)} credits for '
         '$pages pages, charged only after plan approval.';
@@ -265,30 +273,31 @@ class _PageCountControlState extends State<_PageCountControl> {
               },
             ),
             for (final pages in _presetPages)
-              ChoiceChip(
-                key: ValueKey('page-preset-$pages'),
-                avatar: widget._locks(pages)
-                    ? const Icon(Icons.lock_outline, size: 18)
-                    : null,
-                label: Text('$pages pages'),
-                tooltip: widget._locks(pages)
-                    ? 'Books over ${widget.maxPages} pages need a plan'
-                    : null,
-                selected: !_customOpen && committed == pages,
-                showCheckmark: false,
-                onSelected: (_) {
-                  final onLocked = widget.onLocked;
-                  if (widget._locks(pages) &&
-                      committed != pages &&
-                      onLocked != null) {
-                    unawaited(onLocked(pages));
-                    return;
-                  }
-                  setState(() => _customOpen = false);
-                  _controller.clear();
-                  widget.onCustom(pages);
-                },
-              ),
+              if (pages <= widget.ceilingPages)
+                ChoiceChip(
+                  key: ValueKey('page-preset-$pages'),
+                  avatar: widget._locks(pages)
+                      ? const Icon(Icons.lock_outline, size: 18)
+                      : null,
+                  label: Text('$pages pages'),
+                  tooltip: widget._locks(pages)
+                      ? 'Books over ${widget.maxPages} pages need a plan'
+                      : null,
+                  selected: !_customOpen && committed == pages,
+                  showCheckmark: false,
+                  onSelected: (_) {
+                    final onLocked = widget.onLocked;
+                    if (widget._locks(pages) &&
+                        committed != pages &&
+                        onLocked != null) {
+                      unawaited(onLocked(pages));
+                      return;
+                    }
+                    setState(() => _customOpen = false);
+                    _controller.clear();
+                    widget.onCustom(pages);
+                  },
+                ),
             ChoiceChip(
               avatar: const Icon(Icons.edit_outlined, size: 18),
               label: const Text('Custom'),
@@ -308,7 +317,9 @@ class _PageCountControlState extends State<_PageCountControl> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: InputDecoration(
               labelText: 'Pages',
-              errorText: invalid ? 'Use 1 to 600 pages.' : null,
+              errorText: invalid
+                  ? 'Use 1 to ${widget.ceilingPages} pages.'
+                  : null,
               filled: true,
               fillColor: colors.surface,
             ),

@@ -1,3 +1,5 @@
+import { withoutBookMatter } from "./bookMatterPages.js";
+
 /**
  * The last check every compiled `book.md` passes before it is rendered: does it
  * still read like a book, or has the pipeline's own scaffolding leaked into it.
@@ -10,6 +12,12 @@
  *   that the page map and the story layout do not know about. Every book answers
  *   to them. The Studio normalizer turns an author's raw page break into its own
  *   separator before publish, so a Studio book never reaches this one.
+ *   They read the compiled document as written. The title page's HTML opens
+ *   every compile, so the compiler's own output never starts with `---`; with
+ *   the matter cut out first, a coverless book whose first page opened on a
+ *   `---` rule failed its compile. The reader's words in the matter are
+ *   escaped, so none of them can spell a page break.
+ *
  * - **Generation leaks** — `generatedAt`, a `pages: 3` line, a `## Page 3`
  *   heading, a "Page 3" Contents link, "Illustration for Page 3" alt text. Each
  *   is a shape the planner or writer produced before this project learned to
@@ -20,7 +28,10 @@
  *   marked a book the author wrote FAILED over their own sentence, and nothing
  *   they could do short of rewriting it would ever let it export — so
  *   `authorManuscript` (imported or written in the Studio, `isAuthorManuscript`)
- *   runs the structural checks alone.
+ *   runs the structural checks alone. They read the text with the matter pages
+ *   cut out (`withoutBookMatter`): a title page, dedication, imprint or
+ *   biography is the reader's own words set by the compiler, and a reader's
+ *   `generatedat.com` is not a pipeline leak.
  */
 export type BookLikeMarkdownOptions = {
   /** The author owns the text: skip the generation-leak heuristics. */
@@ -34,10 +45,12 @@ export function assertBookLikeMarkdown(markdown: string, options: BookLikeMarkdo
   }
 }
 
-export function findBookLikeMarkdownIssues(markdown: string, options: BookLikeMarkdownOptions = {}): string[] {
+export function findBookLikeMarkdownIssues(compiled: string, options: BookLikeMarkdownOptions = {}): string[] {
   const issues: string[] = [];
   const generationLeaks = options.authorManuscript !== true;
-  if (/^---\s*\r?\n/.test(markdown.trimStart())) {
+  // Only the leak checks read the text without its matter pages.
+  const markdown = withoutBookMatter(compiled);
+  if (/^---\s*\r?\n/.test(compiled.trimStart())) {
     issues.push("frontmatter block");
   }
   if (generationLeaks && (/^generatedAt\s*:/im.test(markdown) || /\bgeneratedAt\b/i.test(markdown))) {
@@ -52,7 +65,7 @@ export function findBookLikeMarkdownIssues(markdown: string, options: BookLikeMa
   if (generationLeaks && /^\s*-\s+\[Page\s+\d+(?::|\])/im.test(markdown)) {
     issues.push("page-number table of contents link");
   }
-  if (/<div\b[^>]*class=["'][^"']*\bpage-break\b/i.test(markdown)) {
+  if (/<div\b[^>]*class=["'][^"']*\bpage-break\b/i.test(compiled)) {
     issues.push("raw page-break markup");
   }
   if (generationLeaks && /!\[Illustration for Page \d+\]/i.test(markdown)) {

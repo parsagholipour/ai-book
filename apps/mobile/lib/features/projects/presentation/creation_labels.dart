@@ -68,7 +68,7 @@ const bookTypePresetOptions = <CreationPresetOption>[
   CreationPresetOption(
     value: 'children_story',
     title: 'Children’s story',
-    subtitle: 'A warm read-aloud story for younger readers.',
+    subtitle: 'A warm story to read aloud to a young child.',
     icon: Icons.auto_stories_outlined,
   ),
   CreationPresetOption(
@@ -105,6 +105,27 @@ const qualityPresetOptions = <CreationPresetOption>[
     icon: Icons.auto_awesome_outlined,
   ),
 ];
+
+/// The Effort options a new book may be started at. Ultra is behind the
+/// operator's `ultraTierEnabled` switch; while it is off the server refuses a
+/// new Ultra book (422 `QUALITY_TIER_UNAVAILABLE`), so the picker does not
+/// offer one. Pass `true` while billing is unknown: an older server never sends
+/// the switch and always offered Ultra, and the server rules on the build.
+List<CreationPresetOption> qualityPresetOptionsFor({
+  required bool ultraEnabled,
+}) => ultraEnabled
+    ? qualityPresetOptions
+    : [
+        for (final option in qualityPresetOptions)
+          if (option.value != 'ultra') option,
+      ];
+
+/// The effort a *new* book will really be started at. An Ultra choice made
+/// while Ultra was on — or carried in by a remix of an Ultra book — falls back
+/// to Extra polish once it is off. Only creation-chat presets go through this;
+/// a book already written at Ultra keeps its tier.
+String startableQualityPreset(String preset, {required bool ultraEnabled}) =>
+    !ultraEnabled && preset == 'ultra' ? 'premium' : preset;
 
 /// Mirrors `LANGUAGE_NAME_CODES` on the server. The list used to hold six
 /// Latin-script languages, so a language the chat detected from a non-Latin

@@ -2,7 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/billing/data/credit_log_repository.dart';
+import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
+import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
 import 'package:tomeza/features/characters/data/characters_repository.dart';
 import 'package:tomeza/features/characters/presentation/character_call.dart';
 import 'package:tomeza/features/characters/presentation/character_profile_screen.dart';
@@ -15,6 +20,7 @@ import 'package:tomeza/features/voice/presentation/voice_call_controller.dart';
 import 'package:tomeza/features/voice/presentation/voice_call_screen.dart';
 import 'package:tomeza/shared/api/api_client.dart';
 
+import '../billing/billing_paywall_harness.dart' as harness;
 import 'character_test_support.dart';
 
 /// Calling a saved character from their own page.
@@ -43,13 +49,14 @@ void main() {
     creditsPerMinute: 60,
     creditsToStart: 180,
     availableCredits: availableCredits,
-    maxCallSeconds: 1800,
+    maxCallSeconds: 900,
   );
 
   Future<_FakeVoiceRepository> pumpProfile(
     WidgetTester tester, {
     required VoiceCast cast,
     bool disclosed = true,
+    List<Override> billing = const [],
   }) async {
     final voice = _FakeVoiceRepository(cast);
     final controller = _StubVoiceCallController();
@@ -70,6 +77,7 @@ void main() {
             _MemoryDisclosureStore(acknowledged: disclosed),
           ),
           voiceCallControllerProvider.overrideWith(() => controller),
+          ...billing,
         ],
         child: const MaterialApp(
           home: CharacterProfileScreen(characterId: 'char-1'),
@@ -142,6 +150,41 @@ void main() {
       expect(find.byType(VoiceCallScreen), findsNothing);
     },
   );
+
+  testWidgets('a free reader is offered the plans, not a call', (tester) async {
+    final voice = await pumpProfile(
+      tester,
+      cast: cast(),
+      billing: [
+        billingRepositoryProvider.overrideWithValue(
+          harness.FakeBillingRepository(),
+        ),
+        storeBillingClientProvider.overrideWithValue(
+          harness.FakeStoreBillingClient(),
+        ),
+        creditLogRepositoryProvider.overrideWithValue(
+          harness.EmptyCreditLogRepository(),
+        ),
+      ],
+    );
+
+    // The tile says so before the tap: calls are a plan perk.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('character-profile-call')),
+        matching: find.byIcon(Icons.lock_outline),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('character-profile-call')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BillingPaywall), findsOneWidget);
+    expect(find.byType(VoiceCallScreen), findsNothing);
+    // Refused before the cast was even read.
+    expect(voice.castRequests, isEmpty);
+  });
 
   test('a character the cast has not caught up with is still callable', () {
     final built = voiceCharacterFor(

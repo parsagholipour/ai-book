@@ -243,8 +243,6 @@ MobileProjectDetail _importedProject() {
       pdf: MobileExportAvailability(
         format: 'pdf',
         available: false,
-        unlocked: false,
-        creditsRequired: 150,
         downloadUrl: '',
         filename: '',
         contentType: 'application/pdf',
@@ -252,8 +250,6 @@ MobileProjectDetail _importedProject() {
       epub: MobileExportAvailability(
         format: 'epub',
         available: false,
-        unlocked: false,
-        creditsRequired: 150,
         downloadUrl: '',
         filename: '',
         contentType: 'application/epub+zip',

@@ -1,7 +1,7 @@
 /**
  * The queue dispatch policy shared by the API (apps/api/src/queue.ts) and the
  * worker (apps/worker/src/runtime/dispatch.ts, jobRetryPolicy.ts). Both sides
- * publish to and consume from the same BullMQ queue, so the job-name table,
+ * publish to the same BullMQ queues (which one is `jobLanes.ts`), so the job-name table,
  * the retry budgets, the dispatch backoff, and the stop-signalling constants
  * must be one definition — they used to be hand-copied forks with "keep in
  * sync" comments. Only the Redis handle and the Prisma client stay local to
@@ -78,7 +78,7 @@ export const STOPPED_JOB_ERROR = "Stopped by user";
  * already marked READY — and it is the job most exposed to a per-minute quota,
  * because it is dozens of speech calls in a row.
  *
- * apply-book-edit and continue-book have a budget for a different reason, and
+ * apply-book-edit, continue-book and import-book have a budget for a different reason, and
  * it is deliberately invisible to their handlers. They publish the manuscript
  * and settle the charge inside one transaction, then run a checkpointed tail
  * — export invalidation, the memory write, the compile enqueue, the settled
@@ -104,7 +104,8 @@ const JOB_ATTEMPT_BUDGETS: Record<string, number> = {
   "generate-book": GENERATE_BOOK_RECOVERY_ATTEMPTS,
   "generate-audiobook": GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS,
   "apply-book-edit": DELIVERED_TAIL_RECOVERY_ATTEMPTS,
-  "continue-book": DELIVERED_TAIL_RECOVERY_ATTEMPTS
+  "continue-book": DELIVERED_TAIL_RECOVERY_ATTEMPTS,
+  "import-book": DELIVERED_TAIL_RECOVERY_ATTEMPTS
 };
 
 export type JobRetryContext = {

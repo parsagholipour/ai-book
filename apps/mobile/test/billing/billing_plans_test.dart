@@ -54,7 +54,9 @@ MobileBilling _billing({
     plan: MobileSubscriptionPlan(
       tier: tier,
       source: tier == 'free' ? 'free' : 'google_play',
-      status: tier == 'free' ? null : (cancelAtPeriodEnd ? 'CANCELED' : 'ACTIVE'),
+      status: tier == 'free'
+          ? null
+          : (cancelAtPeriodEnd ? 'CANCELED' : 'ACTIVE'),
       renewsAt: tier == 'free' || cancelAtPeriodEnd
           ? null
           : DateTime.utc(2026, 7, 15),
@@ -76,7 +78,9 @@ MobileBilling _billing({
 Widget _wrap(Widget child, {MobileBilling? billing}) {
   return _scope(
     billing,
-    MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child))),
+    MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: child)),
+    ),
   );
 }
 
@@ -115,7 +119,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('80,000 credits every month'), findsOneWidget);
-      expect(find.text('Unlimited illustrated books'), findsOneWidget);
+      // A cap lifted, not a promise of unlimited pictures: they use credits.
+      expect(find.text('No monthly cap on illustrated books'), findsOneWidget);
+      expect(find.textContaining('Unlimited'), findsNothing);
       expect(find.text(r'$199.99'), findsOneWidget);
       expect(find.text('per month'), findsOneWidget);
       // The call to action names the move, not the price — the price is already
@@ -260,36 +266,40 @@ void main() {
   });
 
   group('plan banner', () {
-    testWidgets('shows the free balance and image cap without a monthly allowance', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(
-          BillingPlanBanner(
-            billing: _billing(
-              imageQuota: MobileImageQuota(
-                used: 1,
-                limit: 3,
-                resetsAt: DateTime.utc(2026, 7, 1),
+    testWidgets(
+      'shows the free balance and image cap without a monthly allowance',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            BillingPlanBanner(
+              billing: _billing(
+                imageQuota: MobileImageQuota(
+                  used: 1,
+                  limit: 3,
+                  resetsAt: DateTime.utc(2026, 7, 1),
+                ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('600'), findsOneWidget);
-      expect(find.text('credits available'), findsOneWidget);
-      expect(find.textContaining('monthly credits left'), findsNothing);
-      expect(find.textContaining('2 of 3 illustrated books left'), findsOneWidget);
-      // The welcome gift is one-time; the monthly image cap is not a credit grant.
-      expect(
-        find.text(
-          '1,000 one-time welcome credits · usage spends credits · no monthly refill',
-        ),
-        findsOneWidget,
-      );
-    });
+        expect(find.text('600'), findsOneWidget);
+        expect(find.text('credits available'), findsOneWidget);
+        expect(find.textContaining('monthly credits left'), findsNothing);
+        expect(
+          find.textContaining('2 of 3 illustrated books left'),
+          findsOneWidget,
+        );
+        // The welcome gift is one-time; the monthly image cap is not a credit grant.
+        expect(
+          find.text(
+            '1,000 one-time welcome credits · usage spends credits · no monthly refill',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('omits welcome credits when the grant is off', (tester) async {
       await tester.pumpWidget(
@@ -304,9 +314,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text(
-          'Usage spends credits · no monthly refill',
-        ),
+        find.text('Usage spends credits · no monthly refill'),
         findsOneWidget,
       );
       expect(find.textContaining('welcome credits'), findsNothing);
@@ -379,17 +387,29 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Free plan'), findsOneWidget);
-      expect(find.text('3 of 3 illustrated books used this month'), findsOneWidget);
+      expect(
+        find.text('3 of 3 illustrated books used this month'),
+        findsOneWidget,
+      );
       expect(
         find.text(
           '1,000 one-time welcome credits · usage spends credits · no monthly refill',
         ),
         findsOneWidget,
       );
-      expect(find.byKey(const ValueKey('account-upgrade-plan')), findsOneWidget);
-      expect(find.byKey(const ValueKey('account-manage-subscription')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('account-upgrade-plan')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('account-manage-subscription')),
+        findsNothing,
+      );
       // Nothing to cancel on free.
-      expect(find.byKey(const ValueKey('account-cancel-subscription')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('account-cancel-subscription')),
+        findsNothing,
+      );
     });
 
     testWidgets('a subscriber gets the renewal date and a way out', (
@@ -415,13 +435,22 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Max plan'), findsOneWidget);
-      expect(find.text('74,000 of 80,000 monthly credits left'), findsOneWidget);
+      expect(
+        find.text('74,000 of 80,000 monthly credits left'),
+        findsOneWidget,
+      );
       expect(find.textContaining('Renews'), findsOneWidget);
       // Cancelling belongs to Play, so the card sends them there rather than
       // pretending the app can do it.
-      expect(find.byKey(const ValueKey('account-manage-subscription')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('account-manage-subscription')),
+        findsOneWidget,
+      );
       expect(find.byKey(const ValueKey('account-upgrade-plan')), findsNothing);
-      expect(find.byKey(const ValueKey('account-cancel-subscription')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('account-cancel-subscription')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a subscriber below the top tier is offered an upgrade', (
@@ -485,8 +514,14 @@ void main() {
       expect(find.textContaining('you move to Free then'), findsOneWidget);
       expect(find.textContaining('Renews'), findsNothing);
       // Cancelling twice is not a thing; the way back is the only thing left.
-      expect(find.byKey(const ValueKey('account-cancel-subscription')), findsNothing);
-      expect(find.byKey(const ValueKey('account-resume-subscription')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('account-cancel-subscription')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('account-resume-subscription')),
+        findsOneWidget,
+      );
       expect(cancelTaps, 0);
     });
   });
@@ -504,7 +539,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('account-credits-card')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('account-credits-card')),
+        findsOneWidget,
+      );
       expect(
         find.textContaining('Balanced planning currently costs 40 credits'),
         findsOneWidget,
@@ -529,10 +567,16 @@ void main() {
       expect(find.text('1,000 credits every month'), findsNothing);
       expect(find.text('No monthly credit refill'), findsOneWidget);
       expect(find.text('1,000 one-time welcome credits'), findsOneWidget);
-      expect(find.text('Up to 3 illustrated books a month using credits'), findsOneWidget);
+      expect(
+        find.text('Up to 3 illustrated books a month using credits'),
+        findsOneWidget,
+      );
       expect(find.text('YOUR PLAN'), findsOneWidget);
       // No way down from the bottom rung.
-      expect(find.byKey(const ValueKey('paywall-switch-to-free')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('paywall-switch-to-free')),
+        findsNothing,
+      );
     });
 
     testWidgets('is the way down from a paid plan', (tester) async {
@@ -555,7 +599,10 @@ void main() {
       expect(find.text('1,000 credits every month'), findsNothing);
       expect(find.text('No monthly credit refill'), findsOneWidget);
       expect(find.text('1,500 one-time welcome credits'), findsOneWidget);
-      expect(find.text('Up to 2 illustrated books a month using credits'), findsOneWidget);
+      expect(
+        find.text('Up to 2 illustrated books a month using credits'),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('paywall-switch-to-free')));
       expect(taps, 1);
     });
@@ -582,11 +629,34 @@ void main() {
       expect(billing.credits.purchased, 0);
       expect(billing.freeTier.monthlyCredits, 0);
       expect(billing.freeTier.welcomeCredits, 0);
+      // An older server never holds a welcome grant back.
+      expect(billing.welcomeCreditsPending, isFalse);
+    });
+
+    test('reads a welcome grant the server is holding', () {
+      final billing = MobileBilling.fromJson({
+        'credits': {
+          'available': 0,
+          'reserved': 0,
+          'lifetimeGranted': 0,
+          'lifetimeSpent': 0,
+        },
+        'entitlements': <dynamic>[],
+        'products': <dynamic>[],
+        'creditCosts': <String, dynamic>{},
+        'welcomeCreditsPending': true,
+      });
+
+      expect(billing.welcomeCreditsPending, isTrue);
     });
 
     test('any paid tier unlocks manuscript import', () {
       for (final tier in ['creator', 'pro', 'max']) {
-        expect(_billing(tier: tier).hasCreatorSubscription, isTrue, reason: tier);
+        expect(
+          _billing(tier: tier).hasCreatorSubscription,
+          isTrue,
+          reason: tier,
+        );
       }
       expect(_billing().hasCreatorSubscription, isFalse);
     });

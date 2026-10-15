@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import JSZip from "jszip";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { makeFallbackPlan } from "../prompting/templates.js";
 import { generateBookEpub } from "./epub.js";
+import { compileBookMarkdownWithPageAnchors } from "./markdown.js";
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -128,6 +130,35 @@ describe("generateBookEpub", () => {
     expect(chapterTwo).toContain("The second chapter text.");
   });
 
+  it("leads the navigation with the text of a book whose only heading is its back matter", async () => {
+    // A short book has no chapter headings, so its whole text sits in the opening
+    // file; with a biography at the end, the nav used to list only that.
+    const markdown = [
+      '<section class="book-title-page">',
+      '  <h1 class="book-title-page__title">The Clockmaker</h1>',
+      "</section>",
+      "",
+      "The whole short story.",
+      "",
+      "## About the Author",
+      "",
+      '<div class="book-about-author"></div>',
+      "",
+      "Ada writes about engines\\."
+    ].join("\n");
+    const zip = await JSZip.loadAsync(
+      await generateBookEpub(markdown, { title: "The Clockmaker", language: "en", imageStorageDir, publicApiUrl: "http://localhost:4001" })
+    );
+
+    const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
+    const links = [...nav.matchAll(/<a href="([^"#]+)[^"]*">([^<]+)<\/a>/g)].map((match) => [match[1], match[2]]);
+    expect(links).toEqual([
+      ["chapter-1.xhtml", "The Clockmaker"],
+      ["chapter-2.xhtml", "About the Author"]
+    ]);
+    expect(await zip.file("OEBPS/chapter-1.xhtml")!.async("string")).toContain("The whole short story.");
+  });
+
   it("keeps a compiled Contents page valid after splitting its chapters into files", async () => {
     const markdown = [
       '<section class="book-title-page">',
@@ -234,6 +265,138 @@ describe("generateBookEpub", () => {
 
     const chapterOne = await zip.file("OEBPS/chapter-2.xhtml")!.async("string");
     expect(chapterOne).toContain('src="images/image-1.png"');
+  });
+
+  // A long bio is set smaller, and its marker carries the size after the class
+  // (`aboutAuthorLayout`), so the house-size spelling alone is not the marker.
+  const typedImage = "![x](https://example.com/y.png)";
+  const tieredBio = [`Ada once typed ${typedImage} here.`, ...Array.from({ length: 30 }, (_, index) => `Short paragraph ${index + 1}.`)].join("\n\n");
+  it.each([
+    { size: "house", aboutAuthor: `Ada once typed ${typedImage} here.`, marker: /<div class="book-about-author"><\/div>/ },
+    { size: "tiered", aboutAuthor: tieredBio, marker: /<div class="book-about-author book-about-author--[a-z]+"><\/div>/ }
+  ])("keeps image syntax a reader typed into the book's matter, and still packages the page's illustration ($size bio)", async ({ aboutAuthor, marker }) => {
+    // The dedication is HTML-escaped inside the matter sheet's HTML block and the
+    // bio is markdown-escaped (`\![x\](…\)`) — both print as text in the PDF and the
+    // Word file. The image rewrite matched both anyway, found nothing to package at
+    // example.com, and replaced them with "", so the EPUB alone deleted the text.
+    const typed = typedImage;
+    const { markdown } = compileBookMarkdownWithPageAnchors({
+      plan: {
+        ...makeFallbackPlan({
+          prompt: "A story about a careful clockmaker.",
+          category: "STORY",
+          targetPages: 1,
+          complexity: 5,
+          temperature: 0.8,
+          language: "en",
+          mediaSettings: {
+            fullIllustrations: false,
+            illustrationCadence: "template-driven",
+            includeCover: false,
+            coverTemplate: "auto",
+            finalReview: true,
+            toneProfile: "neutral" as const
+          }
+        }),
+        title: "The Clockmaker"
+      },
+      authorName: "Ada",
+      pages: [
+        {
+          index: 1,
+          title: "One",
+          markdown: "The first page.",
+          imagePath: "http://localhost:4001/assets/images/proj1/page-1.png"
+        }
+      ],
+      matter: { year: 2026, madeWithCredit: false, dedication: `For ${typed}`, aboutAuthor }
+    });
+    expect(markdown).toContain('<section class="book-matter-sheet');
+    expect(markdown).toMatch(marker);
+
+    const zip = await JSZip.loadAsync(
+      await generateBookEpub(markdown, {
+        title: "The Clockmaker",
+        author: "Ada",
+        language: "en",
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001",
+        projectId: "proj1"
+      })
+    );
+
+    const chapters = await Promise.all(
+      Object.keys(zip.files)
+        .filter((name) => /^OEBPS\/chapter-\d+\.xhtml$/.test(name))
+        .map((name) => zip.file(name)!.async("string"))
+    );
+    const text = chapters.join("\n");
+    expect(text).toContain(`For ${typed}`);
+    expect(text).toContain(`Ada once typed ${typed} here.`);
+    const imageFiles = Object.keys(zip.files).filter((name) => name.startsWith("OEBPS/images/") && !zip.files[name]!.dir);
+    expect(imageFiles).toEqual(["OEBPS/images/image-1.png"]);
+    expect(text).toContain('src="images/image-1.png"');
+  });
+
+  it.each(["book-about-author", "book-about-author book-about-author--long"])(
+    "packages no illustration from About the Author, whatever size its bio is set at (%s)",
+    async (className) => {
+      // The compiler escapes the bio, so this is the second lock: the range from
+      // the heading to the end of the book is the reader's typed text, and the
+      // range has to be found for every size the bio can be set at.
+      const markdown = [
+        "## Chapter One",
+        "",
+        "The page.",
+        "",
+        "![A workshop](http://localhost:4001/assets/images/proj1/page-1.png)",
+        "",
+        "## About the Author",
+        "",
+        `<div class="${className}"></div>`,
+        "",
+        "![A portrait](http://localhost:4001/assets/images/proj1/cover.svg)"
+      ].join("\n");
+      const zip = await JSZip.loadAsync(
+        await generateBookEpub(markdown, {
+          title: "The Clockmaker",
+          language: "en",
+          imageStorageDir,
+          publicApiUrl: "http://localhost:4001",
+          projectId: "proj1"
+        })
+      );
+      const imageFiles = Object.keys(zip.files).filter((name) => name.startsWith("OEBPS/images/") && !zip.files[name]!.dir);
+      expect(imageFiles).toEqual(["OEBPS/images/image-1.png"]);
+    }
+  );
+
+  it("leaves an escaped image as text, and packages one whose backslash is itself escaped", async () => {
+    // `\!` is an escaped bang, so marked reads `\![x](y)` as "!" and a link — never
+    // an image — while `\\![a](b)` is a literal backslash and then a real image.
+    const markdown = [
+      "# The Book",
+      "",
+      "A literal \\![x](https://example.com/y.png) in prose.",
+      "",
+      "A backslash \\\\![A workshop](http://localhost:4001/assets/images/proj1/page-1.png) then a picture."
+    ].join("\n");
+
+    const zip = await JSZip.loadAsync(
+      await generateBookEpub(markdown, {
+        title: "The Book",
+        language: "en",
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001",
+        projectId: "proj1"
+      })
+    );
+
+    const chapter = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
+    expect(chapter).toContain('A literal !<a href="https://example.com/y.png">x</a> in prose.');
+    expect(chapter).toContain('A backslash \\<img src="images/image-1.png" alt="A workshop" /> then a picture.');
+    const imageFiles = Object.keys(zip.files).filter((name) => name.startsWith("OEBPS/images/") && !zip.files[name]!.dir);
+    expect(imageFiles).toEqual(["OEBPS/images/image-1.png"]);
   });
 
   it("packages no file from outside the image storage directory", async () => {

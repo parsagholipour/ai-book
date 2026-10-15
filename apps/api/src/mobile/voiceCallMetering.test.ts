@@ -19,11 +19,15 @@ import {
   characterRecord,
   callRecord,
   perMinute,
-  resetVoiceCallTestState
+  resetVoiceCallTestState,
+  allowPaidPlan
 } from "./testing/voiceCallTestUtils.js";
 
 describe("mobile voice call metering", () => {
-  beforeEach(resetVoiceCallTestState);
+  beforeEach(() => {
+    resetVoiceCallTestState();
+    allowPaidPlan();
+  });
   afterEach(teardownMobileHarness);
 
   describe("metering a live call", () => {

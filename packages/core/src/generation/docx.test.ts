@@ -5,8 +5,12 @@ import JSZip from "jszip";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { allBookFontSets } from "./bookFonts.js";
+import { closeSharedBrowser, withRenderPage } from "./browserPool.js";
 import { docxFontsFor, generateBookDocx } from "./docx.js";
 import { externalLinkTarget, fitImage, prepareDocxSource } from "./docxAssets.js";
+import { compileBookMarkdownWithPageAnchors } from "./markdown.js";
+import { markdownLabels } from "./markdownLabels.js";
+import { makeFallbackPlan } from "../prompting/templates.js";
 import { scriptProfileForLanguage } from "../prompting/script.js";
 
 const PNG_1X1 = Buffer.from(
@@ -41,6 +45,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(imageStorageDir, { recursive: true, force: true });
+  await closeSharedBrowser();
 });
 
 const SAMPLE_MARKDOWN = [
@@ -81,6 +86,16 @@ const SAMPLE_MARKDOWN = [
   "",
   "![Missing remote](https://example.com/external.png)"
 ].join("\n");
+
+/** The compiler's Contents section, as it writes one for a book set in chapters. */
+const CONTENTS_SECTION = [
+  '<section class="book-contents" aria-labelledby="book-contents-title">',
+  '  <h2 id="book-contents-title">Contents</h2>',
+  "</section>"
+].join("\n");
+
+/** A compiled book prints a Contents only when the compiler did; the fixture says it did. */
+const withContents = (markdown: string) => markdown.replace(/^(# .*\n)/m, `$1${CONTENTS_SECTION}\n`);
 
 type Docx = {
   zip: JSZip;
@@ -143,7 +158,7 @@ describe("generateBookDocx", () => {
   });
 
   it("rebuilds the Contents as hyperlinks to the chapter bookmarks, after the front matter", async () => {
-    const { document } = await render(SAMPLE_MARKDOWN);
+    const { document } = await render(withContents(SAMPLE_MARKDOWN));
     expect(document).toContain('w:anchor="chapter-1"');
     expect(document).toContain('w:anchor="chapter-2"');
     const contentsAt = document.indexOf('w:anchor="chapter-1"');
@@ -152,6 +167,14 @@ describe("generateBookDocx", () => {
     // The bare `# Title` before the chapters is the book's title, not a chapter.
     expect(document).toContain('<w:pStyle w:val="Title"/>');
     expect(document).not.toContain('w:name="chapter-3"');
+  });
+
+  it("prints a Contents only where the compiled markdown carried one", async () => {
+    const { document } = await render(SAMPLE_MARKDOWN);
+    expect(document).not.toContain("w:anchor=");
+    expect(document).not.toContain(">Contents<");
+    // The chapters still open on bookmarked headings.
+    expect(document).toContain('w:name="chapter-2"');
   });
 
   it("prints no Contents for a book with a single chapter", async () => {
@@ -345,6 +368,69 @@ describe("generateBookDocx", () => {
     }
   });
 
+  it("writes parts that parse when the matter and the pages carry characters XML 1.0 forbids", async () => {
+    // The docx library writes text verbatim: a U+000B from a dedication pasted
+    // out of Word reached document.xml and Word called the whole file corrupt.
+    const plan = makeFallbackPlan({
+      prompt: "A story about a careful clockmaker.",
+      category: "STORY",
+      targetPages: 1,
+      complexity: 5,
+      temperature: 0.8,
+      language: "en",
+      mediaSettings: {
+        fullIllustrations: false,
+        illustrationCadence: "template-driven",
+        includeCover: false,
+        coverTemplate: "auto",
+        finalReview: true,
+        toneProfile: "neutral" as const
+      }
+    });
+    const { markdown } = compileBookMarkdownWithPageAnchors({
+      plan: { ...plan, title: "The\u000bClock\u0001maker" },
+      authorName: "Ada\u0001",
+      pages: [{ index: 1, title: "One", markdown: "The first\u000b page\u0001 of\uFFFE the book.\n\nSpelled &#11; and &#xD800;.\n\n```\nconst bell = 1;\u0007\n```" }],
+      matter: {
+        year: 2026,
+        madeWithCredit: false,
+        dedication: "For Mom,\u000bwho taught me\u0001 to read\uFFFE.\uD800",
+        aboutAuthor: "Ada writes\u000b books\u0001.\uFFFF",
+        imprint: "Clockwork\u0001 Press"
+      }
+    });
+    const { zip } = await render(markdown, { title: "The\u000bClockmaker", author: "Ada\u0001" });
+    const parts = await Promise.all(
+      Object.keys(zip.files)
+        .filter((name) => /\.(?:xml|rels)$/.test(name))
+        .map(async (name) => ({ name, source: await zip.file(name)!.async("string") }))
+    );
+    expect(parts.map(({ name }) => name)).toEqual(expect.arrayContaining(["word/document.xml", "docProps/core.xml"]));
+    const parsed = await withRenderPage((page) =>
+      page.evaluate(
+        (sources) =>
+          sources.map(({ name, source }) => {
+            const document = new DOMParser().parseFromString(source, "application/xml");
+            return { name, error: document.querySelector("parsererror")?.textContent ?? null, text: document.documentElement.textContent ?? "" };
+          }),
+        parts
+      )
+    );
+    expect(parsed.filter(({ error }) => error !== null)).toEqual([]);
+    const text = parsed.map((part) => part.text).join("\n");
+    expect(text).toContain("For Mom,who taught me to read.");
+    expect(text).toContain("Ada writes books.");
+    expect(text).toContain("The first page of the book.");
+    expect(text).toContain("const bell = 1;");
+    expect(text).toContain("Clockwork Press");
+    expect(text).toContain("TheClockmaker");
+    // A reference in page text never reaches a part as a reference: the Word
+    // export decodes no entities and the library escapes the ampersand, so it
+    // is words, unlike the EPUB, which has to drop it at its seam.
+    expect(text).toContain("Spelled &#11; and &#xD800;.");
+    expect(parts.find(({ name }) => name === "word/document.xml")!.source).toContain("Spelled &amp;#11; and &amp;#xD800;.");
+  }, 30_000);
+
   it("names a font set for every script the registry knows", () => {
     for (const fontSet of allBookFontSets()) {
       const profile = { ...scriptProfileForLanguage("en"), fontSet: fontSet.id };
@@ -352,6 +438,161 @@ describe("generateBookDocx", () => {
     }
     expect(docxFontsFor(scriptProfileForLanguage("Persian")).complexScript).toBe("Vazirmatn");
     expect(docxFontsFor(scriptProfileForLanguage("Japanese")).eastAsia).toBe("Noto Serif JP");
+  });
+});
+
+describe("the Word Contents is the PDF's", () => {
+  const SOURCES = [{ title: "Clocks of the realm", url: "https://example.com/clocks", summary: "" }];
+
+  function compiled(input: {
+    pages: number;
+    chapters: number;
+    language: string;
+    lastChapterTitle?: string;
+    backMatter?: boolean;
+  }) {
+    const plan = makeFallbackPlan({
+      prompt: "A history of clocks.",
+      category: "SCIENCE",
+      targetPages: input.pages,
+      complexity: 5,
+      temperature: 0.8,
+      language: input.language,
+      mediaSettings: {
+        fullIllustrations: false,
+        illustrationCadence: "template-driven",
+        includeCover: false,
+        coverTemplate: "auto",
+        finalReview: true,
+        toneProfile: "neutral" as const
+      }
+    });
+    const perChapter = Math.ceil(input.pages / input.chapters);
+    return compileBookMarkdownWithPageAnchors({
+      plan: { ...plan, title: "The Clockmaker" },
+      category: "SCIENCE",
+      language: input.language,
+      authorName: "Ada",
+      ...(input.backMatter === false ? {} : {
+        researchSources: SOURCES,
+        matter: { year: 2026, madeWithCredit: false, aboutAuthor: "Ada writes about engines." }
+      }),
+      ...(input.lastChapterTitle ? { chapterHeadingStyle: "title_only" as const } : {}),
+      pages: Array.from({ length: input.pages }, (_, index) => ({
+        index: index + 1,
+        title: `Page ${index + 1}`,
+        markdown: `Page ${index + 1} prose.`
+      })),
+      ...(input.chapters > 1
+        ? {
+            readerChapters: Array.from({ length: input.chapters }, (_, index) => ({
+              index: index + 1,
+              title: index === input.chapters - 1 && input.lastChapterTitle ? input.lastChapterTitle : `Movement ${index + 1}`,
+              summary: "A movement of the book.",
+              startPageIndex: index * perChapter + 1,
+              endPageIndex: Math.min(input.pages, (index + 1) * perChapter)
+            }))
+          }
+        : {})
+    });
+  }
+
+  const internalLinks = (document: string) => count(document, 'w:anchor="');
+
+  for (const language of ["en", "fa"]) {
+    for (const label of ["sources", "aboutAuthor"] as const) {
+      for (const backMatter of [false, true]) {
+        it(`keeps a final chapter named ${label} (${language}, back matter ${backMatter})`, async () => {
+          const labels = markdownLabels(language);
+          const book = compiled({ pages: 20, chapters: 2, language, lastChapterTitle: labels[label], backMatter });
+          expect(book.hasContents).toBe(true);
+          expect(book.markdown).toContain(`## ${labels[label]}`);
+
+          // Repaired exports can lack a page plan; story exports split the same
+          // anchors into scene segments before Word reads their headings.
+          for (const options of [{}, { pageMapPlan: book }, { pageMapPlan: { ...book, storyPageLayout: "separate" as const } }]) {
+            const { document } = await render(book.markdown, { language, ...options });
+            expect(internalLinks(document)).toBe(2);
+            expect(document).toContain(`>${labels.contentsHeading}<`);
+            expect(document).toContain('w:anchor="chapter-2"');
+            expect(document).toContain('w:name="chapter-2"');
+            expect(document).not.toContain('"chapter-3"');
+            expect(count(document, `>${labels[label]}<`)).toBe(backMatter ? 3 : 2);
+            expect(document).toContain("Page 20 prose.");
+            expect(document).not.toContain("&lt;a id=");
+            // The retained anchor must not end the title page by itself before
+            // the Contents/first heading supplies its own page break.
+            expect(document).not.toContain('<w:br w:type="page"/>');
+          }
+        });
+      }
+    }
+  }
+
+  it("keeps bookmarks on their anchored headings when ordinary headings intervene", async () => {
+    const markdown = withContents([
+      "# T", "", '<a id="chapter-4"></a>', "", "## Origins", "", "First chapter.",
+      "", "## A section within the chapter", "", "Section prose.",
+      "", "```html", '<a id="chapter-9"></a>', "```",
+      "", '<a id="chapter-7"></a>', "", "## Sources", "", "Last chapter.",
+      "", "## Sources", "", "- A genuine source."
+    ].join("\n"));
+    const { document } = await render(markdown);
+    expect(internalLinks(document)).toBe(2);
+    const paragraphs = document.match(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g) ?? [];
+    expect(paragraphs.find((paragraph) => paragraph.includes('w:name="chapter-4"'))).toContain(">Origins<");
+    expect(paragraphs.find((paragraph) => paragraph.includes('w:name="chapter-7"'))).toContain(">Sources<");
+    expect(paragraphs.find((paragraph) => paragraph.includes(">A section within the chapter<"))).not.toContain("w:bookmarkStart");
+    expect(document).not.toContain('w:name="chapter-9"');
+    expect(document).not.toContain('w:anchor="chapter-9"');
+    expect(document).toContain("&lt;a id=&quot;chapter-9&quot;&gt;&lt;/a&gt;");
+    expect(document).toContain("A genuine source.");
+  });
+
+  it("prints none for a short chapterless book, however many back-matter headings it has", async () => {
+    const book = compiled({ pages: 2, chapters: 1, language: "en" });
+    expect(book.hasContents).toBe(false);
+    expect(book.markdown).toContain("## Sources");
+    expect(book.markdown).toContain("## About the Author");
+
+    const { document } = await render(book.markdown);
+    expect(internalLinks(document)).toBe(0);
+    expect(document).not.toContain(">Contents<");
+    // The back matter itself still prints, once each, as headings.
+    expect(count(document, ">Sources<")).toBe(1);
+    expect(count(document, ">About the Author<")).toBe(1);
+    expect(document).toContain("Ada writes about engines");
+  });
+
+  for (const language of ["en", "fa"]) {
+    it(`lists a chaptered book's chapters and never its back matter (${language})`, async () => {
+      const labels = markdownLabels(language);
+      const book = compiled({ pages: 12, chapters: 3, language });
+      expect(book.hasContents).toBe(true);
+
+      const { document } = await render(book.markdown, { language });
+      expect(internalLinks(document)).toBe(3);
+      for (const chapter of [1, 2, 3]) {
+        expect(document).toContain(`w:anchor="chapter-${chapter}"`);
+        expect(document).toContain(`w:name="chapter-${chapter}"`);
+      }
+      // Sources and About the Author used to be "chapters" 4 and 5.
+      expect(document).not.toContain('"chapter-4"');
+      expect(count(document, `>${labels.sources}<`)).toBe(1);
+      expect(count(document, `>${labels.aboutAuthor}<`)).toBe(1);
+      expect(document.indexOf(`>${labels.contentsHeading}<`)).toBeLessThan(document.indexOf("Page 1 prose."));
+    });
+  }
+
+  it("cuts only the trailing back matter, so a chapter called Sources mid-book stays listed", async () => {
+    const markdown = withContents(
+      ["# T", "", "## Sources", "", "A chapter.", "", "## Gears", "", "Another.", "", "## Sources", "", "- a source"].join("\n")
+    );
+    const { document } = await render(markdown);
+    expect(internalLinks(document)).toBe(2);
+    expect(document).toContain('w:name="chapter-1"');
+    expect(document).toContain('w:name="chapter-2"');
+    expect(document).not.toContain('"chapter-3"');
   });
 });
 
@@ -363,6 +604,13 @@ describe("prepareDocxSource", () => {
     expect(source.cover).toEqual({ alt: "Cover", src: "/assets/images/p/cover.jpg" });
     expect(source.segments.map((segment) => segment.kind)).toEqual(["markdown", "figure", "markdown"]);
     expect(source.segments[0]).toMatchObject({ text: "# T\n\nBefore.\n\n" });
+    expect(source.contents).toBe(false);
+  });
+
+  it("records that the compiler printed a Contents, and drops its markup", () => {
+    const source = prepareDocxSource(withContents("# T\n\n## One\n\nText."));
+    expect(source.contents).toBe(true);
+    expect(source.segments[0]).toMatchObject({ text: "# T\n\n## One\n\nText." });
   });
 
   it("leaves a code sample about the book's own furniture alone", () => {
@@ -370,6 +618,7 @@ describe("prepareDocxSource", () => {
     const source = prepareDocxSource(markdown);
     expect(source.segments[0]).toMatchObject({ text: markdown });
     expect(source.titlePage).toBeUndefined();
+    expect(source.contents).toBe(false);
   });
 });
 

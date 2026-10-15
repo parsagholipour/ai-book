@@ -11,15 +11,35 @@
 import {
   createProjectSchema,
   creditPricing,
-  estimateFullBookCreditCost,
+  estimateBookReplanCreditCost,
   inputWithReplanSettings,
   modelTierFromMediaSettings,
   tierPrice,
+  type CreditPricing,
+  type ModelTier,
   type ReplanSettings
 } from "@book-maker/core";
 import { type BookEditIntentKind } from "../bookEditIntent.js";
 import { type ProjectForChat } from "./projectChat.js";
 import { inputSnapshotFromProject } from "./projectSummarySerializers.js";
+
+/**
+ * What pages a finished book *gains* cost: a chat continuation's new chapters
+ * and a structural insert's new pages are priced like the book they join — the
+ * flat `addedPagesBase`, then the tier's own `fullBookPerPage` for each page —
+ * rather than at the rewrite rate, which billed ten more pages above a new
+ * ten-page book (launch review, 2026-10-13). No page added is no charge at all,
+ * base included: a delete or a move writes nothing.
+ *
+ * Neither edit draws a picture (`continueBook` and the insert both draft with
+ * `illustrate: false`), so there is no image line; one that starts drawing
+ * would add `tierPrice(pricing, "imageGeneration", tier)` per picture here.
+ * The dashboard buckets the same two keys (`admin/pricingDrivers.ts`).
+ */
+export function addedPagesCreditCost(pages: number, tier: ModelTier, pricing: CreditPricing = creditPricing()): number {
+  const added = Math.max(0, Math.floor(pages));
+  return added === 0 ? 0 : pricing.addedPagesBase + added * tierPrice(pricing, "fullBookPerPage", tier);
+}
 
 export function bookEditCreditCost(
   kind: BookEditIntentKind,
@@ -59,10 +79,13 @@ export function bookEditCreditCost(
       ? 0
       : pricing.bookTextEditBase + Math.max(1, affectedPageCount) * tierPrice(pricing, "bookTextEditPerPage", tier);
   }
-  // Chapter regeneration is priced like a multi-page rewrite of that chapter;
-  // continuation is priced like regenerating the pages it will append.
-  if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
+  // Chapter regeneration is priced like a multi-page rewrite of that chapter.
+  if (kind === "page_rewrite" || kind === "chapter_regenerate") {
     return Math.max(1, affectedPageCount) * tierPrice(pricing, "pageRegenerationPerPage", tier);
+  }
+  // A continuation adds the pages it appends — at least one — like a book does.
+  if (kind === "continue_book") {
+    return addedPagesCreditCost(Math.max(1, affectedPageCount), tier, pricing);
   }
   if (kind === "add_image") {
     // One generated illustration at the book's own tier. No base fee: the
@@ -82,14 +105,17 @@ export function bookEditCreditCost(
     // Only the pages a model has to *write*. Deleting and reordering pages
     // calls no provider at all — the same reasoning that prices move_image and
     // remove_image at zero — so `affectedPageCount` here is the resolved plan's
-    // `pagesBilled`, which is 0 for those two. A page costs the same whether it
-    // lands in the middle of the book or, as a continuation, at the end.
-    return affectedPageCount * tierPrice(pricing, "pageRegenerationPerPage", tier);
+    // `pagesBilled`, which is 0 for those two, and they cost nothing. A page
+    // costs the same whether it lands in the middle of the book or, as a
+    // continuation, at the end.
+    return addedPagesCreditCost(affectedPageCount, tier, pricing);
   }
   if (kind === "book_replan") {
+    // The one function the charge's stored quote comes from too
+    // (`replanCopyOperations.ts`), so the card and the stop settlement agree.
     const current = createProjectSchema.parse(inputSnapshotFromProject(project));
     const requested = inputWithReplanSettings(current, options.replanSettings);
-    return pricing.bookReplanBase + estimateFullBookCreditCost(requested, pricing).totalCredits;
+    return estimateBookReplanCreditCost(requested, pricing).totalCredits;
   }
   // A plan revision runs the planner the first plan ran, so it follows the
   // book's tier exactly as the charge in `queueChargedPlanRevision` does.

@@ -12,14 +12,14 @@ import { stopProjectGenerationJobs } from "../queue.js";
 const mockPrisma = vi.hoisted(() => ({
   user: { upsert: vi.fn() },
   mobileSession: { findUnique: vi.fn() },
+  operatorSessionEpoch: { findUnique: vi.fn() },
   template: { findMany: vi.fn() },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
   imageAsset: { findMany: vi.fn() },
   generationJob: { count: vi.fn(), findMany: vi.fn() },
   voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
-  voiceCallEvent: { create: vi.fn() },
-  voiceConversation: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() }
+  voiceCallEvent: { create: vi.fn() }, voiceConversation: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() }
 }));
 
 vi.mock("@book-maker/db", () => ({
@@ -258,7 +258,7 @@ describe("project routes", () => {
 
   it("protects voice routes when web auth is enabled", async () => {
     process.env.WEB_PASSWORD = "secret";
-    const app = await buildApp({ auth: true });
+    const app = await buildApp();
 
     const unauthorized = await app.inject({ method: "GET", url: "/api/voice/rtc-config" });
     expect(unauthorized.statusCode).toBe(401);
@@ -1188,11 +1188,11 @@ function writeProjectFile(storageDir: string | null, projectId: string, filename
   const category = storageDir === tempBookStorageDir ? "books" : storageDir === tempImageStorageDir ? "images" : "voice";
   seedObject(`${category}/${projectId}/${filename}`, content);
 }
-async function buildApp(options: { auth?: boolean } = {}): Promise<FastifyInstance> {
+async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify();
-  if (options.auth) {
-    await registerAuth(app, loadConfig(process.env));
-  }
+  // Always through the real hook: it is the only thing that makes an operator.
+  // `WEB_PASSWORD` is empty unless a test sets it, which is local development.
+  await registerAuth(app, loadConfig(process.env));
   const { projectRoutes } = await import("./projects.js");
   await app.register(projectRoutes);
   return app;

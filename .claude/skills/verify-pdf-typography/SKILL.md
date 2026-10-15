@@ -1,6 +1,6 @@
 ---
 name: verify-pdf-typography
-description: Use when a change could move a page break in an exported book — a failing sha256 assertion in packages/core/src/generation/pdfDocument.test.ts ("still resolves md-to-pdf's markdown.css unchanged", "still resolves highlight.js' github theme unchanged"), a failing page-count assertion in pdf.test.ts, or any edit to `pdfCss.ts`, `pdfDocument.ts`, `BOOK_PDF_OPTIONS`, the `@page` margins, `bookPdfCss`, the export fonts, or the pinned `md-to-pdf` / `marked` versions. The procedure is `pnpm render:fixtures` with `--baseline <ref>`, `--compare` and `--install`, over the eight-book fixture corpus in scripts/render-book-fixtures.ts. Reach for it on "the css digest test is failing", "can I bump md-to-pdf", "did this change the layout", "update the stylesheet hash", or "the page count test says 9 but I get 10".
+description: Use when a change could move a page break in an exported book — a failing sha256 assertion in packages/core/src/generation/pdfDocument.test.ts ("still resolves md-to-pdf's markdown.css unchanged", "still resolves highlight.js' github theme unchanged"), a failing page-count assertion in pdf.test.ts, or any edit to `pdfCss.ts`, `pdfDocument.ts`, `BOOK_PDF_OPTIONS`, the `@page` margins, `bookPdfCss`, the export fonts, or the pinned `md-to-pdf` / `marked` versions. The procedure is `pnpm render:fixtures` with `--baseline <ref>`, `--compare` and `--install`, over the fixture corpus in scripts/render-book-fixtures.ts. Reach for it on "the css digest test is failing", "can I bump md-to-pdf", "did this change the layout", "update the stylesheet hash", or "the page count test says 9 but I get 10".
 ---
 
 # Verifying book typography did not drift
@@ -51,9 +51,10 @@ it can gate a commit.
 
 Read `scripts/render-book-fixtures.ts` before improvising: the flag parsing is hand-rolled
 (`--install` is filtered out first, then `--compare` / `--baseline` are matched positionally) and
-the corpus is the `FIXTURES` array near the top — eight books covering both text directions, CJK,
-illustrations, rich blocks, a cover-first layout, the coverless title sheet and a dense
-fifteen-chapter Contents.
+the corpus is the `FIXTURES` array near the top — books covering both text directions, CJK,
+illustrations, rich blocks, a cover-first layout, the coverless title sheet, a dense
+fifteen-chapter Contents, figures, the matter pages behind a cover (and in Persian), a long
+dedication and a long About the Author.
 
 The title sheet is the one fixture whose failure is not a moved break. `.book-title-page` is a
 fixed-height clipped box, so a stylesheet edit there loses a line instead of reflowing it, and

@@ -5,6 +5,7 @@ import type { PDFOptions } from "puppeteer";
 import { defaultConfig } from "md-to-pdf/dist/lib/config.js";
 import { getHtml } from "md-to-pdf/dist/lib/get-html.js";
 import type { ScriptProfile } from "../prompting/script.js";
+import { DEFAULT_RENDER_TIMEOUT_MS, MAX_RENDER_TIMEOUT_MS } from "./browserPool.js";
 import { retagColorlessCodeFences } from "./retagColorlessCodeFences.js";
 import { prepareMarkdownMath } from "./markdownMath.js";
 import {
@@ -103,6 +104,83 @@ export const BOOK_PDF_OPTIONS: PDFOptions = {
  * `page.pdf()` on its own emulates *print*, which is a different cascade.
  */
 export const BOOK_PDF_MEDIA_TYPE = "screen" as const;
+
+/**
+ * How long one render of a book may take, scaled to the book.
+ *
+ * Puppeteer's defaults were one size for every book: `page.goto()` and
+ * `page.pdf()` 30 s each, the pool's watchdog 90 s, and every CDP request 90 s
+ * (`protocolTimeout`). An 820-page book measured ~15 s a render on an i7; a
+ * t3 is about twice as slow, illustrations are heavier, and the fit renders a
+ * book at least twice — and a timeout is never retried and compile-export has
+ * no BullMQ retry, so the book went FAILED and was refunded after every AI call
+ * in it was paid for. So each phase gets puppeteer's 30 s plus an allowance per
+ * sheet and per illustration, about five times the i7's measured rate, capped;
+ * the attempt is both phases plus the 30 s the fonts, the image decode and the
+ * page acquisition have always had beside them. A book of no length gets
+ * exactly the old numbers. A timeout only bounds the wait: it is not one of
+ * `Page.printToPDF`'s parameters, so it cannot move a page break.
+ */
+export type BookPdfRenderBudget = {
+  /** `page.pdf()`'s timeout, which races Chrome's `Page.printToPDF` and its font wait. */
+  printTimeoutMs: number;
+  /** `page.goto()`'s, which waits for the document and every illustration in it to load. */
+  navigationTimeoutMs: number;
+  /** The pool's watchdog over the whole attempt (`withRenderPage`). */
+  attemptTimeoutMs: number;
+};
+
+/** Puppeteer's own default, which a short book keeps. */
+export const BOOK_PDF_PHASE_BASE_MS = 30_000;
+export const BOOK_PDF_PHASE_MS_PER_SHEET = 100;
+export const BOOK_PDF_PHASE_MS_PER_ILLUSTRATION = 500;
+/** What the fonts, the image decode and the page acquisition get beside the two phases. */
+const BOOK_PDF_ATTEMPT_SLACK_MS = DEFAULT_RENDER_TIMEOUT_MS - 2 * BOOK_PDF_PHASE_BASE_MS;
+/** Each phase's ceiling: the attempt that holds two of them still fits the pool's own. */
+export const BOOK_PDF_PHASE_MAX_MS = Math.floor((MAX_RENDER_TIMEOUT_MS - BOOK_PDF_ATTEMPT_SLACK_MS) / 2);
+
+export function bookPdfRenderBudget(size: { sheets: number; illustrations?: number | undefined }): BookPdfRenderBudget {
+  const count = (value: number | undefined) => (value !== undefined && Number.isFinite(value) && value > 0 ? Math.ceil(value) : 0);
+  const phase = Math.min(
+    BOOK_PDF_PHASE_MAX_MS,
+    BOOK_PDF_PHASE_BASE_MS +
+      count(size.sheets) * BOOK_PDF_PHASE_MS_PER_SHEET +
+      count(size.illustrations) * BOOK_PDF_PHASE_MS_PER_ILLUSTRATION
+  );
+  return {
+    printTimeoutMs: phase,
+    navigationTimeoutMs: phase,
+    attemptTimeoutMs: Math.min(MAX_RENDER_TIMEOUT_MS, 2 * phase + BOOK_PDF_ATTEMPT_SLACK_MS)
+  };
+}
+
+/**
+ * A generous count of the sheets a render will print, from what is known before
+ * it runs: the paid target, the model pages, and the text's length at a
+ * deliberately low 1,500 characters a sheet (a prose sheet holds about twice
+ * that), because an overestimate only lengthens a wait and an underestimate
+ * fails a paid book.
+ */
+export const BOOK_PDF_ESTIMATE_CHARS_PER_SHEET = 1_500;
+
+export function bookPdfRenderBudgetFor(book: {
+  markdown: string;
+  targetPages?: number | undefined;
+  modelPages?: number | undefined;
+}): BookPdfRenderBudget {
+  const sheets = Math.max(
+    book.targetPages ?? 0,
+    book.modelPages ?? 0,
+    Math.ceil(book.markdown.length / BOOK_PDF_ESTIMATE_CHARS_PER_SHEET)
+  );
+  const illustrations = (book.markdown.match(/!\[[^\]\n]*\]\(|<img\b/gi) ?? []).length;
+  return bookPdfRenderBudget({ sheets, illustrations });
+}
+
+/** The pinned print options with this render's timeout — the only field added, and one Chrome never sees. */
+export function bookPdfPrintOptions(budget: BookPdfRenderBudget): PDFOptions {
+  return { ...BOOK_PDF_OPTIONS, timeout: budget.printTimeoutMs };
+}
 
 export type BookPdfDocumentOptions = {
   /** Markdown with images already rewritten to renderer-relative asset paths. */

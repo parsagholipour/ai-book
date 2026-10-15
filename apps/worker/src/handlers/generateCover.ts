@@ -2,24 +2,25 @@ import {
   coverMetadataFromProject,
   getProjectOrThrow,
   imageGenerationMetadata,
-  imageStorageMetadata,
   strategyForInput
 } from "../generation/bookHelpers.js";
+import { coverTemplateOverrideForDesign, storeCoverArtwork, storeTypesetCover } from "../generation/coverStore.js";
+import { retypesetCover } from "./coverRetypeset.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { coverImageSelectionForInput, createImageAdapterForSelection, createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep, cancelStaleGenerationJob, updateJobProgress } from "../runtime/jobLifecycle.js";
 import {
   bookPlanSchema,
   buildCoverArtworkPrompt,
   coverArtSourceFor,
   coverDesign,
+  coverTypesetFor,
   createProviders,
   isCoverPurchasePayload,
+  isCoverRetypesetPayload,
   isRevisionOwnedCoverPayload,
   jsonRecord,
-  optimizeImageForStorage,
-  publicAssetUrl,
   renderCoverPng,
   selectCoverDesign,
   type CoverDesign,
@@ -32,7 +33,6 @@ import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { prisma } from "@book-maker/db";
 import { refundCreditLedgerEntry } from "@book-maker/db/billing";
 import type { GenerateImageJob } from "../runtime/jobPayloads.js";
-import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
  * `generate-cover` work: cover artwork plus the character reference images that
@@ -40,6 +40,10 @@ import { objectKey, objectStore } from "@book-maker/storage";
  */
 
 export async function generateCover(job: GenerateImageJob) {
+  if (isCoverRetypesetPayload(job.data)) {
+    await retypesetCover(job);
+    return;
+  }
   const { projectId, planId, generationJobId } = job.data;
   const [project, planVersion] = await Promise.all([
     getProjectOrThrow(projectId),
@@ -210,37 +214,21 @@ export async function generateCover(job: GenerateImageJob) {
   });
 
   await advanceJobStep(generationJobId, "store", 84, "Storing cover");
-  const optimizedCover = await optimizeImageForStorage({ bytes: coverPng, mimeType: "image/png" });
-  const filename = `cover.${optimizedCover.extension}`;
-  const filePath = objectKey("images", projectId, filename);
-  await objectStore().put(filePath, optimizedCover.bytes, { contentType: optimizedCover.mimeType });
-  const publicPath = publicAssetUrl(config.PUBLIC_API_URL, `/assets/images/${projectId}/${filename}`);
-
-  await prisma.$transaction([
-    prisma.imageAsset.deleteMany({ where: { projectId, type: "COVER" } }),
-    prisma.imageAsset.create({
-      data: {
-        projectId,
-        type: "COVER",
-        prompt: cover.prompt,
-        provider: cover.provider,
-        path: publicPath,
-        metadata: {
-          ...imageStorageMetadata(optimizedCover),
-          ...cover.metadata,
-          renderer: "puppeteer",
-          fonts: [
-            "Inter (OFL-1.1)",
-            "Source Serif 4 (OFL-1.1)",
-            "Playfair Display (OFL-1.1)",
-            "Nunito (OFL-1.1)",
-            "Bebas Neue (OFL-1.1)",
-            "Noto Sans (OFL-1.1)"
-          ]
-        }
-      }
-    })
-  ]);
+  // A drawn picture is kept beside the cover it became, so new words — a pen
+  // name typed while the book was still being written, a new title — can be set
+  // over it later for free (`coverRetypeset.ts`). A design is the catalog's to keep.
+  const artworkRecord = cover.metadata.coverArtSource === "ai" ? await keptArtworkRecord(projectId, cover.artwork) : {};
+  const publication = await storeTypesetCover({
+    job,
+    coverPng,
+    prompt: cover.prompt,
+    provider: cover.provider,
+    metadata: { ...cover.metadata, ...artworkRecord, typeset: coverTypesetFor(metadata) }
+  });
+  if (publication === "superseded") {
+    await cancelStaleGenerationJob(job, "The book changed while the cover was being rendered.");
+  }
+  if (publication !== "published") return;
   if (purchasedArtworkFailed) {
     await refundPurchasedCover(job);
   }
@@ -275,6 +263,25 @@ async function refundPurchasedCover(job: GenerateImageJob): Promise<void> {
   await refundCreditLedgerEntry(ledgerEntryId, "AI cover artwork could not be drawn; a designed cover was used");
 }
 
+/**
+ * Keeps the drawn picture for a later re-typeset, or records nothing. It is an
+ * enhancement to the cover, never a precondition for one: during generation
+ * this job's failure is the whole paid book's (`markFailed`), so a storage blip
+ * on the second write may not cost what the first one delivered. A cover
+ * without the record reads as one drawn before artwork was kept.
+ */
+async function keptArtworkRecord(
+  projectId: string,
+  artwork: { bytes: Buffer; mimeType: string }
+): Promise<Record<string, unknown>> {
+  try {
+    return await storeCoverArtwork(projectId, artwork);
+  } catch (error) {
+    console.warn(`Could not keep the cover artwork of project ${projectId}; its words cannot be re-set for free`, error);
+    return {};
+  }
+}
+
 /** The catalog design the book's current cover was rendered from, when it was a designed one. */
 async function currentCoverDesign(projectId: string): Promise<CoverDesign | undefined> {
   const current = await prisma.imageAsset.findFirst({
@@ -300,14 +307,4 @@ type CoverArtworkResult = {
   metadata: Record<string, unknown>;
 };
 
-/**
- * A design was authored as a whole, so it brings its own typography rather than
- * taking the book type's `coverTemplate` — which routes AI artwork.
- */
-export function coverTemplateOverrideForDesign(design: CoverDesign): CoverTemplateOverride {
-  return {
-    id: design.template,
-    ...(design.accentColor ? { accentColor: design.accentColor } : {}),
-    ...(design.overlayCss ? { overlayCss: design.overlayCss } : {})
-  };
-}
+export { coverTemplateOverrideForDesign };

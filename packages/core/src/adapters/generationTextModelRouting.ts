@@ -205,6 +205,55 @@ const FAST_GEMINI: TextModelSelection = {
   thinkingBudget: 0
 };
 
+type TextRouteCandidates = readonly [TextModelSelection, ...TextModelSelection[]];
+
+/**
+ * The compiled defaults' preference lists, in order. Each route takes the first
+ * candidate the configured catalog offers and the next one as its fallback, so
+ * every provider named here is one the defaults can land on — which is why the
+ * production check (`providerRequirements.ts`) reads these lists, rather than a
+ * copy of them, to decide which provider keys a deployment must carry.
+ */
+export function compiledGenerationTextRouteCandidates(config: AppConfig) {
+  return {
+    /** Quick Draft's writer and judgment, and the fast judgments. */
+    fast: [
+      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
+      { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
+      FAST_GEMINI,
+      { provider: "alibaba", model: "qwen-flash" }
+    ],
+    balancedWriter: [
+      { provider: "deepseek", model: config.DEEPSEEK_MODEL },
+      { provider: "deepinfra", model: config.DEEPINFRA_MODEL },
+      PREMIUM_WRITER,
+      { provider: "alibaba", model: config.ALIBABA_TEXT_MODEL }
+    ],
+    balancedJudgment: [
+      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
+      { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
+      PREMIUM_JUDGMENT,
+      { provider: "alibaba", model: "qwen-flash" }
+    ],
+    /** Premium and Ultra writers. */
+    premiumWriter: [
+      PREMIUM_WRITER,
+      { provider: "deepseek", model: config.DEEPSEEK_MODEL },
+      { provider: "deepinfra", model: config.DEEPINFRA_MODEL },
+      { provider: "alibaba", model: config.ALIBABA_TEXT_MODEL }
+    ],
+    /** Premium and Ultra judgment. */
+    premiumJudgment: [
+      PREMIUM_JUDGMENT,
+      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
+      { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
+      { provider: "alibaba", model: "qwen-flash" }
+    ]
+  } satisfies Record<string, TextRouteCandidates>;
+}
+
+export type CompiledGenerationTextRouteCandidates = ReturnType<typeof compiledGenerationTextRouteCandidates>;
+
 /**
  * Defaults are the routing that existed before the Quality tab exposed models.
  * A missing preferred provider falls through to the configured catalog order.
@@ -213,51 +262,12 @@ export function compiledGenerationTextModelRouting(
   config: AppConfig,
   configuredOptions: readonly GenerationTextModelOption[]
 ): GenerationTextModelRouting {
-  const fast = preferredRoute(
-    [
-      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
-      { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
-      FAST_GEMINI,
-      { provider: "alibaba", model: "qwen-flash" }
-    ],
-    configuredOptions
-  );
-  const balancedWriter = preferredRoute(
-    [
-      { provider: "deepseek", model: config.DEEPSEEK_MODEL },
-      { provider: "deepinfra", model: config.DEEPINFRA_MODEL },
-      PREMIUM_WRITER,
-      { provider: "alibaba", model: config.ALIBABA_TEXT_MODEL }
-    ],
-    configuredOptions
-  );
-  const balancedJudgment = preferredRoute(
-    [
-      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
-      { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
-      PREMIUM_JUDGMENT,
-      { provider: "alibaba", model: "qwen-flash" }
-    ],
-    configuredOptions
-  );
-  const premiumWriter = preferredRoute(
-    [
-      PREMIUM_WRITER,
-      { provider: "deepseek", model: config.DEEPSEEK_MODEL },
-      { provider: "deepinfra", model: config.DEEPINFRA_MODEL },
-      { provider: "alibaba", model: config.ALIBABA_TEXT_MODEL }
-    ],
-    configuredOptions
-  );
-  const premiumJudgment = preferredRoute(
-    [
-      PREMIUM_JUDGMENT,
-      { provider: "deepseek", model: config.DEEPSEEK_FAST_MODEL, thinkingEnabled: false },
-      { provider: "deepinfra", model: config.DEEPINFRA_FAST_MODEL, thinkingEnabled: false },
-      { provider: "alibaba", model: "qwen-flash" }
-    ],
-    configuredOptions
-  );
+  const candidates = compiledGenerationTextRouteCandidates(config);
+  const fast = preferredRoute(candidates.fast, configuredOptions);
+  const balancedWriter = preferredRoute(candidates.balancedWriter, configuredOptions);
+  const balancedJudgment = preferredRoute(candidates.balancedJudgment, configuredOptions);
+  const premiumWriter = preferredRoute(candidates.premiumWriter, configuredOptions);
+  const premiumJudgment = preferredRoute(candidates.premiumJudgment, configuredOptions);
   return {
     fastDecisions: null,
     fastDecisionsFallback: cloneSelection(fast.primary),

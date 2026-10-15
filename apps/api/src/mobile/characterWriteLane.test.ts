@@ -31,7 +31,8 @@ const auth = {
     status: "ACTIVE",
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:00:00.000Z",
-    legalAcceptanceRequired: false
+    legalAcceptanceRequired: false,
+    emailVerified: true
   },
   sessionId: "session-a"
 } satisfies MobileAuthContext;

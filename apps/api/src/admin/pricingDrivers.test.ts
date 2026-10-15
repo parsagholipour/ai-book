@@ -135,24 +135,46 @@ describe("loadPricingDrivers", () => {
           project: { mediaSettings: null },
           ledgerEntry: {
             status: "SETTLED",
-            amountCredits: -400,
-            reversedByEntry: { amountCredits: 240 }
+            amountCredits: -140,
+            reversedByEntry: { amountCredits: 24 }
           }
         }
       ],
-      chargedCredits: 400,
-      refundedCredits: 240
+      chargedCredits: 140,
+      refundedCredits: 24
     });
 
     const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
 
-    expect(report.drivers.pageRegenerationPerPage).toBe(2);
+    // Added pages are priced like a book: one 100 base plus 2 × 8 at balanced.
+    expect(report.drivers.addedPagesBase).toBe(1);
+    expect(report.drivers.fullBookPerPage).toBe(2);
+    expect(report.drivers.pageRegenerationPerPage).toBe(0);
     expect(report.edits).toBe(1);
     expect(report.coverage).toMatchObject({
-      chargedCredits: 160,
-      modelledCredits: 160,
+      chargedCredits: 116,
+      modelledCredits: 116,
       accuracyPercent: 100
     });
+  });
+
+  it("buckets a continuation's appended pages at its tier's writing rate, plus one base", async () => {
+    primeWindow({
+      edits: [
+        // Ten pages appended to a premium book: 100 + 10 × 30.
+        { kind: "CONTINUE_BOOK", affectedPageIndexes: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21], project: { mediaSettings: { modelTier: "premium" } } },
+        // A delete wrote nothing and was charged nothing.
+        { kind: "RESTRUCTURE_PAGES", affectedPageIndexes: [], project: { mediaSettings: { modelTier: "premium" } } }
+      ],
+      chargedCredits: 400
+    });
+
+    const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
+
+    expect(report.drivers.addedPagesBase).toBe(1);
+    expect(report.drivers.fullBookPerPagePremium).toBe(10);
+    expect(report.drivers.pageRegenerationPerPagePremium).toBe(0);
+    expect(report.coverage).toMatchObject({ chargedCredits: 400, modelledCredits: 400, accuracyPercent: 100 });
   });
 
   it("lets Postgres drop fully refunded charges instead of loading their ids", async () => {
@@ -160,7 +182,7 @@ describe("loadPricingDrivers", () => {
 
     const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
 
-    expect(report.drivers.exportUnlock).toBe(0);
+    expect(report.drivers).not.toHaveProperty("exportUnlock");
     expect(report.drivers.audiobookBase).toBe(0);
     expect(mockPrisma.creditLedgerEntry.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.creditLedgerEntry.groupBy).not.toHaveBeenCalled();
@@ -175,7 +197,7 @@ describe("loadPricingDrivers", () => {
     mockPrisma.$queryRaw.mockImplementation((...args: unknown[]) => {
       const sql = sqlFromQueryRawCall(args);
       if (sql.includes("AUDIOBOOK_GENERATION") && sql.includes("metadata")) {
-        return Promise.resolve([{ metadata: { pageCount: 8 } }]);
+        return Promise.resolve([{ metadata: { pageCount: 8 } }, { metadata: { pageCount: 4, wordCount: 1_801 } }]);
       }
       return Promise.resolve([
         { project_id: null, operation: "EXPORT_UNLOCK", count: 1 },
@@ -185,10 +207,80 @@ describe("loadPricingDrivers", () => {
 
     const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
 
-    expect(report.drivers.exportUnlock).toBe(1);
+    // An old standalone unlock is no price any more, so it drives nothing.
+    expect(report.drivers).not.toHaveProperty("exportUnlock");
     expect(report.drivers.coverRegeneration).toBe(2);
-    expect(report.drivers.audiobookBase).toBe(1);
-    expect(report.drivers.audiobookPerPage).toBe(8);
+    expect(report.drivers.audiobookBase).toBe(2);
+    expect(report.drivers.audiobookPerPage).toBe(12);
+    // Only the charge priced by the word drives the per-word rate: 1,801 words is 19 hundreds.
+    expect(report.drivers.audiobookPer100Words).toBe(19);
+  });
+
+  it("counts no export unlock for a book, whatever its stored quote carried", async () => {
+    // The unlock was retired on 2026-10-15 and is no price; a charge from
+    // before, with the unlock in its quote, counts the book and nothing more.
+    primeWindow({ edits: [], chargedCredits: 0 });
+    mockPrisma.project.findMany.mockResolvedValue([
+      {
+        id: "book-1", title: "Rabbit", subtitle: null, authorName: null, coverTagline: null,
+        prompt: "A bedtime story about a rabbit.", category: "STORY", subcategory: null, targetPages: 10,
+        complexity: 3, temperature: 0.7, language: "en", mediaSettings: { fullIllustrations: false, coverArtSource: "design" }
+      }
+    ]);
+    mockPrisma.$queryRaw.mockImplementation((...args: unknown[]) => {
+      const sql = sqlFromQueryRawCall(args);
+      if (sql.includes("AUDIOBOOK_GENERATION") && sql.includes("metadata")) return Promise.resolve([]);
+      return Promise.resolve([
+        { project_id: "book-1", operation: "FULL_BOOK_GENERATION", pricing_key: null, count: 3 },
+        { project_id: "book-1", operation: "FULL_BOOK_GENERATION", pricing_key: null, count: 1 }
+      ]);
+    });
+
+    const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
+
+    expect(report.drivers.fullBookBase).toBe(4);
+    expect(report.drivers).not.toHaveProperty("exportUnlock");
+    const sql = mockPrisma.$queryRaw.mock.calls.map((args) => sqlFromQueryRawCall(args as unknown[])).join("\n");
+    expect(sql).not.toContain("includesExportUnlock");
+  });
+
+  it("counts a book's pictures off the quote its charge stored, and re-estimates only a charge with none", async () => {
+    // A 16-page picture book charged under the rule before min(pages, 12) was
+    // quoted eight pictures and a drawn cover; today's rule would draw twelve.
+    primeWindow({ edits: [], chargedCredits: 0 });
+    mockPrisma.project.findMany.mockResolvedValue([
+      {
+        id: "kids-1", title: "Moon Rabbit", subtitle: null, authorName: null, coverTagline: null,
+        prompt: "A bedtime story about a rabbit who is afraid of the dark.", category: "KIDS", subcategory: null,
+        targetPages: 16, complexity: 3, temperature: 0.7, language: "en",
+        mediaSettings: {
+          fullIllustrations: true,
+          illustrationCadence: "template-driven",
+          coverArtSource: "ai",
+          mobile: { bookType: "short_story", bookTypeChoice: "children_story" }
+        }
+      }
+    ]);
+    mockPrisma.$queryRaw.mockImplementation((...args: unknown[]) => {
+      const sql = sqlFromQueryRawCall(args);
+      if (sql.includes("AUDIOBOOK_GENERATION") && sql.includes("metadata")) return Promise.resolve([]);
+      return Promise.resolve([
+        {
+          project_id: "kids-1", operation: "FULL_BOOK_GENERATION", pricing_key: null, export_unlock: "false",
+          quoted_interior_images: "8", quoted_cover: "true", count: 2
+        },
+        // An older charge with no quote at all: today's estimate, 12 pictures and the cover.
+        { project_id: "kids-1", operation: "FULL_BOOK_GENERATION", pricing_key: null, export_unlock: null, count: 1 }
+      ]);
+    });
+
+    const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
+
+    expect(report.drivers.fullBookBase).toBe(3);
+    expect(report.drivers.imageGeneration).toBe(2 * (8 + 1) + 1 * (12 + 1));
+    const sql = mockPrisma.$queryRaw.mock.calls.map((args) => sqlFromQueryRawCall(args as unknown[])).join("\n");
+    expect(sql).toContain("{creditEstimate,assumptions,estimatedInteriorImages}");
+    expect(sql).toContain("{creditEstimate,assumptions,includesCover}");
   });
 
   it("counts a stamped plan revision at its tier and an unstamped one at the old flat rate", async () => {

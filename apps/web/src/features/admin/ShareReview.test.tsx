@@ -1,12 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { effectsSummary } from "./AccountModerationPanel.js";
+import { urgentCounts } from "./ModerationScreen.js";
 import { SharingFunnel } from "./OverviewScreen.js";
 import {
   rankedProbabilities,
   readCaptionVerdict,
   readShareSnapshot,
   shareActionAvailability,
-  shareModerationBody
+  shareModerationBody,
+  sharesWithHeldBookText
 } from "./shareModeration.js";
 import { ShareReview } from "./ShareReview.js";
 import type { AdminShare, ModerationReport, ShareModerationAction } from "./types.js";
@@ -73,11 +76,38 @@ function report(overrides: Partial<ModerationReport> = {}): ModerationReport {
   };
 }
 
-function render(subject: ModerationReport, busyAction: ShareModerationAction | null = null): string {
+function render(subject: ModerationReport, busyAction: ShareModerationAction | null = null, heldBookText = false): string {
   return renderToStaticMarkup(
-    <ShareReview report={subject} busyAction={busyAction} locked={false} onAction={() => Promise.resolve(true)} />
+    <ShareReview
+      report={subject}
+      busyAction={busyAction}
+      locked={false}
+      onAction={() => Promise.resolve(true)}
+      heldBookText={heldBookText}
+    />
   );
 }
+
+/** A share the sexual-content screen held: 12 windows, 3 without a verdict, 1 never read. */
+const bookTextReport = () =>
+  report({
+    id: "report-text",
+    targetSnapshot: {
+      kind: "book_text_review",
+      slug: "k3v9q",
+      title: "The Lighthouse Cat",
+      verdict: {
+        surface: "book_text",
+        verdict: "undecided",
+        windows: 12,
+        undecidedWindows: 3,
+        unscreenedWindows: 1,
+        reasons: ["provider_failure", "timeout"],
+        decidedAt: "2026-10-13T09:00:00.000Z"
+      }
+    },
+    share: share({ caption: null, captionStatus: "none", captionVerdict: null })
+  });
 
 /** The opening tag of the button whose label is `label`. */
 function buttonTag(markup: string, label: string): string {
@@ -104,8 +134,10 @@ describe("share moderation helpers", () => {
     expect(shareActionAvailability(share())).toEqual({
       approve_caption: { enabled: true, why: null },
       remove_caption: { enabled: true, why: null },
+      approve_book_text: { enabled: false, why: "No book text is waiting for review on this share." },
       take_down: { enabled: true, why: null }
     });
+    expect(shareActionAvailability(share(), true).approve_book_text).toEqual({ enabled: true, why: null });
     const bare = shareActionAvailability(share({ caption: null, captionStatus: "none" }));
     expect(bare.approve_caption.enabled).toBe(false);
     expect(bare.remove_caption.enabled).toBe(false);
@@ -197,6 +229,46 @@ describe("ShareReview", () => {
     expect(markup).toContain("This share no longer exists");
     expect(markup).toContain("Note when reported");
     expect(markup).not.toContain("Approve caption");
+  });
+});
+
+describe("a held book text", () => {
+  it("shows what the screen could not decide and offers its own approval, with no note needed", () => {
+    const markup = render(bookTextReport(), null, true);
+
+    expect(markup).toContain("Book-text screen: no verdict on 3 of 12 windows, 1 never read");
+    expect(markup).toContain("provider failure, timeout");
+    expect(buttonTag(markup, "Approve book text")).not.toContain("disabled");
+    expect(buttonTag(markup, "Approve caption")).toContain("disabled");
+    // The book screen's record is not a note's gate record.
+    expect(markup).not.toContain("Gate:");
+  });
+
+  it("tells a note's card that approving it closes the held book text too", () => {
+    const markup = render(report(), null, true);
+    expect(markup).toContain("approving its note closes that too");
+    expect(buttonTag(markup, "Approve caption")).toContain("Also closes the share&#x27;s held book-text review.");
+  });
+
+  it("finds the shares the queue holds a pending book text for, and counts what alerts the owner", () => {
+    const reports = [
+      bookTextReport(),
+      report({ id: "settled", bookShareId: "share-2", status: "actioned", targetSnapshot: bookTextReport().targetSnapshot }),
+      report({ id: "child", targetType: "project", bookShareId: null, reason: "child_safety", targetSnapshot: {} }),
+      report({ id: "caption" })
+    ];
+    expect([...sharesWithHeldBookText(reports)]).toEqual(["share-1"]);
+    expect(urgentCounts(reports)).toBe("1 child-safety report, 1 held book text");
+    expect(urgentCounts([report()])).toBeNull();
+  });
+});
+
+describe("account moderation", () => {
+  it("summarises what an action did from its JSON record, and nothing from junk", () => {
+    expect(
+      effectsSummary({ sessionsRevoked: 2, sharesTakenDown: ["a"], sharesRestored: [], projectsStopped: 3, stopFailures: 1 })
+    ).toBe("2 sessions signed out, 1 share taken down, 3 books stopped, 1 book could not be stopped");
+    expect(effectsSummary("junk")).toBe("");
   });
 });
 

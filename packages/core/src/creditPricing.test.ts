@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  CREDIT_PRICE_KEYS,
   CREDIT_PRICING_KEYS,
   CREDIT_PRICING_LIMITS,
   DEFAULT_CREDIT_COSTS,
   creditPricing,
   creditPricingInputSchema,
   diffCreditPricing,
+  isUltraTierEnabled,
+  maxGeneratedBookPages,
   normalizeCreditPricing,
+  RETIRED_CREDIT_PRICING_KEYS,
   resetCreditPricing,
   setCreditPricing
 } from "./creditPricing.js";
@@ -63,13 +67,13 @@ describe("normalizeCreditPricing", () => {
     const values = normalizeCreditPricing({
       imageGeneration: -5,
       fullBookPerPage: 8.5,
-      exportUnlock: "150",
+      coverRegeneration: "150",
       premiumReview: Number.NaN,
       bookReplanBase: CREDIT_PRICING_LIMITS.bookReplanBase + 1
     });
     expect(values.imageGeneration).toBe(DEFAULT_CREDIT_COSTS.imageGeneration);
     expect(values.fullBookPerPage).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPage);
-    expect(values.exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
+    expect(values.coverRegeneration).toBe(DEFAULT_CREDIT_COSTS.coverRegeneration);
     expect(values.premiumReview).toBe(DEFAULT_CREDIT_COSTS.premiumReview);
     expect(values.bookReplanBase).toBe(DEFAULT_CREDIT_COSTS.bookReplanBase);
   });
@@ -207,30 +211,90 @@ describe("the live snapshot", () => {
 
   it("moves what the pricing functions charge", () => {
     const before = estimateFullBookCreditCost(sampleInput).totalCredits;
-    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, exportUnlock: 400, fullBookBase: 700 });
-    expect(creditCostForOperation("EXPORT_UNLOCK")).toBe(400);
-    expect(estimateFullBookCreditCost(sampleInput).totalCredits).toBe(before + 250 + 350);
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, coverRegeneration: 400, fullBookBase: 700 });
+    expect(creditCostForOperation("COVER_REGENERATION")).toBe(400);
+    expect(estimateFullBookCreditCost(sampleInput).totalCredits).toBe(before + 350);
   });
 
   it("is frozen, so nobody can reprice the product by mutating it in place", () => {
     expect(() => {
-      creditPricing().exportUnlock = 99_999;
+      creditPricing().coverRegeneration = 99_999;
     }).toThrow();
-    expect(creditPricing().exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
+    expect(creditPricing().coverRegeneration).toBe(DEFAULT_CREDIT_COSTS.coverRegeneration);
   });
 
   it("is bypassed entirely by an explicit pricing argument", () => {
     // This is what the dashboard preview relies on: price a proposed change
     // without making it real for anyone else mid-request.
-    const proposed = { ...DEFAULT_CREDIT_COSTS, exportUnlock: 400 };
-    expect(creditCostForOperation("EXPORT_UNLOCK", proposed)).toBe(400);
-    expect(creditCostForOperation("EXPORT_UNLOCK")).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
+    const proposed = { ...DEFAULT_CREDIT_COSTS, coverRegeneration: 400 };
+    expect(creditCostForOperation("COVER_REGENERATION", proposed)).toBe(400);
+    expect(creditCostForOperation("COVER_REGENERATION")).toBe(DEFAULT_CREDIT_COSTS.coverRegeneration);
   });
 
   it("resets back to the defaults", () => {
-    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, exportUnlock: 400 });
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, coverRegeneration: 400 });
     expect(resetCreditPricing()).toEqual({ ...DEFAULT_CREDIT_COSTS });
-    expect(creditPricing().exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
+    expect(creditPricing().coverRegeneration).toBe(DEFAULT_CREDIT_COSTS.coverRegeneration);
+  });
+});
+
+describe("launch defaults (2026-10-13 review)", () => {
+  it("prices voice at 120 a minute and caps paid chat at 60 / 120 / 300 messages a day", () => {
+    expect(DEFAULT_CREDIT_COSTS.voiceCallPerMinute).toBe(120);
+    expect(DEFAULT_CREDIT_COSTS.messageDailyLimitFree).toBe(50);
+    expect(DEFAULT_CREDIT_COSTS.messageDailyLimitCreator).toBe(60);
+    expect(DEFAULT_CREDIT_COSTS.messageDailyLimitPro).toBe(120);
+    expect(DEFAULT_CREDIT_COSTS.messageDailyLimitMax).toBe(300);
+  });
+
+  it("caps every generated book at 200 pages and starts with Ultra switched off", () => {
+    expect(DEFAULT_CREDIT_COSTS.paidMaxBookPages).toBe(200);
+    expect(maxGeneratedBookPages()).toBe(200);
+    expect(DEFAULT_CREDIT_COSTS.ultraTierEnabled).toBe(0);
+    expect(isUltraTierEnabled()).toBe(false);
+    expect(isUltraTierEnabled({ ...DEFAULT_CREDIT_COSTS, ultraTierEnabled: 1 })).toBe(true);
+  });
+
+  it("keeps the ceiling and the switch out of every revenue projection", () => {
+    // Neither is multiplied by a quantity; projecting either would invent income.
+    expect(CREDIT_PRICE_KEYS).not.toContain("paidMaxBookPages");
+    expect(CREDIT_PRICE_KEYS).not.toContain("ultraTierEnabled");
+    expect(CREDIT_PRICE_KEYS).toContain("addedPagesBase");
+  });
+
+  it("keeps the retired export unlock parseable at 0 and out of every projection", () => {
+    // Installed apps add `creditCosts.exportUnlock` to a book quote and fall
+    // back to 150 when it is missing, so the key stays, at 0 (2026-10-15).
+    expect(DEFAULT_CREDIT_COSTS.exportUnlock).toBe(0);
+    expect(RETIRED_CREDIT_PRICING_KEYS).toContain("exportUnlock");
+    expect(CREDIT_PRICE_KEYS).not.toContain("exportUnlock");
+    expect(normalizeCreditPricing({ ...DEFAULT_CREDIT_COSTS, exportUnlock: 150 }).exportUnlock).toBe(0);
+    const strict = (patch: Record<string, unknown>) =>
+      creditPricingInputSchema.safeParse({ ...DEFAULT_CREDIT_COSTS, ...patch }).success;
+    expect(strict({ exportUnlock: 0 })).toBe(true);
+    expect(strict({ exportUnlock: 150 })).toBe(false);
+  });
+
+  it("holds the paid ceiling between the free tier's books and the schemas' 600", () => {
+    const strict = (patch: Record<string, unknown>) =>
+      creditPricingInputSchema.safeParse({ ...DEFAULT_CREDIT_COSTS, ...patch }).success;
+    expect(strict({ paidMaxBookPages: 29 })).toBe(false);
+    expect(strict({ paidMaxBookPages: 30 })).toBe(true);
+    expect(strict({ paidMaxBookPages: 600 })).toBe(true);
+    expect(strict({ paidMaxBookPages: 601 })).toBe(false);
+    expect(strict({ ultraTierEnabled: 2 })).toBe(false);
+    expect(strict({ ultraTierEnabled: 1 })).toBe(true);
+    // A stored value out of range is read as the default, like any other key.
+    expect(normalizeCreditPricing({ paidMaxBookPages: 0 }).paidMaxBookPages).toBe(200);
+    expect(normalizeCreditPricing({ paidMaxBookPages: 45 }).paidMaxBookPages).toBe(45);
+  });
+
+  it("reads a price list saved before these keys existed with Ultra off and the 200-page ceiling", () => {
+    const stored = { ...DEFAULT_CREDIT_COSTS } as Record<string, number>;
+    delete stored.paidMaxBookPages;
+    delete stored.ultraTierEnabled;
+    delete stored.addedPagesBase;
+    expect(normalizeCreditPricing(stored)).toMatchObject({ paidMaxBookPages: 200, ultraTierEnabled: 0, addedPagesBase: 100 });
   });
 });
 

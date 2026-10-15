@@ -18,6 +18,128 @@ describe("Google Play billing verifier", () => {
       productType: "SUBSCRIPTION", productId: "creator" })).toMatchObject({ externalPurchaseId: "GPA.paid", grantable: true });
   });
 
+  it.each([
+    [{ freeTrial: {} }, "free_trial"],
+    [{ introductoryPrice: {} }, "introductory"],
+    [{ basePrice: {} }, "base"],
+    [{ prorationPeriod: {} }, "proration"],
+    [undefined, null]
+  ] as const)("reads the offer phase %j as %s", async (offerPhase, expected) => {
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse({
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [{
+        productId: "tomeza.creator_monthly", expiryTime: "2030-01-01T00:00:00Z", latestSuccessfulOrderId: "GPA.1",
+        offerDetails: { basePlanId: "monthly", offerId: "creator-intro-first-month" },
+        ...(offerPhase ? { offerPhase } : {})
+      }]
+    })) });
+    const verified = await verifier.verifyPurchase({ packageName: "com.tomeza.tomeza", purchaseToken: "token",
+      productType: "SUBSCRIPTION", productId: "tomeza.creator_monthly" });
+    expect(verified.subscription).toMatchObject({ offerPhase: expected, offerId: "creator-intro-first-month" });
+  });
+
+  it.each([
+    ["INTRODUCTORY", "introductory"],
+    ["FREE_TRIAL", "free_trial"],
+    ["BASE", "proration"],
+    [undefined, "proration"]
+  ] as const)("reads a plan change's proration period that absorbed a %s phase as %s", async (original, expected) => {
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse({
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      lineItems: [{
+        productId: "tomeza.creator_monthly", expiryTime: "2030-01-01T00:00:00Z", latestSuccessfulOrderId: "GPA.1",
+        offerPhase: { prorationPeriod: original ? { originalOfferPhaseType: original } : {} }
+      }]
+    })) });
+    const verified = await verifier.verifyPurchase({ packageName: "com.tomeza.tomeza", purchaseToken: "token",
+      productType: "SUBSCRIPTION", productId: "tomeza.creator_monthly" });
+    expect(verified.subscription?.offerPhase).toBe(expected);
+  });
+
+  it("reads Google's recurring price, and keeps an on-hold subscription in the renewal sweep as paused", async () => {
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse({
+      subscriptionState: "SUBSCRIPTION_STATE_ON_HOLD",
+      pausedStateContext: { autoResumeTime: "2026-12-01T00:00:00Z" },
+      lineItems: [{
+        productId: "tomeza.creator_monthly", expiryTime: "2026-10-01T00:00:00Z", latestSuccessfulOrderId: "GPA.1",
+        autoRenewingPlan: { autoRenewEnabled: true, recurringPrice: { currencyCode: "INR", units: "1090", nanos: 500_000_000 } }
+      }]
+    })) });
+    const verified = await verifier.verifyPurchase({ packageName: "com.tomeza.tomeza", purchaseToken: "token",
+      productType: "SUBSCRIPTION", productId: "tomeza.creator_monthly" });
+    expect(verified).toMatchObject({ grantable: false, providerStatus: "SUBSCRIPTION_STATE_ON_HOLD" });
+    expect(verified.subscription).toMatchObject({
+      status: "PAUSED",
+      recurringPrice: { micros: 1_090_500_000, currency: "INR" },
+      resumesAt: new Date("2026-12-01T00:00:00Z")
+    });
+  });
+
+  describe("a deferred downgrade", () => {
+    // Play's subscriptionsv2 answer for the token a `ReplacementMode.DEFERRED`
+    // switch from Max to Creator issued: the old item runs to its expiry and
+    // names its replacement, the new item has no expiry and no order yet.
+    const deferred = {
+      subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+      startTime: "2026-10-20T00:00:00Z",
+      acknowledgementState: "ACKNOWLEDGEMENT_STATE_PENDING",
+      linkedPurchaseToken: "max-token",
+      latestOrderId: "GPA.max-order",
+      lineItems: [
+        { productId: "tomeza.max_monthly", expiryTime: "2026-11-04T00:00:00Z", latestSuccessfulOrderId: "GPA.max-order",
+          autoRenewingPlan: { autoRenewEnabled: false }, deferredItemReplacement: { productId: "tomeza.creator_monthly" } },
+        { productId: "tomeza.creator_monthly", autoRenewingPlan: { autoRenewEnabled: true },
+          offerDetails: { basePlanId: "monthly" } }
+      ]
+    };
+
+    it.each(["tomeza.max_monthly", "tomeza.creator_monthly"])(
+      "reports the plan it renews into and when, with no order of its own, asked as %s",
+      async (productId) => {
+        const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse(deferred)) });
+        const verified = await verifier.verifyPurchase({ packageName: "com.tomeza.tomeza", purchaseToken: "creator-token",
+          productType: "SUBSCRIPTION", productId });
+        expect(verified).toMatchObject({
+          productSku: "tomeza.creator_monthly",
+          grantable: true,
+          // The old item's order is the old token's payment, never this one's.
+          externalPurchaseId: null,
+          subscription: {
+            status: "ACTIVE",
+            autoRenewing: true,
+            currentPeriodEnd: new Date("2026-11-04T00:00:00Z"),
+            deferredReplacement: { fromProductSku: "tomeza.max_monthly", takesEffectAt: new Date("2026-11-04T00:00:00Z") }
+          },
+          metadata: { linkedPurchaseToken: "max-token" }
+        });
+        // Play refunds an unacknowledged purchase; the change must be acknowledged now.
+        expect(purchaseNeedsAcknowledgement(verified)).toBe(true);
+      }
+    );
+
+    it("still refuses a plan the token carries neither now nor next", async () => {
+      const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: vi.fn(async () => jsonResponse(deferred)) });
+      await expect(verifier.verifyPurchase({ packageName: "com.tomeza.tomeza", purchaseToken: "creator-token",
+        productType: "SUBSCRIPTION", productId: "tomeza.pro_monthly" })).rejects.toBeInstanceOf(GooglePlayProductMismatchError);
+    });
+  });
+
+  it("cancels a subscription for good through subscriptionsv2", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    const verifier = createGooglePlayVerifier({ accessToken: "test-token", fetchImpl: fetchMock });
+    await verifier.cancelSubscription({ packageName: "com.tomeza.tomeza", purchaseToken: "token/with slash" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.tomeza.tomeza/purchases/subscriptionsv2/tokens/token%2Fwith%20slash:cancel",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ cancellationContext: { cancellationType: "DEVELOPER_REQUESTED_STOP_PAYMENTS" } })
+      })
+    );
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 400 }));
+    await expect(verifier.cancelSubscription({ packageName: "com.tomeza.tomeza", purchaseToken: "token" }))
+      .rejects.toThrow("cancellation failed");
+  });
+
   it("fetches authoritative remaining quantities for a partially refunded order", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ orderId: "GPA.partial",
       productLineItem: [{ productOfferDetails: { quantity: 5, refundableQuantity: 3 } }] }));

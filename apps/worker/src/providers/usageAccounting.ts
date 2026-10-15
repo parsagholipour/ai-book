@@ -28,6 +28,7 @@ import {
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { writeWithSearchGroundingClaim } from "@book-maker/db/searchGroundingAllowance";
+import { currentProviderSpendUserId } from "../runtime/providerSpendUser.js";
 import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/serialization.js";
 
 /**
@@ -45,6 +46,10 @@ import { jsonInputValue, jsonPayloadToRecord, serializeError } from "../runtime/
  * *is* a settled, priced call — so an estimate can never move a dollar figure,
  * a margin, or a credit charge. It can only move the token counts an operator
  * sees, which is why it still has to be roughly right.
+ *
+ * Every row also names the user it was spent for, read off the delivery's
+ * async context (`runtime/providerSpendUser.ts`) rather than passed in, so no
+ * adapter has to carry it and a spend cap can sum the log by `userId` alone.
  */
 
 export async function recordProviderUsage(options: {
@@ -134,6 +139,7 @@ export async function recordProviderUsage(options: {
     const data = {
       projectId: options.projectId ?? null,
       generationJobId: options.generationJobId ?? null,
+      userId: await currentProviderSpendUserId(),
       provider: options.provider,
       model: options.model,
       purpose: options.purpose,
@@ -208,6 +214,7 @@ export async function beginLiveTextUsage(options: {
       data: {
         projectId: options.projectId ?? null,
         generationJobId: options.generationJobId ?? null,
+        userId: await currentProviderSpendUserId(),
         provider: options.provider,
         model: options.model,
         purpose: options.purpose,
@@ -526,6 +533,7 @@ export async function recordProviderImageCost(options: {
       data: {
         projectId: options.projectId ?? null,
         generationJobId: options.generationJobId ?? null,
+        userId: await currentProviderSpendUserId(),
         provider: options.provider,
         model: options.model,
         purpose: options.operation,
@@ -575,6 +583,7 @@ export async function recordProviderAudioCost(options: {
       data: {
         projectId: options.projectId ?? null,
         generationJobId: options.generationJobId ?? null,
+        userId: await currentProviderSpendUserId(),
         provider: options.provider,
         model: options.model,
         purpose: options.operation,

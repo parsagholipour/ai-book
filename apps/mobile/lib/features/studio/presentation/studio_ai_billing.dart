@@ -119,6 +119,9 @@ class StudioAiBillingGate {
           ? 'Out of illustrated books'
           : 'Upgrade your plan',
       message: error.message,
+      trigger: error.code == 'IMAGE_LIMIT_REACHED'
+          ? PaywallTrigger.imageLimit
+          : null,
     );
     ref.invalidate(billingProvider);
     return purchase != null;

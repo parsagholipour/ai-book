@@ -56,6 +56,7 @@ vi.mock("@book-maker/db", () => ({
   }
 }));
 vi.mock("@book-maker/db/billing", () => ({
+  recordUserStopSettlementTx: vi.fn(),
   refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits,
   failGenerationAttempt: mocks.failGenerationAttempt,

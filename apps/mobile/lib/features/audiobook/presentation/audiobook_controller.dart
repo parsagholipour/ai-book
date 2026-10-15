@@ -5,12 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../projects/data/offline_library_store.dart';
 import '../data/audiobook_cache.dart';
 import '../data/audiobook_progress_store.dart';
 import '../data/audiobook_repository.dart';
 import '../domain/audiobook_models.dart';
 import '../domain/audiobook_timeline.dart';
 import 'audiobook_player.dart';
+import 'audiobook_state.dart';
+
+export 'audiobook_state.dart';
 
 /// Drives listening: what exists, what is downloaded, what is playing, and which
 /// sentence is being spoken right now.
@@ -26,6 +30,9 @@ class AudiobookController extends Notifier<AudiobookState> {
   final String projectId;
 
   static const _pollInterval = Duration(seconds: 4);
+
+  /// How often a listener with no connection has the server asked again.
+  static const _reconnectInterval = Duration(seconds: 30);
   static const skipInterval = Duration(seconds: 15);
   static const speedOptions = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
@@ -39,6 +46,7 @@ class AudiobookController extends Notifier<AudiobookState> {
 
   AudiobookPlayer? _player;
   Timer? _pollTimer;
+  Timer? _reconnectTimer;
   Timer? _sleepTimer;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final Map<int, AudiobookChapterTimeline> _timelines = {};
@@ -46,6 +54,9 @@ class AudiobookController extends Notifier<AudiobookState> {
   late AudiobookProgressStore _progressStore;
   bool _downloading = false;
   bool _disposed = false;
+  Future<void>? _playbackReset;
+  int _refreshSequence = 0;
+  int _acceptedRefreshSequence = 0;
 
   /// Advanced whenever the narration the downloads belong to is replaced
   /// (see [_resetPlayback], and [_refresh] when the server hands back a
@@ -82,18 +93,47 @@ class AudiobookController extends Notifier<AudiobookState> {
   // ---------------------------------------------------------------- lifecycle
 
   Future<void> _refresh() async {
+    final sequence = ++_refreshSequence;
+    var generation = _syncGeneration;
+    bool superseded() => _disposed || sequence < _acceptedRefreshSequence;
+    bool abandoned() =>
+        superseded() || generation != _syncGeneration;
     try {
       final audiobook = await ref
           .read(audiobookRepositoryProvider)
           .fetch(projectId);
-      if (_disposed) {
+      if (superseded()) {
         return;
+      }
+      // Order accepted responses, not requests: polls can take longer than the
+      // poll interval, and starting another must not starve the pending one.
+      _acceptedRefreshSequence = sequence;
+      generation = _syncGeneration;
+      // The server answered: whatever kept this screen offline is over, and
+      // the manifest is kept for the next time it is not.
+      _stopReconnecting();
+      if (audiobook != null) {
+        unawaited(ref.read(audiobookCacheProvider).saveManifest(audiobook));
       }
       final previous = state.audiobook;
       if (previous != null && audiobook != null && previous.id != audiobook.id) {
-        // A different narration arrived over a refresh: whatever a running
-        // download loop is fetching belongs to the one that is gone.
-        _syncGeneration += 1;
+        // Replacement elsewhere has the same effect as narrate(): the queue,
+        // transcript and listening position all belong to the old audio.
+        unawaited(_resetPlayback());
+        generation = _syncGeneration;
+        _forgetPlace();
+        state = state.copyWith(
+          starting: false,
+          downloadedChapters: const {},
+          globalPositionMs: 0,
+          chapterIndex: 0,
+          chapterPositionMs: 0,
+          playing: false,
+          buffering: false,
+          caughtUp: false,
+          clearActiveTimeline: true,
+          clearActiveSegment: true,
+        );
       }
       if (audiobook == null) {
         // clearError matters here: "never narrated" is the state a retry after a
@@ -104,6 +144,7 @@ class AudiobookController extends Notifier<AudiobookState> {
           audiobook: null,
           clearAudiobook: true,
           clearError: true,
+          offline: false,
         );
         _stopPolling();
         return;
@@ -114,7 +155,16 @@ class AudiobookController extends Notifier<AudiobookState> {
         audiobook: audiobook,
         timeline: AudiobookGlobalTimeline(audiobook.chapters),
         clearError: true,
+        offline: false,
       );
+
+      // Publish the replacement before yielding, and keep every refresh behind
+      // disposal. Neither an old download nor a concurrent refresh may build a
+      // queue until the previous player has gone away.
+      await _playbackReset;
+      if (abandoned()) {
+        return;
+      }
 
       if (audiobook.isGenerating) {
         _startPolling();
@@ -127,17 +177,62 @@ class AudiobookController extends Notifier<AudiobookState> {
         return;
       }
       await _restorePlace(audiobook);
-      if (_disposed) {
+      if (abandoned()) {
         return;
       }
       unawaited(_syncDownloads());
     } catch (error) {
+      if (abandoned()) return;
+      if (isOfflineFailure(error)) {
+        await _openOffline(error, superseded);
+        return;
+      }
       // Deliberately not just ApiException: a decode error escaping here left
       // `loading` true forever, a spinner with no error and no retry.
-      if (!_disposed) {
-        state = state.copyWith(loading: false, error: userFacingError(error));
-      }
+      state = state.copyWith(loading: false, error: userFacingError(error));
     }
+  }
+
+  /// The server is out of reach: play what this phone holds.
+  ///
+  /// A narration already on screen keeps playing; one opened offline is read
+  /// from the manifest kept beside its audio (`AudiobookCache.loadManifest`).
+  /// Either way only chapters already downloaded are queued — see
+  /// [_syncDownloads] — and the server is asked again every
+  /// [_reconnectInterval], never at a narrating book's pace. With no manifest
+  /// kept there is nothing to be offline with, and the failure is reported
+  /// like any other.
+  Future<void> _openOffline(Object error, bool Function() superseded) async {
+    final current = state.audiobook;
+    final kept =
+        current ?? await ref.read(audiobookCacheProvider).loadManifest(projectId);
+    if (superseded()) return;
+    if (kept == null) {
+      state = state.copyWith(loading: false, error: userFacingError(error));
+      return;
+    }
+    _goOffline();
+    if (current == null) {
+      state = state.copyWith(
+        audiobook: kept,
+        timeline: AudiobookGlobalTimeline(kept.chapters),
+      );
+      await _restorePlace(kept);
+      if (superseded()) return;
+    }
+    state = state.copyWith(loading: false, clearError: true);
+    unawaited(_syncDownloads());
+  }
+
+  void _goOffline() {
+    _stopPolling();
+    _reconnectTimer ??= Timer.periodic(_reconnectInterval, (_) => _refresh());
+    state = state.copyWith(offline: true);
+  }
+
+  void _stopReconnecting() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
   }
 
   void _startPolling() {
@@ -153,6 +248,7 @@ class AudiobookController extends Notifier<AudiobookState> {
     _disposed = true;
     _rememberPlace(force: true);
     _stopPolling();
+    _stopReconnecting();
     _sleepTimer?.cancel();
     for (final subscription in _subscriptions) {
       subscription.cancel();
@@ -174,9 +270,10 @@ class AudiobookController extends Notifier<AudiobookState> {
       return;
     }
     _placeRestored = true;
+    final generation = _syncGeneration;
     try {
       final saved = await _progressStore.load(projectId);
-      if (_disposed || saved == null) {
+      if (_disposed || generation != _syncGeneration || saved == null) {
         return;
       }
       final total = state.timeline?.totalDurationMs ?? 0;
@@ -230,6 +327,7 @@ class AudiobookController extends Notifier<AudiobookState> {
   /// Forgets the position, on the device and in memory. Used when the narration
   /// this position pointed into stops being the book's narration.
   void _forgetPlace() {
+    _placeRestored = true;
     _pendingResumeMs = null;
     _placeAudiobookId = null;
     _placeMs = 0;
@@ -289,8 +387,15 @@ class AudiobookController extends Notifier<AudiobookState> {
       }
       // Different audio for the same book: the old queue, the old transcript
       // and the old position all point into a narration that is gone.
-      await _resetPlayback();
+      // Fetches started before this result must not roll back a local change.
+      _acceptedRefreshSequence = ++_refreshSequence;
+      final reset = _resetPlayback();
+      final generation = _syncGeneration;
       _forgetPlace();
+      await reset;
+      if (_disposed || generation != _syncGeneration) {
+        return null;
+      }
       state = state.copyWith(
         starting: false,
         audiobook: audiobook,
@@ -325,7 +430,7 @@ class AudiobookController extends Notifier<AudiobookState> {
   /// worth far more than chapter nine even though both are ready.
   Future<void> _syncDownloads() async {
     final audiobook = state.audiobook;
-    if (_downloading || audiobook == null) {
+    if (_downloading || _playbackReset != null || audiobook == null) {
       return;
     }
     _downloading = true;
@@ -344,21 +449,40 @@ class AudiobookController extends Notifier<AudiobookState> {
         if (abandoned()) {
           return;
         }
-        final file = await cache.ensureChapterAudio(
-          projectId: projectId,
-          audiobookId: audiobook.id,
-          chapter: chapter,
-        );
-        if (abandoned()) {
-          return;
-        }
-        final timeline = await cache.ensureChapterTimeline(
-          projectId: projectId,
-          audiobookId: audiobook.id,
-          chapter: chapter,
-        );
-        if (abandoned()) {
-          return;
+        File file;
+        AudiobookChapterTimeline timeline;
+        if (state.offline) {
+          // Nothing is downloaded offline. The queue is read positionally, so
+          // the first chapter not on this phone ends what can be played.
+          final stored = await cache.storedChapter(
+            projectId: projectId,
+            audiobookId: audiobook.id,
+            chapter: chapter,
+          );
+          if (abandoned()) {
+            return;
+          }
+          if (stored == null) {
+            break;
+          }
+          (file, timeline) = stored;
+        } else {
+          file = await cache.ensureChapterAudio(
+            projectId: projectId,
+            audiobookId: audiobook.id,
+            chapter: chapter,
+          );
+          if (abandoned()) {
+            return;
+          }
+          timeline = await cache.ensureChapterTimeline(
+            projectId: projectId,
+            audiobookId: audiobook.id,
+            chapter: chapter,
+          );
+          if (abandoned()) {
+            return;
+          }
         }
         _timelines[chapter.index] = timeline;
         _queuedChapters.add(chapter.index);
@@ -399,7 +523,13 @@ class AudiobookController extends Notifier<AudiobookState> {
       }
     } catch (error) {
       if (!abandoned()) {
-        state = state.copyWith(error: userFacingError(error));
+        // The connection went mid-download: what is queued keeps playing, and
+        // the rest follows once the server answers again.
+        if (isOfflineFailure(error)) {
+          _goOffline();
+        } else {
+          state = state.copyWith(error: userFacingError(error));
+        }
       }
     } finally {
       _downloading = false;
@@ -419,7 +549,7 @@ class AudiobookController extends Notifier<AudiobookState> {
   /// chapters to the old queue would leave the player holding tracks that are
   /// no longer in the manifest, and the position mapping reads that queue
   /// positionally — it would not fail, it would play the wrong chapter.
-  Future<void> _resetPlayback() async {
+  Future<void> _resetPlayback() {
     // Fences any download loop still in flight for the old queue.
     _syncGeneration += 1;
     for (final subscription in _subscriptions) {
@@ -431,7 +561,19 @@ class AudiobookController extends Notifier<AudiobookState> {
     _timelines.clear();
     _queuedChapters.clear();
     _atEndOfQueue = false;
-    await player?.dispose();
+    // A stale download's finalizer may try to start the new loop while the
+    // old player is still disposing. Overlapping resets share that barrier.
+    late final Future<void> reset;
+    reset = Future.wait<void>([
+      ?_playbackReset,
+      ?player?.dispose(),
+    ]).then<void>((_) {}).whenComplete(() {
+      if (identical(_playbackReset, reset)) {
+        _playbackReset = null;
+      }
+    });
+    _playbackReset = reset;
+    return reset;
   }
 
   Future<void> _startPlayer(List<AudiobookTrack> tracks) async {
@@ -653,104 +795,6 @@ class AudiobookController extends Notifier<AudiobookState> {
   }
 
   Future<void> retry() => _refresh();
-}
-
-class AudiobookState {
-  const AudiobookState({
-    this.loading = true,
-    this.starting = false,
-    this.audiobook,
-    this.timeline,
-    this.activeTimeline,
-    this.activeSegmentIndex,
-    this.globalPositionMs = 0,
-    this.chapterIndex = 0,
-    this.chapterPositionMs = 0,
-    this.playing = false,
-    this.buffering = false,
-    this.caughtUp = false,
-    this.speed = 1.0,
-    this.sleepTimerEnd,
-    this.downloadedChapters = const {},
-    this.bookTitle,
-    this.coverUrl,
-    this.error,
-  });
-
-  final bool loading;
-  final bool starting;
-  final MobileAudiobook? audiobook;
-  final AudiobookGlobalTimeline? timeline;
-
-  /// Timings for the chapter on screen, absent until it is downloaded.
-  final AudiobookChapterTimeline? activeTimeline;
-  final int? activeSegmentIndex;
-  final int globalPositionMs;
-  final int chapterIndex;
-  final int chapterPositionMs;
-  final bool playing;
-  final bool buffering;
-
-  /// True when playback reached the end of what has been narrated so far.
-  final bool caughtUp;
-  final double speed;
-  final DateTime? sleepTimerEnd;
-  final Set<int> downloadedChapters;
-  final String? bookTitle;
-  final String? coverUrl;
-  final String? error;
-
-  bool get hasAudiobook => audiobook != null;
-  bool get canPlay => downloadedChapters.isNotEmpty;
-  int get totalDurationMs => timeline?.totalDurationMs ?? 0;
-  int get playableUntilMs => timeline?.playableUntilMs ?? 0;
-
-  AudiobookState copyWith({
-    bool? loading,
-    bool? starting,
-    MobileAudiobook? audiobook,
-    bool clearAudiobook = false,
-    AudiobookGlobalTimeline? timeline,
-    AudiobookChapterTimeline? activeTimeline,
-    bool clearActiveTimeline = false,
-    int? activeSegmentIndex,
-    bool clearActiveSegment = false,
-    int? globalPositionMs,
-    int? chapterIndex,
-    int? chapterPositionMs,
-    bool? playing,
-    bool? buffering,
-    bool? caughtUp,
-    double? speed,
-    DateTime? sleepTimerEnd,
-    bool clearSleepTimer = false,
-    Set<int>? downloadedChapters,
-    String? bookTitle,
-    String? coverUrl,
-    String? error,
-    bool clearError = false,
-  }) {
-    return AudiobookState(
-      loading: loading ?? this.loading,
-      starting: starting ?? this.starting,
-      audiobook: clearAudiobook ? null : (audiobook ?? this.audiobook),
-      timeline: timeline ?? this.timeline,
-      activeTimeline: clearActiveTimeline ? null : (activeTimeline ?? this.activeTimeline),
-      activeSegmentIndex: clearActiveSegment ? null : (activeSegmentIndex ?? this.activeSegmentIndex),
-      globalPositionMs: globalPositionMs ?? this.globalPositionMs,
-      chapterIndex: chapterIndex ?? this.chapterIndex,
-      chapterPositionMs: chapterPositionMs ?? this.chapterPositionMs,
-      playing: playing ?? this.playing,
-      buffering: buffering ?? this.buffering,
-      caughtUp: caughtUp ?? this.caughtUp,
-      speed: speed ?? this.speed,
-      sleepTimerEnd: clearSleepTimer ? null : (sleepTimerEnd ?? this.sleepTimerEnd),
-      downloadedChapters: downloadedChapters ?? this.downloadedChapters,
-      bookTitle: bookTitle ?? this.bookTitle,
-      coverUrl: coverUrl ?? this.coverUrl,
-      error: clearError ? null : (error ?? this.error),
-    );
-  }
 }
 
 final audiobookControllerProvider =

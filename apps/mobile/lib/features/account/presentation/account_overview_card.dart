@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
+import '../../auth/presentation/verify_email_banner.dart';
+import '../../auth/presentation/verify_email_location.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_tier_style.dart';
 import 'account_billing_copy.dart';
@@ -60,6 +62,8 @@ class _OverviewBody extends StatelessWidget {
     final allowance = billing.allowance;
     final showAllowance =
         billing.isPaidPlan && allowance != null && allowance.monthlyCredits > 0;
+    final awaitsVerification =
+        !billing.isPaidPlan && verifyEmailCreditsLine(billing) != null;
 
     return AppCard(
       child: Column(
@@ -123,18 +127,39 @@ class _OverviewBody extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.md),
+          // Free credits waiting on the reader's email are the one thing
+          // worth doing before any purchase, so Verify leads and the ladder
+          // steps down beneath it rather than going away.
+          if (awaitsVerification) ...[
+            AppButton.primary(
+              key: const ValueKey('account-verify-email'),
+              onPressed: () => openVerifyEmail(context),
+              leading: const Icon(Icons.verified_outlined),
+              label: 'Verify email',
+              expanded: true,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
           // A free reader is offered the ladder; anyone already on it is
           // offered more credits. Both open the same plans-and-packs sheet.
-          AppButton.primary(
-            onPressed: onGetCredits,
-            leading: Icon(
-              billing.isPaidPlan
-                  ? Icons.add_card_outlined
-                  : Icons.workspace_premium_outlined,
+          if (awaitsVerification)
+            AppButton.outlined(
+              onPressed: onGetCredits,
+              leading: const Icon(Icons.workspace_premium_outlined),
+              label: 'Upgrade',
+              expanded: true,
+            )
+          else
+            AppButton.primary(
+              onPressed: onGetCredits,
+              leading: Icon(
+                billing.isPaidPlan
+                    ? Icons.add_card_outlined
+                    : Icons.workspace_premium_outlined,
+              ),
+              label: billing.isPaidPlan ? 'Add credits' : 'Upgrade',
+              expanded: true,
             ),
-            label: billing.isPaidPlan ? 'Add credits' : 'Upgrade',
-            expanded: true,
-          ),
         ],
       ),
     );
@@ -215,18 +240,28 @@ class _OverviewSkeleton extends StatelessWidget {
 String? _overviewContext(BuildContext context, MobileBilling value) {
   final plan = value.plan;
   final cancelling = plan?.cancelAtPeriodEnd ?? false;
+  // The line sits under the monthly allowance's bar, so a plan that refills
+  // before it renews (Creator yearly) says when the bar refills first.
+  final refill = creditsRefillLine(context, value);
+  String withRefill(String line) => refill == null ? line : '$refill · $line';
   if (value.isPaidPlan && cancelling && plan?.endsAt != null) {
-    return endsLine(context, plan!.endsAt!);
+    return withRefill(endsLine(context, plan!.endsAt!));
   }
-  if (value.isPaidPlan && plan?.renewsAt != null) {
-    return renewsLine(context, plan!.renewsAt!);
+  final next = value.isPaidPlan ? paidPlanNextLine(context, value) : null;
+  if (next != null) {
+    return withRefill(next);
+  }
+  if (refill != null) {
+    return refill;
   }
   final allowance = value.allowance;
   if (allowance != null && allowance.monthlyCredits > 0) {
     return monthlyCreditsLeftLine(allowance);
   }
   if (!value.isPaidPlan) {
-    return freeTierGrantLine(value.freeTier);
+    return value.welcomeCreditsPending
+        ? verifyEmailCreditsLine(value) ?? welcomeCreditsPendingLine
+        : freeTierGrantLine(value.freeTier);
   }
   return null;
 }

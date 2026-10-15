@@ -113,6 +113,25 @@ describe("mobile credit log", () => {
     await app.close();
   });
 
+  it("still titles an export unlock bought before downloads became free", async () => {
+    // No new EXPORT_UNLOCK row is written since 2026-10-15, but a reader's
+    // history keeps the ones they paid for, in words.
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.creditLedgerEntry.findMany.mockResolvedValueOnce([
+      ledgerRow({ id: "unlock", operation: "EXPORT_UNLOCK", amountCredits: -150 })
+    ]);
+    const app = await buildMobileApp();
+
+    const body = (
+      await app.inject({ method: "GET", url: "/api/mobile/billing/credit-log", headers: bearer("token-a") })
+    ).json();
+
+    expect(body.log.entries).toEqual([
+      expect.objectContaining({ id: "unlock", direction: "out", credits: 150, title: "Export unlock" })
+    ]);
+    await app.close();
+  });
+
   it("shows a store refund as credits taken back instead of an expired allowance", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.creditLedgerEntry.findMany.mockResolvedValueOnce([
@@ -123,6 +142,52 @@ describe("mobile credit log", () => {
     const response = await app.inject({ method: "GET", url: "/api/mobile/billing/credit-log", headers: bearer("token-a") });
     expect(response.json().log.entries[0]).toMatchObject({ direction: "out", credits: 1000,
       kind: "spend", title: "Credits reversed after Google Play refund" });
+    await app.close();
+  });
+
+  it("says a stopped book returned only its unused credits, and that an ended month's share expired", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const stopped = { userStopSettlement: { claimKey: "user-stop:attempt-1", chargedCredits: 1000, keptCredits: 425 } };
+    mockPrisma.creditLedgerEntry.findMany.mockResolvedValueOnce([
+      ledgerRow({ id: "lapsed", entryType: "ADJUSTMENT", operation: "PLAN_ALLOWANCE_GRANT", amountCredits: -175,
+        metadata: { expiredPlanPeriodKey: "sub:hash:2026-07-01", lapsedRefundOfEntryId: "charge" } }),
+      ledgerRow({ id: "returned", entryType: "REFUND", amountCredits: 575, reversesEntry: { metadata: stopped } }),
+      ledgerRow({ id: "failed", entryType: "REFUND", amountCredits: 430, reversesEntry: { metadata: {} } }),
+      ledgerRow({ id: "boundary", entryType: "ADJUSTMENT", operation: "PLAN_ALLOWANCE_GRANT", amountCredits: -90,
+        projectId: null, project: null, metadata: { expiredPlanPeriodKey: "sub:hash:2026-07-01" } })
+    ]);
+    const app = await buildMobileApp();
+    const response = await app.inject({ method: "GET", url: "/api/mobile/billing/credit-log", headers: bearer("token-a") });
+    expect(response.json().log.entries).toEqual([
+      expect.objectContaining({ id: "lapsed", direction: "out", credits: 175, kind: "expired",
+        title: "Returned monthly credits expired" }),
+      expect.objectContaining({ id: "returned", direction: "in", credits: 575, kind: "refund",
+        title: "Book generation stopped: unused credits returned" }),
+      // A failure the reader did not cause still reads as a whole refund.
+      expect.objectContaining({ id: "failed", kind: "refund", title: "Book generation refunded" }),
+      expect.objectContaining({ id: "boundary", kind: "expired", title: "Unused monthly credits expired" })
+    ]);
+    await app.close();
+  });
+
+  it("explains a refund debt paid from monthly credits without counting the refund twice", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.creditLedgerEntry.findMany.mockResolvedValueOnce([
+      ledgerRow({ id: "settled", entryType: "ADJUSTMENT", operation: "SUBSCRIPTION_CREDIT_GRANT", amountCredits: 0,
+        projectId: null, project: null,
+        metadata: { planDebtSettlement: { source: "allowance", credits: 6000, planPeriodKey: "sub:hash:2026-12-01" } } }),
+      ledgerRow({ id: "renewal", entryType: "GRANT", operation: "SUBSCRIPTION_CREDIT_GRANT", amountCredits: 6000,
+        projectId: null, project: null })
+    ]);
+    const app = await buildMobileApp();
+    const response = await app.inject({ method: "GET", url: "/api/mobile/billing/credit-log", headers: bearer("token-a") });
+    // The refund's own line already took the credits; this one only says why
+    // the monthly meter reads short, so it moves the total by nothing.
+    expect(response.json().log.entries).toEqual([
+      expect.objectContaining({ id: "settled", direction: "in", credits: 0, kind: "monthly",
+        title: "Refunded purchase settled with 6,000 monthly credits", pending: false, refunded: false }),
+      expect.objectContaining({ id: "renewal", direction: "in", credits: 6000, kind: "subscription" })
+    ]);
     await app.close();
   });
 

@@ -224,7 +224,7 @@ describe("GeneratedBooksView", () => {
 
     expect(markup).toContain('aria-expanded="true"');
     expect(markup).toContain('id="generated-book-detail-book-1"');
-    expect(markup).toContain("Charged");
+    expect(markup).toContain("Earned, net of Google");
     expect(markup).toContain("Refunded");
     expect(markup).toContain("Provider cost");
     expect(markup).toContain("Margin");

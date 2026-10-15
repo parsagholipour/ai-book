@@ -279,7 +279,7 @@ describe("restructurePages drafting and publication", () => {
         data: expect.objectContaining({ status: "APPLIED", publicationRevision: 8 })
       })
     );
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-2", undefined, {
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-2", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
       contentRevision: 8,
       requireContentRevisionMatch: true
     });

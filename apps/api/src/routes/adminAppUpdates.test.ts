@@ -15,7 +15,7 @@ const mockRequireOperatorActor = vi.hoisted(() => vi.fn());
 vi.mock("@book-maker/db", () => ({ prisma: mockPrisma }));
 vi.mock("../requestAuth.js", () => ({
   requireOperatorActor: mockRequireOperatorActor,
-  pathFromRequestUrl: (url: string) => new URL(url, "http://localhost").pathname
+  routedRequestPath: (request: { routeOptions: { url?: string } }) => request.routeOptions.url ?? null
 }));
 
 async function adminApp() {

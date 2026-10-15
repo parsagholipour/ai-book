@@ -7,6 +7,9 @@ import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { imageSettingsFromMediaSettings } from "./imageSettings.js";
 import { serializePlanningProgress } from "./planningProgress.js";
 import { findCurrentOwningFailure } from "./generationRecovery.js";
+import { failedAttemptCreditsReturned, failureMessageForJob } from "./projectFailureCopy.js";
+
+export { failureMessageForJob } from "./projectFailureCopy.js";
 import { serializeExportSet } from "./projectArtifactSerializers.js";
 import { qualityForReader } from "./qualityVerdict.js";
 import {
@@ -61,10 +64,12 @@ function serializedHasCoverPage(project: {
   };
 }
 
+/** Statuses in which a book cannot have gained an export since the last read. */
+const EXPORTLESS_PROJECT_STATUSES: ReadonlySet<string> = new Set(["PLANNING", "GENERATING"]);
+
 export async function loadSerializedProjectStatus(
   projectId: string,
-  appConfig: ReturnType<typeof loadConfig>,
-  userId: string
+  appConfig: ReturnType<typeof loadConfig>
 ): Promise<MobileProjectStatusDto | null> {
   const status = await buildProjectStatus(projectId);
   if (!status) {
@@ -74,10 +79,15 @@ export async function loadSerializedProjectStatus(
     projectId,
     status.project.title,
     appConfig,
-    userId,
-    status.project.contentRevision
+    status.project.contentRevision,
+    // A book still planning or generating has no export to find, and this
+    // read runs every few seconds per open stream and every 15 s for the push
+    // sweep. EDITING keeps the HEADs: the reader is reading the file it has.
+    !EXPORTLESS_PROJECT_STATUSES.has(status.project.status)
   );
-  return serializeProjectStatus(status, exports, await loadStudioDraftStatus(status.project));
+  const failedJob = currentOwningFailedJob(status);
+  const creditsReturned = failedJob ? await failedAttemptCreditsReturned(failedJob.attemptId) : false;
+  return serializeProjectStatus(status, exports, await loadStudioDraftStatus(status.project), { creditsReturned });
 }
 
 /**
@@ -114,10 +124,31 @@ export function studioDraftStatus(words: number, goalWords: number | null): Stud
   };
 }
 
+/**
+ * The FAILED row the status reports as the book's trouble, if any. Shared by
+ * the serializer and the refund read in `loadSerializedProjectStatus`, so the
+ * credits clause is always about the same row the sentence is.
+ */
+function currentOwningFailedJob(status: ProjectStatusResult) {
+  const project = status.project;
+  // A reader's text edit settles itself: a failed one restores the status it
+  // found and refunds, and its own operation card in the chat says so. Read
+  // as the book's trouble once the book is settled again, it painted a
+  // COMPLETE book "Something needs your attention" for good — the reader's
+  // next try is a new operation, which never supersedes it
+  // (`jobsTargetSameOwningWork` matches edits by operation).
+  const settled = project.status === "COMPLETE" || project.status === "REVIEW_REQUIRED";
+  return findCurrentOwningFailure(
+    project.jobs,
+    (type) => generationJobControlsProjectStatus(type) && !(settled && type === "APPLY_BOOK_EDIT")
+  );
+}
+
 export function serializeProjectStatus(
   status: ProjectStatusResult,
   exports: MobileExportSetDto,
-  studioDraft: StudioDraftStatus | null = null
+  studioDraft: StudioDraftStatus | null = null,
+  failure: { creditsReturned?: boolean } = {}
 ): MobileProjectStatusDto {
   const project = status.project;
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
@@ -132,17 +163,9 @@ export function serializeProjectStatus(
   // with nothing the reader could do about it. The repair re-queues itself
   // when a download or status surface next asks; a reprint re-queues when the
   // reader toggles the preference again.
-  // A reader's text edit settles itself: a failed one restores the status it
-  // found and refunds, and its own operation card in the chat says so. Read
-  // as the book's trouble once the book is settled again, it painted a
-  // COMPLETE book "Something needs your attention" for good — the reader's
-  // next try is a new operation, which never supersedes it
-  // (`jobsTargetSameOwningWork` matches edits by operation).
-  const settled = project.status === "COMPLETE" || project.status === "REVIEW_REQUIRED";
-  const failedJob = findCurrentOwningFailure(
-    project.jobs,
-    (type) => generationJobControlsProjectStatus(type) && !(settled && type === "APPLY_BOOK_EDIT")
-  );
+  // An edit's own failure is not reported once the book is settled again:
+  // `currentOwningFailedJob` says why.
+  const failedJob = currentOwningFailedJob(status);
   const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
   const generationProgress = serializeGenerationProgress(status, imageSettings);
   const editProgress = serializeEditProgress(status);
@@ -175,6 +198,8 @@ export function serializeProjectStatus(
     statusLabel: studioDraft?.statusLabel ?? statusLabel(project.status),
     progressPercent,
     generationTimings: status.generationTimings ?? { planningMs: null, bookMs: null },
+    // Books the long lane runs before this one's waiting work; null when none waits.
+    waitingInLine: status.waitingInLine ?? null,
     ...imageSettings,
     // The live phrase leads whenever there is one: it is the only part of this
     // payload that says what is happening right now rather than what stage it is.
@@ -186,7 +211,13 @@ export function serializeProjectStatus(
     planningProgress,
     generationProgress,
     editProgress,
-    failureMessage: failedJob ? failureMessageForJob(failedJob.type as GenerationJobType, failedJob.error) : null,
+    // The phase sentence, never the worker's raw `error` (provider HTTP text);
+    // that column stays for the operator console. `projectFailureCopy.ts`.
+    failureMessage: failedJob
+      ? failureMessageForJob(failedJob.type as GenerationJobType, failedJob.error, {
+          creditsReturned: failure.creditsReturned === true
+        })
+      : null,
     retryAvailable: status.progress.resumableFailedJobs > 0 && recoveryQuote !== null,
     recoveryQuote,
     steps,
@@ -350,28 +381,6 @@ export function statusLabel(status: string): string {
     default:
       return "Working";
   }
-}
-
-export function failureMessageForJob(type: GenerationJobType, rawError: string | null): string {
-  const phase = {
-    PLAN_BOOK: "creating your plan",
-    REVISE_PLAN: "revising your plan",
-    GENERATE_BOOK: "starting book generation",
-    GENERATE_PAGE: "writing a page",
-    GENERATE_IMAGE: "creating a visual",
-    COMPILE_EXPORT: "preparing downloads",
-    APPLY_BOOK_EDIT: "editing your book",
-    REPLAN_BOOK: "rebuilding your book plan",
-    PREPARE_CHARACTER_CANDIDATES: "preparing voice characters",
-    BUILD_CHARACTER_PERSONA: "building a voice character",
-    IMPORT_BOOK: "importing your book",
-    CONTINUE_BOOK: "writing new chapters",
-    GENERATE_AUDIOBOOK: "narrating your book",
-    GENERATE_CHARACTER_PORTRAIT: "drawing a character portrait",
-    WRITING_ASSIST: "working on your writing request"
-  } satisfies Record<GenerationJobType, string>;
-  const detail = rawError?.replace(/\s+/g, " ").trim();
-  return detail ? `We hit a problem while ${phase[type]}: ${detail.slice(0, 240)}` : `We hit a problem while ${phase[type]}.`;
 }
 
 export function planOperation(

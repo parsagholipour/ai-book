@@ -8,7 +8,7 @@ Use Flutter stable. This phase was validated with Flutter `3.44.2` and Dart `3.1
 
 The app reads build-time config through `--dart-define`:
 
-- `APP_ENV`: `local`, `staging`, or `production`. Defaults to `local`.
+- `APP_ENV`: `local`, `staging`, or `production`. Defaults to `local` (`production` in a release build); any other value fails at startup.
 - `API_BASE_URL`: absolute API URL. Local Android emulator builds default to `http://10.0.2.2:4001`.
 - `GOOGLE_SIGN_IN_CLIENT_ID`: Web OAuth client ID, matching the API's environment variable. Enables Google sign-in on Android.
 - `GOOGLE_SIGN_IN_IOS_CLIENT_ID`: iOS OAuth client ID; iOS also requires its URL scheme in `Info.plist`. See [Google sign-in setup](../../docs/google-sign-in.md).
@@ -82,4 +82,4 @@ flutter build appbundle --release \
   --dart-define=API_BASE_URL=https://api.example.com
 ```
 
-Release signing is still using the scaffold placeholder debug signing config. Configure a real keystore and production HTTPS API URL before Play Store submission.
+A release build refuses to run without the upload key in `android/key.properties`; `flutter run --release` on a machine without it needs `-P allowDebugSigning=true`. Creating the key, building the Play bundle (`make mobile-build-release`) and Play App Signing are in [CLAUDE.md](CLAUDE.md), "Release signing".

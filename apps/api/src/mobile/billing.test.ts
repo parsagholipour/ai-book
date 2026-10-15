@@ -6,9 +6,11 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import {
+  describePendingWelcomeGrant,
   endSubscriptionNow,
   getCreditBalance,
   getWelcomeCreditsGranted,
+  isWelcomeCreditGrantPending,
   getImageQuota,
   getPlanSummary,
   listActiveUserEntitlements,
@@ -37,6 +39,30 @@ describe("mobile billing and Google Play", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().billing.freeTier.welcomeCredits).toBe(amount);
     expect(getWelcomeCreditsGranted).toHaveBeenCalledWith("user-a");
+    await app.close();
+  });
+
+  it("says why a pending welcome grant waits and what it would pay, and nothing when none is pending", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(isWelcomeCreditGrantPending).mockResolvedValue(true);
+    vi.mocked(describePendingWelcomeGrant).mockResolvedValue({ reason: "email_unverified", credits: 1150 });
+    const app = await buildMobileApp();
+    const pending = (await app.inject({ method: "GET", url: "/api/mobile/billing", headers: bearer("token-a") })).json();
+    expect(pending.billing).toMatchObject({
+      welcomeCreditsPending: true,
+      welcomeCreditsPendingReason: "email_unverified",
+      welcomeCreditsPendingCredits: 1150
+    });
+
+    vi.mocked(isWelcomeCreditGrantPending).mockResolvedValue(false);
+    vi.mocked(describePendingWelcomeGrant).mockClear();
+    const settled = (await app.inject({ method: "GET", url: "/api/mobile/billing", headers: bearer("token-a") })).json();
+    expect(settled.billing).toMatchObject({
+      welcomeCreditsPending: false,
+      welcomeCreditsPendingReason: null,
+      welcomeCreditsPendingCredits: null
+    });
+    expect(describePendingWelcomeGrant).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -75,6 +101,7 @@ describe("mobile billing and Google Play", () => {
       lifetimeGranted: 1000,
       lifetimeSpent: 150
     });
+    // An unlock bought before 2026-10-15 is still listed; nothing writes a new one.
     expect(body.billing.entitlements).toEqual([
       expect.objectContaining({
         type: "EXPORT_UNLOCK",
@@ -82,7 +109,13 @@ describe("mobile billing and Google Play", () => {
         creditsCost: 150
       })
     ]);
-    expect(body.billing.products.map((product: { sku: string }) => product.sku)).toContain("tomeza.one_book_export");
+    // Installed apps add this key to every book quote and fall back to 150
+    // when it is missing, so it ships, at 0, now that downloads are free.
+    expect(body.billing.creditCosts.exportUnlock).toBe(0);
+    const skus = body.billing.products.map((product: { sku: string }) => product.sku);
+    expect(skus).toContain("tomeza.credit_pack_1");
+    // Retired: the same 1,000 credits as credit_pack_1, at a higher price.
+    expect(skus).not.toContain("tomeza.one_book_export");
     expect(JSON.stringify(body.billing)).not.toMatch(/provider|model|temperature|generationStrategy/);
     await app.close();
   });
@@ -138,6 +171,10 @@ describe("mobile billing and Google Play", () => {
     });
     // The reader's own cap: a free reader is held to the free tier's length.
     expect(body.billing.maxBookPages).toBe(30);
+    // The two operator switches the app draws its pickers from: no book past
+    // 200 pages for anyone yet, and Ultra off at launch.
+    expect(body.billing.paidMaxBookPages).toBe(200);
+    expect(body.billing.ultraTierEnabled).toBe(false);
     expect(body.billing.imageQuota).toEqual({ used: 2, limit: 3, resetsAt: "2026-07-01T00:00:00.000Z" });
     expect(body.billing.credits).toMatchObject({ available: 500, purchased: 500 });
 
@@ -146,15 +183,54 @@ describe("mobile billing and Google Play", () => {
     );
     expect(subscriptions.map((product: { sku: string }) => product.sku)).toEqual([
       "tomeza.creator_monthly",
+      "tomeza.creator_yearly",
       "tomeza.pro_monthly",
       "tomeza.max_monthly"
     ]);
+    const monthly = subscriptions.filter((product: { billingPeriod: string }) => product.billingPeriod === "P1M");
+    expect(monthly).toHaveLength(3);
     // Credits per dollar has to climb with the tier or the ladder makes no sense.
-    const perDollar = subscriptions.map(
+    const perDollar = monthly.map(
       (product: { creditAmount: number; priceMicros: number }) => product.creditAmount / (product.priceMicros / 1_000_000)
     );
     expect(perDollar[1]).toBeGreaterThan(perDollar[0]);
     expect(perDollar[2]).toBeGreaterThan(perDollar[1]);
+    // The yearly plan saves on Creator but never prices a credit under the Max
+    // plan's net rate, which every per-page price is floored at.
+    const yearly = subscriptions.find((product: { sku: string }) => product.sku === "tomeza.creator_yearly");
+    // Granted a month at a time: 6,000 every month, billed yearly (launch review 2026-10-15).
+    expect(yearly).toMatchObject({ billingPeriod: "P1Y", creditAmount: 72_000, monthlyCreditAmount: 6_000 });
+    expect(yearly.description).toMatch(/^6,000 credits every month, billed yearly/);
+    expect(monthly.map((product: { monthlyCreditAmount: number }) => product.monthlyCreditAmount)).toEqual([6_000, 15_000, 80_000]);
+    expect(body.billing.products.find((product: { sku: string }) => product.sku === "tomeza.credit_pack_1"))
+      .toMatchObject({ monthlyCreditAmount: null });
+    const netPerCredit = (product: { priceMicros: number; creditAmount: number }) =>
+      (product.priceMicros / 1_000_000) * 0.85 / product.creditAmount;
+    const max = subscriptions.find((product: { sku: string }) => product.sku === "tomeza.max_monthly");
+    expect(netPerCredit(yearly)).toBeGreaterThanOrEqual(netPerCredit(max) - 1e-6);
+    expect(netPerCredit(yearly)).toBeLessThan(netPerCredit(monthly[0]));
+    // Max stays in the catalog, so a restore still finds it, but a free reader
+    // is not shown a $199.99 plan beside a $19.99 one.
+    const offered = (billing: { products: Array<{ sku: string; offered: boolean }> }) =>
+      Object.fromEntries(billing.products.map((product) => [product.sku, product.offered]));
+    expect(offered(body.billing)).toMatchObject({
+      "tomeza.creator_monthly": true,
+      "tomeza.creator_yearly": true,
+      "tomeza.pro_monthly": true,
+      "tomeza.max_monthly": false,
+      "tomeza.credit_pack_1": true
+    });
+    // The app buys Creator monthly through its intro offer whenever Play lists
+    // it for the account; nothing else names one.
+    const introOffers = Object.fromEntries(
+      body.billing.products.map((product: { sku: string; introOfferId: string | null }) => [product.sku, product.introOfferId])
+    );
+    expect(introOffers).toMatchObject({
+      "tomeza.creator_monthly": "creator-intro-first-month",
+      "tomeza.creator_yearly": null,
+      "tomeza.pro_monthly": null,
+      "tomeza.credit_pack_1": null
+    });
 
     // Same app, same route: on a paid plan the image limit goes away entirely.
     vi.mocked(getCreditBalance).mockResolvedValue(creditBalance({ availableCredits: 15_000 }));
@@ -184,8 +260,11 @@ describe("mobile billing and Google Play", () => {
       illustratedBooksPerMonth: 3,
       maxBookPages: 30
     });
-    // …while the reader's own length cap is lifted.
+    // …while the reader's own length cap is lifted, to the ceiling every plan shares.
     expect(paid.billing.maxBookPages).toBeNull();
+    expect(paid.billing.paidMaxBookPages).toBe(200);
+    // A Pro reader can outgrow 15,000 credits, so Max is offered as the step up.
+    expect(offered(paid.billing)["tomeza.max_monthly"]).toBe(true);
     await app.close();
   });
 
@@ -406,6 +485,119 @@ describe("mobile billing and Google Play", () => {
     await app.close();
   });
 
+  it("records a pending purchase whose order id Play sent blank, instead of refusing it", async () => {
+    // in_app_purchase_android maps a missing orderId to "": a slow card still
+    // pending, a promo code. A 400 here left the payment unacknowledged and
+    // Play refunded it three days later.
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.productCatalog.findUnique.mockResolvedValue({ sku: "tomeza.credit_pack_1", productType: "CREDIT_PACK", active: true });
+    vi.mocked(recordVerifiedGooglePlayPurchase).mockResolvedValue({
+      purchaseRecordId: "purchase-pending", status: "PENDING", creditsGranted: 0, ledgerEntryId: null,
+      subscriptionStatus: null, entitlementType: null
+    });
+    const verifier = {
+      verifyPurchase: vi.fn(async () => ({
+        productSku: "tomeza.credit_pack_1", purchaseToken: "pending-token", kind: "one_time" as const,
+        grantable: false, providerStatus: "PENDING", quantity: 1
+      }))
+    };
+    const app = await buildMobileApp({ googlePlayVerifier: verifier });
+
+    for (const transactionId of ["", "   "]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/billing/google-play/verify",
+        headers: bearer("token-a"),
+        payload: { productId: "tomeza.credit_pack_1", purchaseToken: "pending-token", transactionId }
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().purchase).toMatchObject({ status: "pending" });
+    }
+    expect(vi.mocked(recordVerifiedGooglePlayPurchase)).toHaveBeenLastCalledWith({
+      userId: "user-a",
+      verification: expect.objectContaining({ metadata: expect.objectContaining({ clientTransactionId: null }) })
+    });
+    await app.close();
+  });
+
+  it("passes the buyer's own price to the record for analytics, and refuses half of one", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.productCatalog.findUnique.mockResolvedValue({ sku: "tomeza.credit_pack_1", productType: "CREDIT_PACK", active: true });
+    vi.mocked(recordVerifiedGooglePlayPurchase).mockResolvedValue({
+      purchaseRecordId: "purchase-pack", status: "GRANTED", creditsGranted: 1000, ledgerEntryId: "ledger-pack",
+      subscriptionStatus: null, entitlementType: null
+    });
+    const verifier = {
+      verifyPurchase: vi.fn(async () => ({
+        productSku: "tomeza.credit_pack_1", purchaseToken: "google-token-1", kind: "one_time" as const,
+        grantable: true, providerStatus: "PURCHASED", externalPurchaseId: "GPA.1", quantity: 1
+      }))
+    };
+    const app = await buildMobileApp({ googlePlayVerifier: verifier });
+    const send = (extra: Record<string, unknown>) => app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/google-play/verify",
+      headers: bearer("token-a"),
+      payload: { productId: "tomeza.credit_pack_1", purchaseToken: "google-token-1", ...extra }
+    });
+
+    expect((await send({ localPriceMicros: 749_000_000, localCurrency: "INR" })).statusCode).toBe(200);
+    expect(vi.mocked(recordVerifiedGooglePlayPurchase)).toHaveBeenLastCalledWith(expect.objectContaining({
+      clientPrice: { micros: 749_000_000, currency: "INR" }
+    }));
+    // An old build sends neither, and is recorded exactly as before.
+    expect((await send({})).statusCode).toBe(200);
+    expect(vi.mocked(recordVerifiedGooglePlayPurchase).mock.lastCall?.[0]).not.toHaveProperty("clientPrice");
+
+    for (const invalid of [
+      { localPriceMicros: 749_000_000 },
+      { localCurrency: "INR" },
+      { localPriceMicros: 749_000_000, localCurrency: "inr" },
+      { localPriceMicros: -1, localCurrency: "INR" },
+      { localPriceMicros: 1.5, localCurrency: "INR" }
+    ]) {
+      const response = await send(invalid);
+      expect(response.statusCode, JSON.stringify(invalid)).toBe(400);
+    }
+    await app.close();
+  });
+
+  it("tells the app a downgrade starts at renewal, and acknowledges it under the plan it replaces", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.productCatalog.findUnique.mockResolvedValueOnce({ sku: "tomeza.creator_monthly", productType: "SUBSCRIPTION", active: true });
+    vi.mocked(recordVerifiedGooglePlayPurchase).mockResolvedValueOnce({
+      purchaseRecordId: "purchase-switch", status: "VERIFIED", creditsGranted: 0, ledgerEntryId: null,
+      subscriptionStatus: "ACTIVE", entitlementType: null,
+      scheduledChange: { productSku: "tomeza.creator_monthly", startsAt: new Date("2026-11-04T00:00:00Z") }
+    });
+    const verifier = {
+      verifyPurchase: vi.fn(async () => ({
+        productSku: "tomeza.creator_monthly", purchaseToken: "creator-token", kind: "subscription" as const,
+        grantable: true, providerStatus: "SUBSCRIPTION_STATE_ACTIVE", externalPurchaseId: null,
+        subscription: { status: "ACTIVE" as const, deferredReplacement: {
+          fromProductSku: "tomeza.max_monthly", takesEffectAt: new Date("2026-11-04T00:00:00Z") } },
+        metadata: { acknowledgementState: "ACKNOWLEDGEMENT_STATE_PENDING" }
+      })),
+      acknowledgePurchase: vi.fn(async () => {})
+    };
+    const app = await buildMobileApp({ googlePlayVerifier: verifier });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/google-play/verify",
+      headers: bearer("token-a"),
+      payload: { productId: "tomeza.creator_monthly", purchaseToken: "creator-token", purchaseStatus: "purchased" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().purchase).toMatchObject({
+      status: "verified", creditsGranted: 0,
+      scheduledChange: { productSku: "tomeza.creator_monthly", startsAt: "2026-11-04T00:00:00.000Z" }
+    });
+    expect(verifier.acknowledgePurchase).toHaveBeenCalledWith(expect.objectContaining({ productId: "tomeza.max_monthly" }));
+    await app.close();
+  });
+
   it("re-verifies the stored subscription token so a cancellation shows up at once", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.subscriptionState.findFirst.mockResolvedValueOnce({
@@ -455,6 +647,14 @@ describe("mobile billing and Google Play", () => {
     });
     expect(response.json().billing.plan).toMatchObject({ cancelAtPeriodEnd: true, endsAt: "2026-09-12T00:00:00.000Z" });
     expect(JSON.stringify(response.json())).not.toMatch(/google-sub-token/);
+    // The held plan is looked for first, so a pending checkout recorded with no
+    // period end (sorted first by Postgres in a descending order) is not refreshed instead.
+    expect(mockPrisma.subscriptionState.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED", "PAUSED"] } }),
+        orderBy: { currentPeriodEnd: { sort: "desc", nulls: "last" } }
+      })
+    );
     await app.close();
   });
 

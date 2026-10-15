@@ -6,6 +6,7 @@ import { serializeCreationAttachment } from "../creationSessions.js";
 import { requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import type { FastifyInstance } from "fastify";
 import { sendMessageUsageError } from "../messageUsage.js";
+import { requireAiCapacity } from "../aiCapacity.js";
 
 const sourceParams = z.object({ id: z.string().min(1).max(64), attachmentId: z.string().min(1).max(64) });
 const actionBody = z.object({ requestId: z.string().min(1).max(100), version: z.number().int().positive() });
@@ -33,6 +34,8 @@ export async function registerSourceRoutes(fastify: FastifyInstance) {
       const payload = mobileCreationDraftPayloadSchema.parse(source.draft.payload);
       if (!payload.attachments?.some((attachment) => attachment.id === attachmentId)) return sendMobileError(reply, 404, "SOURCE_NOT_FOUND", "That file was removed.");
       if (action === "retry") {
+        // A retry re-reads the file with the worker's OCR and summary calls.
+        if (!(await requireAiCapacity(request, reply, auth.user.id, "standard"))) return;
         try { await retrySourceUpload(auth.user.id, id, attachmentId, body.requestId, body.version); }
         catch (error) { if (error instanceof SourceUploadError) return sendMobileError(reply, error.code === "ATTACHMENT_FILE_EXPIRED" ? 422 : 409, error.code, error.message); return sendMessageUsageError(reply, error); }
       } else {

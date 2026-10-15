@@ -89,7 +89,11 @@ enum AssetType {
 
 enum UserStatus {
   ACTIVE
+  /// A deleted account's tombstone (apps/api/src/accountDeletion.ts). Final.
   DISABLED
+  /// An operator suspended the account; reversible (apps/api/src/accountModeration.ts).
+  /// Everything that asks for ACTIVE refuses it, which is the point.
+  SUSPENDED
 }
 
 enum BillingProductType {
@@ -243,6 +247,17 @@ enum ModerationReportTargetType {
   VOICE_CALL
   /// A reply in a book's chat; the snapshot keeps it and the message it answered.
   CHAT_MESSAGE
+  /// A reply in the creation chat (a `MobileCreationDraft`, no book yet); the
+  /// snapshot keeps it and the message it answered.
+  CREATION_CHAT_MESSAGE
+  /// A book plan as the plan card showed it: title, premise and chapters.
+  BOOK_PLAN
+  /// A drawn picture of a saved library character (`LibraryCharacterImage`
+  /// with source GENERATED); an upload is the reader's own and is refused.
+  CHARACTER_IMAGE
+  /// A Writing Studio AI suggestion: a stored assist, or a quick assist's
+  /// text, which the app sends because the server keeps no copy of it.
+  STUDIO_SUGGESTION
 }
 
 enum ModerationReportReason {
@@ -299,6 +314,14 @@ model User {
   displayName String?
   status      UserStatus @default(ACTIVE)
   disabledAt  DateTime?
+  /// When the reader proved they receive mail at `email`: a code confirmed
+  /// (EmailVerificationRequest) or a Google sign-in, whose ID token must say
+  /// `email_verified`. Null holds the welcome grant PENDING
+  /// (packages/db/src/welcomeCredits.ts). Anything that changes `email` clears it.
+  emailVerifiedAt DateTime?
+  /// When an operator turned sharing off for this account: no new share or
+  /// remix, and its live shares were taken down. Null may share.
+  sharingDisabledAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -321,11 +344,66 @@ model User {
   legalAcceptances        LegalAcceptance[]
   generationAttempts      GenerationAttempt[]
   passwordResetRequests   PasswordResetRequest[]
+  emailVerificationRequests EmailVerificationRequest[]
   libraryCharacters       LibraryCharacter[]
   messageUsageReservations MessageUsageReservation[]
   welcomeCreditGrant       WelcomeCreditGrant?
   bookShares               BookShare[]
   pushDevices              PushDevice[]
+  authorProfile            AuthorProfile?
+  productEvents            ProductEvent[]
+  activeDays               UserActiveDay[]
+  providerCalls            ProviderCallLog[]
+  moderationActions        AccountModerationAction[]
+}
+
+enum AccountModerationActionKind {
+  SUSPEND
+  UNSUSPEND
+  DISABLE_SHARING
+  ENABLE_SHARING
+}
+
+/// Append-only: every operator action against an account, with the reason the
+/// operator gave and what it did (apps/api/src/accountModeration.ts). Kept with
+/// the tombstone when the account is deleted, as the abuse-handling record.
+model AccountModerationAction {
+  id             String                      @id @default(cuid())
+  userId         String
+  action         AccountModerationActionKind
+  reason         String
+  /// The console actor (`local-admin`): the console has one password, not people.
+  operatorUserId String?
+  /// Sessions revoked, shares taken down or restored, projects stopped.
+  effects        Json
+  createdAt      DateTime                    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Who the reader is as an author: the defaults every new book copies into its
+/// own `authorName` and `bookMatter` (see packages/core/src/schemas/bookMatter.ts).
+/// Editing it changes future books only. Removed by account deletion.
+model AuthorProfile {
+  userId             String    @id
+  /// The byline new books print. Never filled from the account's display name by itself.
+  penName            String?
+  bio                String?
+  website            String?
+  /// The name after the © line; absent means the pen name.
+  copyrightHolder    String?
+  imprint            String?
+  allRightsReserved  Boolean   @default(false)
+  /// Whether new books take the bio as an About the Author page.
+  includeAboutAuthor Boolean   @default(true)
+  /// The one-time "put your name on it" card was answered (saved or dismissed).
+  setupPromptSeenAt  DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// Append-only proof that a user affirmatively accepted a specific pair of
@@ -348,18 +426,101 @@ model LegalAcceptance {
   @@index([acceptedAt])
 }
 
-/// Append-only operator history for the optional copyright prompt gate. The
-/// newest version is active; no rows means disabled, preserving shipped
-/// behavior until an operator deliberately enables the restriction.
+/// Append-only operator history for the optional copyright prompt gate and the
+/// sexual-content filter. The newest version is active. No rows means the
+/// copyright gate is off and the sexual-content filter is ON — the filter is
+/// off only when a revision says so (`@book-maker/db/safetySettings`).
 model SafetySettingsRevision {
   id                           String   @id @default(cuid())
   version                      Int      @unique
   copyrightRestrictionsEnabled Boolean  @default(false)
+  sexualContentFilterEnabled   Boolean  @default(true)
   note                         String?
   updatedBy                    String?
   createdAt                    DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Append-only operator history for the AI spend breaker: the manual pause and
+/// the USD caps (free spend per day and month, paid spend per day, per reader
+/// per day) every door that starts AI work asks before it reserves
+/// anything (apps/api/src/spendBreaker.ts). Newest version wins. No rows means
+/// the compiled defaults in `AI_SPEND_CONTROL_DEFAULTS`
+/// (apps/api/src/spendControls.ts) — never "no limits".
+model AiSpendControlRevision {
+  id                  String   @id @default(cuid())
+  version             Int      @unique
+  paused              Boolean  @default(false)
+  softDailyCapUsd     Float
+  hardDailyCapUsd     Float
+  /// Free spend per UTC month, and paid readers' spend per UTC day (000107).
+  /// Null on a revision saved before them: the compiled default.
+  freeMonthlyCapUsd   Float?
+  paidHardDailyCapUsd Float?
+  freeUserDailyCapUsd Float
+  paidUserDailyCapUsd Float
+  note                String?
+  updatedBy           String?
+  createdAt           DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// A storage prefix whose objects were deleted and must stay deleted: a deleted
+/// book's `books/`, `images/`, `voice/` and `audio/` prefixes, written before the
+/// first delete is attempted (apps/api/src/projectStorage.ts). The API's
+/// storage-deletion sweep (apps/api/src/storageDeletionSweep.ts) deletes each
+/// prefix again every 15 minutes, which retries a delete that failed and
+/// removes what a job still running for the book wrote after it, and drops the
+/// row once it is a day old and a pass found nothing (migration 000111).
+model PendingStorageDeletion {
+  /// With its trailing slash, e.g. `books/<projectId>/`.
+  prefix      String    @id
+  /// The deleted book, for diagnostics only: the project row is gone.
+  projectId   String?
+  requestedAt DateTime  @default(now())
+  lastSweptAt DateTime?
+  /// Objects the last pass found and deleted; null before the first pass and after a failed one.
+  lastFound   Int?
+  attempts    Int       @default(0)
+  /// Why the last pass failed. Never a credential.
+  lastError   String?
+
+  @@index([lastSweptAt])
+}
+
+/// The API's operator alert sweep (apps/api/src/monitoring/operatorAlerts.ts).
+/// One row per alert condition: whether it is firing and whether the owner has
+/// been told, so a restart neither repeats an alert email nor forgets the
+/// recovery one. The row keyed `sweep` is the claim that makes one API process
+/// the sender for each sweep interval; its `observedAt` is when it was taken.
+model OperatorAlert {
+  key             String    @id
+  firing          Boolean   @default(false)
+  /// An alert email went out for the current firing, so its recovery is owed.
+  notified        Boolean   @default(false)
+  failingSweeps   Int       @default(0)
+  passingSweeps   Int       @default(0)
+  /// The last failing observation, in words. Never a secret or a client's input.
+  detail          String?
+  firingSince     DateTime?
+  lastFiredAt     DateTime?
+  lastRecoveredAt DateTime?
+  observedAt      DateTime?
+  claimedBy       String?
+  updatedAt       DateTime  @updatedAt
+}
+
+/// The operator console's sign-in generation (apps/api/src/auth.ts). One row,
+/// keyed `console`; no row is generation 0. Every console cookie is signed with
+/// the generation it was issued under and refused once this has moved past it,
+/// which is the only way to sign a stateless cookie out of every browser short
+/// of rotating WEB_PASSWORD.
+model OperatorSessionEpoch {
+  key       String   @id
+  epoch     Int      @default(0)
+  updatedAt DateTime @updatedAt
 }
 
 /// Append-only operator history for per-feature generation quality gates.
@@ -419,6 +580,28 @@ model PasswordResetRequest {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, consumedAt, expiresAt])
+}
+
+/// A 6-digit code mailed to prove the reader owns `email`
+/// (apps/api/src/mobileEmailVerification.ts). Only a salted SHA-256 of the code
+/// is stored; `attempts` caps guesses per code, a new code expires the pending
+/// ones in place, and rows stay a day so the per-account daily cap survives a
+/// restart. A code confirms only the address it was mailed to.
+model EmailVerificationRequest {
+  id            String    @id @default(cuid())
+  userId        String
+  email         String
+  codeHash      String
+  expiresAt     DateTime
+  attempts      Int       @default(0)
+  consumedAt    DateTime?
+  requestIpHash String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model MobileSession {
@@ -690,6 +873,12 @@ model PurchaseRecord {
   creditsGranted     Int             @default(0)
   amountMicros       BigInt?
   currency           String          @default("USD")
+  /// What the app last reported Play pricing this purchase at, in the buyer's
+  /// currency and before tax (migration 000104). Analytics only, never a grant;
+  /// null from builds that predate it and for purchases only Google reported.
+  localPriceMicros   BigInt?
+  /// ISO 4217 code of `localPriceMicros`.
+  localCurrency      String?         @db.VarChar(3)
   purchasedAt        DateTime?
   verifiedAt         DateTime?
   metadata           Json
@@ -727,6 +916,16 @@ model PurchasePayment {
   paidAt               DateTime
   /// Catalog snapshots are estimates, not store settlement reports.
   amountSource         String   @default("catalog_snapshot")
+  /// What this order charged in the buyer's currency, before tax and Google's
+  /// cut, when known (migration 000104). Analytics only, never a grant; set once
+  /// and never repriced. `amountMicros` stays the USD catalog figure.
+  localPriceMicros     BigInt?
+  /// ISO 4217 code of `localPriceMicros`.
+  localCurrency        String?  @db.VarChar(3)
+  /// `client`: the app's report from Play's product details at verify time.
+  /// `play_recurring_price`: Google's own base-plan price on the subscription,
+  /// for a full-price period nobody verified from the app.
+  localPriceSource     String?
   createdAt            DateTime @default(now())
 
   user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -777,6 +976,10 @@ model Project {
   title         String
   subtitle      String?
   authorName    String?
+  /// The book's own dedication, publication details and biography — copied
+  /// from the author profile at creation, then the book's to change. Read
+  /// with `parseBookMatter` (core); compiled through `bookMatterForExport`.
+  bookMatter    Json?
   coverTagline  String?
   prompt        String
   category      TemplateCategory
@@ -1666,8 +1869,18 @@ model BookShare {
   rightsConfirmedAt   DateTime
   likenessConfirmedAt DateTime?
   status              BookShareStatus        @default(ACTIVE)
-  /// Shown to the author in the app when an operator takes the share down.
+  /// Why the share is not live, shown to the author: an operator's reason
+  /// while TAKEN_DOWN (the share DTO's `takedownReason`), or the system's
+  /// sentence while REVOKED after a re-screen refused the book's changed text
+  /// (its `stoppedReason`). Every return to ACTIVE clears it; an author's own
+  /// stop never sets it.
   takedownReason      String?
+  /// The `Project.contentRevision` whose text the share screens last passed or
+  /// held for review, read in one snapshot with that text. The public page
+  /// serves the book only while this equals the book's current revision; null
+  /// (every row made before migration 000113) is a share that has to be
+  /// screened first. `apps/api/src/mobile/shares/shareRescreen.ts`.
+  screenedContentRevision Int?
   /// PDF fetches (the HTML is not counted: link-preview crawlers fetch only it).
   viewCount           Int                    @default(0)
   createdAt           DateTime               @default(now())
@@ -1794,6 +2007,13 @@ model ProviderCallLog {
   id              String   @id @default(cuid())
   projectId       String?
   generationJobId String?
+  /// Whose spend this was: the book's owner for worker jobs, the payload's
+  /// user for the project-less portrait job, the signed-in reader for inline
+  /// API calls and voice calls. Null for operator-console work and for rows
+  /// written before migration 000098. A user row is never hard-deleted
+  /// (account deletion keeps a tombstone), so SetNull only matters in dev.
+  /// See packages/db/src/providerSpend.ts.
+  userId          String?
   provider        String
   model           String
   purpose         String
@@ -1808,9 +2028,17 @@ model ProviderCallLog {
 
   project       Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
   generationJob GenerationJob? @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([generationJobId])
   @@index([provider, model, purpose, createdAt])
+  // A user's spend since a moment (migration 000099).
+  @@index([userId, createdAt])
+  // Everyone's spend since a moment (migration 000100).
+  @@index([createdAt])
+  // A book's calls: the per-book cost reads, the projectless prune and the
+  // SetNull on book delete (migration 000112).
+  @@index([projectId, createdAt])
 }
 
 /// How many grounded-search units (Gemini 2.5 prompts, 3.x queries) one free
@@ -2097,4 +2325,39 @@ model MessageUsageReservation {
   @@unique([userId, requestKey])
   @@index([status, updatedAt])
   @@index([status, expiresAt])
+}
+
+/// Something only the app can see happen, reported for the operator's funnel:
+/// today a paywall shown, and what showed it. Everything the server already
+/// records — signups, plans, books, payments — is read from its own tables
+/// instead (`apps/api/src/admin/productFunnel.ts`), so this holds no copy of it.
+/// `name` is one of a closed list the route accepts; nothing here is shown to
+/// the reader or sent to a model.
+model ProductEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String   @db.VarChar(64)
+  /// Small, closed-vocabulary detail, e.g. `{ "trigger": "credits_needed" }`.
+  properties Json?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
+  // The daily prune (apps/api/src/tablePruneSweep.ts, migration 000111).
+  @@index([createdAt])
+}
+
+/// One row per reader per UTC day they used the app, written when a session
+/// starts or refreshes. It is what retention is counted from: a session row
+/// keeps only its last use, which says nothing about the days in between.
+model UserActiveDay {
+  userId String
+  day    DateTime @db.Date
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, day])
+  @@index([day])
 }

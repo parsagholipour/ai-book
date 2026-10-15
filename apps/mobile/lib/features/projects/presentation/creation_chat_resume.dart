@@ -24,11 +24,19 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
 
   Future<void> _retryPlanGeneration(String projectId) async {
     if (_planBusyAction != null) return;
-    final status =
-        ref.read(projectStatusProvider(projectId)).value ??
-        await ref.read(projectStatusProvider(projectId).future);
-    if (status == null || !mounted) return;
-    final quote = await confirmGenerationRetry(context, ref, status);
+    final MobileGenerationRecoveryQuote? quote;
+    try {
+      quote = await _confirmRetry(projectId);
+    } catch (error) {
+      if (!mounted) return;
+      await reportGenerationRetryFailure(
+        context,
+        ref,
+        error,
+        projectId: projectId,
+      );
+      return;
+    }
     if (quote == null || !mounted) return;
     final retryRequest = Object();
     setState(() {
@@ -72,13 +80,9 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
   /// status stream stop themselves on `failed`, so nothing would notice the
   /// book moving again.
   Future<void> _retryBookGeneration(String projectId) async {
-    final status =
-        ref.read(projectStatusProvider(projectId)).value ??
-        await ref.read(projectStatusProvider(projectId).future);
-    if (status == null || !mounted) return;
-    final quote = await confirmGenerationRetry(context, ref, status);
-    if (quote == null || !mounted) return;
     try {
+      final quote = await _confirmRetry(projectId);
+      if (quote == null || !mounted) return;
       final recovery = await ref
           .read(projectsRepositoryProvider)
           .resumeProject(
@@ -103,6 +107,19 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
         projectId: projectId,
       );
     }
+  }
+
+  /// The status the retry is priced from, then the reader's confirmation of
+  /// that price. Both can fail — the status read, the balance read — and the
+  /// caller reports either, so neither leaves a button busy for good.
+  Future<MobileGenerationRecoveryQuote?> _confirmRetry(String projectId) async {
+    final status =
+        ref.read(projectStatusProvider(projectId)).value ??
+        await ref
+            .read(projectStatusProvider(projectId).future)
+            .timeout(const Duration(seconds: 20));
+    if (!mounted) return null;
+    return confirmGenerationRetry(context, ref, status);
   }
 
   bool _finishPlanRetry(Object retryRequest, String projectId) {

@@ -157,10 +157,7 @@ describe("applyImageLayout", () => {
     // order too rather than in whatever order the targets happened to resolve.
     expect(mocks.tx.page.update.mock.calls[0]?.[0]?.where).toEqual({ id: "page-1" });
     expect(mocks.tx.page.update.mock.calls[1]?.[0]?.where).toEqual({ id: "page-2" });
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }));
   });
 
   it("removes a markdown image and does not append it anywhere", async () => {
@@ -205,10 +202,7 @@ describe("applyImageLayout", () => {
       expect.objectContaining({ data: { contentRevision: { increment: 1 } } })
     );
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }));
     expect(mocks.claimAppliedEditPublication).toHaveBeenCalledWith(
       mocks.tx, "project-1", "op-1", "REVIEW_REQUIRED"
     );
@@ -791,10 +785,7 @@ describe("applyImageLayout with no imageLayout on the payload", () => {
       expect.objectContaining({ where: expect.objectContaining({ id: "asset-1" }) })
     );
     expect(mocks.tx.imageAsset.update).toHaveBeenCalledWith({ where: { id: "asset-1" }, data: { pageId: null } });
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }));
   });
 
   it("rebuilds a chat-added picture's marker from the operation id that made it", async () => {
@@ -888,10 +879,7 @@ describe("applyImageLayout with no imageLayout on the payload", () => {
     // export refresh is owed.
     expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }));
   });
 
 });

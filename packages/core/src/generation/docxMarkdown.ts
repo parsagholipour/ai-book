@@ -18,7 +18,7 @@ import {
 } from "docx";
 import type { Token, Tokens } from "marked";
 import type { ScriptProfile } from "../prompting/script.js";
-import { externalLinkTarget, type DocxImage } from "./docxAssets.js";
+import { docxChapterAnchorId, externalLinkTarget, type DocxImage } from "./docxAssets.js";
 import { lexDocxMarkdown, wordEquation, type DocxMathToken } from "./docxMath.js";
 
 /**
@@ -44,16 +44,15 @@ export type DocxFonts = {
   eastAsia: string | undefined;
 };
 
-export type DocxChapter = { anchor: string; title: Token[] };
+export type DocxChapter = { anchor: string; title: Token[]; heading: Tokens.Heading };
 
 export type DocxRenderContext = {
   profile: ScriptProfile;
   fonts: DocxFonts;
   /** Illustrations keyed by the `src` the manuscript wrote. */
   images: ReadonlyMap<string, DocxImage>;
-  /** Every `##` heading in document order; `nextChapter` walks it. */
+  /** Chapter headings are identified by their tokens, so other headings cannot steal a bookmark. */
   chapters: readonly DocxChapter[];
-  nextChapter: number;
   /** Restarts numbering per top-level ordered list. */
   listInstance: number;
 };
@@ -84,20 +83,56 @@ export function lexMarkdown(text: string): Token[] {
   return lexDocxMarkdown(text);
 }
 
-/** The chapter list a document's Contents is built from: every `##` heading, in order. */
-export function collectChapters(tokenLists: readonly Token[][]): DocxChapter[] {
-  const chapters: DocxChapter[] = [];
-  for (const tokens of tokenLists) {
-    for (const token of tokens) {
-      if (token.type === "heading" && (token as Tokens.Heading).depth === 2) {
-        chapters.push({
-          anchor: `chapter-${chapters.length + 1}`,
-          title: contentsTitle((token as Tokens.Heading).tokens)
-        });
-      }
+/**
+ * The compiler puts an anchor before every chapter heading and none before
+ * back matter. Use that identity even when a chapter's title is "Sources" or
+ * "About the Author". Plain Markdown without anchors keeps the older fallback:
+ * every `##` heading except a trailing run of localized back-matter labels.
+ */
+export function collectChapters(tokenLists: readonly Token[][], backMatterHeadings: readonly string[] = []): DocxChapter[] {
+  const headings: Tokens.Heading[] = [];
+  const anchored: DocxChapter[] = [];
+  let anchor: string | undefined;
+  for (const token of tokenLists.flat()) {
+    if (token.type === "space") continue;
+    const destination = docxChapterAnchor(token);
+    if (destination) {
+      anchor = destination;
+      continue;
     }
+    if (token.type === "heading" && (token as Tokens.Heading).depth === 2) {
+      const heading = token as Tokens.Heading;
+      headings.push(heading);
+      if (anchor) anchored.push({ anchor, heading, title: contentsTitle(heading.tokens) });
+    }
+    anchor = undefined;
   }
-  return chapters;
+  if (anchored.length > 0) return anchored;
+  const backMatter = new Set(backMatterHeadings.map(foldHeadingText));
+  let end = headings.length;
+  while (end > 0 && backMatter.has(foldHeadingText(plainText(contentsTitle(headings[end - 1]!.tokens))))) {
+    end -= 1;
+  }
+  return headings.slice(0, end).map((heading, index) => ({
+    anchor: `chapter-${index + 1}`,
+    title: contentsTitle(heading.tokens),
+    heading
+  }));
+}
+
+/** Fenced examples are code tokens and must never become chapter destinations. */
+export function docxChapterAnchor(token: Token): string | undefined {
+  return token.type === "paragraph" || token.type === "html"
+    ? docxChapterAnchorId(token.raw)
+    : undefined;
+}
+
+function plainText(tokens: readonly Token[]): string {
+  return tokens.map((token) => (token.type === "text" ? (token as Tokens.Text).text : token.raw)).join("");
+}
+
+function foldHeadingText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /** Plain TOC labels retain equations, without nested hyperlinks or pictures. */
@@ -264,8 +299,7 @@ export function inlineRuns(tokens: readonly Token[] | undefined, ctx: DocxRender
 
 function headingBlocks(token: Tokens.Heading, ctx: DocxRenderContext, block: BlockStyle): FileChild[] {
   if (token.depth === 2) {
-    const chapter = ctx.chapters[ctx.nextChapter];
-    ctx.nextChapter += 1;
+    const chapter = ctx.chapters.find((candidate) => candidate.heading === token);
     const runs = inlineRuns(token.tokens, ctx);
     return [
       new Paragraph(

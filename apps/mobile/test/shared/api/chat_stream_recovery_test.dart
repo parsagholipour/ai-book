@@ -140,7 +140,11 @@ void main() {
     expect(adapter.requests, hasLength(count));
   });
 
-  for (final code in ['INSUFFICIENT_CREDITS', 'SESSION_CONFLICT']) {
+  for (final code in [
+    'INSUFFICIENT_CREDITS',
+    'SESSION_CONFLICT',
+    'AI_PAUSED',
+  ]) {
     test('preserves $code instead of retrying a definitive refusal', () async {
       final adapter = RecoveryAdapter(streamError: code);
       await expectLater(

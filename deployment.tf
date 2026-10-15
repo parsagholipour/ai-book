@@ -15,6 +15,44 @@ resource "aws_ecr_repository" "app" {
   }
 }
 
+# Every push to master adds a release image to each repository, and nothing
+# expired them. Keep the last ten releases (the host itself keeps the current
+# and previous one, scripts/deploy-production.sh) and drop untagged images a day
+# after their push. The untagged rule cannot break a kept release: buildx pushes
+# each release as a tagged index whose platform and attestation manifests are
+# untagged, and ECR never expires an image a manifest list still references.
+resource "aws_ecr_lifecycle_policy" "app" {
+  for_each   = aws_ecr_repository.app
+  repository = each.value.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Expire untagged images one day after push"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 1
+        }
+        action = { type = "expire" }
+      },
+      {
+        rulePriority = 2
+        description  = "Keep the last 10 release images"
+        selection = {
+          tagStatus      = "tagged"
+          tagPatternList = ["*"]
+          countType      = "imageCountMoreThan"
+          countNumber    = 10
+        }
+        action = { type = "expire" }
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role" "book_maker" {
   name = "book-maker-instance"
   assume_role_policy = jsonencode({

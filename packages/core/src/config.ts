@@ -40,6 +40,23 @@ function booleanEnv(name: string): (value: string | undefined) => boolean | unde
   };
 }
 
+/**
+ * A setting whose blank spelling means "not set". `.env` files and Compose
+ * `env_file` hand a `KEY=` line through as an empty string, and an empty
+ * `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` used to win over a configured
+ * `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` (`??` keeps `""`), so Play failed with a
+ * key file sitting right there.
+ */
+function optionalTrimmed() {
+  return z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim();
+      return trimmed ? trimmed : undefined;
+    });
+}
+
 const envSchema = z.object({
   NODE_ENV: z.string().optional(),
   PORT: z.coerce.number().int().positive().optional(),
@@ -138,12 +155,26 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform(booleanEnv("MOCK_EMAIL")),
-  GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
-  GOOGLE_PLAY_RTDN_AUDIENCE: z.string().optional(),
-  GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
+  /**
+   * Where the API's operator alerts go (`apps/api/src/monitoring/operatorAlerts.ts`):
+   * the worker down, a stuck queue, failed jobs, low disk, a spend cap. One
+   * address, or several separated by commas. Unset, alerts are only logged, and
+   * production warns at boot (productionConfig.ts) rather than refusing.
+   */
+  OPERATOR_ALERT_EMAIL: optionalTrimmed(),
+  // Required in production (productionConfig.ts), as are the RTDN pair below.
+  GOOGLE_PLAY_PACKAGE_NAME: optionalTrimmed(),
+  GOOGLE_PLAY_RTDN_AUDIENCE: optionalTrimmed(),
+  GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL: optionalTrimmed(),
   GOOGLE_PLAY_ACCESS_TOKEN: z.string().optional(),
-  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
-  GOOGLE_PLAY_SERVICE_ACCOUNT_FILE: z.string().optional(),
+  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: optionalTrimmed(),
+  GOOGLE_PLAY_SERVICE_ACCOUNT_FILE: optionalTrimmed(),
+  /**
+   * The Web OAuth client ID Google sign-in verifies against. `googleIdentity.ts`
+   * reads `process.env` itself; it is parsed here so the production check can
+   * warn when it is missing.
+   */
+  GOOGLE_SIGN_IN_CLIENT_ID: optionalTrimmed(),
   /**
    * Firebase Cloud Messaging, for the app's book-progress and book-ready
    * notifications: a service-account key of the Firebase project the app's
@@ -159,6 +190,11 @@ const envSchema = z.object({
     .optional()
     .transform(booleanEnv("MOCK_PUSH")),
   WEB_PORT: z.coerce.number().int().positive().default(5173),
+  /**
+   * The operator console's password. Unset means `auth.ts` authenticates every
+   * request, so production refuses to start without a strong one
+   * (productionConfig.ts).
+   */
   WEB_PASSWORD: z
     .string()
     .optional()
@@ -207,6 +243,18 @@ const envSchema = z.object({
   EXPORT_TEMP_RETENTION_HOURS: z.coerce.number().min(1).max(720).default(6),
   MAX_PARALLEL_PAGE_JOBS: z.coerce.number().int().min(1).max(32).default(4),
   MAX_PARALLEL_IMAGE_JOBS: z.coerce.number().int().min(1).max(8).default(2),
+  /**
+   * How many long-lane jobs (book runs, pages, pictures, a generation's own
+   * compile, narration, imports) the worker runs at once. Unset — or blank —
+   * means the single queue's old concurrency, `max(MAX_PARALLEL_PAGE_JOBS,
+   * MAX_PARALLEL_IMAGE_JOBS)` (`workerLaneConcurrency` in `jobLanes.ts`).
+   */
+  WORKER_LONG_CONCURRENCY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(1).max(32).optional()
+  ),
+  /** How many interactive-lane jobs (plans, edits, assists, portraits, short compiles) run at once. */
+  WORKER_INTERACTIVE_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
   MOCK_AI: z
     .string()
     .optional()
@@ -215,7 +263,11 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform(booleanEnv("MOCK_GOOGLE_PLAY_BILLING")),
-  /** Set only by `scripts/check-production-docker.sh`, which runs the production images on mock providers. */
+  /**
+   * Set only by `scripts/check-production-docker.sh`, which runs the production
+   * images on mock providers. The API and worker log an error at boot whenever
+   * it is on in production (productionConfig.ts).
+   */
   ALLOW_MOCK_AI_IN_PRODUCTION: z
     .string()
     .optional()

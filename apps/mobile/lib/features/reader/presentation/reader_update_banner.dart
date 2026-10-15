@@ -15,6 +15,10 @@ enum ReaderUpdateStatus {
 
   /// A newer compile is ready to load.
   updated,
+
+  /// The server is out of reach: the book on screen is the copy on this
+  /// phone, and what needs the server (edits, the chat) is paused.
+  offline,
 }
 
 /// The card over the page telling the reader their edits have landed.
@@ -50,12 +54,29 @@ class ReaderUpdateBanner extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final rebuilding = status == ReaderUpdateStatus.rebuilding;
-    final background = rebuilding
+    final offline = status == ReaderUpdateStatus.offline;
+    final calm = rebuilding || offline;
+    final background = calm
         ? colors.surfaceContainerHigh
         : colors.primaryContainer;
-    final foreground = rebuilding
-        ? colors.onSurface
-        : colors.onPrimaryContainer;
+    final foreground = calm ? colors.onSurface : colors.onPrimaryContainer;
+    final (icon, title, detail) = switch (status) {
+      ReaderUpdateStatus.rebuilding => (
+        Icons.autorenew,
+        'Updating this book with your changes…',
+        'You can keep reading while it finishes.',
+      ),
+      ReaderUpdateStatus.offline => (
+        Icons.cloud_off_outlined,
+        "You're offline — reading the copy on this phone",
+        'Edits and the book chat come back when you reconnect.',
+      ),
+      _ => (
+        Icons.auto_awesome,
+        'Your edits are in. Reload to see them.',
+        'Reloading keeps your place.',
+      ),
+    };
 
     return SafeArea(
       key: key,
@@ -91,11 +112,7 @@ class ReaderUpdateBanner extends StatelessWidget {
                   child: Row(
                     children: [
                       ExcludeSemantics(
-                        child: Icon(
-                          rebuilding ? Icons.autorenew : Icons.auto_awesome,
-                          size: 20,
-                          color: foreground,
-                        ),
+                        child: Icon(icon, size: 20, color: foreground),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
@@ -103,9 +120,7 @@ class ReaderUpdateBanner extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              rebuilding
-                                  ? 'Updating this book with your changes…'
-                                  : 'Your edits are in. Reload to see them.',
+                              title,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: foreground,
                                 fontWeight: FontWeight.w700,
@@ -113,9 +128,7 @@ class ReaderUpdateBanner extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              rebuilding
-                                  ? 'You can keep reading while it finishes.'
-                                  : 'Reloading keeps your place.',
+                              detail,
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: foreground.withValues(alpha: 0.8),
                               ),
@@ -123,7 +136,14 @@ class ReaderUpdateBanner extends StatelessWidget {
                           ],
                         ),
                       ),
-                      if (!rebuilding) ...[
+                      if (offline)
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          tooltip: 'Dismiss',
+                          color: foreground,
+                          onPressed: onDismiss,
+                        )
+                      else if (!rebuilding) ...[
                         const SizedBox(width: AppSpacing.xs),
                         FilledButton(
                           onPressed: onReload,

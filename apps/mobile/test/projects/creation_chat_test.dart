@@ -93,7 +93,7 @@ void main() {
           assistantMessage: reply,
           canBuild: false,
           quickReplies: const [
-            'Bedtime story for 5 year olds',
+            'A bedtime story for my 5-year-old',
             'Lead magnet about pricing',
             'Workbook for new coaches',
             'Short story about a garden mystery',
@@ -107,7 +107,7 @@ void main() {
     // captured by the drawer's full-screen gesture layer.
     final firstChip = find.widgetWithText(
       ActionChip,
-      'Bedtime story for 5 year olds',
+      'A bedtime story for my 5-year-old',
     );
     final chipLeftBefore = tester.getTopLeft(firstChip).dx;
     await tester.drag(firstChip, const Offset(-250, 0));
@@ -1136,8 +1136,15 @@ void main() {
     expect(find.text('Question 1 of 1'), findsOneWidget);
     expect(find.text('Pick as many as you like.'), findsOneWidget);
 
+    // The drawer scrolls on this short surface, and its "Scroll for more" cue
+    // is a control laid over the bottom of the list: an option half under it
+    // takes the tap as a page-down. Each pick scrolls its row to the top
+    // first, and the running count proves the tap reached the row.
+    await tester.ensureVisible(find.text('Forgiveness'));
+    await tester.pump();
     await tester.tap(find.text('Forgiveness'));
     await tester.pump();
+    expect(find.text('1 selected'), findsOneWidget);
     // A tap is a pick, not an answer: nothing has been sent yet.
     expect(projects.revisionMessages, isEmpty);
 
@@ -1145,6 +1152,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Justice'));
     await tester.pump();
+    expect(find.text('2 selected'), findsOneWidget);
 
     final sendFinder = find.widgetWithText(FilledButton, 'Send 2 answers');
     await tester.ensureVisible(sendFinder);

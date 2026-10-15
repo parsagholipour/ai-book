@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../../account/presentation/account_billing_copy.dart';
+import '../../projects/domain/project_models.dart';
 import '../domain/billing_models.dart';
 
 // Defined beside the models so their own labels can use it; every importer of
@@ -165,11 +166,16 @@ class BillingPlanCard extends StatelessWidget {
     this.mostPopular = false,
     this.bestValue = false,
     this.savingsPercent,
+    this.creditCosts = const {},
     super.key,
   });
 
   final MobileBillingProduct product;
   final StoreProduct? storeProduct;
+
+  /// The live price list: the benefit lines read the plan's page ceiling and
+  /// the typical-book count from it.
+  final Map<String, dynamic> creditCosts;
   final bool isCurrentPlan;
   final bool pending;
   final VoidCallback onBuy;
@@ -190,6 +196,7 @@ class BillingPlanCard extends StatelessWidget {
     final style = billingTierStyleForSku(product.sku);
     final accent = style.accent(colors);
     final ribbon = _ribbonLabel();
+    final intro = introOfferFor(product, storeProduct);
 
     return Container(
       decoration: BoxDecoration(
@@ -282,14 +289,20 @@ class BillingPlanCard extends StatelessWidget {
                       runSpacing: 4,
                       children: [
                         Text(
-                          storeProduct?.price ?? fallbackPrice(product),
+                          intro?.price ??
+                              storeProduct?.price ??
+                              billingPriceUnavailable,
                           style: text.headlineMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                             color: colors.onSurface,
                           ),
                         ),
                         Text(
-                          'per month',
+                          storeProduct == null
+                              ? 'Price unavailable'
+                              : intro == null
+                              ? 'per ${product.periodNoun}'
+                              : 'for the ${intro.termLabel}',
                           style: text.bodyMedium?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
@@ -301,16 +314,26 @@ class BillingPlanCard extends StatelessWidget {
                           ),
                       ],
                     ),
+                    if (intro != null)
+                      Text(
+                        'Then ${storeProduct!.price} per ${product.periodNoun}',
+                        style: text.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
                     const SizedBox(height: 4),
                     Text(
-                      '${formatCredits(product.creditAmount)} credits every month',
+                      planCreditsLine(product, intro, per: 'every'),
                       style: text.titleSmall?.copyWith(
                         color: accent,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    for (final benefit in planBenefits(product)) ...[
+                    for (final benefit in planBenefits(
+                      product,
+                      creditCosts: creditCosts,
+                    )) ...[
                       BillingBenefitRow(label: benefit, accent: accent),
                       const SizedBox(height: 8),
                     ],
@@ -381,7 +404,7 @@ class BillingPlanCard extends StatelessWidget {
   }
 }
 
-/// A one-off purchase: an export unlock or a credit pack.
+/// A one-off purchase: a credit pack.
 class BillingTopUpTile extends StatelessWidget {
   const BillingTopUpTile({
     required this.product,
@@ -448,7 +471,7 @@ class BillingTopUpTile extends StatelessWidget {
               onPressed: storeProduct != null && !pending ? onBuy : null,
               loading: pending,
               loadingLabel: 'Purchase pending',
-              label: storeProduct?.price ?? fallbackPrice(product),
+              label: storeProduct?.price ?? 'Unavailable',
             ),
           ],
         ),
@@ -725,32 +748,119 @@ class _BannerFootnote extends StatelessWidget {
 /// The monthly credit figure is deliberately absent: the card already shows it
 /// beside the price, and repeating it here would spend the first line of the
 /// list on something the eye has just read.
-List<String> planBenefits(MobileBillingProduct product) {
+List<String> planBenefits(
+  MobileBillingProduct product, {
+  Map<String, dynamic> creditCosts = const {},
+}) {
   return <String>[
-    'Books up to $maxPlanBookPages pages',
-    'Unlimited illustrated books',
+    'Books up to ${planMaxBookPages(creditCosts)} pages',
+    'No monthly cap on illustrated books',
     'Bring your own manuscript',
-    switch (product.sku) {
-      'tomeza.max_monthly' => 'Enough for a book a day, with room to spare',
-      'tomeza.pro_monthly' => 'Room for around a book a week',
-      _ => 'Room for around two books a month',
-    },
+    planBooksLine(product, creditCosts),
   ];
 }
 
-String fallbackPrice(MobileBillingProduct product) {
-  final price = product.priceMicros / 1000000;
-  return '${product.currency} ${price.toStringAsFixed(2)}';
+/// The longest book a plan writes: the server's `paidMaxBookPages` from the
+/// price list, or the 600-page request ceiling from a server that sends none.
+int planMaxBookPages(Map<String, dynamic> creditCosts) {
+  final raw = creditCosts['paidMaxBookPages'];
+  if (raw is! num || raw < 1) return maxPlanBookPages;
+  return raw.toInt().clamp(1, maxPlanBookPages);
+}
+
+/// The book every plan line is counted in: Balanced, 20 pages, illustrated,
+/// with a drawn cover — what the app suggests to someone who has not chosen.
+const _typicalBookPages = 20;
+
+/// How many typical books a plan's monthly credits buy at today's prices.
+///
+/// Read from the live price list through the same formula the creation chat
+/// quotes with, so a price change moves this line too. A fixed sentence here
+/// once told Creator buyers "around two books a month" for an allowance that
+/// covers six. Every plan is granted monthly, the yearly one included, so this
+/// is always a month's count.
+int typicalBooksPerMonth(
+  MobileBillingProduct product,
+  Map<String, dynamic> creditCosts,
+) {
+  final perBook =
+      estimatePlanGenerationCredits(
+        qualityPreset: 'balanced',
+        creditCosts: creditCosts,
+      ) +
+      estimateProjectCredits(
+        bookType: 'custom',
+        qualityPreset: 'balanced',
+        coverEnabled: true,
+        illustrationsEnabled: true,
+        targetPages: _typicalBookPages,
+        creditCosts: creditCosts,
+      );
+  return perBook <= 0 ? 0 : product.creditsPerGrant ~/ perBook;
+}
+
+/// "About 8 illustrated 20-page books a month", the yearly plan too: its
+/// credits arrive every month.
+String planBooksLine(
+  MobileBillingProduct product,
+  Map<String, dynamic> creditCosts,
+) {
+  final books = typicalBooksPerMonth(product, creditCosts);
+  if (books <= 1) {
+    return 'About one illustrated $_typicalBookPages-page book a month';
+  }
+  return 'About $books illustrated $_typicalBookPages-page books a month';
+}
+
+/// Where a price goes when Play gave none. The server's catalog price is never
+/// shown in its place: it is in dollars before tax, and read beside Play's own
+/// prices it looked like what the reader would be charged.
+const billingPriceUnavailable = '—';
+
+/// A plan's price in one line, intro offer and all: "$19.99 / month", or
+/// "$9.99 first month, then $19.99 / month". Play's policy is that an offer's
+/// price is never shown without the price it renews at.
+String planPriceLine(MobileBillingProduct plan, StoreProduct? store) {
+  if (store == null) return 'Price unavailable from Google Play';
+  final regular = '${store.price} / ${plan.periodNoun}';
+  final intro = introOfferFor(plan, store);
+  if (intro == null) return regular;
+  return '${intro.price} ${intro.termLabel}, then $regular';
+}
+
+/// What a plan grants, in the same breath as [planPriceLine]: "6,000 credits
+/// / month", or, sold through an intro offer, "4,000 credits the first month,
+/// then 6,000 / month" — the intro period grants `introOfferCredits`, fewer
+/// than the plan, and a surface beside the intro price must not promise more.
+/// [per] is "/" for a compact row and "every" for a card.
+///
+/// Every plan's credits arrive monthly, so a yearly plan says "6,000 credits
+/// every month, billed yearly" — never the year's total, which it no longer
+/// grants at once.
+String planCreditsLine(
+  MobileBillingProduct plan,
+  StoreIntroOffer? intro, {
+  String per = '/',
+}) {
+  final monthly = plan.creditsPerGrant;
+  final billed = plan.isYearly ? ', billed yearly' : '';
+  final regular = '${formatCredits(monthly)} $per month$billed';
+  final introCredits = plan.introOfferCredits;
+  if (intro == null || introCredits == null || introCredits == monthly) {
+    return '${formatCredits(monthly)} credits $per month$billed';
+  }
+  return '${formatCredits(introCredits)} credits the ${intro.termLabel}, '
+      'then $regular';
 }
 
 /// A paid plan in one line: when it renews, or when it stops.
 String _paidPlanLine(MobileSubscriptionPlan? plan) {
   if (plan == null) {
-    return 'Unlimited illustrated books';
+    return 'No monthly cap on illustrated books';
   }
   final endsAt = plan.periodEndsAt;
   if (endsAt == null) {
-    return 'Unlimited illustrated books';
+    return 'No monthly cap on illustrated books';
   }
   final local = endsAt.toLocal();
   final date = '${local.day}/${local.month}/${local.year}';

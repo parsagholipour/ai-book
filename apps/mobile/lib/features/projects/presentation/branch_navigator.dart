@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/touch_target.dart';
 import '../domain/project_models.dart';
 
 /// Chevron arrows with an `index/total` label shown under a message that has
@@ -23,17 +24,22 @@ class BranchNavigator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The arrows keep their small box in the layout but answer a 48dp touch
+    // (see [TouchTarget]); the bubble around them is the region that hands a
+    // near miss to them.
     final color = foreground.withValues(alpha: 0.85);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          tooltip: 'Previous branch',
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-          padding: EdgeInsets.zero,
-          onPressed: switching || !branch.canGoPrevious ? null : onPrevious,
-          icon: Icon(Icons.chevron_left, color: color, size: 20),
+        TouchTarget(
+          child: IconButton(
+            tooltip: 'Previous branch',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            padding: EdgeInsets.zero,
+            onPressed: switching || !branch.canGoPrevious ? null : onPrevious,
+            icon: Icon(Icons.chevron_left, color: color, size: 20),
+          ),
         ),
         Text(
           '${branch.index}/${branch.total}',
@@ -42,13 +48,15 @@ class BranchNavigator extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
-        IconButton(
-          tooltip: 'Next branch',
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-          padding: EdgeInsets.zero,
-          onPressed: switching || !branch.canGoNext ? null : onNext,
-          icon: Icon(Icons.chevron_right, color: color, size: 20),
+        TouchTarget(
+          child: IconButton(
+            tooltip: 'Next branch',
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            padding: EdgeInsets.zero,
+            onPressed: switching || !branch.canGoNext ? null : onNext,
+            icon: Icon(Icons.chevron_right, color: color, size: 20),
+          ),
         ),
       ],
     );

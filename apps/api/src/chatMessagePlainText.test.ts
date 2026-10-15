@@ -22,7 +22,11 @@ const fixtures: [input: string, expected: string][] = [
     "Found:\n1. **Chaco War**, 1932\n- Bolivia [source:src_a:2:1]\n## Head\n`code`",
     "Found:\n1. Chaco War, 1932\n• Bolivia\nHead\n`code`"
   ],
-  ["۱. سلام\n۲. خداحافظ", "۱. سلام\n۲. خداحافظ"]
+  ["۱. سلام\n۲. خداحافظ", "۱. سلام\n۲. خداحافظ"],
+  [
+    "It reads “For \uFEFF*\uFEFFMom\uFEFF*\uFEFF [\u2060x]\u2060”.\n\u2060- not a list",
+    "It reads “For *Mom* [x]”.\n- not a list"
+  ]
 ];
 
 describe("chatMessagePlainText", () => {

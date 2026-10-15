@@ -2,6 +2,8 @@ export * from "./concurrency.js";
 export * from "./generation/pageCountAllowance.js";
 export * from "./collections.js";
 export * from "./config.js";
+export * from "./contentRestrictions.js";
+export * from "./contentSafetyRule.js";
 export * from "./errors.js";
 export * from "./legal.js";
 export * from "./machinePath.js";
@@ -10,14 +12,22 @@ export * from "./textDiff.js";
 export * from "./textTokens.js";
 export * from "./categories.js";
 export * from "./costs.js";
+export * from "./liveVoiceUsage.js";
 export * from "./searchGroundingCost.js";
 export * from "./creditPricing.js";
 export * from "./welcomeCredits.js";
 export * from "./billing.js";
 export * from "./schemas/book.js";
+export * from "./schemas/bookMatter.js";
+export * from "./authoring/bookMatterChatEdit.js";
+export * from "./authoring/bookMatterProseGrounding.js";
+export { isLocalizedBookEditRequest, localizedBookMatterBreaks } from "./authoring/bookMatterLocalizedRequests.js";
+export * from "./generation/coverTypeset.js";
+export { yearInBookDigits } from "./generation/bookMatterPages.js";
 export * from "./prompting/templates.js";
 export * from "./prompting/tone.js";
 export * from "./prompting/language.js";
+export * from "./prompting/conversationLanguage.js";
 export * from "./prompting/script.js";
 export * from "./prompting/readingLevel.js";
 export * from "./generation/generateJsonWithRetry.js";
@@ -55,6 +65,9 @@ export * from "./ingestion/documentText.js";
 export * from "./ingestion/manuscriptImport.js";
 export * from "./adapters/fake.js";
 export * from "./adapters/factory.js";
+export * from "./adapters/providerCredentials.js";
+export * from "./adapters/providerRequirements.js";
+export * from "./productionConfig.js";
 export * from "./context/contextPack.js";
 export * from "./generation/planner.js";
 export * from "./generation/planLibraryCharacters.js";
@@ -155,6 +168,11 @@ export * from "./generation/copyrightSafeImagePrompt.js";
 export * from "./generation/imageProvenance.js";
 export * from "./generation/imageOptimization.js";
 export * from "./generation/markdown.js";
+export {
+  bookCarriesTomezaCredit,
+  TOMEZA_CREDIT_HEAD_BYTES,
+  tomezaCreditInManuscriptHead
+} from "./generation/bookMatterPages.js";
 export * from "./generation/bookImageAssets.js";
 export * from "./generation/exportFormats.js";
 export * from "./generation/epub.js";
@@ -192,6 +210,8 @@ export * from "./jobSteps.js";
 export * from "./jobScope.js";
 export * from "./compilePublicationPolicy.js";
 export * from "./jobDispatch.js";
+export * from "./jobLanes.js";
+export * from "./workerHeartbeat.js";
 export * from "./continuationPublication.js";
 // The record coercion every workspace reaches for. Only these two names leave
 // the package — the rest of `schemas/jsonCoercion.js` stays internal.

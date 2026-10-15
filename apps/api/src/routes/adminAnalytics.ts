@@ -10,13 +10,14 @@
 
 import { type FastifyPluginAsync, type FastifyReply } from "fastify";
 import { z } from "zod";
-import { markOperatorRequest } from "../requestAuth.js";
+import { requireOperatorActor } from "../requestAuth.js";
 import { loadAdminCostBreakdown } from "../admin/costBreakdown.js";
 import { listGeneratedBooks, loadGeneratedBookDetail } from "../admin/generatedBooks.js";
 import { listGeneratedPlans, loadGeneratedPlanDetail } from "../admin/generatedPlans.js";
 import { loadAdminProjectDetail, loadAdminUserDetail, listAdminUsers } from "../admin/inspection.js";
 import { loadAdminOverview, resolveWindow } from "../admin/metrics.js";
 import { loadOperationEconomics } from "../admin/operationEconomics.js";
+import { loadProductFunnel } from "../admin/productFunnel.js";
 
 const windowQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
@@ -63,7 +64,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/overview",
     { attachValidation: true, schema: { tags: ["admin"], querystring: windowQueryOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = windowQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return sendInvalid(reply, parsed.error);
@@ -72,11 +75,30 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
+  // The growth funnel (`admin/productFunnel.ts`): its own request because its
+  // cohort queries are the slowest on the page and the Overview should not wait.
+  fastify.get(
+    "/api/admin/growth",
+    { attachValidation: true, schema: { tags: ["admin"], querystring: windowQueryOpenApi } },
+    async (request, reply) => {
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
+      const parsed = windowQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendInvalid(reply, parsed.error);
+      }
+      return loadProductFunnel(resolveWindow(parsed.data.days));
+    }
+  );
+
   fastify.get(
     "/api/admin/costs",
     { attachValidation: true, schema: { tags: ["admin"], querystring: windowQueryOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = windowQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return sendInvalid(reply, parsed.error);
@@ -89,7 +111,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/operations",
     { attachValidation: true, schema: { tags: ["admin"], querystring: windowQueryOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = windowQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return sendInvalid(reply, parsed.error);
@@ -102,7 +126,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/operations/books",
     { attachValidation: true, schema: { tags: ["admin"], querystring: generatedBookListQueryOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = generatedBookListQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return sendInvalid(reply, parsed.error);
@@ -116,7 +142,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   fastify.get("/api/admin/operations/books/:id", { schema: { tags: ["admin"] } }, async (request, reply) => {
-    await markOperatorRequest(request);
+    if (!(await requireOperatorActor(request, reply))) {
+      return;
+    }
     const { id } = idParamsSchema.parse(request.params);
     const detail = await loadGeneratedBookDetail(id);
     if (!detail) {
@@ -129,7 +157,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/operations/plans",
     { attachValidation: true, schema: { tags: ["admin"], querystring: generatedBookListQueryOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = generatedBookListQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return sendInvalid(reply, parsed.error);
@@ -143,7 +173,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   fastify.get("/api/admin/operations/plans/:id", { schema: { tags: ["admin"] } }, async (request, reply) => {
-    await markOperatorRequest(request);
+    if (!(await requireOperatorActor(request, reply))) {
+      return;
+    }
     const { id } = idParamsSchema.parse(request.params);
     const detail = await loadGeneratedPlanDetail(id);
     if (!detail) {
@@ -156,7 +188,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/users",
     { attachValidation: true, schema: { tags: ["admin"], querystring: userListQueryOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = userListQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return sendInvalid(reply, parsed.error);
@@ -171,7 +205,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   fastify.get("/api/admin/users/:id", { schema: { tags: ["admin"] } }, async (request, reply) => {
-    await markOperatorRequest(request);
+    if (!(await requireOperatorActor(request, reply))) {
+      return;
+    }
     const { id } = idParamsSchema.parse(request.params);
     const detail = await loadAdminUserDetail(id);
     if (!detail) {
@@ -181,7 +217,9 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get("/api/admin/projects/:id", { schema: { tags: ["admin"] } }, async (request, reply) => {
-    await markOperatorRequest(request);
+    if (!(await requireOperatorActor(request, reply))) {
+      return;
+    }
     const { id } = idParamsSchema.parse(request.params);
     const detail = await loadAdminProjectDetail(id);
     if (!detail) {

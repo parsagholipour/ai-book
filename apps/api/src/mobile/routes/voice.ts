@@ -60,6 +60,9 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { MobileAuthContext } from "../../requestAuth.js";
 import type { MobileRouteContext } from "../routeContext.js";
+import { requireAiCapacity } from "../aiCapacity.js";
+import { requirePaidPlanPerk } from "../planPerks.js";
+import { withContentSafetyInstructions } from "../../contentSafety.js";
 
 /**
  * Live voice calls with the characters of a finished book, and with the
@@ -142,7 +145,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       schema: {
         tags: ["mobile"],
         body: mobileVoiceCallStartOpenApiBody,
-        response: { 401: mobileAuthError, 404: mobileAuthError }
+        response: { 401: mobileAuthError, 403: mobileAuthError, 404: mobileAuthError }
       }
     },
     async (request, reply) => {
@@ -172,6 +175,17 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       }
       if (!appConfig.GEMINI_API_KEY?.trim()) {
         return sendVoiceUnavailable(reply);
+      }
+      // A plan perk (`planPerks.ts`), asked before the breaker so a free reader
+      // is told what unlocks it rather than that Tomeza is busy — and, like the
+      // breaker, ahead of the persona build, which nobody is charged for.
+      if (!(await requirePaidPlanPerk(reply, auth.user.id, "voice_call"))) {
+        return;
+      }
+      // Ahead of the persona build too: that job is a text and an image call
+      // nobody is charged for, and a refused call has no use for it yet.
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "voice"))) {
+        return;
       }
 
       // A character nobody has called yet has no persona. Building one takes a
@@ -223,7 +237,7 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       schema: {
         tags: ["mobile"],
         body: mobileLibraryVoiceCallStartOpenApiBody,
-        response: { 401: mobileAuthError, 404: mobileAuthError }
+        response: { 401: mobileAuthError, 403: mobileAuthError, 404: mobileAuthError }
       }
     },
     async (request, reply) => {
@@ -244,6 +258,12 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       }
       if (!appConfig.GEMINI_API_KEY?.trim()) {
         return sendVoiceUnavailable(reply);
+      }
+      if (!(await requirePaidPlanPerk(reply, auth.user.id, "voice_call"))) {
+        return;
+      }
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "voice"))) {
+        return;
       }
 
       // No "preparing" answer here: the persona is the reader's own notes,
@@ -382,7 +402,9 @@ async function connectVoiceCall(
   if (!hitAuthenticatedLimit(context.voiceCallLimiter, reply, auth.user.id, "voice-call")) {
     return;
   }
-  const instructions = await connection.instructions();
+  // The persona is a system instruction rather than a text call, so the
+  // operator's sexual-content rule is put in front of it here (`contentSafety.ts`).
+  const instructions = await withContentSafetyInstructions(await connection.instructions());
   const ticket = randomBytes(32).toString("base64url");
 
   let call;

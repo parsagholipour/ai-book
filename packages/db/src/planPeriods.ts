@@ -8,7 +8,8 @@
  *
  * Google Play verification and renewal grant paid subscription periods. Live
  * paid periods stay intact. Period adoption and legacy retirement run inside
- * the caller's serializable transaction.
+ * the caller's serializable transaction, and so does settling a store refund's
+ * debt out of the allowance at a period boundary (`planDebt.ts`).
  */
 import {
   PLAN_ENTITLEMENT_TYPES,
@@ -34,6 +35,7 @@ import {
 import { activeCreditPricingVersion } from "./creditPricing.ts";
 import { ensureWelcomeCreditsTx } from "./welcomeCredits.ts";
 import { retireFreePlanCreditsTx } from "./freePlanCredits.ts";
+import { planDebtSettlementTx, recordPlanDebtSettlementTx } from "./planDebt.ts";
 
 /** Monthly usage counters. See `UsageCounter` in the schema. */
 export const ILLUSTRATED_BOOK_COUNTER = "illustrated_books";
@@ -58,6 +60,13 @@ export type PlanSummary = {
   productSku: string | null;
   /** Identifies the owned Play purchase without exposing its raw token. */
   purchaseTokenHash: string | null;
+  /**
+   * A downgrade Play deferred to the end of the paid period: the plan the
+   * reader moves to, and when. Until then `productSku` names the plan being
+   * run out — the one Play still files the token under — so a further switch
+   * from the app matches what Play holds. Absent when nothing is scheduled.
+   */
+  pendingChange?: { productSku: string; startsAt: Date | null } | undefined;
 };
 
 export type MonthlyQuota = {
@@ -122,7 +131,9 @@ export async function ensureCurrentPlanPeriodTx(
   now: Date = new Date()
 ): Promise<PlanAccountRow> {
   const account = await ensureCreditAccountRow(tx, userId);
-  const welcomed = await ensureWelcomeCreditsTx(tx, account, now);
+  const welcomed = await ensureWelcomeCreditsTx(tx, account, now, {
+    onPaidPlan: async () => (await resolvePlanTierTx(tx, userId, now)) !== "free"
+  });
   const settled = await retireFreePlanCreditsTx(tx, welcomed);
   // A period that has not run out is owned by whoever granted it. That covers
   // paid periods mid-month and this month's zero-credit free period, and it
@@ -163,7 +174,7 @@ export async function ensureCurrentPlanPeriod(userId: string, now: Date = new Da
  */
 type SubscriptionPlanPeriodOptions = {
   userId: string;
-  productId: string;
+  productId?: string | null | undefined;
   purchaseRecordId: string;
   tokenHash: string;
   allowance: number;
@@ -201,7 +212,7 @@ export async function grantSubscriptionPlanPeriodTx(tx: BillingTx, options: Subs
     idempotencyKey: options.idempotencyKey,
     description: options.description,
     metadata: { ...options.metadata, planPeriodKey: period.key },
-    productId: options.productId,
+    productId: options.productId ?? undefined,
     purchaseRecordId: options.purchaseRecordId
   });
   return applied.entry;
@@ -220,6 +231,7 @@ export async function getPlanSummary(userId: string, now: Date = new Date()): Pr
       currentPeriodEnd: true,
       autoRenewing: true,
       externalSubscriptionId: true,
+      metadata: true,
       product: { select: { sku: true } }
     }
   });
@@ -227,6 +239,7 @@ export async function getPlanSummary(userId: string, now: Date = new Date()): Pr
   // first, so either answer means the same thing: this period is the last one.
   const cancelAtPeriodEnd = subscription?.status === "CANCELED" || subscription?.autoRenewing === false;
   const periodEnd = subscription?.currentPeriodEnd ?? null;
+  const pendingChange = subscription ? deferredChange(subscription.metadata, subscription.product?.sku ?? null, now) : null;
   return {
     tier,
     source: "google_play",
@@ -234,9 +247,23 @@ export async function getPlanSummary(userId: string, now: Date = new Date()): Pr
     renewsAt: cancelAtPeriodEnd ? null : periodEnd,
     cancelAtPeriodEnd,
     endsAt: cancelAtPeriodEnd ? periodEnd : null,
-    productSku: subscription?.product?.sku ?? null,
-    purchaseTokenHash: subscription?.externalSubscriptionId ?? null
+    productSku: pendingChange?.fromProductSku ?? subscription?.product?.sku ?? null,
+    purchaseTokenHash: subscription?.externalSubscriptionId ?? null,
+    ...(pendingChange ? { pendingChange: { productSku: pendingChange.productSku, startsAt: pendingChange.startsAt } } : {})
   };
+}
+
+/** The deferred plan change a subscription row's last verification recorded, while it is still ahead. */
+function deferredChange(
+  metadata: unknown,
+  productSku: string | null,
+  now: Date
+): { fromProductSku: string; productSku: string; startsAt: Date | null } | null {
+  const change = jsonRecord(jsonRecord(jsonRecord(metadata).subscription).deferredReplacement);
+  if (!productSku || typeof change.fromProductSku !== "string") return null;
+  const startsAt = typeof change.takesEffectAt === "string" ? new Date(change.takesEffectAt) : null;
+  if (startsAt && !(startsAt > now)) return null;
+  return { fromProductSku: change.fromProductSku, productSku, startsAt };
 }
 
 /**
@@ -406,6 +433,12 @@ const FALLBACK_PERIOD_MS = 31 * 24 * 60 * 60 * 1000;
  * idempotency key is the period, which is what makes concurrent API instances —
  * and a renewal sweep racing the app's own verification — harmless.
  *
+ * Resetting the allowance never touched a negative purchased pool, so a store
+ * refund's debt used to sit beside every new allowance, hide that much of it,
+ * and outlive it. The boundary now settles the debt first (`planDebt.ts`): the
+ * outgoing remainder pays what it was hiding instead of expiring, and the new
+ * allowance pays the rest, so only what is left of either expires or is spendable.
+ *
  * A free period is still *adopted* when the account is sitting on a different
  * one. That is the case a cancellation makes reachable:
  * someone who entered a free period on the 1st, subscribed on the 5th and
@@ -486,7 +519,29 @@ async function applyPlanPeriodTx(
   }
 
   const granted = existing ? 0 : allowance;
-  const forfeited = Math.max(0, options.account.planCredits);
+  // Store-refund debt is settled at the boundary, before anything expires:
+  // first from the remainder the debt was hiding, then from the new allowance.
+  const settlement = await planDebtSettlementTx(tx, {
+    userId: options.userId,
+    account: options.account,
+    periodKey: options.period.key,
+    granted
+  });
+  const fromRemainder = settlement.fromRemainder.credits;
+  const fromAllowance = settlement.fromAllowance.credits;
+  const forfeited = Math.max(0, options.account.planCredits) - fromRemainder;
+  const purchasedAfterRemainder = options.account.availableCredits + fromRemainder;
+  if (fromRemainder > 0) {
+    await recordPlanDebtSettlementTx(tx, {
+      userId: options.userId,
+      operation: options.operation,
+      source: "remainder",
+      part: settlement.fromRemainder,
+      paidFromPlanPeriodKey: options.account.planPeriodKey,
+      debtBeforeCredits: settlement.debtCredits,
+      balanceAfterCredits: purchasedAfterRemainder + forfeited
+    });
+  }
   if (forfeited > 0) {
     await tx.creditLedgerEntry.create({
       data: {
@@ -496,7 +551,7 @@ async function applyPlanPeriodTx(
         operation: options.operation,
         amountCredits: -forfeited,
         planCreditsDelta: -forfeited,
-        balanceAfterCredits: options.account.availableCredits,
+        balanceAfterCredits: purchasedAfterRemainder,
         // The outgoing period names the adopting write, because the grant's own
         // `:expired` key may already have been spent when it ran for real.
         idempotencyKey: existing
@@ -519,7 +574,8 @@ async function applyPlanPeriodTx(
   const account = await tx.userCreditAccount.update({
     where: { userId: options.userId },
     data: {
-      planCredits: granted,
+      planCredits: granted - fromAllowance,
+      ...(fromRemainder + fromAllowance > 0 ? { availableCredits: { increment: fromRemainder + fromAllowance } } : {}),
       // The period's size, not what is left of it. Zero for free periods.
       planCreditsPerPeriod: allowance,
       planPeriodStart: options.period.start,
@@ -529,6 +585,9 @@ async function applyPlanPeriodTx(
     },
     select: accountSelect
   });
+  // Settling the debt moves credits between pools, so the total right after the
+  // grant is the same whether or not any of it went to the debt.
+  const balanceAfterGrant = purchasedAfterRemainder + granted;
 
   const entry =
     granted <= 0
@@ -541,15 +600,30 @@ async function applyPlanPeriodTx(
             entryType: "GRANT",
             status: "SETTLED",
             operation: options.operation,
+            // The whole allowance, including any part that pays a debt below: a
+            // refund of this period reverses all of it, and that is what brings
+            // the debt it paid back.
             amountCredits: granted,
             planCreditsDelta: granted,
-            balanceAfterCredits: account.availableCredits + granted,
+            balanceAfterCredits: balanceAfterGrant,
             idempotencyKey: options.idempotencyKey,
             description: options.description,
             metadata: jsonInput({ pricingVersion: activeCreditPricingVersion(), ...options.metadata })
           },
           select: ledgerSelect
         });
+
+  if (fromAllowance > 0) {
+    await recordPlanDebtSettlementTx(tx, {
+      userId: options.userId,
+      operation: options.operation,
+      source: "allowance",
+      part: settlement.fromAllowance,
+      paidFromPlanPeriodKey: options.period.key,
+      debtBeforeCredits: settlement.debtCredits - fromRemainder,
+      balanceAfterCredits: balanceAfterGrant
+    });
+  }
 
   return { account, entry };
 }

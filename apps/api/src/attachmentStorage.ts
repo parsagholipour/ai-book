@@ -60,10 +60,16 @@ export async function deleteCreationAttachmentFile(
   }
 }
 
+/** A draft's (or an import's) upload prefix, or null for an id that cannot be one path segment. */
+export function creationAttachmentDraftPrefix(draftId: string): string | null {
+  return SAFE_SEGMENT.test(draftId) ? `${objectKey("attachments", draftId)}/` : null;
+}
+
 /** Removes every stored file for a draft (used when the chat session is deleted). */
 export async function deleteCreationAttachmentDraftDir(_root: string, draftId: string): Promise<void> {
-  if (SAFE_SEGMENT.test(draftId)) {
-    await objectStore().deletePrefix(`${objectKey("attachments", draftId)}/`);
+  const prefix = creationAttachmentDraftPrefix(draftId);
+  if (prefix) {
+    await objectStore().deletePrefix(prefix);
   }
 }
 

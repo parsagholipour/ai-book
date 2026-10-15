@@ -61,6 +61,7 @@ class MobileProjectSummary {
     this.manuscript,
     this.bookTypeChoice,
     this.bookShape = 'book',
+    this.payload,
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
        illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
        coverArtSource =
@@ -71,6 +72,11 @@ class MobileProjectSummary {
   final String title;
   final String? subtitle;
   final String? authorName;
+
+  /// The server's JSON this summary was read from, so the library can be
+  /// written to the phone exactly as it was sent (`OfflineLibraryStore`) and
+  /// read back by this same parser. Null for a summary built in code.
+  final Map<String, dynamic>? payload;
 
   /// Cover art once the cover job has finished; null before that.
   final MobileProjectImage? coverImage;
@@ -166,6 +172,7 @@ class MobileProjectSummary {
             ),
       coverImage: parseProjectCoverImage(json),
       manuscript: MobileManuscriptSummary.fromJsonOrNull(json['manuscript']),
+      payload: json,
     );
   }
 
@@ -726,6 +733,10 @@ int estimateApprovalCredits(
   );
 }
 
+/// What a book costs once its plan is approved: the writing, its pictures and,
+/// on the top tiers, the premium review. Mirrors `estimateFullBookCreditCost`
+/// in core. A book carries no export line for anyone — once it is written its
+/// files download free — so this is the whole price whoever approves it.
 int estimateProjectCredits({
   required String bookType,
   String? bookTypeChoice,
@@ -748,7 +759,7 @@ int estimateProjectCredits({
     creditCosts,
     'fullBookPerPage',
     qualityPreset,
-    {'fast': 5, 'balanced': 8, 'premium': 30, 'ultra': 71},
+    {'fast': 5, 'balanced': 8, 'premium': 30, 'ultra': 130},
   );
   final imageGeneration = tierCreditRate(
     creditCosts,
@@ -757,7 +768,6 @@ int estimateProjectCredits({
     {'fast': 45, 'balanced': 45, 'premium': 85, 'ultra': 85},
   );
   final premiumReview = flatCreditRate(creditCosts, 'premiumReview', 200);
-  final exportUnlock = flatCreditRate(creditCosts, 'exportUnlock', 150);
   final imageCount = estimatedInteriorImageCount(
     bookType: bookType,
     bookTypeChoice: bookTypeChoice,
@@ -771,8 +781,7 @@ int estimateProjectCredits({
       targetPages * fullBookPerPage +
       (includeCover ? imageGeneration : 0) +
       imageCount * imageGeneration +
-      premiumCredits +
-      exportUnlock;
+      premiumCredits;
 }
 
 /// What starting the initial plan costs at the selected effort level.
@@ -823,10 +832,9 @@ String quotingBookType(String bookType, [String? bookTypeChoice]) {
 /// Mirrors `estimateInteriorImageCount` in `packages/core/src/billing.ts`, which
 /// is what the server actually charges against, so the two must move together.
 /// Counts the same pages generation will illustrate (page 1, then every 8th;
-/// workbooks every 4th; a children's story, which is a KIDS book, every page),
-/// then the launch cap. The cover is excluded here because
-/// [estimateProjectCredits] prices it separately as exactly one
-/// image-generation unit.
+/// workbooks every 4th), then the launch cap; a children's story, which is a
+/// KIDS picture book, is [pictureBookIllustrationCount]. The cover is excluded:
+/// [estimateProjectCredits] prices it as exactly one image-generation unit.
 int estimatedInteriorImageCount({
   required String bookType,
   String? bookTypeChoice,
@@ -838,6 +846,10 @@ int estimatedInteriorImageCount({
   if (!includeIllustrations) {
     return 0;
   }
+  // A children's story is a picture book (`pictureBookIllustrationCap`).
+  if (bookTypeChoice == 'children_story') {
+    return pictureBookIllustrationCount(targetPages);
+  }
   final type = quotingBookType(bookType, bookTypeChoice);
   final customCap = (targetPages / 8).ceil();
   final launchCap = switch (type) {
@@ -848,12 +860,20 @@ int estimatedInteriorImageCount({
   final step = type == 'workbook' ? 4 : 8;
   var slots = 0;
   for (var i = 1; i <= targetPages; i++) {
-    if (bookTypeChoice == 'children_story' || i == 1 || i % step == 0) {
+    if (i == 1 || i % step == 0) {
       slots++;
     }
   }
   return slots > launchCap ? launchCap : slots;
 }
+
+/// The most pictures a picture book draws (`PICTURE_BOOK_MAX_PICTURES`).
+const pictureBookMaxPictures = 12;
+
+/// A picture book's pictures: `min(pages, 12)`, so a longer book never draws
+/// fewer. Mirrors `pictureBookIllustrationCap` in core's `illustrationSlots.ts`.
+int pictureBookIllustrationCount(int pages) =>
+    pages.clamp(0, pictureBookMaxPictures);
 
 /// Compact copy for places that summarize generated imagery in one phrase.
 String generatedImagesLabel({

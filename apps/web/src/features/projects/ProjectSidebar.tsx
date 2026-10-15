@@ -54,6 +54,8 @@ export function ProjectSidebar(props: {
   showImageModelControls: boolean;
   createProjectBusy: boolean;
   onLogout: () => void;
+  /** Signs out every browser holding a console cookie, this one included. */
+  onLogoutEverywhere: () => void;
   onCreateProject: () => void;
   onRefreshProjects: () => void;
   onSelectProject: (projectId: string) => void;
@@ -85,6 +87,19 @@ export function ProjectSidebar(props: {
             startIcon={<LogOut />}
           >
             Log out
+          </Button>
+        ) : null}
+        {props.authEnabled ? (
+          <Button
+            size="sm"
+            onClick={() => {
+              if (window.confirm("Sign out every browser signed in to this console, this one included?")) props.onLogoutEverywhere();
+            }}
+            disabled={props.authBusy}
+            title="For a browser left signed in somewhere or a copied cookie. Everyone signs in again with the password."
+            startIcon={<LogOut />}
+          >
+            Sign out everywhere
           </Button>
         ) : null}
       </div>

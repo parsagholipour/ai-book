@@ -20,12 +20,15 @@ don't flip the generator setting to make the root convention true.
 
 `src/billing.ts` is a facade over `billingLedger.ts` (balances), `billingEntitlements.ts`,
 `billingSubscriptions.ts` (Google Play), `planPeriods.ts` (allowances and quotas),
-`welcomeCredits.ts` (one-time welcome grant) and `billingInternals.ts` (shared plumbing).
+`welcomeCredits.ts` (one-time welcome grant) and `billingInternals.ts` (shared plumbing), with
+`ledgerReversal.ts` (a settled charge's one cumulative reversal) and `userStopSettlement.ts` (what
+a reader's own stop keeps) behind the ledger.
 
 **Import `@book-maker/db/billing`, never a module behind it.** The API suites mock the facade with
 `vi.mock("@book-maker/db/billing")`; a deep import silently escapes that mock and the test stops
 covering you. The package's `exports` map names only whole facades — `.`, `./billing`,
-`./libraryMentions`, `./pageIllustrationOwnership` and `./searchGroundingAllowance` — and nothing
+`./libraryMentions`, `./pageIllustrationOwnership`, `./searchGroundingAllowance`,
+`./safetySettings` and `./providerSpend` — and nothing
 behind one, to keep that honest.
 
 `./libraryMentions` is a subpath for the opposite reason: it holds no client at all (its Prisma
@@ -58,6 +61,21 @@ stand-in client. What only Postgres can settle — every ordinal handed out once
 first inserts, and a rolled-back claim not spent — is measured in
 `searchGroundingAllowance.integration.test.ts`. Why the counter exists at all is in
 `packages/core/src/adapters/CLAUDE.md`.
+
+`./safetySettings` is the fourth: `readCopyrightRestrictionsEnabled(client)` is the one read of
+the copyright flag, shared by the API's screens and the worker's legacy import restore so the two
+cannot disagree about what the current setting is. Same shape — client passed in, Prisma for types.
+It also owns the sexual-content filter's switch, `readSexualContentFilterEnabled` — **ON when no
+revision exists**, the copyright flag's opposite — and `createSexualContentFilterFlag`, the cached,
+single-flight read both apps ask on every text call, which answers ON when the read fails
+(→ apps/api/CLAUDE.md, "Content safety").
+
+`./providerSpend` is the fifth: `providerSpendSince(client, since, { userId? })` is provider spend
+in USD since a moment — everyone's, or one reader's off `ProviderCallLog.userId` — summed from
+`costHint` alone, so it is a floor on real spend and never replays a rate card
+(`apps/api/src/admin/CLAUDE.md`). It is what a spend cap reads, served by the `(userId, createdAt)`
+and `(createdAt)` indexes of migrations 000099 and 000100. Same shape — client passed in, Prisma for
+types.
 
 ## Adding a priced operation
 
@@ -647,10 +665,10 @@ diff rather than by silently reordering rows.
 
 - **A charge has one cumulative reversal, and partial settlements name their claim.**
   `refundCreditLedgerEntryPortion` is the ledger's only partial reversal, for work priced by the
-  page that delivered fewer than it billed. Its one production caller was a structural insert that
-  resumed against a book holding two of its five recorded pages; a recorded insert is now
-  indivisible and settles whole, so the primitive is currently unreached and kept for the next
-  operation priced that way. The unique `reversesEntryId` still links one REFUND row,
+  page that delivered fewer than it billed. Its first production caller was a structural insert
+  that resumed against a book holding two of its five recorded pages; a recorded insert is now
+  indivisible and settles whole, and the caller it has today is a reader's own stop of a book that
+  had written some of its pages (the entry below). The unique `reversesEntryId` still links one REFUND row,
   but that row's amount is the cumulative total returned; the partial caller's stable claim key in
   metadata makes a redelivery a no-op. `failEditOperation`, `failGenerationAttempt`, the fallback
   project refund and the attempt reconciler may later reach the same charge: they top that row up by
@@ -671,6 +689,93 @@ diff rather than by silently reordering rows.
   row, so `refundedLedgerEntryIds` and `refundLatestProjectOperationCredits` would under-count a split
   reversal and redeliver or re-refund a charge.
 
+- **A reader's own stop or delete refunds only what was not delivered, and an ended month's
+  allowance lapses instead of turning permanent.** Every stop route and both delete routes go
+  through `stopProjectGenerationJobs` (`apps/api/src/queue.ts`), which refunded a paid run whole
+  however much of it had been delivered. The app previews every page row while a book is written
+  (900 characters, a whole picture-book page) and serves its pictures, so a book could be read and
+  then deleted for every credit back, and a free account could repeat that on welcome credits with
+  its illustrated-book slot handed back each time. And `refundPoolSplit` sent the allowance share of
+  any refund to the never-expiring purchased pool once its period had rolled over: a Max subscriber
+  who started 80,000 credits of books before the reset and deleted them after it held 160,000
+  spendable, 80,000 of them permanent (found 2026-10-12, before launch). The stop transaction now
+  calls `recordUserStopSettlementTx` (`userStopSettlement.ts`) for every attempt it terminalizes,
+  before a delete can cascade the pages away, and stamps the **charge** with
+  `metadata.userStopSettlement`. What was delivered is page rows holding prose, whatever their
+  status — the app previews every one, and a composed chapter's pages sit PENDING with their whole
+  prose until finalize — plus interior pictures and a model-drawn cover. It is priced at the quote
+  the approval stored beside the charge (`creditEstimate`, or a paid retry's source's), with the
+  base fee only once a page exists; premium review and the export unlock are never delivered by a
+  stopped run. Three charges are priced by delivery (launch review 2026-10-13, H3, closed the two
+  that still came back whole after the reader had them). `FULL_BOOK_GENERATION` as above. A chat
+  rebuild or translated copy, `BOOK_REPLAN`, by the same rule against the **copy** — its attempt
+  and charge belong to the copy's project, so the source book's pages are never counted — at the
+  quote `replanCopyOperations.ts` stores beside it (core's `estimateBookReplanCreditCost`: a
+  `BOOK_REPLAN` re-planning line, read as base, then the copy's full-book lines); a rebuild charged
+  before that quote was stored has none and refunds whole. A narration, `AUDIOBOOK_GENERATION`:
+  READY chapters are downloadable the moment they flip, so it keeps its base once one is READY plus
+  the READY chapters' share of the length-priced part, weighed by each chapter's
+  `estimatedDurationMs` (the text it reads, which the per-word rate prices) and rounded down —
+  only the audiobook row whose `generationJobId` is the attempt's own job counts. A quote that does
+  not add up to the charge refunds whole. Every other charge (an edit, a plan) is stamped as keeping
+  nothing: refunded whole as before, but still as the reader's own. The stamp is on the ledger
+  entry because the attempt-less refund paths only ever see the entry, and it binds every
+  settlement whichever path runs it.
+  `refundCreditLedgerEntryTx` routes a stamp that kept something through the partial reversal under
+  `user-stop:<attemptId>`. The reversal never grows past `refundableCredits`, so no reconciler,
+  legacy fallback, worker failure or later partial under another claim tops it up.
+  `refundLatestProjectOperationCredits` treats a charge settled to its stamp as no longer standing.
+  The kept part consumes the charge the way spending does, allowance first, so what comes back is
+  the purchased share first. A plan share whose period has ended lapses (`refundPoolSplit`'s
+  `lapseExpiredPlanShare`). It is counted in the reversal, so the charge reads settled and a stop
+  that kept nothing still releases its quota slot; and it is written as its own `ADJUSTMENT` with
+  `expiredPlanPeriodKey`, the shape a boundary gives expiring allowance, so the reader's log adds up
+  and a store refund of that period (`googlePlayRefunds.ts`) counts it as allowance that expired.
+  That row carries `PLAN_ALLOWANCE_GRANT`, never the charge's operation: a negative SETTLED row under
+  the charge's operation and project is exactly what `refundLatestProjectOperationCredits` scans
+  for, and it would "refund" the lapse into the purchased pool. A failure the reader did not cause
+  keeps today's split exactly. The illustrated-book slot (and, on a charge from before 2026-10-15,
+  the export entitlement granted beside it) stays indivisible: any kept credit keeps it, and a
+  stop that kept nothing returns it.
+
+- **A delivered attempt's charge is final: the ledger refuses to reverse a charge whose attempt
+  SUCCEEDED.** `failGenerationAttemptTx` always refused a SUCCEEDED attempt, but the attempt-less
+  settlements never ask the attempt — they *walk* to a charge: the API's legacy stop
+  (`apps/api/src/stopLegacySettlement.ts`) and the worker's `refundFailedProjectCredits` follow a
+  row's `planId` to the book's `GENERATE_BOOK` payload, and `refundLatestProjectOperationCredits`
+  takes the newest charge. A free edit's recompile (a manual save, Undo, Redo, a Studio publish or
+  takeover) is attempt-less and carries the book's `planId`, so a one-word edit then a delete
+  reversed the whole `FULL_BOOK_GENERATION` charge of a book already downloaded, and after a period
+  rollover its allowance share landed in the permanent pool (launch review 2026-10-13, B3). Those
+  recompiles no longer own the book's outcome (`FREE_EDIT_RECOMPILE`,
+  `apps/worker/src/handlers/CLAUDE.md`), and this is the defence behind that:
+  `refundCreditLedgerEntryTx` reads the attempt the charge names (`metadata.generationAttemptId`,
+  written by `startGenerationAttempt`, and the attempt must name the charge back) and returns null
+  for a SETTLED charge whose attempt SUCCEEDED, so no walk can reach past it. The latest-charge scan
+  then stops there rather than refunding an older charge behind it — every caller of it is an
+  attempt-less fallback. It is in the shared function on purpose, and nothing legitimate is refused:
+  a failure or a stop terminalizes the attempt FAILED/CANCELED before its refund, the reconciler
+  only sees those, a skipped edit closes its attempt CANCELED first, a purchased cover's design
+  fallback refunds before completion marks it SUCCEEDED, holds and message/voice charges carry no
+  attempt, store refunds reverse grants rather than spends, and a delivered shortfall is a partial
+  reversal under its own claim (`refundCreditLedgerEntryPortion`), which does not come through
+  here. A new path that must give back delivered work is a grant, not a reversal.
+
+- **No charge carries or grants an export unlock, and nothing here writes one.** A book is one
+  charge at plan approval and its finished file downloads free (2026-10-15,
+  `apps/api/src/mobile/CLAUDE.md`). `startGenerationAttempt` used to take `grantExportEntitlement`
+  and write an `EXPORT_UNLOCK` entitlement in the attempt's transaction, and
+  `ensureProjectExportEntitlementOrSpend` settled a download — an unlock held, a free
+  `source: "plan_included"` one for a subscriber, or a 150-credit spend. Both are gone. What stays
+  is history: the `EXPORT_UNLOCK` operation and entitlement type, the rows written before (a refund
+  of the charge an old entitlement was granted beside still revokes it), and old quotes whose
+  `EXPORT_UNLOCK` line the user-stop rates read like any other line and never count as delivered.
+  A paid retry of an attempt charged before the change re-charges its stored price, unlock
+  included, and `startGenerationAttempt`'s equality with the source's `quotedCredits` is what
+  makes that the only price it can take. `grantProjectEntitlement` and
+  `hasActiveProjectEntitlement` remain as the generic project-entitlement primitives; no
+  production path calls either today.
+
 ## Balances and plan periods
 
 - **A balance is two pools, and spending draws the expiring one first.** `planCredits` is the
@@ -680,17 +785,47 @@ diff rather than by silently reordering rows.
   clients compare it against a quote. Each ledger entry records how much of itself came from the
   allowance in `planCreditsDelta`, which is what lets a refund put credits back where they came
   from — and after a period rollover a refund goes entirely to the purchased pool, because that
-  period's allowance has already been re-granted in full.
+  period's allowance has already been re-granted in full. A refund the reader chose by stopping the
+  work lets that share lapse instead (the user-stop entry above).
 - **Welcome credits are granted lazily, once, not by a cron.** Signup writes a PENDING
   `WelcomeCreditGrant`; `ensureCurrentPlanPeriod` settles it on the first balance read or reserve.
-  The operator toggle and amount live on the price list (`welcomeCreditsEnabled`, `welcomeCredits`).
+  The operator toggle and amount live on the price list (`welcomeCreditsEnabled`, `welcomeCredits`;
+  1,250 by default since migration 000110, sized to the largest free picture book with its plan —
+  "Credit pricing" in `packages/core/CLAUDE.md`).
   `welcomeCreditIpLimit` reads the signup country's cap from
   `welcomeCreditsAccountsPerIpHighIncome` or `welcomeCreditsAccountsPerIpLowMiddleIncome`
-  (defaults two and one). Unknown countries use the latter; zero settles DISABLED.
+  (defaults three and two since migration 000110: a verified email gates the grant now, so the
+  cap only has to stop a farm, and at one every reader behind a carrier NAT past the first got
+  nothing). Unknown countries use the latter; zero settles DISABLED.
   Caps apply inside 30 days even with regional amounts disabled, and all successful same-IP
   grants count toward the quota. Further claims settle silent
   RECENT_IP; a missing IP settles silent NO_IP — neither writes a ledger GRANT.
   A user with no row is never welcomed. Credits land in the purchased pool.
+  While the API's spend breaker is paused or free accounts' spend is past its soft cap or monthly
+  ceiling (paying readers' spend never holds it), a free account's grant stays PENDING: `setWelcomeGrantHold` installs the API's predicate, `ensureWelcomeCreditsTx` asks it
+  (and the plan, so a reader who subscribed on day one is still welcomed), and the next balance
+  read after it clears settles the grant exactly as it would have. This package never reads the
+  spend controls; with no hold installed (the worker, the suites) nothing is held.
+- **A welcome grant pays out only to a verified email, and the gate is inside
+  `ensureWelcomeCreditsTx`, where no caller can grant past it.** The grant used to settle on the
+  first balance read behind nothing but the per-address cap, so a farm rotating addresses and
+  inventing emails took the welcome credits once per account and could push free spend past the
+  breaker's caps for everyone (launch review, 2026-10-13). `User.emailVerifiedAt` (migration
+  000106) is set by a confirmed emailed code or by Google sign-in, whose token must say
+  `email_verified` (→ apps/api/CLAUDE.md); the migration stamps Google-linked accounts and every
+  account whose grant was already GRANTED, and leaves the rest unverified. The check is read off the
+  same `findUnique` that loads the grant (`include: { user }`), after the hold, the toggle and the
+  missing-address checks, and it is not a hold threaded through callers for the reason the spend
+  hold is not. An unverified account still settles every outcome that grants nothing — DISABLED,
+  NO_IP, and RECENT_IP on an address already at its cap, counted without the lock because it writes
+  no grant — so the app never promises credits the address cannot receive; otherwise it stays
+  PENDING with nothing written and is granted, under the lock, on the first read after
+  verification. Only GRANTED rows count toward the cap, so on a shared address the first account to
+  *verify* is the one welcomed. A paid plan does not excuse it. `describePendingWelcomeGrant` says
+  why a pending grant waits (`email_unverified` before `spend_hold`, since verifying is the step the
+  reader can take) and what it would pay now — the payload's `welcomeCreditsPendingReason` and
+  `welcomeCreditsPendingCredits`. The billing test harness reads every user as verified unless the
+  suite adds it to `unverifiedEmailUsers`. `welcomeCredits.test.ts` ("email verification").
 - **Free accounts spend welcome or purchased credits; only paid plans receive recurring grants.**
   Free calendar periods carry zero allowance. `ensureCurrentPlanPeriod` retires unused legacy
   `free:` balances with a ledger adjustment before a balance read or reservation, preserving
@@ -705,3 +840,142 @@ diff rather than by silently reordering rows.
   granted amount of 0 whenever `account.planPeriodKey !== period.key` — that guard is the safety
   property, because the race it must not disturb runs under `runSerializable` and re-reads the
   winner's key. Both `planCredits` and `planCreditsPerPeriod` are zero on the free period.
+- **A store refund's debt is paid at the next period boundary, first by the allowance it hid and
+  then by the new one.** A Google Play refund of spent credits leaves the purchased pool
+  (`availableCredits`) negative, and a reservation is checked against both pools together, so the
+  debt hides that much of a live allowance. `applyPlanPeriodTx` reset `planCredits` beside it and
+  never touched it: the hidden part expired at every boundary and the debt never shrank. A Creator
+  subscriber whose spent October was refunded mid-November saw 6,000 plan credits and 0 spendable
+  in November, December and January, indefinitely (found 2026-10-12, before launch). `planDebt.ts`
+  now settles it inside the transition. The outgoing remainder pays up to the debt instead of
+  expiring — that is exactly the part the debt was hiding, and settling only from the new grant
+  would charge a mid-period debt twice, once as the hidden part expiring and again out of the next
+  allowance. Then the new allowance pays the rest, spread over as many periods as it takes. Each
+  part is an `ADJUSTMENT` of amount 0 whose `planCreditsDelta` is the move, keyed on the incoming
+  period (`plan-debt:{userId}:{periodKey}`, the remainder's with `:remainder:{outgoingKey}`) and read
+  before it is written, so a re-run settles nothing twice and a free month (no remainder, no
+  allowance) settles nothing at all. The grant row still records the whole allowance and the
+  settlement carries no top-level `expiredPlanPeriodKey`: a refund of the period that paid a debt
+  reverses all of it, and that is what brings the debt back. A debt that arrives mid-period stays
+  negative until the boundary; the live allowance is never cut under the reader. Purchases and
+  welcome credits need none of this — they are added to the pool the debt is in. The credit log
+  sends the row with 0 credits and the amount in its title (`apps/api/src/mobile/creditLog.ts`),
+  because the refund's own line already took them, and the app draws a zero line with no amount
+  (`credit_log_tile.dart`).
+- **A plan's allowance is granted a month at a time, worth what its phase paid for: the yearly
+  plan's 6,000 every month of its paid year, an intro offer's own credits, a switched plan's share
+  of a short month.** The yearly plan (`tomeza.creator_yearly`, $179.99) granted all 72,000 credits
+  the day it was bought, so a reader could spend the year in days and then refund inside Play's
+  window (launch review, 2026-10-15). Every order's paid period is now laid out in calendar months
+  (`subscriptionAllowance.ts`, the pure half; `subscriptionMonths.ts`, the ledger half) and each
+  month is one grant, lapsing at its own end like any monthly allowance.
+  - **The schedule is laid out once, by the order's first granted month, and stored on every
+    month's grant** (`metadata.allowanceSchedule`: order key, start, the paid end it was laid out
+    against, the monthly credits, the basis; `allowanceMonth` is the month's index). Later months
+    read it back, so a period end Google corrects or a grace period extends never moves a boundary:
+    the last month runs to the end Google reports now (a slide, as a monthly period's always did),
+    and no month runs past it. Month 1 starts one billing period before the paid end — a renewal
+    starts where the last one ended, and Google reports no other start: its `startTime` is when the
+    subscription began — except a plan switch's first order, which starts at the switch, because its
+    period also holds the time Google carried over from the replaced plan (`newAllowanceSchedule`).
+    A deferred downgrade's first order carried nothing, and starts one period back like a renewal.
+    A tail under a day past the last whole month is absorbed by it.
+  - **One grant per (order, month)**: month 1 keeps the order's own key
+    (`google-play:subscription:<token hash>:<order>`), month *n* appends `:month:<n>`
+    (`allowanceMonthKey`), and its plan period is `sub:<token hash>:<month end>`. That is what makes
+    the app's verify, the sweep and RTDN racing over one month harmless. An order granted before
+    schedules existed has no stored schedule and stays one grant for its whole period.
+  - **The sweep is what grants months two to twelve.** The recording path sets the state row's
+    `nextCreditGrantAt` to the next month's start while the paid period has months left
+    (`apps/api/src/mobile/CLAUDE.md`, the renewal sweep). A cancelled plan keeps being granted to
+    its paid end, because it was paid for; a refund or revocation stops it (the row is EXPIRED and
+    `planRecordedOrderMonthTx` refuses a refunded order), and a deleted account is never swept.
+    `PurchaseRecord.creditsGranted` is what the current order's months have granted so far.
+  - **A refund reverses every month the order granted**, each against its own month
+    (`applyGooglePlayRefundTx`): the grant whose `planPeriodKey` the account is still on gives back
+    what is left of it, and an earlier month counts what expired unspent at its end as never
+    delivered. Asked of the order alone, every month "owned" the live period and each reversal drained
+    it again, overcharging the debt by every lapsed month's leftover. Spent credits become plan debt
+    as before (`planDebt.ts`).
+  - **What a month grants.** A trial grants 0. An intro month grants the offer's `creditAmount` from
+    core's `SUBSCRIPTION_INTRO_OFFERS` (4,000 for `creator-intro-first-month`, the Max-plan floor of
+    `$0.002125` after Play's 15% at $9.99; it granted all 6,000 once, $0.00142 a credit), and an
+    intro under an ID that table does not know still grants the plan's allowance, because nothing
+    says what it cost — add the offer there before selling it. A whole month grants the product's
+    `creditAmount` divided by its billing period's months (core's `monthlyPlanCredits`; the yearly
+    plan's `creditAmount` stays the 72,000 one payment buys, which is what a credit is valued
+    against; the billing payload sends each plan's month as `products[].monthlyCreditAmount`, which
+    the app shows as "6,000 credits every month, billed yearly"). A short month of a switch — `proration`, or any replacement purchase
+    (`linkedPurchaseToken`) — grants `floor(credits × covered / whole month)`, the month counted from
+    its own start as Google bills it, with a day's slack; so does the tail of carried time after a
+    switch's last whole month. A fresh order's own short period is Google's to set and grants in full
+    (Play's test cycles run a month in five minutes). A switch charged at full price used to grant
+    one allowance for its whole period, carried time and all; yearly to Pro carries up to about four
+    months of Pro, so that lost up to ~60,000 credits of paid value, and each of those months is now
+    granted (launch review 2026-10-15, Medium). Upgrading away from the yearly plan forfeits only the
+    month in hand. The verifier reads a proration period that absorbed the new offer's first phase
+    (`originalOfferPhaseType`) as that trial or intro. A grant that was not a whole month's allowance
+    stamps `allowanceBasis` (and `coveredFraction`).
+  `subscriptionAllowance.test.ts`, `subscriptionYearlyPlan.test.ts` (twelve months through a
+  simulated sweep, races, the clipped last month, cancel, refund, switches both ways),
+  `subscriptionPlanChanges.test.ts`, `purchasePayments.test.ts`, and core's `billing.test.ts`, which
+  prices its margin tests at the cheapest credit sold — intro offers included — rather than at Max
+  by name.
+- **A downgrade starts at the renewal date, and until then the token Play issued for it carries the
+  plan it replaces.** The app switches down with `ReplacementMode.deferred` (`apps/mobile/CLAUDE.md`),
+  because a full-price switch forfeited what was left of the bigger allowance the reader had paid
+  for. Play issues the new token at once: its old line item keeps the paid expiry and names the
+  plan replacing it (`deferredItemReplacement`), the new item has no expiry and no order yet, and
+  the old token reads as expired. The verifier (`mapDeferredReplacement`) accepts either product,
+  reports the plan it renews into, the old item's expiry as the period end, **no order id** (the old
+  item's order is the old token's payment), and `subscription.deferredReplacement`; it stays
+  `grantable` so it is acknowledged now, or Play refunds it. Recording it grants the new plan nothing
+  and records no payment. `retireReplacedSubscriptionTx` still stamps the old record
+  `replacedByPurchaseTokenHash` — so Google's "expired" for the old token is a no-op — but in
+  deferred mode it does not expire the old entitlement and the old state row keeps the end of the
+  period it paid for; the old plan's entitlement moves onto the new record (a further switch away
+  from that token must take it down), and the allowance stays on the old period. **The old plan's
+  paid months keep coming from the new token**: its row is the one the sweep polls, due at the old
+  order's next month and then at `takesEffectAt`, and each verification of it grants the old order's
+  current month under the old token's keys and record (`planRecordedOrderMonthTx`, `carriedBy:
+  "deferred_replacement"`) — a monthly plan has none left, a yearly one up to eleven. A refund of the
+  old order stops those months and revokes the carried entitlement where it now sits, because it
+  still names the order that paid for it. At `takesEffectAt` the first paid period of the new plan
+  grants through the ordinary path, which also expires the carried plan entitlement. Meanwhile
+  `getPlanSummary` reports the plan being run out as `productSku`, the new token's hash, and
+  `pendingChange`, so the app's next switch matches what Play holds. Not handled: a reader who
+  undoes the pending change inside Play leaves a token holding only the old product, which
+  re-verifies against the state's new product as `GOOGLE_PLAY_PRODUCT_MISMATCH` until a restore
+  records it again. `subscriptionPlanChanges.test.ts`, `subscriptionYearlyPlan.test.ts` and
+  `googlePlayBilling.test.ts` pin it.
+- **A paid period outlives a token Google calls expired: only its paid end, a refund or its
+  replacement ends it, whichever of Google's reports lands first.** A non-grantable verification
+  ended the plan on the spot: entitlement expired, `planPeriodEnd` set to now, the account dropped to
+  free. Google reports a deferred downgrade's old token expired the moment the new one is issued,
+  and when that report was recorded first — an RTDN for the old token, the cancel sheet's refresh
+  re-checking the stored one, a verify of the new token that failed first — a Max subscriber lost
+  about 50,000 unspent credits and sat on free until the renewal date, because the new token then
+  found no live plan to carry (launch review 2026-10-15, C6). `keepPaidPeriodTx`
+  (`subscriptionMonths.ts`) now answers first: a token whose state row last recorded it live
+  (ACTIVE, grace or cancelled) with its paid end still ahead, and no refund or revocation against
+  its order (those return earlier, as REVOKED), keeps its plan, entitlement and allowance; the row
+  becomes CANCELED — running out, not over — with that paid end kept, due again at the order's next
+  month or the paid end, and the order's months keep being granted from what it recorded (`carriedBy:
+  "paid_period_kept"`). The purchase record is left as it was. The new token's arrival then retires
+  the old one exactly as in the other order, so both end in the same state (the suite compares them
+  whole). A genuine end still ends it: a lapsed renewal or a payment failure past grace is reported
+  after the recorded paid end, a refund or revocation leaves its marker, an account deletion's cancel
+  runs the period out, and a revocation whose refund notice is late is kept only until that notice
+  lands. `subscriptionPlanChanges.test.ts` ("launch review C6", and "a genuine expiry still ends the
+  plan").
+- **A payment's local price is the buyer's own currency for analytics, and it never decides a
+  grant.** `PurchasePayment.localPriceMicros` / `localCurrency` / `localPriceSource` (migration
+  000104) hold what an order charged in the buyer's currency, before tax and Google's cut, beside
+  the USD catalog figure `amountMicros` keeps. `client` is the app's report from Play's product
+  details at verify time (the pricing phase bought for a subscription, price × quantity for a pack);
+  `play_recurring_price` is Google's `autoRenewingPlan.recurringPrice` for a full-price period nobody
+  verified from the app (the sweep, RTDN) — never for an intro or prorated one, which charged
+  something else. Set once, never repriced: a later report only fills a payment recorded without
+  one. `PurchaseRecord` keeps the app's latest report too, so a pack still pending when the app
+  reported it gets its price when RTDN grants it. The app sends both or neither and old builds send
+  neither (`apps/api/src/mobile/schemas.ts`).

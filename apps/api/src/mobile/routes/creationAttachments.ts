@@ -20,6 +20,7 @@ import {
   mobileAuthError
 } from "../schemas.js";
 import { jsonInputValue } from "../support.js";
+import { attachmentContentDisposition, servedAttachmentType } from "../attachmentResponse.js";
 import {
   CREATION_ATTACHMENT_MAX_BYTES,
   CREATION_ATTACHMENT_MAX_COUNT,
@@ -32,6 +33,7 @@ import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 import { sendMessageUsageError } from "../messageUsage.js";
 import { sendProcessingOutcome, withAiProcessingUsage } from "../processingUsage.js";
+import { requireAiCapacity } from "../aiCapacity.js";
 
 /**
  * Creation-chat attachment routes: upload, remove and read back the files a
@@ -56,6 +58,11 @@ export async function registerMobileCreationAttachmentRoutes(
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
+        return;
+      }
+      // Reading an upload is a vision or summary call; ahead of the limiter so a
+      // refusal spends no bucket.
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "standard"))) {
         return;
       }
       if (!hitAuthenticatedLimit(attachmentLimiter, reply, auth.user.id, "creation-attachment-upload")) {
@@ -253,7 +260,12 @@ export async function registerMobileCreationAttachmentRoutes(
         return sendMobileError(reply, 404, "ATTACHMENT_FILE_EXPIRED", "This file is no longer stored.");
       }
       reply.header("Cache-Control", "private, max-age=300");
-      reply.type(attachment.mimeType);
+      // The stored type is client-writable (the draft PATCH), so it is
+      // allowlisted, never sniffed, and always a download — see
+      // `attachmentResponse.ts`.
+      reply.header("X-Content-Type-Options", "nosniff");
+      reply.header("Content-Disposition", attachmentContentDisposition(attachment.name));
+      reply.type(servedAttachmentType(attachment.mimeType));
       return file;
     }
   );

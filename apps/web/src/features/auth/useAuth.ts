@@ -51,6 +51,27 @@ export function useAuth() {
     }
   }
 
+  /**
+   * Signs out every browser holding a console cookie, this one included:
+   * `POST /api/auth/logout-everywhere` moves the operator generation, which
+   * refuses every cookie issued before it (apps/api/CLAUDE.md, "A console cookie
+   * is signed with the generation it was issued under"). For a copied cookie or
+   * a browser left signed in somewhere; a forgotten password is a rotation.
+   */
+  async function logoutEverywhere(onSuccess?: () => Promise<void>) {
+    setAuthBusy(true);
+    setAuthError(null);
+    try {
+      const nextAuthStatus = await apiPost<AuthStatus>("/api/auth/logout-everywhere");
+      setAuthStatus(nextAuthStatus);
+      await onSuccess?.();
+    } catch (logoutError) {
+      setAuthError(readError(logoutError));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
   return {
     authStatus,
     authPassword,
@@ -59,6 +80,7 @@ export function useAuth() {
     setAuthPassword,
     login,
     logout,
+    logoutEverywhere,
     refreshAuthStatus
   };
 }

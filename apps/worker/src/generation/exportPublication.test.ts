@@ -271,6 +271,7 @@ describe("publishCompiledExports", () => {
     expect(result).toEqual({
       published: true,
       blockedByOpenImageJobs: false,
+      blockedByChangedCover: false,
       characterPreparationJobId: "character-job-1"
     });
     expect(mocks.prisma.generationAttempt.updateMany).toHaveBeenCalledWith({
@@ -314,6 +315,7 @@ describe("publishCompiledExports", () => {
     ).resolves.toEqual({
       published: true,
       blockedByOpenImageJobs: false,
+      blockedByChangedCover: false,
       characterPreparationJobId: null
     });
 
@@ -332,6 +334,7 @@ describe("publishCompiledExports", () => {
     ).resolves.toEqual({
       published: true,
       blockedByOpenImageJobs: false,
+      blockedByChangedCover: false,
       characterPreparationJobId: "character-job-open"
     });
 
@@ -592,6 +595,7 @@ describe("publishCompiledExports", () => {
     ).resolves.toEqual({
       published: false,
       blockedByOpenImageJobs: false,
+      blockedByChangedCover: false,
       characterPreparationJobId: null
     });
 
@@ -633,6 +637,7 @@ describe("publishCompiledExports", () => {
     ).resolves.toEqual({
       published: true,
       blockedByOpenImageJobs: false,
+      blockedByChangedCover: false,
       characterPreparationJobId: null
     });
 
@@ -659,6 +664,7 @@ describe("publishCompiledExports", () => {
     await expect(publishResult()).resolves.toEqual({
       published: false,
       blockedByOpenImageJobs: true,
+      blockedByChangedCover: false,
       characterPreparationJobId: null
     });
 

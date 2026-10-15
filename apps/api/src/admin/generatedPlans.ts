@@ -6,15 +6,16 @@
  * entries and provider spend is limited to the project's PLAN_BOOK job.
  */
 
-import { CREDIT_USD_VALUE } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import {
   costBreakdownFromRows,
+  providerCostKindSql,
   type CostUsage,
   type KindCost,
   type OperationCost,
   type ProviderCostRow
 } from "./costBreakdown.js";
+import { loadValuedSpends, sumValued } from "./creditValuation.js";
 import { netSettledCredits, round2, type AdminWindow } from "./metrics.js";
 
 export type GeneratedPlanSummary = {
@@ -137,7 +138,7 @@ export async function loadGeneratedPlanDetail(planId: string): Promise<Generated
     loadPlanEconomics([{ id: plan.id, projectId: plan.projectId }]),
     loadPlanCostRows(plan.projectId)
   ]);
-  const economics = economicsByPlan.get(plan.id) ?? economicsFromRow(emptyEconomicsRow(plan.id));
+  const economics = economicsByPlan.get(plan.id) ?? economicsFromRow(emptyEconomicsRow(plan.id), 0);
   const breakdown = costBreakdownFromRows(costRows);
   const providerCostUsd = breakdown.totals.usd;
   const marginUsd = round6(economics.revenueUsd - providerCostUsd);
@@ -171,7 +172,9 @@ async function loadPlanEconomics(
     .map((_plan, index) => `($${index * 2 + 1}::text, $${index * 2 + 2}::text)`)
     .join(", ");
   const parameters = plans.flatMap((plan) => [plan.id, plan.projectId]);
-  const rows = await prisma.$queryRawUnsafe<PlanEconomicsRow[]>(
+  // The plan charges valued by where their credits came from (`creditValuation.ts`).
+  const projectIds = [...new Set(plans.map((plan) => plan.projectId))];
+  const [rows, valued] = await Promise.all([prisma.$queryRawUnsafe<PlanEconomicsRow[]>(
     `
       WITH selected(plan_id, project_id) AS (VALUES ${values}),
       ledger AS (
@@ -215,20 +218,22 @@ async function loadPlanEconomics(
       LEFT JOIN provider ON provider.plan_id = s.plan_id
     `,
     ...parameters
-  );
+  ), loadValuedSpends({ kind: "projects", projectIds, operation: "PLAN_GENERATION" })]);
+  // Keyed by project, as the ledger CTE above joins: every plan row of a project
+  // reads that project's PLAN_GENERATION charges.
+  const valueByProject = sumValued(valued, (spend) => spend.projectId);
+  const projectOf = new Map(plans.map((plan) => [plan.id, plan.projectId]));
 
-  return new Map(rows.map((row) => [row.plan_id, economicsFromRow(row)]));
+  return new Map(
+    rows.map((row) => [row.plan_id, economicsFromRow(row, valueByProject.get(projectOf.get(row.plan_id) ?? "")?.usd ?? 0)])
+  );
 }
 
 /** The Costs-tab grouping query, scoped only to the initial plan job. */
 async function loadPlanCostRows(projectId: string): Promise<ProviderCostRow[]> {
   return prisma.$queryRaw<ProviderCostRow[]>`
     SELECT
-      CASE
-        WHEN l.purpose LIKE 'tts.%' OR COALESCE(l.metadata ->> 'operation', '') LIKE 'tts.%' THEN 'audio'
-        WHEN l.purpose = 'image.generate' OR l.metadata ->> 'operation' = 'image.generate' THEN 'image'
-        ELSE 'text'
-      END AS kind,
+      ${Prisma.raw(providerCostKindSql("l"))} AS kind,
       l.purpose AS purpose,
       l.provider AS provider,
       l.model AS model,
@@ -264,11 +269,12 @@ async function loadPlanCostRows(projectId: string): Promise<ProviderCostRow[]> {
   `;
 }
 
-function economicsFromRow(row: PlanEconomicsRow): PlanEconomics {
+/** `valueUsd` is what the kept credits earned, valued by source; nothing else turns credits into dollars. */
+function economicsFromRow(row: PlanEconomicsRow, valueUsd: number): PlanEconomics {
   const grossCredits = Number(row.gross_credits ?? 0);
   const refundedCredits = Math.max(Number(row.refunded_credits ?? 0), 0);
   const netCredits = netSettledCredits(grossCredits, refundedCredits);
-  const revenueUsd = round2(netCredits * CREDIT_USD_VALUE);
+  const revenueUsd = round2(valueUsd);
   const providerCostUsd = round6(row.provider_cost_usd ?? 0);
   const marginUsd = round6(revenueUsd - providerCostUsd);
   return {
@@ -285,7 +291,7 @@ function economicsFromRow(row: PlanEconomicsRow): PlanEconomics {
 }
 
 function economicsFor(economics: Map<string, PlanEconomics>, planId: string) {
-  const value = economics.get(planId) ?? economicsFromRow(emptyEconomicsRow(planId));
+  const value = economics.get(planId) ?? economicsFromRow(emptyEconomicsRow(planId), 0);
   const { chargeCount: _chargeCount, refundCount: _refundCount, ...summary } = value;
   return summary;
 }

@@ -75,7 +75,8 @@ $\sin x + \log n$ and $\gcd(e,\phi(n))=1$`);
   });
 
   it("keeps equations in chapter headings and Contents without nesting hyperlinks", async () => {
-    const { tree, xml } = await render(String.raw`## The [totient $\phi(n)$](https://example.test)
+    // The Word file prints a Contents only where the compiler printed one.
+    const { tree, xml } = await render('<section class="book-contents">\n</section>\n' + String.raw`## The [totient $\phi(n)$](https://example.test)
 
 First chapter.
 

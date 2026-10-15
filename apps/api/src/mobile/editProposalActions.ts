@@ -1,7 +1,9 @@
 import { type FastifyReply } from "fastify";
 import { numberingForProject } from "../bookPageNumbering.js";
+import { chatCopy } from "../chatReplyCopy.js";
 import { busyEditReply, handleProjectChatIntent } from "./bookEditIntents.js";
 import { operationKindForIntent } from "./bookEditPricing.js";
+import { matterChatLanguage } from "./bookMatterChatLanguage.js";
 import { type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "./dto.js";
 import { createOpenBookEditOperation, hasOpenProjectWork } from "./editOperations.js";
 import { sendMobileError, sendProjectNotFound } from "./httpErrors.js";
@@ -17,9 +19,13 @@ import {
   serializeBookEditOperation,
   serializeProjectChatMessage
 } from "./projectChat.js";
+import { PROJECT_CHAT_REPLY_COPY } from "./projectChatReplyCopy.js";
 import { replayClaimedProposal } from "./proposalExecutionClaims.js";
 import { isPrismaUniqueConflict, jsonInputValue } from "./support.js";
 import type { TextModelAdapter } from "@book-maker/core";
+import { aiWorkKindForMediaSettings, proposalRunsModel, sendAiCapacityRefusal } from "./aiCapacity.js";
+import { spendBreaker } from "../spendBreaker.js";
+import { booksInProgressRefusal, proposalStartsLongLaneWork, sendBooksInProgressLimit } from "./booksInProgress.js";
 
 /**
  * The Apply and Cancel buttons on a priced edit card. Split out of
@@ -60,6 +66,23 @@ export async function applyOrCancelEditProposal(options: {
   const pending = findPendingProposalById(activeMessages, proposalId);
   if (!pending?.intent || pending.clarification !== "confirm") {
     return sendMobileError(reply, 404, "PROPOSAL_NOT_FOUND", "That edit proposal is no longer available.");
+  }
+  // The AI spend breaker, at the book's own tier, before the "Apply" row: a
+  // refusal written after it would leave a turn with no reply, and every retry
+  // of that requestId would then read as still in progress.
+  if (action === "apply" && proposalRunsModel(pending)) {
+    const capacity = await spendBreaker.check(userId, aiWorkKindForMediaSettings(project.mediaSettings), reply.log);
+    if (!capacity.allowed) {
+      return void sendAiCapacityRefusal(reply, capacity);
+    }
+  }
+  // A continuation, a rebuild or a whole-book rewrite takes the long lane, and one account may only
+  // hold so much of it (`booksInProgress.ts`) — asked before the "Apply" row too.
+  if (action === "apply" && proposalStartsLongLaneWork(pending)) {
+    const refusal = await booksInProgressRefusal(userId, { exceptProjectIds: [projectId] });
+    if (refusal) {
+      return void sendBooksInProgressLimit(reply, refusal);
+    }
   }
   let userMessage: MobileProjectChatMessageRecord;
   try {
@@ -107,12 +130,15 @@ export async function applyOrCancelEditProposal(options: {
       const claimed = await replayClaimedProposal(projectId, proposalId);
       if (claimed) return claimed;
     }
+    // No model reads a button tap, so the conversation's established
+    // language answers it, the same as a typed "cancel".
+    const replyLanguage = matterChatLanguage(undefined, activeMessages);
     const replyMessage = await createAssistantChatMessage({
       projectId,
       parentId: userMessage.id,
       ...(cancelClaim ? { operationId: cancelClaim.id } : {}),
-      content: "Okay, I dropped that request. No edit was applied.",
-      metadata: { pendingEditCancelled: true, charged: false, proposalId }
+      content: chatCopy(PROJECT_CHAT_REPLY_COPY, replyLanguage).cancelled,
+      metadata: { pendingEditCancelled: true, charged: false, proposalId, replyLanguage }
     });
     return {
       ...(await loadProjectChatResponse(projectId)),
@@ -134,7 +160,8 @@ export async function applyOrCancelEditProposal(options: {
       parentMessageId: userMessage.id,
       intent: pending.intent,
       request: pending.request,
-      pendingState: pending
+      pendingState: pending,
+      activeMessages
     });
     return {
       ...(await loadProjectChatResponse(projectId)),
@@ -153,7 +180,8 @@ export async function applyOrCancelEditProposal(options: {
     executeProposal: true,
     executionCommandId: proposalId,
     ...(pending.credits !== undefined ? { quotedCredits: pending.credits } : {}),
-    ...(pending.characterContext ? { characterContext: pending.characterContext } : {})
+    ...(pending.characterContext ? { characterContext: pending.characterContext } : {}),
+    activeMessages
   });
 
   return {

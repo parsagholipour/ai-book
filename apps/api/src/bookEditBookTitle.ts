@@ -18,8 +18,10 @@ import { type BookEditIntent } from "./bookEditIntent.js";
 /** The longest title the chat will set; past this it is a paragraph, not a title. */
 export const MAX_BOOK_TITLE_LENGTH = 160;
 
-const BOOK_WORD = String.raw`(?:the|this|my|our)\s+(?:book|story|novel|guide|manuscript)`;
-const COURTESY = String.raw`(?:(?:please|pls|kindly|just|(?:can|could|would|will)\s+you|i\s+(?:want|need|would\s+like|['’]d\s+like)\s+(?:you\s+)?to|let['’]?s|go\s+ahead\s+and)\s+)*`;
+/** "the book", "my story": the whole book, named. Shared with `bookEditTomezaCredit.ts`. */
+export const BOOK_WORD = String.raw`(?:the|this|my|our)\s+(?:book|story|novel|guide|manuscript)`;
+/** The politeness a request may open on. Shared with `bookEditTomezaCredit.ts`. */
+export const COURTESY = String.raw`(?:(?:please|pls|kindly|just|(?:can|could|would|will)\s+you|i\s+(?:want|need|would\s+like|['’]d\s+like)\s+(?:you\s+)?to|let['’]?s|go\s+ahead\s+and)\s+)*`;
 
 /** The shapes a reader names a new title in; the capture is the title itself. */
 const TITLE_REQUESTS: readonly RegExp[] = [

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { type BookEditProjectStage } from "./bookEditIntent.js";
 import { CHAT_REPLY_MARKDOWN_PROMPT } from "./chatReplyMarkdownPrompt.js";
-import { allStoryPageDesigns, STORY_PAGE_DESIGN_IDS } from "@book-maker/core";
+import { allStoryPageDesigns, CONVERSATION_LANGUAGES, STORY_PAGE_DESIGN_IDS } from "@book-maker/core";
 
 /**
  * What the edit router is allowed to decide, and what it is told.
@@ -71,6 +71,8 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       // grounded pass, and for edits the proposal card carries the details —
       // the router was spending output tokens on prose that was discarded.
       assistantMessage: z.string().trim().min(1).max(600),
+      /** Conversation language selected from the request and history, independently of the book. */
+      responseLanguage: z.enum(CONVERSATION_LANGUAGES).optional().catch(undefined),
       /**
        * The complete, standalone instruction the generation worker executes.
        * It is required in the tool contract so a proposal can never depend on
@@ -104,6 +106,8 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
           "chapter_heading",
           "page_design",
           "book_title",
+          "book_matter",
+          "tomeza_credit",
           "insert_image",
           "move_image",
           "remove_image",
@@ -252,7 +256,7 @@ const imageRules = (readerPagesArePdf: boolean) => [
  */
 const READER_PAGE_RULES = [
   "Page numbers in the user's message are the PRINTED page numbers of the compiled book — the numbers the reader sees on the PDF pages, in its footer and in its table of contents. They are NOT the internal page index values. Each entry in pages carries readerPages: the printed pages that entry occupies. To act on \"page 12\", find the entries whose readerPages include 12 and put their index values into pageIndexes; never copy a printed number into pageIndexes directly.",
-  "readerPageContext names furniture that holds no book text: cover (true only when the PDF opens on an unnumbered cover sheet — omit it when printed page 1 is on the first sheet), contentsStartPage, and sourcesStartPage. A request aimed at one of those is about the book's furniture rather than its prose — use editTarget back_matter or chapter_heading when it matches one, and otherwise action answer explaining what that printed page is. Never turn it into a page rewrite. When cover is true, that sheet has no printed page number."
+  "readerPageContext names furniture that holds no book text: cover (true only when the PDF opens on an unnumbered cover sheet — omit it when printed page 1 is on the first sheet), frontMatter (the printed pages before the Contents and what each holds — the title page, the dedication and publication page), contentsStartPage, and backMatterStartPage — the first page after the book's text, with backMatter naming what is printed there when known. A request aimed at one of those is about the book's furniture rather than its prose — use editTarget book_matter for anything on a frontMatter page or the About the Author page (book_title for the book's title), back_matter for the Sources list, chapter_heading when it matches one, and otherwise action answer explaining what that printed page is. Never turn it into a page rewrite. When cover is true, that sheet has no printed page number."
 ];
 
 export function routerSystemPrompt(
@@ -296,6 +300,8 @@ export function routerSystemPrompt(
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           `Use editTarget page_design when the user wants a picture book's pages to look different — the page design, layout, colours, background or decoration they are printed in, not what they say. Set pageDesign to one of ${allStoryPageDesigns().map((design) => `${design.id} (${design.label}: ${design.summary})`).join("; ")} — the one whose look matches what they describe — or leave it null when they only ask for something different. It changes no text and is free. Never use it for the writing style, the story's theme, the cover, the illustrations or the font.`,
           "Use editTarget book_title when the user wants the book itself called something else — a new title, renaming or retitling the book — and set bookTitle to the exact title: their own words when they gave one, otherwise one you write that does what they asked (shorter, catchier). The title is printed from the book's details, not from any page, so it is never structural, never a page rewrite, and never a book_replan. A chapter's or a page's title is not the book's title.",
+          "Use editTarget book_matter when the user wants to set, change, reword or remove any of the book's matter: the author name printed on the title page and cover (byline, pen name), the dedication, the About the Author page (their bio), the author website, the copyright holder on the © line, the publisher or imprint, the ISBN, or the \"All rights reserved\" line. bookMatter shows what the book prints now; a field it leaves out is not printed. \"Remove my ex's name from the dedication\", \"mention my sister in it too\" and \"cut it to one line\" are book_matter edits of the current text, and so is a request to remove the title page (every book keeps one, and the reply says what can change on it). Never write the new words yourself — the server composes them from the user's message and the book's matter — and never ask for them: the server asks when something it needs is missing. These are printed from the book's details, never from a page, and are free: never a page edit, never structural. When the message also asks for something else, still use book_matter; the server says what it left for another message. The book's own title is book_title. A scene, a page or a chapter about a dedication, \"dedicate a chapter to…\", or a character who is dedicated to something is page content.",
+          "Use editTarget tomeza_credit when the user wants the “Made with Tomeza” line — the Tomeza credit, branding or watermark — taken off the book; it is printed from the account's plan, never a page. A question about that line is an answer: it prints on books made on a free account, and on any plan it comes off a book when they ask here.",
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
           "A request that changes how long the book is or whether it has pictures is structural, because both are decided when the book is planned. Set newTargetPages whenever the user names the book's whole new length (\"make it 3 pages\", \"half as long\" — resolve it to a number), and illustrationsEnabled false when they want it without illustrations (true to add them). Report them even when the message also asks for other changes; the server prices the book you describe, so leaving them out quotes the old book's size.",
           "Adding, removing or reordering particular pages is NOT structural, and newTargetPages is the book's total length rather than a number of pages to add. Use editTarget insert_pages (\"add three pages after page 10\", \"write a new opening page\"), delete_pages (\"delete page 7\", \"remove pages 4 and 5\") or move_pages (\"move page 12 to after page 4\"). Set structuralAnchorPageIndex to the page the new or moved pages go next to, filled exactly the way you fill pageIndexes and never stepped back by one yourself, and structuralAnchorPosition to before or after (after is the default) to say which side of that page they land on: \"add a page before page 10\" is structuralAnchorPageIndex for page 10 with structuralAnchorPosition before, and 0 with after is the front of the book. Set structuralPageCount for how many pages to add, and pageIndexes for the pages to delete or move. For insert_pages, editInstruction says only what the new pages should contain, never where they go: code writes the placement onto the card from those fields, so a page number, a position or an internal page index restated in the instruction reaches the reader as a requirement. Reserve structural for replacing the book's premise, main character, audience or whole length, because it regenerates the entire book into a new copy.",
@@ -314,7 +320,7 @@ export function routerSystemPrompt(
     "For change actions, write assistantMessage as a short confirmation of the specific change that will be proposed or made.",
     "For action answer, keep assistantMessage to two or three concise sentences: a separate grounded pass with the book's full context writes the final answer and only falls back to yours.",
     `assistantMessage is ${CHAT_REPLY_MARKDOWN_PROMPT} A list or a key term uses markup instead of hand-numbered "1) 2) 3)" prose.`,
-    "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
+    `Return responseLanguage on every decision, one of ${CONVERSATION_LANGUAGES.join(", ")}, and write assistantMessage in that language. Read the meaning of the user's instructions and recentConversation to choose it, independently of the book's language. An explicit request to reply in a language wins; otherwise follow the latest user instructions. Names, ISBNs, websites and quoted text to print are data, not a language switch. A bare value or terse follow-up keeps the established conversationLanguage or the language of earlier user instructions; use en when no language is established.`,
     "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
     "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."
   ];

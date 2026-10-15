@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ArrowLeft, Loader2, X } from "lucide-react";
 import { Button } from "../shared/Button.js";
+import { AccountModerationPanel } from "./AccountModerationPanel.js";
 import { BreakdownBars } from "./charts.js";
 import { count, dateTime, duration, percent, relative, titleCase, usd } from "./format.js";
 import { useAdminProjectDetail, useAdminUserDetail } from "./useAdminData.js";
@@ -42,7 +43,7 @@ export function InspectorPanel(props: { userId: string; onClose: () => void }) {
           <Spinner />
         )
       ) : user.data ? (
-        <UserBody detail={user.data} onOpenProject={setProjectId} />
+        <UserBody detail={user.data} onOpenProject={setProjectId} onChanged={user.reload} />
       ) : (
         <Spinner />
       )}
@@ -53,9 +54,9 @@ export function InspectorPanel(props: { userId: string; onClose: () => void }) {
 function UserBody(props: {
   detail: NonNullable<ReturnType<typeof useAdminUserDetail>["data"]>;
   onOpenProject: (projectId: string) => void;
+  onChanged: () => Promise<void>;
 }) {
-  const { credits, plan, user } = props.detail;
-  const cash = props.detail.purchases.reduce((total, purchase) => total + (purchase.amountUsd ?? 0), 0);
+  const { cash, credits, plan, user } = props.detail;
 
   return (
     <>
@@ -76,9 +77,15 @@ function UserBody(props: {
           }
         />
         <MiniStat label="Lifetime spent" value={count(credits.lifetimeSpent)} note={`${count(credits.lifetimeGranted)} granted`} />
-        <MiniStat label="Money spent" value={usd(cash)} note={`${count(props.detail.purchases.length)} purchases`} />
+        <MiniStat
+          label="Money spent, net of Google"
+          value={usd(cash.netUsd)}
+          note={`${usd(cash.collectedUsd)} gross at catalog price − ${usd(cash.feeUsd)} Google fee · ${count(cash.orders)} orders`}
+        />
         <MiniStat label="Joined" value={relative(user.createdAt)} note={user.status.toLowerCase()} />
       </div>
+
+      <AccountModerationPanel detail={props.detail} onChanged={props.onChanged} />
 
       {props.detail.deletionRequests.length > 0 ? (
         <p className="hero-caveat">

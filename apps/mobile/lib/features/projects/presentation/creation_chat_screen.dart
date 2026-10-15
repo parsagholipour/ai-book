@@ -16,6 +16,7 @@ import 'chat_archive_feedback.dart';
 import 'chat_history_drawer.dart';
 import 'creation_chat_navigation.dart';
 import '../../billing/presentation/message_allowance_banner.dart';
+import '../../auth/presentation/verify_email_banner.dart';
 import '../../../app/config/app_config.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_client.dart';
@@ -26,6 +27,7 @@ import '../../../shared/ui/authed_network_image.dart';
 import '../../../shared/ui/easy_drawer_open.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../../../shared/ui/touch_target.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../../shared/ui/polling_state_mixin.dart';
@@ -46,6 +48,7 @@ import '../domain/chat_markdown.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
+import 'ai_content_report.dart';
 import 'branch_navigator.dart';
 import 'chat_assistant_avatar.dart';
 import 'chat_composer_field.dart';
@@ -420,6 +423,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
           .read(creationChatControllerProvider.notifier)
           .dismissFailedMessage(localId),
       onEditCreationMessage: _startCreationMessageEdit,
+      onReportCreationMessage: _reportCreationReply,
+      onReportProjectMessage: _reportProjectReply,
       onSwitchCreationBranch: (message, direction) {
         final messageId = message.id;
         if (messageId == null) return;
@@ -527,6 +532,13 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                         ),
                       if (state.warnings.isNotEmpty)
                         _ChatWarningsBanner(warnings: state.warnings),
+                      // The welcome credits waiting on the reader's email,
+                      // above the transcript and never while typing, so it
+                      // takes no room from the composer.
+                      if (!keyboardOpen)
+                        const VerifyEmailBanner(
+                          padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        ),
                       Expanded(
                         child: AnimatedSwitcher(
                           duration: AppMotion.reducedMotion(context)
@@ -654,66 +666,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         ),
       ],
     );
-  }
-
-  Future<void> _retryFailedOperation({
-    required MobileProjectDetail? project,
-    required MobileBookEditOperation operation,
-  }) async {
-    if (operation.isAutomaticRetryPending) {
-      _refreshOutput(operation.projectId);
-      return;
-    }
-    if (!operation.retryAvailable) {
-      final submittedText = operation.submittedText?.trim();
-      if (submittedText != null && submittedText.isNotEmpty) {
-        _revisionController.text = submittedText;
-        _revisionController.selection = TextSelection.collapsed(
-          offset: submittedText.length,
-        );
-      }
-      _refreshOutput(operation.projectId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showAppSnackBar(
-        SnackBar(
-          content: Text(
-            submittedText == null || submittedText.isEmpty
-                ? 'Edit the request below, then send it again.'
-                : 'The original request is ready to edit and send again.',
-          ),
-        ),
-      );
-      return;
-    }
-    final quote = operation.recoveryQuote;
-    if (quote == null) return;
-    final confirmed = await confirmPaidGenerationRetry(
-      context,
-      ref,
-      projectId: operation.projectId,
-      quote: quote,
-    );
-    if (confirmed == null || !mounted) return;
-    setState(() => _planBusyAction = 'retry-${operation.id}');
-    try {
-      final retried = await ref
-          .read(projectsRepositoryProvider)
-          .retryOperation(
-            projectId: operation.projectId,
-            operationId: operation.id,
-            requestId: createPlanRevisionRetryRequestId(operation.id),
-            retryToken: confirmed.retryToken,
-          );
-      if (!mounted) return;
-      _trackRetriedOperation(retried, project);
-      _refreshOutput(operation.projectId);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _planBusyAction = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
   }
 
   @override

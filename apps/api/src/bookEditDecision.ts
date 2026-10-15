@@ -1,6 +1,8 @@
 import { backMatterIntent } from "./bookEditBackMatter.js";
 import { bookTitleIntent, sanitizeBookTitle } from "./bookEditBookTitle.js";
 import { chapterHeadingEditFromDecision, chapterHeadingIntent } from "./bookEditChapterHeading.js";
+import { bookMatterIntent } from "./bookEditMatter.js";
+import { tomezaCreditIntent } from "./bookEditTomezaCredit.js";
 import { pageDesignEditFromDecision, pageDesignIntent } from "./bookEditPageDesign.js";
 import { imageInsertionIntentFromDecision, imageLayoutIntentFromDecision } from "./bookEditImage.js";
 import {
@@ -70,6 +72,16 @@ export function intentFromDecideAction(
   message: string,
   chapters: BookEditChapterContext[] = [],
   context: IntentDecisionContext = {}
+): BookEditIntent {
+  const intent = intentFromDecision(decision, message, chapters, context);
+  return { ...intent, ...(decision.responseLanguage ? { responseLanguage: decision.responseLanguage } : {}) };
+}
+
+function intentFromDecision(
+  decision: DecideActionPayload,
+  message: string,
+  chapters: BookEditChapterContext[],
+  context: IntentDecisionContext
 ): BookEditIntent {
   if (decision.action === "clarify" || decision.action === "answer") {
     const settled = numberedStructuralIntent(decision, message, context.pageNumbering?.pdfPageMap);
@@ -287,6 +299,14 @@ function intentFromProposeEditBase(
           impact: "small_text",
           clarification: "scope"
         };
+  }
+  if (target === "book_matter") {
+    // Only *that* it is a matter edit: what changes is composed when it is
+    // applied, from the message and the book's matter as it stands then.
+    return bookMatterIntent(decision);
+  }
+  if (target === "tomeza_credit") {
+    return tomezaCreditIntent(decision);
   }
   if (target === "chapter_heading") {
     return chapterHeadingIntent(

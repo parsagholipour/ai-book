@@ -36,7 +36,8 @@ authentication. The React operator console keeps its separate password login.
 
    Or use `--dart-define=GOOGLE_SIGN_IN_CLIENT_ID=...` with `flutter run/build`.
    Make does not load the API `.env` automatically. Without this build setting,
-   the Google button is hidden; without the server setting the route returns 503.
+   the Google button is hidden, so `make mobile-build-release` refuses to run
+   without it; without the server setting the route returns 503.
 
 Google sign-in does not require Firebase Authentication or a service-account
 key. The existing Firebase messaging configuration is independent. Providing

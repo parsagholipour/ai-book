@@ -21,8 +21,9 @@ import 'narrator_preview_source.dart';
 /// Voices are impossible to judge from a name, so every one can be heard before
 /// any credits are spent — the samples are free and shared across all books.
 /// The price sits on the confirm button's line as the same tappable badge used
-/// everywhere else, rather than being spelled out in prose, and only when the
-/// billing payload has actually quoted one.
+/// everywhere else, rather than being spelled out in prose, and only once the
+/// server has quoted one — narration is priced by the words read aloud, which
+/// only the server counts.
 ///
 /// [currentVoice] marks the narrator a replacement would replace. [onConfirm]
 /// returns null once the narration is under way, or the reason it could not
@@ -31,7 +32,6 @@ import 'narrator_preview_source.dart';
 Future<bool> showNarratorPickerSheet(
   BuildContext context, {
   required String projectId,
-  required int pageCount,
   required bool replacing,
   required Future<String?> Function(String voice) onConfirm,
   String? currentVoice,
@@ -40,7 +40,6 @@ Future<bool> showNarratorPickerSheet(
     context,
     builder: (_) => _NarratorPickerSheet(
       projectId: projectId,
-      pageCount: pageCount,
       replacing: replacing,
       currentVoice: currentVoice,
       onConfirm: onConfirm,
@@ -52,14 +51,12 @@ Future<bool> showNarratorPickerSheet(
 class _NarratorPickerSheet extends ConsumerStatefulWidget {
   const _NarratorPickerSheet({
     required this.projectId,
-    required this.pageCount,
     required this.replacing,
     required this.currentVoice,
     required this.onConfirm,
   });
 
   final String projectId;
-  final int pageCount;
   final bool replacing;
   final String? currentVoice;
   final Future<String?> Function(String voice) onConfirm;
@@ -182,10 +179,11 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
   Widget build(BuildContext context) {
     final voices = ref.watch(narratorVoicesProvider);
     final billing = ref.watch(billingProvider).asData?.value;
-    final credits = _priceFor(
-      billing?.creditCosts ?? const {},
-      widget.pageCount,
-    );
+    final credits = ref
+        .watch(audiobookQuoteProvider(widget.projectId))
+        .asData
+        ?.value
+        .credits;
     // An unquoted price is not a price of zero and not a price we can check the
     // balance against: the server has the final say, and says so out loud.
     final canAfford =
@@ -263,19 +261,6 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
         );
       },
     );
-  }
-
-  /// Mirrors the server's `audiobookBase + audiobookPerPage × pages`, reading
-  /// the live prices the billing endpoint ships so a price change needs no
-  /// client release. Null when either price has not been shipped: the app does
-  /// not guess one.
-  static int? _priceFor(Map<String, dynamic> creditCosts, int pageCount) {
-    final base = creditCosts['audiobookBase'];
-    final perPage = creditCosts['audiobookPerPage'];
-    if (base is! num || perPage is! num) {
-      return null;
-    }
-    return base.round() + pageCount * perPage.round();
   }
 }
 

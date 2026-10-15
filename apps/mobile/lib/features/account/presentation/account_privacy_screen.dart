@@ -337,7 +337,8 @@ class _DeleteAccountCard extends StatelessWidget {
             'Your account is deleted a day after you ask. Write to support before then if you change your mind.',
           ),
           point(
-            'It does not cancel a Google Play subscription. Cancel that separately in Google Play.',
+            'Deleting your account also cancels your Google Play subscription. '
+            'You can check or cancel it yourself in Google Play › Subscriptions.',
           ),
           const SizedBox(height: AppSpacing.md),
           if (requested) ...[

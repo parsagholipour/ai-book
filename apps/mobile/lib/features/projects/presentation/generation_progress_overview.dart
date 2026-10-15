@@ -5,6 +5,7 @@ import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
 import 'plan_build_progress.dart';
 import 'progress_step_row.dart';
+import 'waiting_in_line_note.dart';
 import '../../billing/domain/billing_models.dart';
 
 /// The live "what is happening to my book right now" card on /handoff.
@@ -102,6 +103,10 @@ class GenerationProgressOverviewCard extends StatelessWidget {
                   context,
                 ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
+            ],
+            if (status.waitingInLineLabel != null) ...[
+              const SizedBox(height: 8),
+              WaitingInLineNote(status: status),
             ],
             const SizedBox(height: 14),
             Row(

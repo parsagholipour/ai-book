@@ -43,12 +43,14 @@ import { terminateBrowserProcess } from "./browserProcess.js";
  */
 
 /**
- * Deliberately below the worker's job concurrency, which is
- * `Math.max(MAX_PARALLEL_PAGE_JOBS, MAX_PARALLEL_IMAGE_JOBS)` — 4 by default and
- * tunable to 32 (`config.ts`) — with no separate lane for compiles. Four large
- * books typesetting inside one Chromium is an out-of-memory kill that takes all
- * four down together, so renders queue here instead. Raising this without
- * raising the container's memory is how that outage comes back.
+ * Deliberately below the worker's job concurrency, which is the sum of its two
+ * lanes (`workerLaneConcurrency` in `jobLanes.ts`: one long and two interactive
+ * in production, the long lane `max(MAX_PARALLEL_PAGE_JOBS,
+ * MAX_PARALLEL_IMAGE_JOBS)` when unset) — and compiles run in both lanes. Four
+ * large books typesetting inside one Chromium is an out-of-memory kill that takes
+ * all four down together, so renders queue here instead, whatever the lanes add
+ * up to. Raising this without raising the container's memory is how that outage
+ * comes back.
  */
 const RENDER_CONCURRENCY = 2;
 
@@ -62,12 +64,20 @@ const MAX_RENDERS_PER_BROWSER = 50;
 const IDLE_CLOSE_MS = 60_000;
 
 /**
+ * One attempt's watchdog when the caller names none — a cover, a short book.
  * Covers what has no timeout of its own: our `document.fonts.ready` wait and a
- * wedged renderer. `page.pdf()` already throws `TimeoutError` at 30 s in
- * puppeteer 25, so this is defense in depth rather than the fix for slow
- * exports — the `file://` transport is that.
+ * wedged renderer. A book's PDF render passes its own, scaled to its length
+ * (`bookPdfRenderBudget` in `pdfDocument.ts`), because an 800-page book spends
+ * most of this inside `Page.printToPDF` alone on a slow host.
  */
-const RENDER_TIMEOUT_MS = 90_000;
+export const DEFAULT_RENDER_TIMEOUT_MS = 90_000;
+
+/**
+ * The longest watchdog any attempt may be given, whatever it asks for, and so
+ * the bound on every CDP request (`protocolTimeout` below). A render this slow
+ * is holding one of two render permits; past this it is wedged, not long.
+ */
+export const MAX_RENDER_TIMEOUT_MS = 11 * 60_000;
 
 /**
  * How long a browser gets to close politely before its process is signalled.
@@ -100,8 +110,11 @@ const LAUNCH_OPTIONS: LaunchOptions = {
   args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   // Context/page acquisition is CDP work too. The attempt watchdog below is
   // the outer deadline; this keeps an individual protocol request from living
-  // beyond that same budget inside Puppeteer's connection callback registry.
-  protocolTimeout: RENDER_TIMEOUT_MS,
+  // beyond the largest budget any attempt may have inside Puppeteer's
+  // connection callback registry. It is one setting for the whole browser and
+  // `Page.printToPDF` is one request, so it cannot be smaller than a long
+  // book's print — at 90 s it failed that print whatever `page.pdf()` was told.
+  protocolTimeout: MAX_RENDER_TIMEOUT_MS,
   // Puppeteer installs its own signal handlers by default, which race the
   // app's own shutdown; `closeSharedBrowser()` is how this process says goodbye.
   //
@@ -612,7 +625,7 @@ export async function withRenderPage<T>(
   render: (page: Page) => Promise<T>,
   options: { timeoutMs?: number } = {}
 ): Promise<T> {
-  const timeoutMs = options.timeoutMs ?? RENDER_TIMEOUT_MS;
+  const timeoutMs = Math.min(options.timeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS, MAX_RENDER_TIMEOUT_MS);
   // Capture this before joining the semaphore queue. A shutdown may happen
   // while this call is waiting; once a permit reaches it, that queued render
   // must drain without launching a replacement browser. A later, genuinely new

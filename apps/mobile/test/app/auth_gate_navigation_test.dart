@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/app.dart';
 import 'package:tomeza/features/auth/domain/legal_gate.dart';
+import 'package:tomeza/features/auth/presentation/auth_controller.dart';
+import 'package:tomeza/features/auth/presentation/offline_session_notice.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 
 import 'app_test_fixtures.dart';
@@ -136,9 +138,12 @@ void main() {
     );
   });
 
-  testWidgets('restore network errors stay on a retryable splash screen', (
-    tester,
-  ) async {
+  // A restore that cannot reach the server opens the session this phone holds
+  // (`MobileAuthRepository.restoreSession`) — it used to hold every route at
+  // the splash, so nothing downloaded could be read on a plane. Only a phone
+  // with no copy of the account to fall back on still errors to the splash.
+  testWidgets('restore errors with nothing on the phone stay on a retryable '
+      'splash screen', (tester) async {
     await tester.pumpWidget(
       testApp(
         authRepository: FakeAuthRepository(
@@ -157,6 +162,61 @@ void main() {
     expect(find.text('Check your connection and try again.'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
     expect(find.text('Welcome back'), findsNothing);
+  });
+
+  testWidgets('an offline restore opens the app, says so, and confirms the '
+      'session once the server answers', (tester) async {
+    final auth = FakeAuthRepository(
+      initialSession: fakeSession(),
+      offlineRestores: 2,
+    );
+    await tester.pumpWidget(
+      testApp(
+        authRepository: auth,
+        projectsRepository: FakeProjectsRepository(projects: [fakeProject()]),
+        billingRepository: FakeBillingRepository(billing: fakeBilling()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connection problem'), findsNothing);
+    expect(find.text('Practical guide'), findsOneWidget);
+    expect(find.byKey(const ValueKey('offline-session-notice')), findsOneWidget);
+    expect(find.text(OfflineSessionNotice.message), findsOneWidget);
+
+    // Still offline at the first retry; the second one gets through.
+    await tester.pump(AuthController.offlineRevalidationDelays[0]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('offline-session-notice')), findsOneWidget);
+    await tester.pump(AuthController.offlineRevalidationDelays[1]);
+    await tester.pumpAndSettle();
+
+    expect(auth.restoreCalls, 3);
+    expect(find.byKey(const ValueKey('offline-session-notice')), findsNothing);
+    expect(find.text('Practical guide'), findsOneWidget);
+  });
+
+  testWidgets('an offline session the server turns out to have ended signs '
+      'the reader out', (tester) async {
+    await tester.pumpWidget(
+      testApp(
+        authRepository: FakeAuthRepository(
+          initialSession: fakeSession(),
+          offlineRestores: 1,
+          sessionDiesOffline: true,
+        ),
+        projectsRepository: FakeProjectsRepository(projects: [fakeProject()]),
+        billingRepository: FakeBillingRepository(billing: fakeBilling()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('offline-session-notice')), findsOneWidget);
+
+    await tester.pump(AuthController.offlineRevalidationDelays[0]);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('offline-session-notice')), findsNothing);
+    expect(find.text('Welcome back'), findsOneWidget);
   });
 
   testWidgets('failed sign in keeps the email field filled', (tester) async {

@@ -84,8 +84,8 @@ function emptyDrivers(): PricingDrivers {
   return Object.fromEntries(CREDIT_PRICE_KEYS.map((key) => [key, 0])) as PricingDrivers;
 }
 
-function audiobookPageCount(metadata: unknown): number {
-  const value = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).pageCount : undefined;
+function audiobookMetadataCount(metadata: unknown, key: "pageCount" | "wordCount"): number {
+  const value = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>)[key] : undefined;
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
 }
 
@@ -93,8 +93,29 @@ type SpendCountRow = {
   project_id: string | null;
   operation: string;
   pricing_key: string | null;
+  /** The stored quote's `estimatedInteriorImages`, as text; null when the charge stored no quote. */
+  quoted_interior_images?: string | null;
+  /** The stored quote's `includesCover`, as text. */
+  quoted_cover?: string | null;
   count: number;
 };
+
+/**
+ * The pictures a charge was quoted for, off the quote it stored, or null when
+ * it stored none that can be read. A book is counted at what it was charged
+ * for, never at what today's rule would draw for it: the picture-book rule
+ * changed twice in a day (four pictures, then a picture a page to twelve and
+ * one per two pages, then `min(pages, 12)`), so a book charged under an earlier
+ * one re-estimated today projects pictures nobody paid for.
+ */
+function quotedImages(row: SpendCountRow): { interior: number; cover: number | null } | null {
+  const interior = Number(row.quoted_interior_images);
+  if (row.quoted_interior_images === null || row.quoted_interior_images === undefined || !Number.isInteger(interior) || interior < 0) {
+    return null;
+  }
+  const cover = row.quoted_cover === "true" ? 1 : row.quoted_cover === "false" ? 0 : null;
+  return { interior, cover };
+}
 
 type AudiobookChargeRow = { metadata: unknown };
 
@@ -139,12 +160,16 @@ export async function loadPricingDrivers(
         e."projectId" AS project_id,
         e.operation::text AS operation,
         e.metadata ->> 'pricingKey' AS pricing_key,
+        e.metadata #>> '{creditEstimate,assumptions,estimatedInteriorImages}' AS quoted_interior_images,
+        e.metadata #>> '{creditEstimate,assumptions,includesCover}' AS quoted_cover,
         COUNT(*)::double precision AS count
       FROM "CreditLedgerEntry" e
       WHERE e."entryType" = 'SPEND' AND e.status = 'SETTLED'
         AND e."createdAt" >= ${window.since}::timestamptz AND e."createdAt" <= ${window.until}::timestamptz
         AND ${Prisma.raw(NOT_FULLY_REFUNDED_SQL)}
-      GROUP BY e."projectId", e.operation, e.metadata ->> 'pricingKey'
+      GROUP BY e."projectId", e.operation, e.metadata ->> 'pricingKey',
+        e.metadata #>> '{creditEstimate,assumptions,estimatedInteriorImages}',
+        e.metadata #>> '{creditEstimate,assumptions,includesCover}'
     `,
     prisma.creditLedgerEntry.aggregate({ _sum: { amountCredits: true }, where: { ...SETTLED_CHARGE, createdAt: inWindow } }),
     prisma.creditLedgerEntry.aggregate({
@@ -203,7 +228,10 @@ export async function loadPricingDrivers(
   // The tier rides along because the rates it drove differ per tier, so a
   // premium book counted into the balanced buckets would project revenue at
   // prices nobody was charged.
-  const bookShapes = new Map<string, { tier: ModelTier; pages: number; images: number; premium: number }>();
+  const bookShapes = new Map<
+    string,
+    { tier: ModelTier; pages: number; interiorImages: number; coverImages: number; premium: number }
+  >();
   const projectTiers = new Map<string, ModelTier>();
   for (const project of projects) {
     projectTiers.set(project.id, modelTierFromMediaSettings(project.mediaSettings));
@@ -214,7 +242,9 @@ export async function loadPricingDrivers(
         pages: input.targetPages,
         // Initial covers share the image-generation price. Cover regeneration
         // remains a separate, standalone operation counted from its own ledger rows.
-        images: estimateInteriorImageCount(input) + (coverArtSourceFor(input.mediaSettings) === "ai" ? 1 : 0),
+        // Both are today's estimate, used only for a charge that stored no quote.
+        interiorImages: estimateInteriorImageCount(input),
+        coverImages: coverArtSourceFor(input.mediaSettings) === "ai" ? 1 : 0,
         premium: isPremiumProject(input) ? 1 : 0
       });
     } catch {
@@ -224,26 +254,31 @@ export async function loadPricingDrivers(
   }
 
   const drivers = emptyDrivers();
-  const addBook = (projectId: string | null, times: number) => {
-    const shape = projectId ? bookShapes.get(projectId) : undefined;
+  const addBook = (row: SpendCountRow, times: number) => {
+    const shape = row.project_id ? bookShapes.get(row.project_id) : undefined;
     if (!shape) {
       return;
     }
+    const quoted = quotedImages(row);
+    const images = (quoted?.interior ?? shape.interiorImages) + (quoted?.cover ?? shape.coverImages);
     drivers[tierPriceKey("fullBookBase", shape.tier)] += times;
     drivers[tierPriceKey("fullBookPerPage", shape.tier)] += shape.pages * times;
-    drivers[tierPriceKey("imageGeneration", shape.tier)] += shape.images * times;
+    drivers[tierPriceKey("imageGeneration", shape.tier)] += images * times;
     drivers.premiumReview += shape.premium * times;
-    // A full generation bundles the export unlock.
-    drivers.exportUnlock += times;
+    // No export unlock: it was retired on 2026-10-15 and is no price
+    // (`RETIRED_CREDIT_PRICING_KEYS`), so a book counts nothing for it — and an
+    // older charge that carried one, or a standalone EXPORT_UNLOCK row in the
+    // window, shows up as the coverage gap it is rather than as projected
+    // income at a price nobody pays any more.
   };
 
   for (const row of spendRows) {
     if (row.operation === "FULL_BOOK_GENERATION") {
-      addBook(row.project_id, Number(row.count));
+      addBook(row, Number(row.count));
     } else if (row.operation === "BOOK_REPLAN") {
       drivers.bookReplanBase += Number(row.count);
       // A replan is priced as its base plus a fresh full-book estimate.
-      addBook(row.project_id, Number(row.count));
+      addBook(row, Number(row.count));
     }
   }
 
@@ -251,8 +286,6 @@ export async function loadPricingDrivers(
     spendRows
       .filter((row) => row.operation === operation)
       .reduce((total, row) => total + Number(row.count), 0);
-  // Standalone unlocks only — the bundled ones are already counted above.
-  drivers.exportUnlock += countOf("EXPORT_UNLOCK");
   // Initial plans and their revisions both climb the tier ladder. A row stamped
   // with its key counts there. An unstamped initial plan counts at its book's
   // tier; an unstamped revision predates tiered revisions and was charged the
@@ -288,7 +321,10 @@ export async function loadPricingDrivers(
 
   for (const charge of audiobookCharges) {
     drivers.audiobookBase += 1;
-    drivers.audiobookPerPage += audiobookPageCount(charge.metadata);
+    drivers.audiobookPerPage += audiobookMetadataCount(charge.metadata, "pageCount");
+    // A charge from before narration was priced by the word recorded no count,
+    // so it drives nothing here rather than a guess.
+    drivers.audiobookPer100Words += Math.ceil(audiobookMetadataCount(charge.metadata, "wordCount") / 100);
   }
 
   const deliveredEdits = edits.filter((edit) => {
@@ -309,13 +345,19 @@ export async function loadPricingDrivers(
     if (edit.kind === "LOCAL_PATCH") {
       drivers.bookTextEditBase += 1;
       drivers[tierPriceKey("bookTextEditPerPage", tier)] += pages;
-    } else if (edit.kind === "PAGE_REWRITE" || edit.kind === "CHAPTER_REGENERATE" || edit.kind === "CONTINUE_BOOK") {
+    } else if (edit.kind === "PAGE_REWRITE" || edit.kind === "CHAPTER_REGENERATE") {
       drivers[tierPriceKey("pageRegenerationPerPage", tier)] += pages;
-    } else if (edit.kind === "RESTRUCTURE_PAGES") {
-      // Only an insert is billed, and its `affectedPageIndexes` are the pages
-      // it wrote — a delete or a move settles with an empty list and costs
-      // nothing, so the `Math.max(1, …)` floor above must not apply to it.
-      drivers[tierPriceKey("pageRegenerationPerPage", tier)] += edit.affectedPageIndexes.length;
+    } else if (edit.kind === "CONTINUE_BOOK" || edit.kind === "RESTRUCTURE_PAGES") {
+      // Pages a book gains are priced like the book (`addedPagesCreditCost`):
+      // one base plus the tier's writing rate per page added. A continuation's
+      // `affectedPageIndexes` are the pages it appended (at least one was
+      // quoted); an insert's are the pages it wrote, and a delete or a move
+      // settles with an empty list and costs nothing — no base either.
+      const added = edit.kind === "CONTINUE_BOOK" ? pages : edit.affectedPageIndexes.length;
+      if (added > 0) {
+        drivers.addedPagesBase += 1;
+        drivers[tierPriceKey("fullBookPerPage", tier)] += added;
+      }
     } else if (edit.kind === "ADD_IMAGE") {
       // A chat-inserted illustration is one image at the book's tier — the
       // target page rides along in affectedPageIndexes but is not a quantity.

@@ -6,9 +6,9 @@ import {
   type AuthFailure,
   type AuthUser
 } from "./mobileAuth.js";
+import { DEFAULT_LOCAL_ADMIN_USER_EMAIL, DEFAULT_LOCAL_ADMIN_USER_ID } from "./localAdminUser.js";
 
-export const DEFAULT_LOCAL_ADMIN_USER_ID = "local-admin";
-export const DEFAULT_LOCAL_ADMIN_USER_EMAIL = "local-admin@ai-book-maker.local";
+export { DEFAULT_LOCAL_ADMIN_USER_EMAIL, DEFAULT_LOCAL_ADMIN_USER_ID };
 
 let defaultLocalAdminUserId: Promise<string> | null = null;
 
@@ -65,8 +65,39 @@ export function allowsMobileBearer(path: string): boolean {
   return MOBILE_BEARER_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
-export function pathFromRequestUrl(rawUrl: string): string {
-  return new URL(rawUrl, "http://localhost").pathname;
+/** Routes that match any path, and so say nothing about which surface a request is on. */
+const CATCH_ALL_ROUTES = new Set(["*", "/*"]);
+
+/**
+ * The path every auth decision is made from: the pattern of the route the
+ * router matched, never the URL as sent.
+ *
+ * The URL as sent keeps its percent-encoding and the router decodes it before
+ * matching, so the two disagreed: the hook read `/%61pi/admin/users` as a path
+ * outside `/api/`, protected nothing, and find-my-way ran the
+ * `/api/admin/users` handler — which believed the hook. The matched pattern
+ * *is* the handler that will run, so no spelling of the URL (encoded letters,
+ * `%2e%2e`, an absolute-form target) can separate what is checked from what
+ * executes.
+ *
+ * A request with no route of its own — a 404, or one only a catch-all took
+ * (the console's static files, CORS preflight) — reaches no handler worth
+ * protecting, and is classified by its decoded path as it always was. `null`
+ * is a path that would not decode; callers treat it as operator-only.
+ */
+export function routedRequestPath(request: FastifyRequest): string | null {
+  const routed = request.routeOptions.url;
+  if (routed !== undefined && !CATCH_ALL_ROUTES.has(routed)) {
+    return routed;
+  }
+  try {
+    // Anchored to an origin of our own: `new URL("//api/x", base)` would read
+    // `api` as a host and drop it from the path.
+    const url = new URL(request.url.startsWith("/") ? `http://localhost${request.url}` : request.url);
+    return decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
 }
 
 declare module "fastify" {
@@ -123,14 +154,6 @@ async function upsertDefaultLocalAdminUser(): Promise<string> {
   return user.id;
 }
 
-export async function markOperatorRequest(request: FastifyRequest): Promise<OperatorAuthContext> {
-  const operatorAuth = {
-    userId: await ensureDefaultLocalAdminUser()
-  };
-  request.operatorAuth = operatorAuth;
-  return operatorAuth;
-}
-
 /**
  * The actor a project route acts for.
  *
@@ -139,6 +162,12 @@ export async function markOperatorRequest(request: FastifyRequest): Promise<Oper
  * quietly falling through to the operator branch — the `onRequest` hook in
  * `auth.ts` already answers 401 there, but only when a WEB_PASSWORD is
  * configured, and this rule has to hold either way.
+ *
+ * Only that hook makes an operator (`request.operatorAuth`), and only after it
+ * has checked the cookie or found password auth off. A request carrying neither
+ * that nor a bearer is refused here: it reached the handler without the hook
+ * vouching for it. This used to make an operator out of the missing bearer, so
+ * one percent-encoded letter that slipped past the hook was the whole console.
  */
 export async function resolveProjectActor(request: FastifyRequest, reply: FastifyReply): Promise<ProjectActor | null> {
   // The auth hook has already verified the operator cookie before setting this
@@ -158,7 +187,8 @@ export async function resolveProjectActor(request: FastifyRequest, reply: Fastif
       sendMobileAuthFailure(reply, mobileAuth);
       return null;
     }
-    if (!allowsMobileBearer(pathFromRequestUrl(request.url))) {
+    const path = routedRequestPath(request);
+    if (path === null || !allowsMobileBearer(path)) {
       sendOperatorOnly(reply);
       return null;
     }
@@ -170,11 +200,8 @@ export async function resolveProjectActor(request: FastifyRequest, reply: Fastif
     };
   }
 
-  const operatorAuth = await markOperatorRequest(request);
-  return {
-    kind: "operator",
-    userId: operatorAuth.userId
-  };
+  sendOperatorAuthRequired(reply);
+  return null;
 }
 
 /**
@@ -203,6 +230,11 @@ export async function requireOperatorActor(
 
 function sendOperatorOnly(reply: FastifyReply): FastifyReply {
   return reply.code(403).send({ error: "Operator access required" });
+}
+
+/** The operator console's own 401, the same body the auth hook answers with. */
+function sendOperatorAuthRequired(reply: FastifyReply): FastifyReply {
+  return reply.code(401).send({ error: "Password required" });
 }
 
 export function sendProjectNotFound(reply: FastifyReply, label = "Project not found"): FastifyReply {

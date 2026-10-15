@@ -50,7 +50,7 @@ export function planMediaSettingsSnapshot(input: CreateProjectInput): Prisma.Inp
 
 export function coverMetadataFromProject(
   project: { title: string; subtitle?: string | null; authorName?: string | null; coverTagline?: string | null },
-  plan: BookPlan
+  plan: Pick<BookPlan, "title" | "subtitle">
 ) {
   return {
     title: cleanOptionalText(project.title) ?? plan.title,

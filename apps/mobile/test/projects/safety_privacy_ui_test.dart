@@ -254,8 +254,6 @@ MobileExportSet fakeExports() {
     pdf: MobileExportAvailability(
       format: 'pdf',
       available: false,
-      unlocked: false,
-      creditsRequired: 150,
       downloadUrl: '/api/mobile/projects/project-1/export/pdf',
       filename: 'Launch-Workbook.pdf',
       contentType: 'application/pdf',
@@ -263,8 +261,6 @@ MobileExportSet fakeExports() {
     epub: MobileExportAvailability(
       format: 'epub',
       available: false,
-      unlocked: false,
-      creditsRequired: 150,
       downloadUrl: '/api/mobile/projects/project-1/export/epub',
       filename: 'Launch-Workbook.epub',
       contentType: 'application/epub+zip',

@@ -22,17 +22,32 @@ export const SHARE_ERRORS = {
   },
   PREVIEW_PAGES_REQUIRED: { status: 400, message: "Choose how many pages the preview shows." },
   PREVIEW_TOO_LONG: { status: 400, message: "A preview can show at most half of the book's pages." },
-  EXPORT_UNLOCK_REQUIRED: {
-    status: 402,
-    message: "Sharing the whole book uses the book's PDF unlock. Unlock it, or share a free preview instead."
-  },
   CAPTION_TOO_LONG: { status: 400, message: "Keep the note to 500 characters or fewer." },
   CAPTION_LINK_NOT_ALLOWED: { status: 422, message: "A shared book's note can't include links. Remove the link and try again." },
   SHARE_NOT_FOUND: { status: 404, message: "This book isn't shared." },
+  // An operator turned sharing off for the account (`../../accountModeration.ts`).
+  // 403, which the app shows as a refusal: only SESSION_REVOKED and
+  // ACCOUNT_DISABLED sign it out, whatever their status.
+  SHARING_DISABLED: {
+    status: 403,
+    message: "Sharing is turned off for this account, so it can't share books or start one from a shared book. If you think this is a mistake, contact support."
+  },
   REMIX_NOT_AVAILABLE: { status: 410, message: "This book is no longer shared." }
 } as const;
 
 export type ShareErrorCode = keyof typeof SHARE_ERRORS;
+
+/**
+ * Why a link is off when a re-screen refused the book's changed text
+ * (`shareRescreen.ts`). The share is REVOKED, not taken down: the refused text
+ * was never served (the share was already "being updated"), the model screen's
+ * wording is unmeasured, and so this is the create path's 422 arriving later —
+ * the author edits and shares again, and that share is screened like any new
+ * one. The author reads it as the share's `stoppedReason`. One sentence for
+ * every refusal, because the share sheet is no place to quote the rule back.
+ */
+export const SHARE_TEXT_OFFLINE_REASON =
+  "This link was turned off because your latest changes didn't pass our content check. Edit the book and share it again.";
 
 export function sendShareError(reply: FastifyReply, code: ShareErrorCode, extra: Record<string, unknown> = {}) {
   const { status, message } = SHARE_ERRORS[code];

@@ -9,6 +9,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { wordBomb } from "../testing/zipBomb.js";
 import {
   bearer,
   buildMobileApp,
@@ -113,6 +114,8 @@ describe("creation chat attachments API", () => {
     });
     expect(served.statusCode).toBe(200);
     expect(served.headers["content-type"]).toContain("text/plain");
+    expect(served.headers["x-content-type-options"]).toBe("nosniff");
+    expect(served.headers["content-disposition"]).toBe(`attachment; filename="notes.txt"; filename*=UTF-8''notes.txt`);
     expect(served.body).toBe("original bytes");
 
     await testObjectStore.delete(join(fileDir, "att_ready1"));
@@ -123,6 +126,54 @@ describe("creation chat attachments API", () => {
     });
     expect(expired.statusCode).toBe(404);
     expect(expired.json()).toMatchObject({ error: { code: "ATTACHMENT_FILE_EXPIRED" } });
+    await app.close();
+  });
+
+  it("never serves a client-chosen markup type, and always as a download", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // The draft PATCH writes the payload the client sends, so the stored type
+    // and name are the client's words.
+    const planted = [
+      { ...readyAttachment, id: "att_html1", mimeType: "text/html", name: 'page".html\r\nX-Injected: 1' },
+      { ...readyAttachment, id: "att_svg01", mimeType: "image/svg+xml; charset=utf-8", name: "drawing.svg" },
+      { ...readyAttachment, id: "att_xhtm1", mimeType: "application/xhtml+xml", name: "page.xhtml" },
+      { ...readyAttachment, id: "att_png01", mimeType: "IMAGE/PNG", name: "رسم.png", kind: "photo" as const }
+    ];
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(
+      creationDraftRecord({ id: "session-draft", payload: { ...sessionPayload, attachments: planted } })
+    );
+    for (const attachment of planted) {
+      seedObject(join("attachments", "session-draft", attachment.id), "<script>alert(1)</script>");
+    }
+    const app = await buildMobileApp();
+
+    const served = async (attachmentId: string) =>
+      app.inject({
+        method: "GET",
+        url: `/api/mobile/creation-sessions/session-draft/attachments/${attachmentId}/file`,
+        headers: bearer("token-a")
+      });
+
+    const html = await served("att_html1");
+    expect(html.statusCode).toBe(200);
+    expect(html.headers["content-type"]).toBe("application/octet-stream");
+    expect(html.headers["x-content-type-options"]).toBe("nosniff");
+    expect(html.headers["x-injected"]).toBeUndefined();
+    expect(html.headers["content-disposition"]).toBe(
+      `attachment; filename="page_.htmlX-Injected: 1"; filename*=UTF-8''page%22.htmlX-Injected%3A%201`
+    );
+
+    for (const attachmentId of ["att_svg01", "att_xhtm1"]) {
+      const response = await served(attachmentId);
+      expect(response.headers["content-type"]).toBe("application/octet-stream");
+      expect(response.headers["content-disposition"]).toMatch(/^attachment; /);
+    }
+
+    const png = await served("att_png01");
+    expect(png.headers["content-type"]).toBe("image/png");
+    expect(png.headers["content-disposition"]).toBe(
+      `attachment; filename="___.png"; filename*=UTF-8''${encodeURIComponent("رسم.png")}`
+    );
     await app.close();
   });
 
@@ -147,6 +198,32 @@ describe("creation chat attachments API", () => {
 
     expect(response.statusCode).toBe(422);
     expect(response.json()).toMatchObject({ error: { code: "UNSUPPORTED_TYPE" } });
+    await app.close();
+  });
+
+  it("answers a Word file that inflates past the limit with the too-large refusal", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload: sessionPayload })
+    );
+    const { ingestCreationAttachment } = await import("@book-maker/core");
+    const app = await buildMobileApp({ attachmentIngestion: ingestCreationAttachment });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/attachments?filename=notes.docx",
+      headers: { ...bearer("token-a"), "content-type": "application/octet-stream" },
+      payload: wordBomb(1024)
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "FILE_TOO_LARGE",
+        message: "That file is too large to read in the chat. Paste the part you need into a message, or attach a smaller file."
+      }
+    });
+    expect(mockPrisma.mobileCreationDraft.update).not.toHaveBeenCalled();
     await app.close();
   });
 

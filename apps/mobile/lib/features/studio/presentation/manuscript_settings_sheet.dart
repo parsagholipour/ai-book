@@ -183,9 +183,9 @@ class _ManuscriptSettingsSheetState
     } on FormatException {
       goalError = 'Enter a number of words, like 50,000.';
     }
-    final titleError = title.length < 2
-        ? 'Give your book a title of at least two characters.'
-        : null;
+    // One character is a title: a CJK book is often named in one. The
+    // server takes 1–160 everywhere.
+    final titleError = title.isEmpty ? 'Give your book a title.' : null;
     if (titleError != null || goalError != null) {
       setState(() {
         _titleError = titleError;

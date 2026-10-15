@@ -33,7 +33,7 @@ describe("classifyEditFailure", () => {
     ];
 
     for (const { message } of sentences) {
-      expect(message).toMatch(/Send it again|Add credits|Upgrade for unlimited/);
+      expect(message).toMatch(/Send it again|Add credits|Upgrade to a plan for no monthly cap/);
     }
   });
 
@@ -43,7 +43,7 @@ describe("classifyEditFailure", () => {
       internal: false
     });
     expect(imageLimitReachedMessage(3)).toBe(
-      "Free plans include 3 illustrated books a month. Upgrade for unlimited, or turn visuals off."
+      "Free plans include 3 illustrated books a month. Upgrade to a plan for no monthly cap, or turn visuals off."
     );
   });
 

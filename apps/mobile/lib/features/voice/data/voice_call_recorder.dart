@@ -46,7 +46,8 @@ class VoiceCallRecorder {
   /// file the caller shared a week ago has been saved wherever they wanted it.
   static const exportRetention = Duration(days: 7);
 
-  /// Past this the spool stops growing. The server caps a call at 30 minutes,
+  /// Past this the spool stops growing. The server caps a call at 15 minutes
+  /// (`maxCallSeconds`; 30 until 2026-10-15, which this bound was sized for),
   /// so anything beyond is a clock that has jumped rather than a long call —
   /// and seeking to a bad offset would zero-fill the gap all the way there.
   static const _maxRecordedSeconds = 35 * 60;

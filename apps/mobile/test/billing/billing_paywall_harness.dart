@@ -140,6 +140,8 @@ class FakeBillingRepository implements BillingRepository {
     String? transactionId,
     String? purchaseStatus,
     String? projectId,
+    int? localPriceMicros,
+    String? localCurrency,
   }) async {
     verifications.add(
       VerificationCall(
@@ -148,15 +150,20 @@ class FakeBillingRepository implements BillingRepository {
         transactionId: transactionId,
         purchaseStatus: purchaseStatus,
         projectId: projectId,
+        localPriceMicros: localPriceMicros,
+        localCurrency: localCurrency,
       ),
     );
     final isSubscription = productId == 'tomeza.creator_monthly';
-    final granted = nextPurchaseIsPending
+    // The app reports no status for a payment Play holds as pending, and
+    // Google answers the server's read of it as pending too.
+    final pending = nextPurchaseIsPending || purchaseStatus == null;
+    final granted = pending
         ? 0
         : isSubscription
         ? 3000
         : 1000;
-    if (!nextPurchaseIsPending) {
+    if (!pending) {
       billing = fakeBilling(
         availableCredits: billing.credits.available + granted,
         planTier: planTier,
@@ -165,7 +172,7 @@ class FakeBillingRepository implements BillingRepository {
     return GooglePlayVerificationResult(
       purchase: VerifiedPurchase(
         id: 'purchase-${verifications.length}',
-        status: nextPurchaseIsPending ? 'pending' : 'granted',
+        status: pending ? 'pending' : 'granted',
         creditsGranted: granted,
         subscriptionStatus: isSubscription ? 'active' : null,
         entitlementType: isSubscription ? 'CREATOR_PLAN' : null,
@@ -205,6 +212,15 @@ class FakeStoreBillingClient implements StoreBillingClient {
   final buyCalls = <BuyCall>[];
   final finished = <FinishCall>[];
   var restoreCalls = 0;
+
+  /// What Play still holds for this device. Finishing a purchase takes a pack
+  /// out and marks a plan acknowledged, as Play does.
+  List<StorePurchaseUpdate> owned = [];
+  var ownedQueries = 0;
+  Object? ownedError;
+
+  /// Thrown by the next [buyProduct], as a checkout Play would not open.
+  Object? buyError;
 
   @override
   Stream<List<StorePurchaseUpdate>> get purchaseUpdates => _controller.stream;
@@ -256,11 +272,22 @@ class FakeStoreBillingClient implements StoreBillingClient {
         purchaseAccountId: purchaseAccountId,
       ),
     );
+    final error = buyError;
+    buyError = null;
+    if (error != null) throw error;
   }
 
   @override
   Future<void> restorePurchases() async {
     restoreCalls += 1;
+  }
+
+  @override
+  Future<List<StorePurchaseUpdate>> queryOwnedPurchases() async {
+    ownedQueries += 1;
+    final error = ownedError;
+    if (error != null) throw error;
+    return [...owned];
   }
 
   @override
@@ -271,6 +298,19 @@ class FakeStoreBillingClient implements StoreBillingClient {
     finished.add(
       FinishCall(purchaseToken: purchase.purchaseToken, consumable: consumable),
     );
+    owned = [
+      for (final held in owned)
+        if (held.purchaseToken != purchase.purchaseToken)
+          held
+        else if (!consumable)
+          StorePurchaseUpdate(
+            productId: held.productId,
+            status: held.status,
+            purchaseToken: held.purchaseToken,
+            purchaseId: held.purchaseId,
+            purchaseAccountId: held.purchaseAccountId,
+          ),
+    ];
   }
 
   void emit(StorePurchaseUpdate purchase) {
@@ -309,6 +349,8 @@ class VerificationCall {
     this.transactionId,
     this.purchaseStatus,
     this.projectId,
+    this.localPriceMicros,
+    this.localCurrency,
   });
 
   final String productId;
@@ -316,12 +358,16 @@ class VerificationCall {
   final String? transactionId;
   final String? purchaseStatus;
   final String? projectId;
+  final int? localPriceMicros;
+  final String? localCurrency;
 }
 
 MobileBilling fakeBilling({
   required int availableCredits,
   String? planTier,
   String purchaseAccountId = 'test-purchase-account',
+  List<MobileBillingProduct> extraProducts = const [],
+  String? creatorIntroOfferId,
 }) {
   return MobileBilling(
     purchaseAccountId: purchaseAccountId,
@@ -340,8 +386,9 @@ MobileBilling fakeBilling({
             status: 'active',
             productSku: 'tomeza.${planTier}_monthly',
           ),
-    products: const [
-      MobileBillingProduct(
+    products: [
+      ...extraProducts,
+      const MobileBillingProduct(
         sku: 'tomeza.one_book_export',
         title: 'One book export',
         description: 'One standard export credit.',
@@ -358,8 +405,9 @@ MobileBilling fakeBilling({
         creditAmount: 3000,
         priceMicros: 19990000,
         currency: 'USD',
+        introOfferId: creatorIntroOfferId,
       ),
-      MobileBillingProduct(
+      const MobileBillingProduct(
         sku: 'tomeza.pro_monthly',
         title: 'Pro monthly',
         description: 'Nine standard export credits monthly.',
@@ -368,7 +416,7 @@ MobileBilling fakeBilling({
         priceMicros: 39990000,
         currency: 'USD',
       ),
-      MobileBillingProduct(
+      const MobileBillingProduct(
         sku: 'tomeza.credit_pack_1',
         title: 'One extra credit',
         description: 'One extra standard export credit.',
@@ -377,7 +425,7 @@ MobileBilling fakeBilling({
         priceMicros: 7990000,
         currency: 'USD',
       ),
-      MobileBillingProduct(
+      const MobileBillingProduct(
         sku: 'tomeza.credit_pack_2',
         title: 'Two extra credits',
         description: 'Two extra standard export credits.',

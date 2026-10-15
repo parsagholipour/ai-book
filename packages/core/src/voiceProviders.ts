@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import type { AppConfig } from "./config.js";
 import type { VoiceProfile } from "./generation/voiceCharacters.js";
+import { VOICE_CALL_POLICY } from "./voiceCallMetering.js";
 
 export type VoiceChatProviderId = "openai_realtime" | "gemini_live";
 export type VoiceTransport = "webrtc_sdp" | "gemini_live";
@@ -307,8 +308,8 @@ export class GeminiLiveVoiceProvider implements VoiceChatProvider {
     const reconnectInstructions = buildReconnectInstructions(request.reconnectContext);
     const instructions = [request.instructions, reconnectInstructions, selected.instructions].filter(Boolean).join("\n\n");
     const now = this.options.now?.() ?? new Date();
-    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000).toISOString();
-    const newSessionExpiresAt = new Date(now.getTime() + 60 * 1000).toISOString();
+    const expiresAt = new Date(now.getTime() + GEMINI_LIVE_TOKEN_LIFETIME_MS).toISOString();
+    const newSessionExpiresAt = new Date(now.getTime() + GEMINI_LIVE_NEW_SESSION_WINDOW_MS).toISOString();
     const sessionHandle = "sessionHandle" in request ? request.sessionHandle?.trim() : undefined;
     const token = await this.createAuthToken({
       config: {
@@ -331,12 +332,7 @@ export class GeminiLiveVoiceProvider implements VoiceChatProvider {
             outputAudioTranscription: {},
             ...geminiRealtimeInputConfig(request),
             sessionResumption: sessionHandle ? { handle: sessionHandle } : {},
-            contextWindowCompression: {
-              triggerTokens: "24000",
-              slidingWindow: {
-                targetTokens: "12000"
-              }
-            }
+            contextWindowCompression: geminiLiveContextCompression(instructions)
           }
         },
         lockAdditionalFields: [
@@ -385,6 +381,94 @@ export class GeminiLiveVoiceProvider implements VoiceChatProvider {
     });
     return ai.authTokens.create(params as never);
   }
+}
+
+/** How long after the mint the relay may open its first provider connection. */
+const GEMINI_LIVE_NEW_SESSION_WINDOW_MS = 60 * 1000;
+
+/**
+ * How long the token keeps a call's provider session usable, resumptions
+ * included (Google's ephemeral-token page: the ~10-minute connection resets are
+ * resumed "with the same token even if `uses: 1`" until `expireTime`). The
+ * window to open, the length cap, and a minute for the handshake and the first
+ * lease, so the relay's funded deadline always comes first and Google's expiry
+ * is only the backstop. It was a flat 30 minutes, which was the cap when the cap
+ * was 30.
+ */
+const GEMINI_LIVE_TOKEN_LIFETIME_MS =
+  GEMINI_LIVE_NEW_SESSION_WINDOW_MS + VOICE_CALL_POLICY.maxCallMinutes * 60 * 1000 + 60 * 1000;
+
+/**
+ * In-call context compaction, counted from the top of the system instruction.
+ *
+ * Gemini Live bills every turn for the whole context window: the system
+ * instruction as text, and the conversation so far as audio, which piles up at
+ * about 25 tokens a second (Google's Live API best practices). So what a minute
+ * costs is decided almost entirely by how much conversation the window may hold.
+ * The sliding window drops the oldest turns once the context passes
+ * `triggerTokens`, down to `targetTokens`, and always keeps the system
+ * instruction (API reference, `SlidingWindow`).
+ *
+ * Both of those numbers count the instruction, and it runs from about 1,500
+ * tokens on a first call to about 7,000 for a returning caller with a long
+ * persona, a large cast and the 12,000 characters of remembered talk
+ * `voiceCallHistory.ts` allows. A fixed pair therefore either keeps minutes of
+ * audio behind a short instruction or none behind a long one: the 12k/6k the
+ * launch review suggested would have compacted a 7,000-token caller to its last
+ * turn. So the pair is set per call, above the instruction's estimated size.
+ *
+ * Modelled at full talk (30 s each way a minute, 8 turns), a 15-minute call costs
+ * $0.14–0.17 a minute across that instruction range, against $0.25–0.29 with the
+ * old fixed 24k/12k; revenue at the cheapest credit is $0.25 (120 × $0.00212).
+ * Unmeasured: the Operations tab's `VOICE_CALL_MINUTE` is where to check.
+ */
+export const GEMINI_LIVE_CONTEXT_COMPACTION = {
+  /** Conversation above the instruction that starts a compaction: about 5 minutes of two-way talk. */
+  conversationTriggerTokens: 8_000,
+  /** Conversation kept after one: the last 2 minutes or so, about 15 turns. */
+  conversationTargetTokens: 3_000
+} as const;
+
+/**
+ * About four characters a token for ASCII, three for the other alphabetic
+ * scripts (Persian, Arabic, Hebrew, Cyrillic, Devanagari, Thai), and one for
+ * CJK and Hangul. An estimate on purpose — counting exactly would put a
+ * tokenizer call in front of every call's token mint. It errs high rather than
+ * low: high costs a little more conversation kept, low costs the conversation.
+ * Not UTF-8 bytes / 4: that counts a Persian letter, two bytes, as half a token,
+ * half again too many, and modelled a Persian caller's 15 minutes past the
+ * margin this pair exists to keep.
+ */
+export function estimateInstructionTokens(text: string): number {
+  let ascii = 0;
+  let ideographic = 0;
+  let other = 0;
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x80) ascii += 1;
+    else if (isIdeographicScript(code)) ideographic += 1;
+    else other += 1;
+  }
+  return Math.ceil(ascii / 4 + other / 3 + ideographic);
+}
+
+/** CJK radicals through unified ideographs (kana included), Hangul, compatibility forms, full-width forms, and the supplementary planes. */
+function isIdeographicScript(code: number): boolean {
+  return (code >= 0x2e80 && code <= 0x9fff) || (code >= 0xac00 && code <= 0xd7af) ||
+    (code >= 0xf900 && code <= 0xfaff) || (code >= 0xff00 && code <= 0xffef) || code >= 0x20000;
+}
+
+export function geminiLiveContextCompression(systemInstruction: string): {
+  triggerTokens: string;
+  slidingWindow: { targetTokens: string };
+} {
+  const instructionTokens = estimateInstructionTokens(systemInstruction);
+  return {
+    triggerTokens: String(instructionTokens + GEMINI_LIVE_CONTEXT_COMPACTION.conversationTriggerTokens),
+    slidingWindow: {
+      targetTokens: String(instructionTokens + GEMINI_LIVE_CONTEXT_COMPACTION.conversationTargetTokens)
+    }
+  };
 }
 
 function buildReconnectInstructions(reconnectContext?: string): string {

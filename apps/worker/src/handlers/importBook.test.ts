@@ -3,8 +3,10 @@ import type { Job } from "bullmq";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    bookImport: { findUnique: vi.fn(), update: vi.fn() },
-    project: { update: vi.fn() },
+    bookImport: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    project: { update: vi.fn(), findUnique: vi.fn() },
+    generationJob: { findUnique: vi.fn() },
+    planVersion: { findFirst: vi.fn() },
     page: { findMany: vi.fn() },
     $transaction: vi.fn()
   },
@@ -56,6 +58,10 @@ beforeEach(() => {
   });
   mocks.prisma.project.update.mockResolvedValue({});
   mocks.prisma.bookImport.update.mockResolvedValue({});
+  mocks.prisma.bookImport.updateMany.mockResolvedValue({ count: 1 });
+  mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", currentPlanId: "plan-9", contentRevision: 1 });
+  mocks.prisma.planVersion.findFirst.mockResolvedValue({ id: "plan-9" });
+  mocks.prisma.generationJob.findUnique.mockResolvedValue({ status: "COMPLETED" });
 });
 
 describe("importBook redelivery", () => {
@@ -64,18 +70,17 @@ describe("importBook redelivery", () => {
     // COMPLETED write redelivers the job; re-importing hits
     // @@unique(projectId, index) on chapter.create and marked a fully
     // committed book FAILED.
-    mocks.prisma.bookImport.findUnique.mockResolvedValue({ id: "import-1", status: "COMPLETE", format: "TXT" });
+    mocks.prisma.bookImport.findUnique.mockResolvedValue({ id: "import-1", projectId: "project-1", status: "COMPLETE", format: "TXT" });
 
-    await expect(importBook(job())).resolves.toBeUndefined();
+    const completion = await importBook(job());
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    await completion.afterJobCompleted?.();
 
     expect(mocks.readFile).not.toHaveBeenCalled();
     expect(mocks.parseManuscript).not.toHaveBeenCalled();
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
-    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
-      where: { id: "project-1" },
-      data: { status: "COMPLETE" }
-    });
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-9");
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-9", undefined, { contentRevision: 1, requireContentRevisionMatch: true });
     // The committed import must not be re-marked PARSING or FAILED.
     expect(mocks.prisma.bookImport.update).not.toHaveBeenCalled();
   });
@@ -86,8 +91,8 @@ describe("importBook redelivery", () => {
 
     await expect(importBook(job())).rejects.toThrow("The uploaded manuscript file is no longer available");
 
-    expect(mocks.prisma.bookImport.update).toHaveBeenCalledWith({
-      where: { id: "import-1" },
+    expect(mocks.prisma.bookImport.updateMany).toHaveBeenCalledWith({
+      where: { id: "import-1", status: { not: "COMPLETE" } },
       data: { status: "FAILED", error: expect.stringContaining("no longer available") }
     });
   });

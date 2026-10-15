@@ -21,7 +21,9 @@ const config = { ...loadConfig(), WEB_PASSWORD: "operator-test-password", GOOGLE
   GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL: "play-push@example.iam.gserviceaccount.com" };
 const voided = { purchaseToken: "purchase-token", orderId: "GPA.123", productType: 2, refundType: 1 };
 const headers = { authorization: "Bearer signed-google-token" };
-const verifier = { verifyPurchase: vi.fn(), acknowledgePurchase: vi.fn(), readRefundableQuantity: vi.fn() } satisfies GooglePlayVerifier;
+const verifier = {
+  verifyPurchase: vi.fn(), acknowledgePurchase: vi.fn(), readRefundableQuantity: vi.fn(), cancelSubscription: vi.fn()
+} satisfies GooglePlayVerifier;
 const apps: ReturnType<typeof Fastify>[] = [];
 function envelope(event: Record<string, unknown>, packageName = config.GOOGLE_PLAY_PACKAGE_NAME) {
   return { message: { messageId: "message-1", data: Buffer.from(JSON.stringify({

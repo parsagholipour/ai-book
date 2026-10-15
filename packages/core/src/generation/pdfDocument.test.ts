@@ -2,7 +2,16 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { scriptProfileForLanguage } from "../prompting/script.js";
-import { BOOK_PDF_OPTIONS, bookPdfBaseStylesheetPaths, buildBookPdfDocument } from "./pdfDocument.js";
+import { DEFAULT_RENDER_TIMEOUT_MS, MAX_RENDER_TIMEOUT_MS } from "./browserPool.js";
+import {
+  BOOK_PDF_OPTIONS,
+  BOOK_PDF_PHASE_MAX_MS,
+  bookPdfBaseStylesheetPaths,
+  bookPdfPrintOptions,
+  bookPdfRenderBudget,
+  bookPdfRenderBudgetFor,
+  buildBookPdfDocument
+} from "./pdfDocument.js";
 
 /**
  * The book is typeset against md-to-pdf's bundled `markdown.css` and highlight.js'
@@ -297,5 +306,55 @@ describe("BOOK_PDF_OPTIONS", () => {
     expect(BOOK_PDF_OPTIONS.format).toBe("a4");
     expect(BOOK_PDF_OPTIONS.printBackground).toBe(true);
     expect(BOOK_PDF_OPTIONS.outline).toBe(true);
+  });
+});
+
+describe("bookPdfRenderBudget", () => {
+  it("gives a book of no length exactly puppeteer's and the pool's old numbers", () => {
+    expect(bookPdfRenderBudget({ sheets: 0 })).toEqual({
+      printTimeoutMs: 30_000,
+      navigationTimeoutMs: 30_000,
+      attemptTimeoutMs: DEFAULT_RENDER_TIMEOUT_MS
+    });
+    // Garbage counts are no length, never NaN or a negative wait.
+    expect(bookPdfRenderBudget({ sheets: Number.NaN, illustrations: -4 })).toEqual(bookPdfRenderBudget({ sheets: 0 }));
+  });
+
+  it("scales each phase with the sheets and the illustrations, and the watchdog with both phases", () => {
+    // The measured case: ~15 s a render at 820 pages on an i7, about twice that on a t3.
+    const long = bookPdfRenderBudget({ sheets: 820 });
+    expect(long.printTimeoutMs).toBe(30_000 + 820 * 100);
+    expect(long.navigationTimeoutMs).toBe(long.printTimeoutMs);
+    expect(long.attemptTimeoutMs).toBe(2 * long.printTimeoutMs + 30_000);
+    expect(long.printTimeoutMs).toBeGreaterThan(3 * 2 * 15_000);
+    expect(bookPdfRenderBudget({ sheets: 820, illustrations: 40 }).printTimeoutMs).toBe(long.printTimeoutMs + 40 * 500);
+    expect(bookPdfRenderBudget({ sheets: 600 }).printTimeoutMs).toBeGreaterThan(bookPdfRenderBudget({ sheets: 100 }).printTimeoutMs);
+  });
+
+  it("is capped so the watchdog never exceeds the pool's ceiling, which bounds every CDP request", () => {
+    const huge = bookPdfRenderBudget({ sheets: 1_000_000, illustrations: 1_000 });
+    expect(huge.printTimeoutMs).toBe(BOOK_PDF_PHASE_MAX_MS);
+    expect(huge.attemptTimeoutMs).toBeLessThanOrEqual(MAX_RENDER_TIMEOUT_MS);
+    expect(huge.attemptTimeoutMs).toBeGreaterThanOrEqual(huge.printTimeoutMs + huge.navigationTimeoutMs);
+  });
+
+  it("estimates a book's sheets generously from its target, its model pages and its length", () => {
+    const prose = "word ".repeat(30_000);
+    // 150,000 characters at 1,500 a sheet.
+    expect(bookPdfRenderBudgetFor({ markdown: prose })).toEqual(bookPdfRenderBudget({ sheets: 100 }));
+    expect(bookPdfRenderBudgetFor({ markdown: prose, targetPages: 600 })).toEqual(bookPdfRenderBudget({ sheets: 600 }));
+    expect(bookPdfRenderBudgetFor({ markdown: "short", modelPages: 40 })).toEqual(bookPdfRenderBudget({ sheets: 40 }));
+    const illustrated = ["![a](p/1.png)", '<img src="p/cover.jpg" alt="" />', "![b](p/2.png)", "[a link](https://x.y)"].join("\n\n");
+    expect(bookPdfRenderBudgetFor({ markdown: illustrated, targetPages: 10 })).toEqual(
+      bookPdfRenderBudget({ sheets: 10, illustrations: 3 })
+    );
+  });
+
+  it("adds only a timeout to the pinned print options, which no print parameter reads", () => {
+    const options = bookPdfPrintOptions(bookPdfRenderBudget({ sheets: 820 }));
+    const { timeout, ...printed } = options;
+    expect(timeout).toBe(112_000);
+    expect(printed).toEqual(BOOK_PDF_OPTIONS);
+    expect(BOOK_PDF_OPTIONS).not.toHaveProperty("timeout");
   });
 });

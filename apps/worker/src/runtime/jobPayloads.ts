@@ -225,6 +225,8 @@ const importBookSchema = z.object({
   ...projectDispatchedFields,
   importId: requiredId("importId"),
   language: z.string().nullable().optional(),
+  /** Upload-time parsing hints; [] is authoritative, absent only on legacy jobs. */
+  knownAuthors: z.array(z.string()).optional(),
   importQuota: importQuotaSchema.optional()
 }).passthrough();
 

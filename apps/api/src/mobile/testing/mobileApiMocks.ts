@@ -451,8 +451,13 @@ export const mockPrisma = ({
     aggregate: vi.fn()
   },
   shareSlug: { create: vi.fn(), findUnique: vi.fn(noRow) },
+  // Author profiles (`authorProfile.ts`). No profile by default, so a new book
+  // copies nothing; `bookMatterRoutes.test.ts` backs these with a store.
+  authorProfile: { findUnique: vi.fn(noRow), upsert: vi.fn(), deleteMany: vi.fn(rowsAffected(0)) },
   // Push notifications (`src/push/`). `pushDevice.test.ts` asserts the writes.
   pushDevice: { upsert: vi.fn(), deleteMany: vi.fn(rowsAffected(0)), findMany: vi.fn(noRows) },
+  productEvent: { create: vi.fn() },
+  userActiveDay: { createMany: vi.fn(rowsAffected(1)) },
   moderationReport: { create: vi.fn(), updateMany: vi.fn(rowsAffected(0)), findMany: vi.fn(noRows) },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: {
@@ -474,9 +479,19 @@ export const mockPrisma = ({
     update: vi.fn(),
     updateMany: vi.fn()
   },
-  creditLedgerEntry: { findMany: vi.fn(), update: vi.fn() },
-  subscriptionState: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
-  providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn(), create: vi.fn() },
+  creditLedgerEntry: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+  subscriptionState: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+  // No spend recorded, no plan held and no spend controls saved: the AI spend
+  // breaker's reads (`spendBreaker.ts`, `spendBreakdown.ts`) find a normal day
+  // with the defaults in force.
+  providerCallLog: {
+    aggregate: vi.fn(async (..._args: any[]): Promise<any> => ({ _sum: { costHint: null } })),
+    findMany: vi.fn(),
+    groupBy: vi.fn(async (..._args: any[]): Promise<any> => []),
+    create: vi.fn()
+  },
+  userEntitlement: { findMany: vi.fn(async (..._args: any[]): Promise<any> => []) },
+  aiSpendControlRevision: { findFirst: vi.fn(noRow), create: vi.fn() },
   imageAsset: {
     findFirst: vi.fn(),
     findMany: vi.fn(),
@@ -651,6 +666,11 @@ export const mockBilling = (() => {
     ensureDefaultProductCatalog: vi.fn(),
     getCreditBalance: vi.fn(),
     getWelcomeCreditsGranted: vi.fn(async () => 1000),
+    isWelcomeCreditGrantPending: vi.fn(async () => false),
+    describePendingWelcomeGrant: vi.fn(async () => null),
+    setWelcomeGrantHold: vi.fn(),
+    // Read by the account deletion sweep's welcome-hash release.
+    WELCOME_CREDITS_IP_WINDOW_DAYS: 30,
     listActiveUserEntitlements: vi.fn(),
     reserveCredits: vi.fn(),
     VoiceRelayError: class VoiceRelayError extends Error {
@@ -670,7 +690,6 @@ export const mockBilling = (() => {
     releaseReservationsByKeyPrefix: vi.fn(async () => 0),
     grantProjectEntitlement: vi.fn(),
     hasActiveProjectEntitlement: vi.fn(),
-    ensureProjectExportEntitlementOrSpend: vi.fn(),
     recordVerifiedGooglePlayPurchase: vi.fn(),
     endSubscriptionNow: vi.fn(async () => ({ ended: true, endedSubscriptionIds: ["sub-1"] })),
     hasActiveSubscriptionEntitlement: vi.fn(async () => false),

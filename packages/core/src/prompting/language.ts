@@ -43,6 +43,8 @@ const COMMON_LANGUAGE_LABELS: Record<string, string> = {
   korean: "Korean",
   nl: "Dutch",
   dutch: "Dutch",
+  // Bokmål, which is what written Norwegian means unless Nynorsk is named.
+  nb: "Norwegian",
   no: "Norwegian",
   norwegian: "Norwegian",
   pl: "Polish",
@@ -121,9 +123,17 @@ const LANGUAGE_TRAILERS =
  * is modifying a topic ("Chinese media", "Italian villages"); a name followed by
  * another language name is one item of a list about a topic ("in Japanese,
  * Korean, and Thai cuisine"). Append this after a captured name.
+ *
+ * Each run of whitespace here has exactly one quantifier that can match it:
+ * the comma and the conjunction carry their own trailing `\s*` instead of
+ * sitting between two of them. Written as `\s*,?\s*(?:and|or)?\s*`, a failing
+ * lookahead tried every way of cutting one run three ways — "make it in thai",
+ * 3,000 spaces and an "x" held the API's only thread for 3 s, and a tab and
+ * newline run of 4,000 for 23 s. `W* (C W*)? (K W*)?` accepts exactly the
+ * strings `W* C? W* K? W*` did, and only whether the lookahead matches is read.
  */
 export const LANGUAGE_CLAUSE_END_GUARD =
-  `\\b(?!\\s*,?\\s*(?:and|or)?\\s*(?:${LANGUAGE_NAMES})\\b)` +
+  `\\b(?!\\s*(?:,\\s*)?(?:(?:and|or)\\s*)?(?:${LANGUAGE_NAMES})\\b)` +
   `(?=\\s*$|\\s*[,.;:!?)"']|\\s+(?:${LANGUAGE_TRAILERS})\\b)`;
 
 // Words that make a following "in <Lang>" an instruction about the book rather
@@ -140,7 +150,9 @@ const LANGUAGE_REQUEST_PATTERNS = [
     "iu"
   ),
   // "language: German", "the language should be Italian", "set the language to Korean"
-  new RegExp(`\\blanguages?\\b\\s*(?:is|are|:|=|should\\s+be|to|into|as|in)?\\s*(${LANGUAGE_NAMES})\\b`, "iu"),
+  // The linking word carries its own `\s*`, as in the guard above: two around
+  // an optional word split one whitespace run every possible way.
+  new RegExp(`\\blanguages?\\b\\s*(?:(?:is|are|:|=|should\\s+be|to|into|as|in)\\s*)?(${LANGUAGE_NAMES})\\b`, "iu"),
   // "use Japanese"
   new RegExp(`\\buse\\s+(${LANGUAGE_NAMES})${LANGUAGE_CLAUSE_END_GUARD}`, "iu"),
   // A message that is nothing but the request: "in Spanish please"
@@ -282,6 +294,28 @@ export function languageLabel(language: string | null | undefined): string {
   }
 
   return clean.slice(0, 40);
+}
+
+/**
+ * A book language's row in a table keyed by `languageLabel(...).toLowerCase()`.
+ * `SCRIPT_PROFILES` and `MARKDOWN_LABELS_BY_LANGUAGE` both read through here, so
+ * a book's script and its printed labels resolve one value the same way. A
+ * region tag the label table does not list ("he-IL", "pt-BR", "nb-NO") falls
+ * back to its primary subtag: the creation chat asks its model for a BCP-47 code
+ * and stores what comes back, and `languageLabel` keeps an unknown value
+ * verbatim, which is right for a prompt and wrong for a lookup.
+ */
+export function languageTableEntry<T>(
+  table: Readonly<Record<string, T>>,
+  language: string | null | undefined
+): T | undefined {
+  const entry = table[languageLabel(language).toLowerCase()];
+  if (entry !== undefined) {
+    return entry;
+  }
+  const clean = cleanLanguageValue(language);
+  const primary = clean.split(/[-_]/)[0] ?? "";
+  return primary && primary !== clean ? table[languageLabel(primary).toLowerCase()] : undefined;
 }
 
 function normalizeDetectedLanguage(result: LanguageDetectionResult): string {

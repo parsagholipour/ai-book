@@ -161,14 +161,27 @@ export const BOOK_PAGE_WORD_PATTERN = [
   "עמוד"
 ].join("|");
 
+/**
+ * Every whitespace run in these patterns is the *only* quantifier that can
+ * match it: an optional word carries its own trailing `\s*` instead of
+ * sitting between two of them. Written as `\s*(?:count)?\s*(?:is)?\s*`, a
+ * failing match tried every way of splitting one run of spaces three ways, so
+ * "page" followed by 2,000 spaces took about a second and a 5,000-character
+ * chat message ~20 s of the API's only thread. `W* (K W*)?` accepts exactly
+ * what `W* K? W*` did, and no token here begins with whitespace, so each match
+ * — its start, its end and its digits — is unchanged; only the backtracking is
+ * gone. `replanSettings.test.ts` holds both: a corpus pinned to the old
+ * function's answers, and adversarial runs timed at 1k before 10k.
+ */
 const TARGET_PAGE_PATTERNS = [
-  /\b(\d{1,3})\s*[- ]?\s*(?:page|pages|pg|pgs)\s*(?:book|ebook|story|guide|workbook|project|plan)?\b/gi,
-  /\b(?:make|create|write|build|draft|set|keep|turn)\s+(?:it|this|the\s+book|the\s+story|the\s+guide)?\s*(?:to|at|as)?\s*(\d{1,3})\s*(?:page|pages|pg|pgs)\b/gi,
-  /\b(?:page|pages|pg|pgs)\s*(?:count|length)?\s*(?:is|=|:|to|should\s+be)?\s*(\d{1,3})\b/gi,
+  // `[- ]?` beside `\s*` was the same overlap: its space is whitespace already.
+  /\b(\d{1,3})\s*(?:-\s*)?(?:page|pages|pg|pgs)\s*(?:book|ebook|story|guide|workbook|project|plan)?\b/gi,
+  /\b(?:make|create|write|build|draft|set|keep|turn)\s+(?:(?:it|this|the\s+book|the\s+story|the\s+guide)\s*)?(?:(?:to|at|as)\s*)?(\d{1,3})\s*(?:page|pages|pg|pgs)\b/gi,
+  /\b(?:page|pages|pg|pgs)\s*(?:(?:count|length)\s*)?(?:(?:is|=|:|to|should\s+be)\s*)?(\d{1,3})\b/gi,
   // The multilingual number-then-word form. It must not use `\b`: JavaScript
   // word boundaries are ASCII, so `\b` never matches beside "ص" or "页". The
   // digit lookarounds do that job and also stop "1200 pages" reading as 120.
-  new RegExp(`(?<!\\d)(\\d{1,3})(?!\\d)\\s*[-–]?\\s*(?:${BOOK_PAGE_WORD_PATTERN})`, "giu")
+  new RegExp(`(?<!\\d)(\\d{1,3})(?!\\d)\\s*(?:[-–]\\s*)?(?:${BOOK_PAGE_WORD_PATTERN})`, "giu")
 ];
 
 /**

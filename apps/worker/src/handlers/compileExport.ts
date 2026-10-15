@@ -27,6 +27,7 @@ import { loadQualityContext, qualityContextFromSnapshot } from "../generation/qu
 import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { appliedEditPublicationOwnerId } from "../generation/editProjectStatus.js";
+import { currentCoverAsset } from "../generation/currentCover.js";
 import {
   ExportRepairIllustrationDeferredError,
   repairPagesFromFinalQa
@@ -50,7 +51,7 @@ import {
 } from "./compileExportStandDown.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { maybeEnqueueCompile, parallelPageWaveSize } from "../runtime/dispatch.js";
+import { maybeEnqueueCompile, maybeEnqueueCoverRetypeset, parallelPageWaveSize } from "../runtime/dispatch.js";
 import { advanceJobStep, editOperationIdFromJob, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ExportPageForRepair, type JobCompletion } from "../runtime/jobTypes.js";
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
@@ -79,15 +80,15 @@ import {
   type PersistableBookPdfPageMap,
   type CompiledBookMarkdown,
   type FinalBookQa,
-  type ManuscriptQualityIssue,
-  type ManuscriptQualityReport
+  type ManuscriptQualityIssue
 } from "@book-maker/core";
-import { prisma, researchCitationsForExport } from "@book-maker/db";
+import { bookMatterForExport, prisma, researchCitationsForExport } from "@book-maker/db";
 import type { CompileExportJob } from "../runtime/jobPayloads.js";
 import { writeFile } from "node:fs/promises";
 import { withTemporaryDirectory } from "@book-maker/storage";
 import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
 import { urlBackedResearchNotes } from "../generation/researchSources.js";
+import { dedupeQualityIssues, qualitySummaryMessage } from "./compileExportQualitySummary.js";
 /**
  * `compile-export` job: final QA over the manuscript, then Markdown/PDF and companion (EPUB, Word) output.
  */
@@ -125,7 +126,11 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // read queues a fresh one every five minutes for as long as a file is missing.
   const detachedRepair = policy.ownership.kind === "detached";
   const presentationOnly = policy.ownership.kind === "presentation";
-  const ownsOutcome = policy.ownership.kind === "outcome";
+  // A free edit's recompile (manual save, Undo, Redo, Studio publish or
+  // takeover) compiles, reviews and publishes exactly as the outcome compile it
+  // used to be; only its failure is not the book's, and that is settled in
+  // `runtime/jobLifecycle.ts` from the payload, not here.
+  const ownsOutcome = policy.ownership.kind === "outcome" || policy.ownership.kind === "freeEdit";
   const generationAttemptId = ownsOutcome ? job.data.attemptId ?? null : null;
   const payloadEditOperationId = ownsOutcome ? editOperationIdFromJob(job) : null;
   // Character discovery follows every charged compile of the manuscript — the
@@ -167,12 +172,15 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   if (!planVersion || !project) {
     throw new Error("Cannot compile export without plan and project");
   }
-  if (openImageJobs > 0) {
-    // The gate stays: a Bull redelivery of an already-ACTIVE compile can
-    // render terminal prose before the replacement image job publishes.
-    // Any verdict this delivery already wrote is settled through the same
-    // unpublished door as every other unpublished exit — not by retracting
-    // the column to DbNull.
+  // Fan-in can read the byline before a matter save commits. The durable
+  // compile row's Project foreign-key lock orders its insertion after that
+  // save, and this fresh snapshot sees the new words. Recheck the cover here
+  // before rendering; this open compile now prevents another matter save.
+  const coverRetypesetPending = openImageJobs === 0 && ownsOutcome && project.status === "GENERATING" &&
+    (queuedContentRevision === null || queuedContentRevision === project.contentRevision) &&
+    await maybeEnqueueCoverRetypeset(projectId, project, planId, planVersion.planningPackage);
+  if (openImageJobs > 0 || coverRetypesetPending) {
+    // Settle any prior verdict while replacement images or corrected cover words are pending.
     await standDownForOpenImageJobs({
       projectId,
       generationJobId
@@ -542,7 +550,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // Resolve one partition for coverage and export after all prose repairs. An obsolete
   // compile still records/withdraws its findings below, but must not spend on chapterization.
   const supersededBeforeCoverage = await exportPublicationSuperseded(projectId, queuedContentRevision);
-  const cover = project.images.find((image) => image.type === "COVER");
+  const cover = currentCoverAsset(project.images);
   const markdownPages = pages.map((page) => ({
     index: page.index,
     title: page.title,
@@ -714,6 +722,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       // the plan's frozen snapshot: dropping the Sources list or restyling the
       // chapter headings is a live reader preference that only queues a recompile.
       ...(project.authorName ? { authorName: project.authorName } : {}),
+      matter: await bookMatterForExport(project),
       includeSources: includeSourcesPreference(project.mediaSettings),
       chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
       chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
@@ -805,6 +814,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         repairFormat,
         ...(pdfPageMapUpdate !== undefined ? { pdfPageMap: pdfPageMapUpdate } : {}),
         publishReconstructedMarkdown: repairReconstructedMarkdown,
+        // Exact repairs reproduce the published document's historical image URLs.
+        ...(detachedRepair && publishedMarkdown !== undefined ? {} : { renderedCoverId: cover?.id ?? null }),
         contentRevision: queuedContentRevision,
         expectedProjectStatus,
         status: policy.ownership.kind === "presentation"
@@ -826,7 +837,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         // is about to discard, so it describes a file no reader will ever be
         // offered.
         await standDownForNewerExport({ projectId, generationJobId, findings });
-        return publication.blockedByOpenImageJobs
+        return publication.blockedByOpenImageJobs || publication.blockedByChangedCover
           ? { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile }
           : {};
       }
@@ -872,24 +883,4 @@ export {
   runBoundedChapterQualityReview
 } from "./compileExportChapterReview.js";
 
-export function dedupeQualityIssues(issues: ManuscriptQualityIssue[]): ManuscriptQualityIssue[] {
-  const seen = new Set<string>();
-  return issues.filter((issue) => {
-    const key = JSON.stringify([issue.code, issue.message, issue.affectedPageIndexes, issue.severity,
-      issue.provenance?.findingId, issue.provenance?.primaryPageIndex,
-      issue.provenance?.kind === "repair" ? issue.provenance.repairOperationId : undefined]);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-export function qualitySummaryMessage(report: ManuscriptQualityReport): string {
-  const count = report.findings?.length ?? report.issues.length;
-  if (report.state === "blocked") {
-    return `Review required: ${count} integrity issue${count === 1 ? "" : "s"} must be fixed before export.`;
-  }
-  if (report.state === "review_recommended") {
-    return `Export complete with ${count} review recommendation${count === 1 ? "" : "s"}.`;
-  }
-  return "Export complete. Quality checks passed.";
-}
+export { dedupeQualityIssues, qualitySummaryMessage };

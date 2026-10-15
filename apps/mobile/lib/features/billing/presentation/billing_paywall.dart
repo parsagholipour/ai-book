@@ -5,18 +5,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
+import '../data/paywall_view_reporter.dart';
 import '../domain/billing_models.dart';
 import 'billing_buy_credits_sheet.dart';
 import 'billing_cancel_sheet.dart';
 import 'billing_controller.dart';
 import 'billing_credits_needed.dart';
 import 'billing_export_offer.dart';
+import 'billing_first_book_offer.dart';
 import 'billing_long_book_offer.dart';
 import 'billing_offers.dart';
 import 'billing_purchase_success_dialog.dart';
 import 'play_subscriptions_link.dart';
 
 export 'billing_credits_needed.dart' show PaywallCreditsNeeded;
+export '../data/paywall_view_reporter.dart' show PaywallTrigger;
 
 /// Plan comparison and credit packs, with a focused offer for gated exports.
 ///
@@ -30,8 +33,14 @@ export 'billing_credits_needed.dart' show PaywallCreditsNeeded;
 /// balance blocked is the only place that can offer to pick that thing back up,
 /// which is why the outcome must not be swallowed.
 ///
-/// [exportFormatLabel] opens a focused subscription comparison for a gated
-/// export. It keeps the same verification and purchase-result lifecycle.
+/// [exportFormatLabel] opens a focused subscription comparison for a format
+/// only a plan includes (the Word file). It keeps the same verification and
+/// purchase-result lifecycle. PDF and EPUB never come here: a book's files
+/// download free once it is written.
+///
+/// [trigger] says what opened it, for the operator's growth funnel. Most
+/// callers leave it to be read off what they passed — a long book, an export,
+/// a shortfall — and name it only where nothing else says.
 Future<BillingPurchaseSuccess?> showBillingPaywall(
   BuildContext context, {
   String? projectId,
@@ -39,18 +48,32 @@ Future<BillingPurchaseSuccess?> showBillingPaywall(
   String? message,
   PaywallCreditsNeeded? creditsNeeded,
   String? exportFormatLabel,
+  String? firstBookTitle,
   BookPageLimit? longBook,
   VoidCallback? onShorten,
   VoidCallback? onIncluded,
+  PaywallTrigger? trigger,
 }) async {
+  final surface =
+      trigger ??
+      (longBook != null
+          ? PaywallTrigger.pageLimit
+          : exportFormatLabel != null
+          ? PaywallTrigger.export
+          : creditsNeeded != null
+          ? PaywallTrigger.creditsNeeded
+          : PaywallTrigger.other);
+  _reportPaywallView(context, surface);
   final outcome = await showAppBottomSheet<_PaywallOutcome>(
     context,
     builder: (sheetContext) => BillingPaywall(
       projectId: projectId,
+      surface: surface,
       title: title,
       message: message,
       creditsNeeded: creditsNeeded,
       exportFormatLabel: exportFormatLabel,
+      firstBookTitle: firstBookTitle,
       longBook: longBook,
       onShorten: onShorten == null
           ? null
@@ -77,6 +100,18 @@ Future<BillingPurchaseSuccess?> showBillingPaywall(
     await showBillingPurchaseSuccessDialog(context, outcome.purchase);
   }
   return outcome?.purchase;
+}
+
+/// Best effort: a context with no provider scope above it reports nothing.
+void _reportPaywallView(BuildContext context, PaywallTrigger trigger) {
+  try {
+    ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(paywallViewReporterProvider).paywallViewed(trigger);
+  } catch (_) {
+    // The funnel loses one row; the paywall still opens.
+  }
 }
 
 /// What a reader did with the long-book offer.
@@ -135,18 +170,28 @@ class BillingPaywall extends ConsumerStatefulWidget {
     this.message,
     this.creditsNeeded,
     this.exportFormatLabel,
+    this.firstBookTitle,
     this.longBook,
     this.onShorten,
     this.onIncluded,
     this.onPurchaseSuccess,
+    this.surface,
     super.key,
   });
+
+  /// What opened this sheet, named on every purchase started from it so the
+  /// funnel's `purchase_started` says where the reader bought.
+  final PaywallTrigger? surface;
 
   final String? projectId;
   final String? title;
   final String? message;
   final PaywallCreditsNeeded? creditsNeeded;
   final String? exportFormatLabel;
+
+  /// Opens the one-time offer for a free reader's first finished book, named
+  /// by its title, instead of the plan comparison.
+  final String? firstBookTitle;
 
   /// Opens the long-book offer instead of the plan comparison.
   final BookPageLimit? longBook;
@@ -226,7 +271,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
       return;
     }
     _purchasesStartedHere.add(product.sku);
-    unawaited(controller.buy(product));
+    unawaited(controller.buy(product, surface: widget.surface));
   }
 
   /// Opens the amount picker, then leaves this sheet if the purchase closed the
@@ -287,6 +332,17 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
             onClose: () => Navigator.of(context).pop(),
             onIncluded: widget.onIncluded ?? () => Navigator.of(context).pop(),
             onShorten: widget.onShorten,
+          );
+        }
+        if (widget.firstBookTitle case final title?) {
+          return BillingFirstBookOffer(
+            bookTitle: title,
+            state: state,
+            plans: controller.plans,
+            onBuy: (plan) => _buy(controller, plan),
+            onRestore: controller.restore,
+            onRetry: controller.load,
+            onClose: () => Navigator.of(context).pop(),
           );
         }
         if (widget.exportFormatLabel case final format?) {

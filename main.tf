@@ -28,16 +28,26 @@ variable "ssh_public_key" {
   default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGacYmYHBz8/vu8jl2GNYKro+puK9bHJB7QoVb+ISnJa parsa_gholipour@yahoo.com"
 }
 
+# 4 GiB: docker-compose.production.yml's memory limits are sized for it (worker
+# 2 GiB, api 1 GiB, the rest for PostgreSQL, Redis, the edge and the OS; see
+# docs/deployment.md, "Memory budget and swap"). Changing the type stops and
+# starts the same instance in place: same ID, root volume and Elastic IP, a few
+# minutes of downtime, no replacement.
 variable "instance_type" {
   type        = string
-  description = "EC2 size for the production Docker stack (t3.small has 2 GiB RAM)."
-  default     = "t3.small"
+  description = "EC2 size for the production Docker stack (t3.medium has 4 GiB RAM)."
+  default     = "t3.medium"
 }
 
+# 30 GiB: the OS, the current and previous release's images (the deploy prunes
+# the rest), PostgreSQL, Redis, and room for a whole new image to land beside
+# them (scripts/deploy-production.sh refuses to pull with less than 4 GiB free).
+# Growing a running instance's volume also needs its partition and filesystem
+# grown; aws_ssm_association.root_filesystem does that on apply.
 variable "root_volume_size" {
   type        = number
   description = "Root disk size in GiB for Docker, PostgreSQL, Redis, and temporary rendering files. Durable files live in S3."
-  default     = 20
+  default     = 30
 }
 
 data "aws_availability_zones" "available" {

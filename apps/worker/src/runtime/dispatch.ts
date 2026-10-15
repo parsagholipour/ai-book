@@ -5,10 +5,14 @@ import {
   compilePublicationDedupeKey,
   compilePublicationPolicyFromPayload,
   compilePublicationPolicyIdentity,
+  COVER_RETYPESET,
   coverArtSourceFor,
+  coverRetypesetFingerprint,
   dispatchBackoffMs,
   errorMessage,
+  clearLaneJobIdForAdd,
   exportPublicationProjectStatusFromPayload,
+  generationJobPlacement,
   isCoverPurchasePayload,
   isDetachedFromProjectLifecycle,
   isRevisionOwnedCoverPayload,
@@ -25,13 +29,14 @@ import {
 import { Prisma, prisma } from "@book-maker/db";
 import { acceptedSavedPageTarget, terminalSavedPageCount } from "../generation/wholeBookTolerance.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
+import { coverTypesetDrift } from "../generation/coverTypesetDrift.js";
 import {
   forkedPublicationRecoveryPolicy,
   loadStrandedCompileRecoveryPolicy,
   strandedCompileRecoveryPolicy
 } from "./compileRecoveryPolicy.js";
 import { config } from "./config.js";
-import { queue } from "./queue.js";
+import { allLaneQueues, queueNamed } from "./queue.js";
 import { jsonPayloadToRecord } from "./serialization.js";
 import { currentGenerationAttemptId, runWithGenerationAttempt } from "./generationAttemptContext.js";
 import {
@@ -180,7 +185,10 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
         }
       });
     }
-    const bullJob = await queue.add(
+    // The lane is the row's (type, payload), so the API's dispatch of the same
+    // row lands in the same queue and BullMQ's job-id dedupe still holds.
+    const placement = generationJobPlacement(generationJob.type, payload);
+    const bullJob = await queueNamed(placement.queueName).add(
       name,
       {
         ...payload,
@@ -190,7 +198,11 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
         generationJobId: generationJob.id,
         ...(generationJob.attemptId ? { attemptId: generationJob.attemptId } : {})
       },
-      { ...jobOptionsForName(name), jobId: generationJob.id }
+      {
+        ...jobOptionsForName(name),
+        ...(placement.priority !== undefined ? { priority: placement.priority } : {}),
+        jobId: generationJob.id
+      }
     );
     return prisma.generationJob.update({
       where: { id: generationJob.id },
@@ -226,28 +238,11 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
 /**
  * BullMQ job ids are the durable row's id, so a delivery that is still in the
  * processor — or a failed one that has not been removed — occupies the only
- * id a requeue can use. Finished jobs are dropped; a live one means this
- * push has to wait for reconciliation.
+ * id a requeue can use, in whichever lane it was put. Finished copies are
+ * dropped; a live one anywhere means this push waits for reconciliation.
  */
-async function prepareDurableJobId(jobId: string): Promise<boolean> {
-  const existing = await queue.getJob(jobId);
-  if (!existing) return true;
-  const state = await existing.getState();
-  if (
-    state === "active" ||
-    state === "waiting" ||
-    state === "delayed" ||
-    state === "prioritized" ||
-    state === "waiting-children"
-  ) {
-    return false;
-  }
-  try {
-    await existing.remove();
-  } catch {
-    // A remove racing another dispatcher is fine; add will say if the id is still taken.
-  }
-  return true;
+function prepareDurableJobId(jobId: string): Promise<boolean> {
+  return clearLaneJobIdForAdd(allLaneQueues, jobId);
 }
 
 /**
@@ -331,6 +326,40 @@ export async function maybeEnqueueCover(projectId: string, planId: string, input
     dedupeKey: `generate-cover:${projectId}:${planId}`
   });
   return true;
+}
+
+/**
+ * Sets the cover's words again before a book's first compile when the row has
+ * moved on since the cover was typeset — a pen name or title given while the
+ * book was being written — or the cover never recorded its words
+ * (`coverTypesetDrift.ts`). Free, and it never draws.
+ *
+ * Waits only on a re-typeset this call queued or one still running. The dedupe
+ * key names the current cover id and the change in words
+ * (`coverRetypesetFingerprint`). A successful re-set replaces the cover row,
+ * so a byline changed A → X → A → X gets a new attempt even when the same word
+ * transition already succeeded on an earlier cover.
+ *
+ * Each change is attempted once per cover row. A re-set that could not change
+ * the cover (its artwork gone, say) leaves the same row and words behind and
+ * answers with its own spent job, allowing the book to compile without a loop.
+ */
+export async function maybeEnqueueCoverRetypeset(
+  projectId: string,
+  project: { title: string; subtitle: string | null; authorName: string | null; coverTagline: string | null },
+  planId: string,
+  planningPackage: unknown
+): Promise<boolean> {
+  const drift = await coverTypesetDrift(projectId, project, planningPackage);
+  if (!drift) return false;
+  const { coverId, stored, target } = drift;
+  const job = await enqueueWorkerJob({
+    projectId,
+    type: "GENERATE_IMAGE",
+    payload: { planId, assetType: "COVER", [COVER_RETYPESET]: true },
+    dedupeKey: `retypeset-cover:${projectId}:${planId}:${coverId}:${coverRetypesetFingerprint(stored, target)}`
+  });
+  return job?.status === "QUEUED" || job?.status === "ACTIVE";
 }
 
 /**
@@ -522,7 +551,9 @@ export async function maybeEnqueueCompile(
         ? prisma.bookEditOperation.findFirst({
             where: { projectId, status: "APPLIED" },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            select: { kind: true, status: true }
+            // The apply job's payload carries the pre-edit status the recovered
+            // edit recompile puts back if it fails (`compileRecoveryPolicy.ts`).
+            select: { kind: true, status: true, generationJob: { select: { payload: true } } }
           })
         : Promise.resolve(null)
     ]);
@@ -546,6 +577,12 @@ export async function maybeEnqueueCompile(
     // A page or image job still in flight calls back here when it completes;
     // anything else means the saved pages do not add up to a book at all.
     return openPageJobs > 0 || openImageJobs > 0 ? "waiting" : "not-ready";
+  }
+  if (
+    project.status === "GENERATING" &&
+    (await maybeEnqueueCoverRetypeset(projectId, project, planId, planVersion?.planningPackage))
+  ) {
+    return "waiting";
   }
   const policy = currentRevisionOptions
     ? "review" in currentRevisionOptions
@@ -703,7 +740,16 @@ export async function reconcileStrandedGeneration(limit = 20): Promise<number> {
   const cutoff = new Date(Date.now() - STRANDED_GENERATION_GRACE_MS);
   const projects = await prisma.project.findMany({
     where: {
-      status: { in: ["GENERATING", "EDITING"] },
+      OR: [
+        { status: { in: ["GENERATING", "EDITING"] } },
+        // A completed import may exhaust its Bull tail attempts before its
+        // first compile is persisted. Recover only that original manuscript;
+        // later revisions and already dispatched exports have their own owner.
+        {
+          status: "COMPLETE", contentRevision: 1, currentPlan: { version: 1 },
+          bookImport: { status: "COMPLETE" }, jobs: { none: { type: "COMPILE_EXPORT" } }
+        }
+      ],
       currentPlanId: { not: null },
       updatedAt: { lt: cutoff },
       jobs: { none: { status: { in: ["QUEUED", "ACTIVE"] } } }
@@ -739,7 +785,7 @@ export async function reconcileStrandedGeneration(limit = 20): Promise<number> {
         project.id,
         project.currentPlanId,
         recovery.policy,
-        { contentRevision: project.contentRevision }
+        { contentRevision: project.contentRevision, ...(project.status === "COMPLETE" ? { requireContentRevisionMatch: true } : {}) }
       );
     })
   );

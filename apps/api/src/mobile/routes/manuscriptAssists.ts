@@ -38,6 +38,7 @@ import { messageRequestKey, withMessageUsage } from "../messageUsage.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import { authorProjectOrReply } from "./manuscriptRouteSupport.js";
+import { aiWorkKindForTier, requireAiCapacity } from "../aiCapacity.js";
 
 /**
  * The Writing Studio's AI (spec "Phase 2 + 3 contract"): the quick assists,
@@ -119,17 +120,19 @@ export async function registerMobileManuscriptAssistRoutes(fastify: FastifyInsta
         }
         throw error;
       }
-      const textModel = context.studioAssistTextModel(modelTierFromMediaSettings(project.mediaSettings));
+      const tier = modelTierFromMediaSettings(project.mediaSettings);
+      const textModel = context.studioAssistTextModel(tier);
       if (!textModel) {
         return sendMobileError(reply, 503, "ASSIST_UNAVAILABLE", ASSIST_UNAVAILABLE_MESSAGE);
       }
+      if (!(await requireAiCapacity(request, reply, auth.user.id, aiWorkKindForTier(tier)))) return;
       return withMessageUsage(
         { userId: auth.user.id, projectId: project.id, requestKey: messageRequestKey(`studio:${project.id}`, body.requestId) },
         reply,
         async () => {
           try {
             const result = await runStudioQuickAssist({
-              textModel: withInlineProviderUsage(textModel, { projectId: project.id }),
+              textModel: withInlineProviderUsage(textModel, { projectId: project.id, userId: auth.user.id }),
               request: assistRequest
             });
             return {

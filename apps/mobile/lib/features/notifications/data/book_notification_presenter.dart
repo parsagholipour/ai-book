@@ -153,7 +153,9 @@ const bookProgressChannelId = 'com.tomeza.tomeza.book_progress';
 const bookReadyChannelId = 'com.tomeza.tomeza.book_ready';
 
 /// The status-bar icon: the brand bubble as a white silhouette
-/// (`android/app/src/main/res/drawable-*/ic_stat_tomeza.png`).
+/// (`android/app/src/main/res/drawable-*/ic_stat_tomeza.png`). Only this
+/// string names it, so `res/raw/tomeza_keep.xml` has to as well, or the
+/// release resource shrinker strips it and the plugin refuses to initialize.
 const bookNotificationIcon = 'ic_stat_tomeza';
 
 const _brandColor = Color(0xFF0F6B5C);

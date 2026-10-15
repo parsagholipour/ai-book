@@ -104,8 +104,8 @@ describe("summary/detail serializer parity", () => {
     });
     const appConfig = loadConfig();
 
-    const owned = await serializeProjectSummary(record as never, appConfig, "user-a");
-    const facade = await serializeProjectSummaryFromFacade(record as never, appConfig, "user-a");
+    const owned = await serializeProjectSummary(record as never, appConfig);
+    const facade = await serializeProjectSummaryFromFacade(record as never, appConfig);
 
     expect(serializeProjectSummaryFromFacade).toBe(serializeProjectSummary);
     expect(facade).toEqual(owned);
@@ -155,8 +155,8 @@ describe("summary/detail serializer parity", () => {
     });
     const appConfig = loadConfig();
 
-    const owned = await serializeProjectDetail(record as never, appConfig, "user-a");
-    const facade = await serializeProjectDetailFromFacade(record as never, appConfig, "user-a");
+    const owned = await serializeProjectDetail(record as never, appConfig);
+    const facade = await serializeProjectDetailFromFacade(record as never, appConfig);
 
     expect(serializeProjectDetailFromFacade).toBe(serializeProjectDetail);
     expect(facade).toEqual(owned);

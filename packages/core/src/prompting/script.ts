@@ -1,4 +1,4 @@
-import { isEnglishLanguage, languageLabel } from "./language.js";
+import { isEnglishLanguage, languageTableEntry } from "./language.js";
 
 /**
  * The writing systems the exporters know how to typeset. A book's language
@@ -110,9 +110,9 @@ const CJK_DEFAULTS = {
 } as const satisfies Partial<ScriptProfile>;
 
 /**
- * Keyed by `languageLabel(...).toLowerCase()`, the same way
- * `MARKDOWN_LABELS_BY_LANGUAGE` is — which is what makes "fa", "Farsi" and
- * "Persian" all land on the same entry.
+ * Keyed by `languageLabel(...).toLowerCase()` and read through
+ * `languageTableEntry`, the same way `MARKDOWN_LABELS_BY_LANGUAGE` is — which is
+ * what makes "fa", "Farsi", "Persian" and "fa-IR" all land on the same entry.
  */
 const SCRIPT_PROFILES: Record<string, ScriptProfile> = {
   persian: profile({ ...ARABIC_DEFAULTS, code: "fa", fontSet: "arabic-persian", numerals: PERSIAN_DIGITS }),
@@ -184,7 +184,7 @@ export function scriptProfileForLanguage(language: string | null | undefined): S
   if (isEnglishLanguage(language)) {
     return LATIN_PROFILE;
   }
-  const known = SCRIPT_PROFILES[languageLabel(language).toLowerCase()];
+  const known = languageTableEntry(SCRIPT_PROFILES, language);
   if (known) {
     return known;
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { costBreakdownFromRows, type ProviderCostRow } from "./costBreakdown.js";
+import { VOICE_CALL_OPERATION, VOICE_CALL_PURPOSE } from "@book-maker/core";
+import { costBreakdownFromRows, providerCostKindSql, type ProviderCostRow } from "./costBreakdown.js";
 
 function row(overrides: Partial<ProviderCostRow>): ProviderCostRow {
   return {
@@ -140,5 +141,28 @@ describe("costBreakdownFromRows", () => {
     expect(breakdown.models[0]?.provider).toBe("unknown");
     expect(breakdown.totals.usd).toBe(0);
     expect(breakdown.totals.unratedCalls).toBe(2);
+  });
+});
+
+describe("voice-call spend", () => {
+  it("is audio in every query that groups by kind, on either alias", () => {
+    for (const alias of ["l", "a"] as const) {
+      const sql = providerCostKindSql(alias);
+      expect(sql).toContain(`${alias}.purpose = '${VOICE_CALL_PURPOSE}'`);
+      expect(sql).toContain(`${alias}.metadata ->> 'operation' = '${VOICE_CALL_OPERATION}'`);
+      // Audio is decided before the image and text arms can claim the row.
+      expect(sql.indexOf(VOICE_CALL_PURPOSE)).toBeLessThan(sql.indexOf("THEN 'image'"));
+    }
+  });
+
+  it("lands in the audio bucket, and a segment no card could price counts as unrated", () => {
+    const breakdown = costBreakdownFromRows([
+      row({ kind: "audio", purpose: VOICE_CALL_PURPOSE, model: "gemini-3.1-flash-live-preview", calls: 3, priced_calls: 3, usd: 0.03, prompt_tokens: 7_200, output_tokens: 900 }),
+      row({ kind: "audio", purpose: VOICE_CALL_PURPOSE, model: "gemini-live-next", calls: 1, priced_calls: 0, usd: 0 })
+    ]);
+
+    expect(breakdown.byKind).toEqual([expect.objectContaining({ kind: "audio", usd: 0.03, calls: 4, pricedCalls: 3, unratedCalls: 1 })]);
+    // Usage is summed over priced calls only, so the tokens describe the dollars.
+    expect(breakdown.byKind[0]).toMatchObject({ promptTokens: 7_200, outputTokens: 900 });
   });
 });

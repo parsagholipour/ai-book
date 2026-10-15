@@ -13,7 +13,7 @@ void main() {
       'creditsPerMinute': 60,
       'creditsToStart': 180,
       'availableCredits': 600,
-      'maxCallSeconds': 1800,
+      'maxCallSeconds': 900,
     },
   };
 
@@ -30,29 +30,40 @@ void main() {
       'secondsRemaining': 180,
       'creditsPerMinute': 60,
       'heartbeatSeconds': 20,
-      'maxCallSeconds': 1800,
+      'maxCallSeconds': 900,
     },
   };
 
-  test('reads a book cast from the book, and the library from the library', () async {
-    final client = _FakeApiClient()..nextData = castJson();
-    final repository = HttpVoiceRepository(client);
+  test(
+    'reads a book cast from the book, and the library from the library',
+    () async {
+      final client = _FakeApiClient()..nextData = castJson();
+      final repository = HttpVoiceRepository(client);
 
-    await repository.getCast('project-1');
-    await repository.getCast(null);
+      await repository.getCast('project-1');
+      await repository.getCast(null);
 
-    expect(client.paths, [
-      '/api/mobile/projects/project-1/voice/cast',
-      '/api/mobile/voice/characters',
-    ]);
-  });
+      expect(client.paths, [
+        '/api/mobile/projects/project-1/voice/cast',
+        '/api/mobile/voice/characters',
+      ]);
+    },
+  );
 
   test('requests the relay for both book and library calls', () async {
     final client = _FakeApiClient()..nextData = sessionJson();
     final repository = HttpVoiceRepository(client);
 
-    await repository.startCall(projectId: 'project-1', characterId: 'character-1', pageIndex: 4);
-    await repository.startCall(projectId: null, characterId: 'lib-1', pageIndex: 4);
+    await repository.startCall(
+      projectId: 'project-1',
+      characterId: 'character-1',
+      pageIndex: 4,
+    );
+    await repository.startCall(
+      projectId: null,
+      characterId: 'lib-1',
+      pageIndex: 4,
+    );
 
     expect(client.paths, [
       '/api/mobile/projects/project-1/voice/characters/character-1/calls',
@@ -70,7 +81,10 @@ class _FakeApiClient implements ApiClient {
   Object? nextData;
 
   @override
-  Future<Map<String, dynamic>> getMap(String path, {bool requiresAuth = true}) async {
+  Future<Map<String, dynamic>> getMap(
+    String path, {
+    bool requiresAuth = true,
+  }) async {
     paths.add(path);
     return nextData as Map<String, dynamic>;
   }

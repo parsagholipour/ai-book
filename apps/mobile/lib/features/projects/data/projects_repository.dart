@@ -10,9 +10,12 @@ import 'package:share_plus/share_plus.dart';
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/api/export_provenance.dart';
+import '../../../shared/lifecycle/app_resume_signal.dart';
 import '../domain/project_models.dart';
 import 'export_repair_watch.dart';
+import 'offline_library_store.dart';
 import 'project_snapshot_cache.dart';
+import 'project_status_watch.dart';
 
 enum ExportOpenOutcome { opened, sharedFallback }
 
@@ -251,20 +254,40 @@ class MobileProjectsRepository implements ProjectsRepository {
     return MobileProjectStatus.fromJson(data['status'] as Map<String, dynamic>);
   }
 
+  /// The status event stream. A transformer rather than an `async*` loop, so
+  /// a cancel reaches the socket at once (see `getServerSentEvents`). Comment
+  /// lines (the `: ping` heartbeat) never arrive here; an `error` event that
+  /// ends the stream is turned into an error the watch can act on (see
+  /// [statusStreamEnding]), and one that does not is skipped.
   @override
-  Stream<MobileProjectStatus> watchProjectStatus(String id) async* {
-    await for (final event in apiClient.getServerSentEvents(
-      '/api/mobile/projects/$id/status/events',
-    )) {
-      if (event.event != 'status') {
-        continue;
-      }
-      final decoded = jsonDecode(event.data) as Map<String, dynamic>;
-      final status = decoded['status'] is Map<String, dynamic>
-          ? decoded['status'] as Map<String, dynamic>
-          : decoded;
-      yield MobileProjectStatus.fromJson(status);
-    }
+  Stream<MobileProjectStatus> watchProjectStatus(String id) {
+    return apiClient
+        .getServerSentEvents(
+          '/api/mobile/projects/$id/status/events',
+          idleTimeout: statusStreamIdleTimeout,
+        )
+        .transform(
+          StreamTransformer<ServerSentEvent, MobileProjectStatus>.fromHandlers(
+            handleData: (event, sink) {
+              try {
+                switch (event.event) {
+                  case 'status':
+                    final decoded =
+                        jsonDecode(event.data) as Map<String, dynamic>;
+                    final status = decoded['status'] is Map<String, dynamic>
+                        ? decoded['status'] as Map<String, dynamic>
+                        : decoded;
+                    sink.add(MobileProjectStatus.fromJson(status));
+                  case 'error':
+                    final ending = statusStreamEnding(event.data);
+                    if (ending != null) sink.addError(ending);
+                }
+              } catch (error, stackTrace) {
+                sink.addError(error, stackTrace);
+              }
+            },
+          ),
+        );
   }
 
   @override
@@ -676,8 +699,30 @@ final projectsRepositoryProvider = Provider<ProjectsRepository>((ref) {
 /// Because the cache outlives any one screen, it has to be cleared on sign-out;
 /// `AuthController.logout` invalidates it with `asReload: true` so the next
 /// account gets the loading state instead of the previous account's books.
-final projectsProvider = FutureProvider<List<MobileProjectSummary>>((ref) {
-  return ref.watch(projectsRepositoryProvider).listProjects();
+///
+/// Every list the server sends is also written to the phone, and a read that
+/// cannot reach the server answers with that copy instead of an error, so a
+/// reader with no connection still has their library and its downloaded
+/// books. [OfflineLibraryMarker] says which one the answer was: the library
+/// shows it as the phone's copy, and never draws its running books as live.
+final projectsProvider = FutureProvider<List<MobileProjectSummary>>((
+  ref,
+) async {
+  final store = ref.watch(offlineLibraryStoreProvider);
+  final marker = ref.watch(offlineLibraryMarkerProvider);
+  final epoch = store.epoch;
+  try {
+    final projects = await ref.watch(projectsRepositoryProvider).listProjects();
+    marker.savedAt = null;
+    unawaited(store.saveLibrary(projects, epoch: epoch));
+    return projects;
+  } catch (error) {
+    if (!isOfflineFailure(error)) rethrow;
+    final saved = await store.loadLibrary();
+    if (saved == null) rethrow;
+    marker.savedAt = saved.savedAt;
+    return saved.books;
+  }
 });
 
 final projectDetailProvider = FutureProvider.autoDispose
@@ -693,15 +738,31 @@ final projectDetailProvider = FutureProvider.autoDispose
 final projectStatusProvider = StreamProvider.autoDispose
     .family<MobileProjectStatus, String>((ref, id) {
       final cache = ref.watch(projectSnapshotCacheProvider);
-      final pollDelay = _StatusPollDelay();
+      // A status that offers a PDF is the descriptor the reader opens that
+      // book against with no connection (`offlineBookStatusProvider`); the
+      // store writes it only when the PDF it names changes.
+      final offline = ref.watch(offlineLibraryStoreProvider);
+      final offlineEpoch = offline.epoch;
+      final pollDelay = StatusPollDelay();
       ref.onDispose(pollDelay.dispose);
-      return _watchProjectStatus(
+      MobileProjectStatus? latest;
+      // Back from the background, a live book's socket may have died with
+      // the radio, and a watch that never got a status may have been waiting
+      // out an outage the phone slept through. Either is opened afresh; a
+      // settled book's watch has finished and stays finished.
+      final resumes = ref.watch(appResumesProvider).listen((_) {
+        if (latest == null || latest!.isLive) ref.invalidateSelf();
+      });
+      ref.onDispose(resumes.cancel);
+      return watchProjectStatusWithFallback(
         ref.watch(projectsRepositoryProvider),
         id,
         pollDelay,
         ref.watch(exportRepairWatchProvider(id)),
       ).map((status) {
+        latest = status;
         if (ref.mounted) cache.statuses[id] = status;
+        unawaited(offline.saveStatus(status, epoch: offlineEpoch));
         return status;
       });
     });
@@ -743,75 +804,6 @@ Map<String, dynamic> _reportPayload({required String reason, String? comment}) {
     'reason': reason,
     if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
   };
-}
-
-Stream<MobileProjectStatus> _watchProjectStatus(
-  ProjectsRepository repository,
-  String id,
-  _StatusPollDelay pollDelay,
-  ExportRepairWatchBudget repairWatch,
-) async* {
-  try {
-    await for (final status in repository.watchProjectStatus(id)) {
-      yield status;
-      if (!repairWatch.shouldKeepWatching(status)) {
-        return;
-      }
-    }
-    // Falling out while there is still something to watch means the socket
-    // ended without saying so — a backgrounded app, a proxy idle timeout, a
-    // network switch, or the API deliberately closing after it queued a settled
-    // book's export repair. Drop through to polling instead.
-  } catch (_) {
-    // Older API builds, local proxies, or transient stream failures fall back
-    // to short polling so progress and export repairs remain observable.
-  }
-
-  while (true) {
-    final status = await repository.getProjectStatus(id);
-    yield status;
-    if (!repairWatch.shouldKeepWatching(status)) {
-      return;
-    }
-    if (!await pollDelay.wait()) {
-      return;
-    }
-  }
-}
-
-/// Owns the one pending short-poll delay so auto-disposing the provider also
-/// cancels its timer. A bare `Future.delayed` keeps running after its stream
-/// subscription is canceled, wasting work and leaving a timer behind when a
-/// reader closes during an export repair.
-class _StatusPollDelay {
-  Timer? _timer;
-  Completer<bool>? _pending;
-  bool _disposed = false;
-
-  Future<bool> wait() {
-    if (_disposed) {
-      return Future.value(false);
-    }
-    final pending = Completer<bool>();
-    _pending = pending;
-    _timer = Timer(const Duration(seconds: 3), () {
-      _timer = null;
-      _pending = null;
-      pending.complete(true);
-    });
-    return pending.future;
-  }
-
-  void dispose() {
-    _disposed = true;
-    _timer?.cancel();
-    _timer = null;
-    final pending = _pending;
-    _pending = null;
-    if (pending != null && !pending.isCompleted) {
-      pending.complete(false);
-    }
-  }
 }
 
 // A finished book can briefly have no PDF after an edit invalidates its old

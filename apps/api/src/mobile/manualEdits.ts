@@ -28,9 +28,8 @@ import {
   EXPORT_FORMATS,
   compilePolicyPayload,
   compilePublicationDedupeKey,
-  compilePublicationPolicyFromPayload,
   exportProvenancePaths,
-  EXPORT_PUBLICATION_PROJECT_STATUS,
+  freeEditRecompilePolicy,
   bookPlanSchema,
   parseStructuralApplication,
   withImageRenderProvenance,
@@ -263,6 +262,13 @@ export async function replayManualBookEdit(
  * the compile job restores COMPLETE when it finishes. skipFinalReview keeps
  * the compile QA pass from rewriting text the user chose deliberately.
  *
+ * The edit is free and the book was delivered and paid for before it, so the
+ * compile is a free edit's (`freeEditRecompilePolicy`): it owns the verdict its
+ * new prose earns but never the paid book's failure. A failure or a stop —
+ * including the delete that stops it — puts `fallbackStatus` back and refunds
+ * nothing, where an outcome compile marked the book FAILED and handed its
+ * generation charge back (launch review 2026-10-13, B3).
+ *
  * Presentation-only recompiles do not use this helper: their preference write
  * and compile row must share the transaction in `presentationEdits.ts` so a
  * crash cannot commit one without the other.
@@ -280,10 +286,7 @@ export async function queueUserEditExportRecompile(
         select: { contentRevision: true }
       })
     : { contentRevision: options.contentRevision };
-  const policy = compilePublicationPolicyFromPayload({
-    skipFinalReview: true,
-    [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING"
-  });
+  const policy = freeEditRecompilePolicy(fallbackStatus);
   try {
     await enqueueGenerationJob({
       projectId,

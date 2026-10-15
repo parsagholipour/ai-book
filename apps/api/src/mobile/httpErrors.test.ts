@@ -339,7 +339,7 @@ describe("sendGenerationAttemptError", () => {
       body: {
         error: {
           code: "IMAGE_LIMIT_REACHED",
-          message: "Free plans include 3 illustrated books a month. Upgrade for unlimited, or turn visuals off.",
+          message: "Free plans include 3 illustrated books a month. Upgrade to a plan for no monthly cap, or turn visuals off.",
           imageQuota: { used: 3, limit: 3, resetsAt: resetsAt.toISOString() }
         }
       }

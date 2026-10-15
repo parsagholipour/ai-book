@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../billing/domain/billing_models.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
-import '../../billing/data/billing_repository.dart';
 import '../domain/book_share_models.dart';
 import 'book_share_live.dart' show bookShareSheetTitle;
 import 'book_share_progress.dart';
@@ -34,12 +31,11 @@ const defaultBookSharePreviewPages = 10;
 /// note, the name, and the confirmations a public link needs. It makes a new
 /// share and changes a live one; the sheet owns the save and hands back what
 /// the server refused, which lands beside the control it is about.
-class BookShareForm extends ConsumerStatefulWidget {
+class BookShareForm extends StatefulWidget {
   const BookShareForm({
     required this.book,
     required this.editing,
     required this.onSubmit,
-    required this.onGetCredits,
     required this.onClose,
     this.previous,
     this.saving,
@@ -75,9 +71,6 @@ class BookShareForm extends ConsumerStatefulWidget {
   final bool askRights;
   final bool askLikeness;
   final ValueChanged<BookShareRequest> onSubmit;
-
-  /// Full on a locked book with a balance that does not cover the unlock.
-  final VoidCallback onGetCredits;
   final VoidCallback onClose;
 
   /// Back to the live share, when there is one.
@@ -90,10 +83,10 @@ class BookShareForm extends ConsumerStatefulWidget {
       'link can see it.';
 
   @override
-  ConsumerState<BookShareForm> createState() => _BookShareFormState();
+  State<BookShareForm> createState() => _BookShareFormState();
 }
 
-class _BookShareFormState extends ConsumerState<BookShareForm> {
+class _BookShareFormState extends State<BookShareForm> {
   late BookShareMode _mode;
   late int _pages;
   late final TextEditingController _caption;
@@ -148,15 +141,11 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
     return !onRecord || widget.askLikeness;
   }
 
-  void _submit({required bool shortOfCredits}) {
+  void _submit() {
     FocusScope.of(context).unfocus();
     if ((_needsRights && !_rights) || (_needsLikeness && !_likeness)) {
       AppHaptics.error();
       setState(() => _showConsentError = true);
-      return;
-    }
-    if (shortOfCredits) {
-      widget.onGetCredits();
       return;
     }
     widget.onSubmit(
@@ -175,17 +164,9 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
   Widget build(BuildContext context) {
     final book = widget.book;
     final saving = widget.saving;
-    final available = ref.watch(billingProvider).value?.credits.available;
-    final lockedFull = _mode == BookShareMode.full && !book.exportUnlocked;
-    final price = book.exportUnlockCredits;
-    final shortOfCredits = lockedFull && available != null && available < price;
     final notice = widget.notice;
 
-    final label = shortOfCredits
-        ? 'Get credits'
-        : lockedFull
-        ? (widget.editing ? 'Unlock and save' : 'Unlock and share')
-        : widget.editing
+    final label = widget.editing
         ? 'Save changes'
         : _mode == BookShareMode.preview
         ? 'Share preview'
@@ -198,11 +179,7 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
           : 'Anyone with the link can read it. It is not listed anywhere.',
       icon: Icons.link_rounded,
       onClose: widget.onClose,
-      footer: _footer(
-        label: label,
-        lockedFull: lockedFull,
-        shortOfCredits: shortOfCredits,
-      ),
+      footer: _footer(label: label),
       children: [
         IgnorePointer(
           ignoring: saving != null,
@@ -244,7 +221,7 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
                   alignment: Alignment.topCenter,
                   child: _mode == BookShareMode.preview
                       ? _previewPages(book)
-                      : _fullBook(book, available, shortOfCredits),
+                      : _fullBook(),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 TextField(
@@ -296,11 +273,7 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
     );
   }
 
-  Widget _footer({
-    required String label,
-    required bool lockedFull,
-    required bool shortOfCredits,
-  }) {
+  Widget _footer({required String label}) {
     final saving = widget.saving;
     final refusal = widget.refusal;
     return Column(
@@ -326,15 +299,9 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
               : AppButton.primary(
                   key: const ValueKey('book-share-submit'),
                   label: label,
-                  leading: Icon(
-                    shortOfCredits
-                        ? Icons.toll_outlined
-                        : lockedFull
-                        ? Icons.lock_open_outlined
-                        : Icons.link_rounded,
-                  ),
+                  leading: const Icon(Icons.link_rounded),
                   expanded: true,
-                  onPressed: () => _submit(shortOfCredits: shortOfCredits),
+                  onPressed: _submit,
                 ),
         ),
         if (widget.onCancel != null && saving == null) ...[
@@ -423,32 +390,16 @@ class _BookShareFormState extends ConsumerState<BookShareForm> {
     );
   }
 
-  /// The price of a full share, worded as the download words its unlock
-  /// (`projectExportStateText`), because it is the same unlock.
-  Widget _fullBook(BookShareBook book, int? available, bool shortOfCredits) {
+  /// A full share is free: once a book is written its files are the
+  /// reader's, and so is giving it away.
+  Widget _fullBook() {
     final theme = Theme.of(context);
-    if (book.exportUnlocked) {
-      return Text(
-        'Readers can read the whole book. This book is already unlocked, so '
-        'sharing it in full costs nothing more.',
-        key: const ValueKey('book-share-full'),
-        style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      );
-    }
-    final price = book.exportUnlockCredits;
-    return AppInlineNotice(
-      key: const ValueKey('book-share-unlock'),
-      tone: AppTone.info,
-      icon: Icons.lock_outline,
-      title: 'Full sharing uses the export unlock',
-      message: shortOfCredits
-          ? 'Ready after export unlock. You need ${formatCredits(price)} credits and have '
-                '${formatCredits(available!)}. Previews are free.'
-          : 'Ready after export unlock. This uses $price credits — the same '
-                'unlock the PDF download takes, so this book’s downloads are '
-                'included too. Previews are free.',
+    return Text(
+      'Readers can read the whole book. Sharing it in full is free.',
+      key: const ValueKey('book-share-full'),
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
     );
   }
 }

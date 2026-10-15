@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/billing/data/play_purchase_processor.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/presentation/billing_controller.dart';
 
@@ -18,6 +19,8 @@ class GatedBillingRepository extends FakeBillingRepository {
     String? transactionId,
     String? purchaseStatus,
     String? projectId,
+    int? localPriceMicros,
+    String? localCurrency,
   }) async {
     final gate = verifyGate;
     if (gate != null) {
@@ -30,19 +33,29 @@ class GatedBillingRepository extends FakeBillingRepository {
       transactionId: transactionId,
       purchaseStatus: purchaseStatus,
       projectId: projectId,
+      localPriceMicros: localPriceMicros,
+      localCurrency: localCurrency,
     );
   }
 }
 
 void main() {
-  testWidgets('a purchase landing mid-batch after dispose is still verified',
-      (tester) async {
+  testWidgets('a purchase landing mid-batch after dispose is still verified', (
+    tester,
+  ) async {
     final store = FakeStoreBillingClient();
     final repository = GatedBillingRepository();
     var elementDisposed = false;
+    final purchases = PlayPurchaseProcessor(
+      billingRepository: repository,
+      storeClient: store,
+      onBillingChanged: () {},
+    );
+    addTearDown(purchases.dispose);
     final controller = BillingController(
       billingRepository: repository,
       storeClient: store,
+      purchases: purchases,
       onBillingChanged: () {},
       // The real callback is `ref.keepAlive`, which throws once the provider
       // element is disposed — exactly what the controller must survive.
@@ -80,9 +93,15 @@ void main() {
 
     // Both purchase tokens reached the backend: the second one's verification
     // must not be skipped because keepAlive threw on a dead element.
-    expect(
-      repository.verifications.map((call) => call.productId).toList(),
-      ['tomeza.credit_pack_1', 'tomeza.credit_pack_2'],
-    );
+    expect(repository.verifications.map((call) => call.productId).toList(), [
+      'tomeza.credit_pack_1',
+      'tomeza.credit_pack_2',
+    ]);
+    // The purchase stream is the app's, not the paywall's: with the paywall
+    // gone the processor stops listening, but what it was handed it finishes.
+    expect(store.finished.map((call) => call.purchaseToken).toList(), [
+      'token-1',
+      'token-2',
+    ]);
   });
 }

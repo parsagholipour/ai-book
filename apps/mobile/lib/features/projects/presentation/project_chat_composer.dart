@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
+import '../domain/chat_text_direction.dart';
 import 'chat_reply_quote.dart';
 import 'plan_build_progress.dart';
 
@@ -139,6 +140,60 @@ class ProjectChatComposer extends StatelessWidget {
   /// text that has nowhere to go. Whatever is already typed stays put.
   final String? lockedLabel;
 
+  Widget _field({
+    required ColorScheme colors,
+    required bool locked,
+    required OutlineInputBorder border,
+    required TextDirection? direction,
+  }) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      enabled: !locked,
+      minLines: 1,
+
+      maxLines: 5,
+      textCapitalization: TextCapitalization.sentences,
+      textInputAction: TextInputAction.newline,
+      textDirection: direction,
+      decoration: InputDecoration(
+        hintText: lockedLabel ?? 'Ask or request an edit…',
+        filled: true,
+        fillColor: locked
+            ? colors.surfaceContainerLow
+            : colors.surfaceContainerLowest,
+        contentPadding: const EdgeInsetsDirectional.fromSTEB(
+          AppSpacing.md,
+          14,
+          AppSpacing.md,
+          14,
+        ),
+        // While the book is being rebuilt the field says so, and
+        // the sparkle only turns for as long as that is true.
+        prefixIcon: locked
+            ? Padding(
+                padding: const EdgeInsetsDirectional.only(
+                  start: AppSpacing.sm,
+                  end: AppSpacing.xs,
+                ),
+                child: Center(
+                  widthFactor: 1,
+                  child: ExcludeSemantics(
+                    child: PlanBuildSparkle(color: colors.primary, size: 20),
+                  ),
+                ),
+              )
+            : null,
+        border: border,
+        enabledBorder: border,
+        disabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: BorderSide(color: colors.primary, width: 1.6),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -165,51 +220,20 @@ class ProjectChatComposer extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
-                child: TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  enabled: !locked,
-                  minLines: 1,
-                  maxLines: 5,
-                  textCapitalization: TextCapitalization.sentences,
-                  textInputAction: TextInputAction.newline,
-                  decoration: InputDecoration(
-                    hintText: lockedLabel ?? 'Ask or request an edit…',
-                    filled: true,
-                    fillColor: locked
-                        ? colors.surfaceContainerLow
-                        : colors.surfaceContainerLowest,
-                    contentPadding: const EdgeInsetsDirectional.fromSTEB(
-                      AppSpacing.md,
-                      14,
-                      AppSpacing.md,
-                      14,
-                    ),
-                    // While the book is being rebuilt the field says so, and
-                    // the sparkle only turns for as long as that is true.
-                    prefixIcon: locked
-                        ? Padding(
-                            padding: const EdgeInsetsDirectional.only(
-                              start: AppSpacing.sm,
-                              end: AppSpacing.xs,
-                            ),
-                            child: Center(
-                              widthFactor: 1,
-                              child: ExcludeSemantics(
-                                child: PlanBuildSparkle(
-                                  color: colors.primary,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                          )
-                        : null,
+                // Typing Persian or Arabic in an English UI: the field follows
+                // the language being typed, as the creation composer and the
+                // bubbles it produces do.
+                child: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: controller,
+                  builder: (context, value, _) => _field(
+                    colors: colors,
+                    locked: locked,
                     border: border,
-                    enabledBorder: border,
-                    disabledBorder: border,
-                    focusedBorder: border.copyWith(
-                      borderSide: BorderSide(color: colors.primary, width: 1.6),
-                    ),
+                    direction: switch (chatTextDirection(value.text)) {
+                      TextDirectionHint.rtl => TextDirection.rtl,
+                      TextDirectionHint.ltr => TextDirection.ltr,
+                      null => null,
+                    },
                   ),
                 ),
               ),

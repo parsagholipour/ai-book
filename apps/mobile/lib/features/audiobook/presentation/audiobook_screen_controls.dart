@@ -32,7 +32,10 @@ class _PlayerControls extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (audiobook.isGenerating || playable < total) ...[
+            if (state.offline) ...[
+              _OfflineBanner(state: state),
+              const SizedBox(height: 4),
+            ] else if (audiobook.isGenerating || playable < total) ...[
               _NarrationBanner(audiobook: audiobook, caughtUp: state.caughtUp),
               const SizedBox(height: 4),
             ],
@@ -222,6 +225,62 @@ class _NarrationBanner extends StatelessWidget {
                     trackColor: colors.surfaceContainerHighest,
                   ),
                 ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Offline: what is playing is what this phone holds. Still, with no sparkle
+/// and no moving bar — a narration that was being made when the manifest was
+/// kept is a memory here, not work in progress.
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner({required this.state});
+
+  final AudiobookState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final count = state.audiobook?.chapters.length ?? 0;
+    final here = state.downloadedChapters.length;
+    final label = here < count
+        ? 'Offline — $here of $count chapters on this phone'
+        : 'Offline — playing the copy on this phone';
+    return Semantics(
+      container: true,
+      label: label,
+      child: ExcludeSemantics(
+        child: DecoratedBox(
+          key: const ValueKey('audiobook-offline-banner'),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.cloud_off_outlined,
+                  size: 18,
+                  color: colors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.onSurface,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

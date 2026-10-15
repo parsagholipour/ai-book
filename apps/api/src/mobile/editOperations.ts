@@ -62,6 +62,7 @@ import { queueChatRestructurePages } from "./restructurePageOperations.js";
 // A book_replan forks a second project rather than editing this one, so its
 // queue function lives next door too.
 import { queueChatBookReplanCopy } from "./replanCopyOperations.js";
+import { aiWorkKindForMediaSettings, assertAiCapacity } from "./aiCapacity.js";
 
 /**
  * The resume payload for a credits-blocked edit: the same pendingEdit +
@@ -131,8 +132,6 @@ export async function queueAttemptChatOperation(options: {
       description: options.description,
       metadata: options.metadata,
       imageQuotaLimit: options.imageQuotaLimit ?? null,
-      // A rebuild's full-book price includes exports for the new copy.
-      grantExportEntitlement: options.billingOperation === "BOOK_REPLAN",
       create: async (tx, context) => {
         const job = await options.enqueue(tx, context);
         await tx.bookEditOperation.update({
@@ -257,6 +256,9 @@ export async function queueChatPlanRevision(options: {
   // prompts are recovered from the message itself — this is what lets the
   // reviser drop them instead of re-asking, without a new chat field.
   const respondedQuestionPrompts = planQuestionPromptsInMessage(project, message);
+  // The turn that got here was let through as ordinary chat; a revision runs
+  // the planner at the book's own tier, so it asks again before the row exists.
+  await assertAiCapacity(userId, aiWorkKindForMediaSettings(project.mediaSettings));
   const operation = await createOpenBookEditOperation({
     projectId: project.id,
     requestId: userMessageId,
@@ -730,8 +732,12 @@ export async function queueChatContinueBook(options: QueuedChatEdit): Promise<{
  * acts on it, which is why this is only the fast path: the authoritative
  * one-open-edit-at-a-time guard is the partial unique index behind
  * `createOpenBookEditOperation`.
+ * Callers already holding a transaction pass its client to reuse that connection.
  */
-export async function hasOpenProjectWork(projectId: string): Promise<boolean> {
+export async function hasOpenProjectWork(
+  projectId: string,
+  db: Pick<Prisma.TransactionClient, "generationJob"> = prisma
+): Promise<boolean> {
   const openWork = {
     projectId,
     status: { in: ["QUEUED", "ACTIVE"] },
@@ -739,6 +745,6 @@ export async function hasOpenProjectWork(projectId: string): Promise<boolean> {
     // book, so it must never hold an edit, a publish or an undo back.
     type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH", "WRITING_ASSIST"] }
   } satisfies Prisma.GenerationJobWhereInput;
-  const openJobs = await prisma.generationJob.findMany({ where: openWork, select: { payload: true } });
+  const openJobs = await db.generationJob.findMany({ where: openWork, select: { payload: true } });
   return openJobs.some((job) => !isDetachedFromProjectLifecycle(job.payload));
 }

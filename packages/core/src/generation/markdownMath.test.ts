@@ -15,6 +15,18 @@ describe("Markdown math boundaries", () => {
     expect(render(markdown)).toBe(markdown);
   });
 
+  it("leaves the compiler's title page and matter sheet as the reader typed them, and reads on after them", () => {
+    const titlePage = '<section class="book-title-page">\n  <h1 class="book-title-page__title">Proofs $t$</h1>\n  <p class="book-title-page__byline">by Pen \\(x\\)</p>\n</section>';
+    const matterSheet = '<section class="book-matter-sheet book-matter-sheet--long">\n  <div class="book-matter-sheet__dedication">\n  <p>For $d$ and \\[e\\]</p>\n  </div>\n</section>';
+    expect(render(titlePage)).toBe(titlePage);
+    expect(render(matterSheet)).toBe(matterSheet);
+    const result = render(`${titlePage}\n\n${matterSheet}\n\nThe text: $y^2$.`);
+    expect(result.match(/<math\b/g)).toHaveLength(1);
+    expect(result).toContain("by Pen \\(x\\)");
+    // Only where the compiler writes one — at a line's start — is it furniture.
+    expect(render("A page about <section class=\"book-title-page\"> and $z^2$.")).toContain("<math");
+  });
+
   it("does not consume later equations when earlier dollars are currency", () => {
     const result = render("Pay $5 and $10, then compute $x^2$.");
     expect(result).toContain("Pay $5 and $10, then compute ");

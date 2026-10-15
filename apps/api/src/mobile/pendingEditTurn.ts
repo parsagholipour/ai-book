@@ -30,7 +30,8 @@ export type PendingEditTurnResolution = {
    * still "none" can never be resolved by the gate above — no reply satisfies
    * it — so an answer that adds no scope would be met with the same question
    * forever. Route it as a forced decision instead, carrying the original
-   * request so the router sees more than the fragment.
+   * request so the router sees more than the fragment. A matter question's
+   * answer always takes this path: it is never a scope.
    */
   clarifyExhausted: boolean;
   /** What the router classifies: the resumed request, the merged follow-up, or the message as sent. */
@@ -58,6 +59,11 @@ export function resolvePendingEditTurn(
   const pendingResolutionScope = currentScope !== "none" ? currentScope : pendingScope?.scope ?? "none";
   const pendingCarriesFullRequest =
     pendingScope?.clarification === "busy" || pendingScope?.clarification === "confirm";
+  // The matter composer asked what to print, so the reply is words to print:
+  // never a scope ("For my mom, who stood by me throughout" is a dedication)
+  // and never a confirmation. It is always the follow-up that spends the one
+  // question, unless it cancels.
+  const answersMatterQuestion = pendingScope?.clarification === "matter";
   // A bare "ok" only counts as confirmation while the pending edit is still
   // the assistant's latest word. Once something else was said in between,
   // "ok" is agreement with that, and only an explicit "apply it" resumes the
@@ -67,6 +73,7 @@ export function resolvePendingEditTurn(
     !(pendingScope?.requiresExplicitConfirmation && isBareAcknowledgementMessage(message));
   const resolvesPendingScope = Boolean(
     pendingScope &&
+      !answersMatterQuestion &&
       (pendingCarriesFullRequest
         ? confirmsPendingEdit || currentScope !== "none"
         : currentScope !== "none" ||
@@ -82,7 +89,7 @@ export function resolvePendingEditTurn(
       : null;
   const clarifyExhausted = Boolean(
     pendingScope &&
-      pendingScope.clarification === "scope" &&
+      (pendingScope.clarification === "scope" || answersMatterQuestion) &&
       !resolvesPendingScope &&
       !isPendingEditCancellationMessage(message)
   );
@@ -103,8 +110,10 @@ export function resolvePendingEditTurn(
         (pendingScope?.clarification === "busy" && pendingScope.proposalId && pendingScope.intent)) &&
       confirmsPendingEdit
   );
+  // A matter question has no scope to recover: the recovery reply asks where
+  // an edit goes, which is not what it asked.
   const pendingScopeIsRecoverable = Boolean(
-    pendingScope && (pendingCarriesFullRequest || pendingScope.scope !== "none")
+    pendingScope && (pendingCarriesFullRequest || (!answersMatterQuestion && pendingScope.scope !== "none"))
   );
 
   return {

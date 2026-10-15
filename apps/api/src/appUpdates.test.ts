@@ -140,6 +140,20 @@ describe("app update gate and route", () => {
     await app.close();
   });
 
+  it("gates the mobile surface however its path is spelled", async () => {
+    storePolicy([android(4, "required")]);
+    const app = await appWithGate();
+
+    // The router decodes these to `/api/mobile/projects`; the gate reads what it routed.
+    for (const url of ["/%61pi/mobile/projects", "/api/%6Dobile/projects", "/api/mobile/%70rojects"]) {
+      const response = await app.inject({ method: "GET", url, headers: fromBuild(3) });
+      expect(response.statusCode, url).toBe(426);
+    }
+    const check = await app.inject({ method: "GET", url: "/api/mobile/%61pp-update", headers: fromBuild(3) });
+    expect(check.statusCode).toBe(200);
+    await app.close();
+  });
+
   it("lets a prompted build, a current build and a request with no build through", async () => {
     storePolicy([android(4, "required"), android(5, "prompt")]);
     const app = await appWithGate();

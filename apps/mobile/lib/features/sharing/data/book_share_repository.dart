@@ -2,8 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_client.dart';
-import '../../billing/data/billing_repository.dart';
-import '../../projects/data/projects_repository.dart';
 import '../domain/book_remix.dart';
 import '../domain/book_share_models.dart';
 
@@ -15,7 +13,10 @@ abstract interface class BookShareRepository {
   /// Creates the share, changes it in place, or shares again after a stop.
   /// Throws the server's refusal as an `ApiException`; a changed note makes
   /// this wait on a moderation model, so it can take several seconds.
-  Future<BookShareSaved> saveShare(String projectId, BookShareRequest request);
+  Future<BookShareSnapshot> saveShare(
+    String projectId,
+    BookShareRequest request,
+  );
 
   /// Stops sharing: the link stops working for everyone who has it.
   Future<BookShareSnapshot> stopSharing(String projectId);
@@ -38,7 +39,7 @@ class MobileBookShareRepository implements BookShareRepository {
   }
 
   @override
-  Future<BookShareSaved> saveShare(
+  Future<BookShareSnapshot> saveShare(
     String projectId,
     BookShareRequest request,
   ) async {
@@ -48,7 +49,7 @@ class MobileBookShareRepository implements BookShareRepository {
       // A changed note is read by a model before the answer comes back.
       receiveTimeout: llmReceiveTimeout,
     );
-    return BookShareSaved.fromJson(response.data as Map<String, dynamic>);
+    return BookShareSnapshot.fromJson(response.data as Map<String, dynamic>);
   }
 
   @override
@@ -85,19 +86,12 @@ class BookShareController extends AsyncNotifier<BookShareSnapshot> {
   }
 
   /// Kept alive until the answer lands, so a sheet closed mid-save still
-  /// leaves the book's state — and the balance an unlock spent — current.
-  Future<BookShareSaved> save(BookShareRequest request) async {
+  /// leaves the book's state current.
+  Future<BookShareSnapshot> save(BookShareRequest request) async {
     final link = ref.keepAlive();
     try {
       final saved = await _repository.saveShare(projectId, request);
-      state = AsyncData(saved.snapshot);
-      if (saved.exportUnlockCharged) {
-        // The unlock is the book's: the balance moved, and the export panel
-        // and the reader's gate now read the book as unlocked.
-        ref.invalidate(billingProvider);
-        ref.invalidate(projectStatusProvider(projectId));
-        ref.invalidate(projectDetailProvider(projectId));
-      }
+      state = AsyncData(saved);
       return saved;
     } finally {
       link.close();

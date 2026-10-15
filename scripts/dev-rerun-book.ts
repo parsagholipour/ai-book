@@ -30,7 +30,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { Prisma, prisma } from "../packages/db/src/index.ts";
-import { bookQueue, dispatchGenerationJob, enqueueGenerationJob, redisConnection } from "../apps/api/src/queue.ts";
+import { dispatchGenerationJob, enqueueGenerationJob, generationQueues, redisConnection } from "../apps/api/src/queue.ts";
 import { scorecardFor } from "./structural-scorecard.ts";
 import { capturePublishedArtifacts, classifyGenerationCompletion } from "./generation-acceptance.mjs";
 import { objectStore } from "../packages/storage/src/index.ts";
@@ -517,7 +517,7 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await bookQueue.close().catch(() => undefined);
+    await Promise.all(generationQueues.map((queue) => queue.close().catch(() => undefined)));
     await redisConnection.quit().catch(() => undefined);
     await prisma.$disconnect().catch(() => undefined);
   });

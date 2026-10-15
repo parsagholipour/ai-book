@@ -1,10 +1,11 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
-import { loadConfig } from "@book-maker/core";
+import { createHash, randomBytes } from "node:crypto";
+import { LEGAL_SUPPORT_EMAIL, loadConfig } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import {
   InMemoryRateLimiter,
+  clientNetworkRateLimitKey,
   identityRateLimitKey,
   rateLimitKey,
   sendRateLimitError,
@@ -12,6 +13,18 @@ import {
 } from "./rateLimit.js";
 import { hasCurrentLegalAcceptance, legalAcceptanceEvidence } from "./legalAcceptance.js";
 import { lookupSignupCountry } from "./signupCountry.js";
+import { noteUserActiveDay } from "./productAnalytics.js";
+import { welcomeCreditIpKey } from "./welcomeCreditIp.js";
+import { sendFirstEmailVerificationCode } from "./emailVerificationCodes.js";
+import type { Mailer } from "./mailer.js";
+import {
+  hashPassword,
+  passwordHashingErrorHandler,
+  simulatePasswordVerification,
+  verifyPassword
+} from "./passwordHashing.js";
+
+export { hashPassword, verifyPassword };
 
 const ACCESS_TOKEN_PREFIX = "bma_at";
 const REFRESH_TOKEN_PREFIX = "bma_rt";
@@ -22,13 +35,15 @@ const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
 const REFRESH_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const REFRESH_TOKEN_GRACE_MS = 30 * 1000;
 const TOKEN_BYTE_LENGTH = 32;
-const SCRYPT_N = 16_384;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const SCRYPT_KEY_LENGTH = 64;
-const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 const DEFAULT_SIGN_UP_RATE_LIMIT = { maxAttempts: 5, windowMs: 15 * 60 * 1000 };
 const DEFAULT_SIGN_IN_RATE_LIMIT = { maxAttempts: 10, windowMs: 15 * 60 * 1000 };
+// Per client network, whatever email each attempt names: the limits above are
+// keyed by the email too, so a spray of invented addresses never met them.
+// Sign-in has room for a household or an office sharing one address. Creating
+// an account is a once-per-person act, and the welcome grant already stops at
+// one or two accounts per address a month, so sign-up is held to ten an hour.
+const DEFAULT_SIGN_UP_NETWORK_RATE_LIMIT = { maxAttempts: 10, windowMs: 60 * 60 * 1000 };
+const DEFAULT_SIGN_IN_NETWORK_RATE_LIMIT = { maxAttempts: 30, windowMs: 15 * 60 * 1000 };
 
 export const emailSchema = z.string().trim().email().max(254).transform(normalizeEmail);
 export const passwordSchema = z.string().min(8).max(200);
@@ -66,8 +81,12 @@ const refreshBodySchema = z.object({ refreshToken: tokenSchema }).strict();
 const logoutBodySchema = z.object({ refreshToken: tokenSchema.optional() }).strict();
 
 type MobileAuthRouteOptions = {
+  /** Mails sign-up's first verification code; without one the reader asks for it later. */
+  mailer?: Mailer | null;
   signUpRateLimit?: Partial<RateLimitConfig>;
   signInRateLimit?: Partial<RateLimitConfig>;
+  signUpNetworkRateLimit?: Partial<RateLimitConfig>;
+  signInNetworkRateLimit?: Partial<RateLimitConfig>;
 };
 
 type AuthUserRecord = {
@@ -76,6 +95,7 @@ type AuthUserRecord = {
   displayName: string | null;
   status: string;
   disabledAt?: Date | null;
+  emailVerifiedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -109,6 +129,8 @@ export type AuthUser = {
   createdAt: string;
   updatedAt: string;
   legalAcceptanceRequired: boolean;
+  /** Whether the address is proven (`User.emailVerifiedAt`); the welcome grant waits for it. */
+  emailVerified: boolean;
 };
 
 export type AuthFailure = {
@@ -143,6 +165,16 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
     ...DEFAULT_SIGN_IN_RATE_LIMIT,
     ...options.signInRateLimit
   });
+  const signUpNetworkLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_SIGN_UP_NETWORK_RATE_LIMIT,
+    ...options.signUpNetworkRateLimit
+  });
+  const signInNetworkLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_SIGN_IN_NETWORK_RATE_LIMIT,
+    ...options.signInNetworkRateLimit
+  });
+  // Scoped to this plugin's routes: a hash the gate refuses answers 429.
+  fastify.setErrorHandler(passwordHashingErrorHandler);
 
   fastify.post(
     "/api/mobile/auth/signup",
@@ -162,6 +194,12 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
         );
       }
 
+      // First, ahead of the per-email limits: a request this refuses must not
+      // spend a bucket that belongs to the address it named.
+      const networkLimit = signUpNetworkLimiter.hit(clientNetworkRateLimitKey(request, "signup"));
+      if (!networkLimit.allowed) {
+        return sendRateLimitError(reply, networkLimit.retryAfterSeconds);
+      }
       const limit = signUpLimiter.hit(rateLimitKey(request, parsed.data.email));
       if (!limit.allowed) {
         return sendRateLimitError(reply, limit.retryAfterSeconds);
@@ -203,6 +241,14 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
           }
         });
         const session = await createMobileSession(user.id, sessionContext);
+        noteUserActiveDay(user.id, request.log);
+        // The first code goes out unasked, so the app can open straight onto
+        // the code entry. Not awaited: an SMTP round trip must not hold the
+        // response, and it never fails the sign-up (emailVerificationCodes.ts).
+        void sendFirstEmailVerificationCode(user, options.mailer, {
+          requestIpHash: sessionContext.ipHash,
+          log: request.log
+        });
         return reply.code(201).send(authSessionResponse(user, session, true));
       } catch (error) {
         if (isUniqueConstraintError(error)) {
@@ -226,6 +272,10 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
         return sendAuthError(reply, 400, "VALIDATION_ERROR", "Enter a valid email and password.");
       }
 
+      const networkLimit = signInNetworkLimiter.hit(clientNetworkRateLimitKey(request, "signin"));
+      if (!networkLimit.allowed) {
+        return sendRateLimitError(reply, networkLimit.retryAfterSeconds);
+      }
       const limit = signInLimiter.hit(rateLimitKey(request, parsed.data.email));
       if (!limit.allowed) {
         return sendRateLimitError(reply, limit.retryAfterSeconds);
@@ -254,11 +304,16 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
       }
 
       const passwordMatches = await verifyPassword(parsed.data.password, user.passwordCredential.passwordHash);
-      if (!passwordMatches || !isActiveUser(user)) {
+      if (!passwordMatches) {
         return invalidCredentials(reply);
+      }
+      // After the password matched, so it tells a stranger nothing about the address.
+      if (!isActiveUser(user)) {
+        return sendAuthError(reply, 403, "ACCOUNT_DISABLED", ACCOUNT_DISABLED_MESSAGE);
       }
 
       const session = await createMobileSession(user.id, requestSessionContext(request));
+      noteUserActiveDay(user.id, request.log);
       return authSessionResponse(user, session, await hasCurrentLegalAcceptance(user.id));
     }
   );
@@ -280,6 +335,7 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
       if (!refreshed.ok) {
         return sendAuthError(reply, refreshed.statusCode, refreshed.code, refreshed.message);
       }
+      noteUserActiveDay(refreshed.user.id, request.log);
       return authSessionResponse(refreshed.user, refreshed.session, !refreshed.user.legalAcceptanceRequired);
     }
   );
@@ -327,26 +383,6 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
     return { user: { ...verified.user, legalAcceptanceRequired: !accepted } };
   });
 };
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const derivedKey = await deriveScryptKey(password, salt, SCRYPT_KEY_LENGTH);
-  return ["scrypt", SCRYPT_N, SCRYPT_R, SCRYPT_P, SCRYPT_KEY_LENGTH, salt.toString("base64url"), derivedKey.toString("base64url")].join("$");
-}
-
-export async function verifyPassword(password: string, encodedHash: string): Promise<boolean> {
-  const parsed = parsePasswordHash(encodedHash);
-  if (!parsed) {
-    return false;
-  }
-
-  const derivedKey = await deriveScryptKey(password, parsed.salt, parsed.keyLength, {
-    N: parsed.n,
-    r: parsed.r,
-    p: parsed.p
-  });
-  return safeEqual(derivedKey, parsed.hash);
-}
 
 export async function createMobileSession(
   userId: string,
@@ -532,77 +568,6 @@ function generateToken(prefix: string): string {
   return `${prefix}_${randomBytes(TOKEN_BYTE_LENGTH).toString("base64url")}`;
 }
 
-async function simulatePasswordVerification(password: string): Promise<void> {
-  await deriveScryptKey(password, Buffer.from("missing-mobile-user"), SCRYPT_KEY_LENGTH);
-}
-
-async function deriveScryptKey(
-  password: string,
-  salt: Buffer,
-  keyLength: number,
-  overrides: Partial<{ N: number; r: number; p: number }> = {}
-): Promise<Buffer> {
-  return scryptBuffer(password, salt, keyLength, {
-    N: overrides.N ?? SCRYPT_N,
-    r: overrides.r ?? SCRYPT_R,
-    p: overrides.p ?? SCRYPT_P,
-    maxmem: SCRYPT_MAXMEM
-  });
-}
-
-function scryptBuffer(password: string, salt: Buffer, keyLength: number, options: ScryptOptions): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    nodeScrypt(password, salt, keyLength, options, (error, derivedKey) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(derivedKey);
-    });
-  });
-}
-
-function parsePasswordHash(encodedHash: string):
-  | {
-      n: number;
-      r: number;
-      p: number;
-      keyLength: number;
-      salt: Buffer;
-      hash: Buffer;
-    }
-  | null {
-  const [algorithm, rawN, rawR, rawP, rawKeyLength, rawSalt, rawHash, extra] = encodedHash.split("$");
-  if (algorithm !== "scrypt" || extra !== undefined || !rawN || !rawR || !rawP || !rawKeyLength || !rawSalt || !rawHash) {
-    return null;
-  }
-
-  const n = Number(rawN);
-  const r = Number(rawR);
-  const p = Number(rawP);
-  const keyLength = Number(rawKeyLength);
-  if (![n, r, p, keyLength].every((value) => Number.isInteger(value) && value > 0)) {
-    return null;
-  }
-
-  try {
-    return {
-      n,
-      r,
-      p,
-      keyLength,
-      salt: Buffer.from(rawSalt, "base64url"),
-      hash: Buffer.from(rawHash, "base64url")
-    };
-  } catch {
-    return null;
-  }
-}
-
-function safeEqual(left: Buffer, right: Buffer): boolean {
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
 export function welcomeCreditIpHash(request: FastifyRequest, hops: number): string | undefined {
   if (!request.ip) {
     return undefined;
@@ -613,7 +578,7 @@ export function welcomeCreditIpHash(request: FastifyRequest, hops: number): stri
   if (hops === 0 && requestCarriesForwardedFor(request)) {
     return undefined;
   }
-  return hashToken(`ip:${request.ip}`);
+  return hashToken(`ip:${welcomeCreditIpKey(request.ip)}`);
 }
 
 export function requestSessionContext(request: FastifyRequest): MobileSessionContext {
@@ -650,6 +615,8 @@ export function authSessionResponse(
     session: {
       accessToken: session.accessToken,
       accessTokenExpiresAt: session.accessTokenExpiresAt.toISOString(),
+      // Seconds left, read on no clock but ours: an app on a phone running fast saw every token as due.
+      accessTokenExpiresIn: Math.max(0, Math.floor((session.accessTokenExpiresAt.getTime() - Date.now()) / 1000)),
       refreshToken: session.refreshToken,
       refreshTokenExpiresAt: session.refreshTokenExpiresAt.toISOString()
     }
@@ -664,13 +631,21 @@ function toAuthUser(user: AuthUserRecord, legalAccepted: boolean): AuthUser {
     status: user.status,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
-    legalAcceptanceRequired: !legalAccepted
+    legalAcceptanceRequired: !legalAccepted,
+    emailVerified: Boolean(user.emailVerifiedAt)
   };
 }
 
 function isSerializedAuthUser(user: AuthUserRecord | AuthUser): user is AuthUser {
   return typeof user.createdAt === "string";
 }
+
+/**
+ * `ACCOUNT_DISABLED`'s one sentence. Only an operator's suspension reaches it in
+ * practice (`accountModeration.ts`): a deleted account has no password and no
+ * sessions left to refuse. The app signs out on the code and shows this at sign-in.
+ */
+export const ACCOUNT_DISABLED_MESSAGE = `This account has been suspended. If you think this is a mistake, email ${LEGAL_SUPPORT_EMAIL}.`;
 
 export function isActiveUser(user: AuthUserRecord): boolean {
   return user.status === "ACTIVE" && !user.disabledAt;
@@ -681,7 +656,7 @@ function sessionAuthFailure(session: SessionWithUser, tokenType: "access" | "ref
     return authFailure(401, "SESSION_REVOKED", "Sign in again to continue.");
   }
   if (!isActiveUser(session.user)) {
-    return authFailure(403, "ACCOUNT_DISABLED", "This account is not active.");
+    return authFailure(403, "ACCOUNT_DISABLED", ACCOUNT_DISABLED_MESSAGE);
   }
   const expiresAt = tokenType === "access" ? session.accessTokenExpiresAt : session.refreshTokenExpiresAt;
   if (expiresAt.getTime() <= now.getTime()) {
@@ -737,9 +712,9 @@ export const authErrorResponseSchema = {
   additionalProperties: false
 } as const;
 
-const authUserResponseSchema = {
+export const authUserResponseSchema = {
   type: "object",
-  required: ["id", "email", "displayName", "status", "createdAt", "updatedAt", "legalAcceptanceRequired"],
+  required: ["id", "email", "displayName", "status", "createdAt", "updatedAt", "legalAcceptanceRequired", "emailVerified"],
   properties: {
     id: { type: "string" },
     email: { type: "string" },
@@ -747,17 +722,19 @@ const authUserResponseSchema = {
     status: { type: "string" },
     createdAt: { type: "string" },
     updatedAt: { type: "string" },
-    legalAcceptanceRequired: { type: "boolean" }
+    legalAcceptanceRequired: { type: "boolean" },
+    emailVerified: { type: "boolean" }
   },
   additionalProperties: false
 } as const;
 
 const sessionResponseSchema = {
   type: "object",
-  required: ["accessToken", "accessTokenExpiresAt", "refreshToken", "refreshTokenExpiresAt"],
+  required: ["accessToken", "accessTokenExpiresAt", "accessTokenExpiresIn", "refreshToken", "refreshTokenExpiresAt"],
   properties: {
     accessToken: { type: "string" },
     accessTokenExpiresAt: { type: "string" },
+    accessTokenExpiresIn: { type: "integer", minimum: 0 },
     refreshToken: { type: "string" },
     refreshTokenExpiresAt: { type: "string" }
   },
@@ -840,6 +817,7 @@ const signInRouteSchema = {
     200: authSessionResponseSchema,
     400: authErrorResponseSchema,
     401: authErrorResponseSchema,
+    403: authErrorResponseSchema,
     429: authErrorResponseSchema
   }
 } as const;

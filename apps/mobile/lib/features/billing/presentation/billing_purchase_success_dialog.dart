@@ -128,7 +128,11 @@ class _BillingPurchaseSuccessDialogState
           ),
         ),
       ),
-      title: const Text('Purchase successful', textAlign: TextAlign.center),
+      // A deferred downgrade bought nothing today; its message says when.
+      title: Text(
+        purchase.scheduled ? 'Plan change scheduled' : 'Purchase successful',
+        textAlign: TextAlign.center,
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -24,6 +24,7 @@ class MobileCreationMessage {
     this.parentId,
     this.branch,
     this.requestId,
+    this.editMessageId,
     this.replyTo,
     this.mentionedCharacterIds = const [],
     this.characters = const [],
@@ -45,6 +46,9 @@ class MobileCreationMessage {
 
   /// Client-generated idempotency key retained for failed-send retries.
   final String? requestId;
+
+  /// Local-only target of an optimistic edit, retained so retries still fork.
+  final String? editMessageId;
 
   /// The earlier message this turn replies to, quoted above its own text.
   final ChatReplyTarget? replyTo;
@@ -104,6 +108,7 @@ class MobileCreationMessage {
       parentId: parentId,
       branch: branch,
       requestId: requestId,
+      editMessageId: editMessageId,
       replyTo: replyTo,
       mentionedCharacterIds: mentionedCharacterIds,
       characters: characters,

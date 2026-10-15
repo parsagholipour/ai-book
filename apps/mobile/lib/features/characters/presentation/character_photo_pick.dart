@@ -7,6 +7,12 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import 'character_crop_screen.dart';
 
+/// Said wherever a photo of a person can be added: whose face may go into a
+/// book is the reader's call, and they should make it knowingly.
+const characterPhotoConsentLine =
+    'Only add photos of yourself, or of people (or children in your care) '
+    'who agreed.';
+
 /// What the reader picked out of the photo menu. Deliberately not an
 /// `ImageSource`: the menu is presentation and knows nothing about the picker.
 enum CharacterPhotoAction { gallery, camera }
@@ -51,6 +57,14 @@ Future<CharacterPhotoAction?> showCharacterPhotoActions(BuildContext context) {
                   'Pick one where their face is clear and well lit. You will '
                   'crop it next.',
                   style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  characterPhotoConsentLine,
+                  key: const ValueKey('character-photo-consent'),
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),

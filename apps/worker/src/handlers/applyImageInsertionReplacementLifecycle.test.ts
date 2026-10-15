@@ -215,10 +215,7 @@ describe("applyImageInsertion replacement publication lifecycle", () => {
       mocks.claimAppliedEditPublication.mock.invocationCallOrder[0]!
     );
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }));
     expect(mocks.restoreEditProjectStatus).toHaveBeenCalledWith(
       mocks.tx,
       "project-1",
@@ -253,9 +250,6 @@ describe("applyImageInsertion replacement publication lifecycle", () => {
       "op-1",
       "COMPLETE"
     );
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
-      skipFinalReview: true,
-      withoutQualityVerdict: true
-    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }));
   });
 });

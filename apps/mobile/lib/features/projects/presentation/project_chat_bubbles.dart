@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/touch_target.dart';
 import '../domain/chat_markdown.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
@@ -347,99 +348,107 @@ class ProjectMessageBubble extends StatelessWidget {
         onReply: startReply,
         onReport: isUser || editing ? null : onReport,
       ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(AppRadii.card),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (replyTo != null && !editing)
-                  ChatQuotedMessage(target: replyTo, foreground: foreground),
-                if (editing)
-                  InlineMessageEditor(
-                    controller: editController,
-                    submitting: submittingEdit,
-                    onCancel: onCancelEdit,
-                    onSubmit: onSubmitEdit,
-                  )
-                else
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        child: ChatMessageText.forRole(
-                          message.content,
-                          role: message.role,
-                          style: TextStyle(color: foreground),
-                        ),
-                      ),
-                      if (creditsCharged != null) ...[
-                        const SizedBox(width: 8),
-                        CreditCostBadge(
-                          credits: creditsCharged,
-                          foreground: foreground,
-                        ),
-                      ],
-                      if (isUser && onStartEdit != null) ...[
-                        const SizedBox(width: 4),
-                        IconButton(
-                          tooltip: 'Edit message',
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                          padding: EdgeInsets.zero,
-                          onPressed: onStartEdit,
-                          icon: Icon(
-                            Icons.edit_outlined,
-                            size: 18,
-                            color: foreground,
+      // The bubble's padding is where a near miss on its small controls
+      // lands (see [TouchTarget]).
+      child: TouchTargetRegion(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(AppRadii.card),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (replyTo != null && !editing)
+                    ChatQuotedMessage(target: replyTo, foreground: foreground),
+                  if (editing)
+                    InlineMessageEditor(
+                      controller: editController,
+                      submitting: submittingEdit,
+                      onCancel: onCancelEdit,
+                      onSubmit: onSubmitEdit,
+                    )
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(
+                          child: ChatMessageText.forRole(
+                            message.content,
+                            role: message.role,
+                            style: TextStyle(color: foreground),
                           ),
                         ),
+                        if (creditsCharged != null) ...[
+                          const SizedBox(width: 8),
+                          CreditCostBadge(
+                            credits: creditsCharged,
+                            foreground: foreground,
+                          ),
+                        ],
+                        if (isUser && onStartEdit != null) ...[
+                          const SizedBox(width: 4),
+                          // Drawn in its small box, touched across 48dp.
+                          TouchTarget(
+                            child: IconButton(
+                              tooltip: 'Edit message',
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: onStartEdit,
+                              icon: Icon(
+                                Icons.edit_outlined,
+                                size: 18,
+                                color: foreground,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                if (branch != null) ...[
-                  const SizedBox(height: 8),
-                  BranchNavigator(
-                    branch: branch,
-                    foreground: foreground,
-                    switching: switchingBranch,
-                    onPrevious: () => onSwitchBranch('previous'),
-                    onNext: () => onSwitchBranch('next'),
-                  ),
+                    ),
+                  if (branch != null) ...[
+                    const SizedBox(height: 8),
+                    BranchNavigator(
+                      branch: branch,
+                      foreground: foreground,
+                      switching: switchingBranch,
+                      onPrevious: () => onSwitchBranch('previous'),
+                      onNext: () => onSwitchBranch('next'),
+                    ),
+                  ],
+                  if (onOpenPaywall != null) ...[
+                    const SizedBox(height: 10),
+                    _AddCreditsRow(
+                      credits: message.insufficientCreditsRequired,
+                      plans: message.asksForPlan,
+                      onPressed: onOpenPaywall!,
+                    ),
+                  ],
+                  if (message.isAssistant && message.pageLimit != null) ...[
+                    const SizedBox(height: 10),
+                    PageLimitUnlockRow(
+                      limit: message.pageLimit!,
+                      projectId: message.projectId,
+                    ),
+                  ],
+                  if (onOpenReplanCopy != null) ...[
+                    const SizedBox(height: 10),
+                    ActionChip(
+                      avatar: const Icon(Icons.open_in_new_outlined, size: 18),
+                      label: const Text('Open the new book'),
+                      onPressed: onOpenReplanCopy,
+                    ),
+                  ],
                 ],
-                if (onOpenPaywall != null) ...[
-                  const SizedBox(height: 10),
-                  _AddCreditsRow(
-                    credits: message.insufficientCreditsRequired,
-                    onPressed: onOpenPaywall!,
-                  ),
-                ],
-                if (message.isAssistant && message.pageLimit != null) ...[
-                  const SizedBox(height: 10),
-                  PageLimitUnlockRow(
-                    limit: message.pageLimit!,
-                    projectId: message.projectId,
-                  ),
-                ],
-                if (onOpenReplanCopy != null) ...[
-                  const SizedBox(height: 10),
-                  ActionChip(
-                    avatar: const Icon(Icons.open_in_new_outlined, size: 18),
-                    label: const Text('Open the new book'),
-                    onPressed: onOpenReplanCopy,
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),
@@ -482,10 +491,17 @@ class ProjectMessageBubble extends StatelessWidget {
 /// The button is the whole point of the block; the amount, when the server
 /// named one, rides beside it as a badge rather than as a sentence.
 class _AddCreditsRow extends StatelessWidget {
-  const _AddCreditsRow({required this.credits, required this.onPressed});
+  const _AddCreditsRow({
+    required this.credits,
+    required this.onPressed,
+    this.plans = false,
+  });
 
   final int? credits;
   final VoidCallback onPressed;
+
+  /// The reply is unlocked by a plan, not credits: say so on the button.
+  final bool plans;
 
   @override
   Widget build(BuildContext context) {
@@ -496,10 +512,12 @@ class _AddCreditsRow extends StatelessWidget {
       children: [
         FilledButton.icon(
           onPressed: onPressed,
-          icon: const Icon(Icons.add_card_outlined),
-          label: const Text('Add credits'),
+          icon: Icon(
+            plans ? Icons.workspace_premium_outlined : Icons.add_card_outlined,
+          ),
+          label: Text(plans ? 'See plans' : 'Add credits'),
         ),
-        if (credits != null)
+        if (credits != null && !plans)
           CreditCostBadge(credits: credits!, kind: CreditCostKind.quoted),
       ],
     );

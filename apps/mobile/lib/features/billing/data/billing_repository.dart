@@ -6,12 +6,16 @@ import '../domain/billing_models.dart';
 abstract interface class BillingRepository {
   Future<MobileBilling> getBilling();
 
+  /// [localPriceMicros] and [localCurrency] are what Play priced the purchase
+  /// at for the buyer — analytics only, sent only together.
   Future<GooglePlayVerificationResult> verifyGooglePlayPurchase({
     required String productId,
     required String purchaseToken,
     String? transactionId,
     String? purchaseStatus,
     String? projectId,
+    int? localPriceMicros,
+    String? localCurrency,
   });
 
   /// Ask the server to re-check the subscription with Google.
@@ -44,13 +48,26 @@ class MobileBillingRepository implements BillingRepository {
     String? transactionId,
     String? purchaseStatus,
     String? projectId,
+    int? localPriceMicros,
+    String? localCurrency,
   }) async {
     final payload = <String, dynamic>{
       'productId': productId,
       'purchaseToken': purchaseToken,
     };
-    if (transactionId != null) {
-      payload['transactionId'] = transactionId;
+    // Play has no order id yet for a pending payment or a promo code, and the
+    // plugin hands that over as ''. Servers before 2026-10 refused a blank one
+    // outright, which left the payment unrecorded, unacknowledged and refunded.
+    final orderId = transactionId?.trim();
+    if (orderId != null && orderId.isNotEmpty) {
+      payload['transactionId'] = orderId;
+    }
+    if (localPriceMicros != null &&
+        localPriceMicros >= 0 &&
+        localCurrency != null &&
+        RegExp(r'^[A-Z]{3}$').hasMatch(localCurrency)) {
+      payload['localPriceMicros'] = localPriceMicros;
+      payload['localCurrency'] = localCurrency;
     }
     if (purchaseStatus != null) {
       payload['purchaseStatus'] = purchaseStatus;

@@ -55,8 +55,12 @@ const ORDINAL_PAGE_WORD =
  */
 const PAGE_NUMBER_WORD = `(?:${CARDINAL_PAGE_WORD}|${ORDINAL_PAGE_WORD})`;
 const PAGE_QUANTITY_WORD = `(?:${QUANTITY_CARDINAL_WORD}|${QUANTITY_ORDINAL_WORD})`;
-const PAGE_NUMBER = `(?:\\d+(?:st|nd|rd|th)?|${PAGE_NUMBER_WORD})\\b`;
-const PAGE_QUANTITY = `(?:\\d+|a|an|${PAGE_QUANTITY_WORD})\\b`;
+// A number is read from the first digit of its run. The selection is also
+// searched unanchored (`isPlacementOnly` in the API), and from every digit of a
+// long run that a boundary does not end, `\d+` rescanned the rest: quadratic.
+// Everywhere else a number follows a space or a joiner, so nothing else moves.
+const PAGE_NUMBER = `(?:(?<!\\d)\\d+(?:st|nd|rd|th)?|${PAGE_NUMBER_WORD})\\b`;
+const PAGE_QUANTITY = `(?:(?<!\\d)\\d+|a|an|${PAGE_QUANTITY_WORD})\\b`;
 // Before the noun, cardinals count pages while ordinals identify one. Only the
 // latter is an existing-page reference whose word range extends through twenty.
 const PRENOMINAL_PAGE_REFERENCE = `(?:${PAGE_QUANTITY}|${ORDINAL_PAGE_WORD}\\b)`;
@@ -169,15 +173,24 @@ const NUMBERED_PLACEMENT = `(?:(?:to\\s+)?(?:${PLACEMENT_ADVERB}\\s+)?(?:after|b
  * A closing courtesy is not a content requirement, and the opening one already
  * was not. Readers stack them — "please and thanks" — and one alone was known,
  * so "delete page 6 please and thanks" was quoted as a whole-book rebuild.
+ *
+ * The comma carries its own `\s*`. Written `\s*,?\s*` inside the repeat, every
+ * space between two courtesies could go to either quantifier, so a tail that
+ * failed at its last word was retried 2ⁿ ways: "swap pages 1 and 2" and 26
+ * "ty"s took 2.7 s of the API's only thread. `W* (, W*)?` accepts exactly what
+ * `W* ,? W*` did, and every pattern here is anchored at both ends and only
+ * tested, so the answer is unchanged; `structuralInstruction.test.ts` holds a
+ * corpus pinned to the old answers and the adversarial runs, timed.
  */
-const COURTESY_TAIL = "(?:\\s*,?\\s*(?:and\\s+)?(?:please|pls|thanks|thank\\s+you|thx|ty|cheers)(?:\\s+(?:so\\s+much|a\\s+lot))?)*";
+const COURTESY_TAIL = "(?:\\s*(?:,\\s*)?(?:and\\s+)?(?:please|pls|thanks|thank\\s+you|thx|ty|cheers)(?:\\s+(?:so\\s+much|a\\s+lot))?)*";
 /**
  * Why a page should go is not something to write: "delete page 3, it repeats
  * page 7" was quoted as a whole-book rebuild with "Which repeats the content of
  * page 7" as its brief. Only a reason that says the page is redundant is read
  * this way; any other words keep the request on the generation path.
+ * Each optional word carries its own trailing `\s*`, as in the courtesy tail above.
  */
-const DELETE_REASON_TAIL = `(?:\\s*(?:,|—|–|-|because|since|as)?\\s*(?:it|this|which|that)?\\s*(?:['’]s|is)?\\s*(?:(?:just|only|basically)\\s+)?(?:repeats|duplicates|restates|copies|a\\s+(?:repeat|duplicate|copy)\\s+of|the\\s+same\\s+as|redundant|empty|blank|unnecessary|not\\s+needed)(?:\\s+(?:the\\s+content\\s+of\\s+)?${PAGE_SELECTION})?)?`;
+const DELETE_REASON_TAIL = `(?:\\s*(?:(?:,|—|–|-|because|since|as)\\s*)?(?:(?:it|this|which|that)\\s*)?(?:(?:['’]s|is)\\s*)?(?:(?:just|only|basically)\\s+)?(?:repeats|duplicates|restates|copies|a\\s+(?:repeat|duplicate|copy)\\s+of|the\\s+same\\s+as|redundant|empty|blank|unnecessary|not\\s+needed)(?:\\s+(?:the\\s+content\\s+of\\s+)?${PAGE_SELECTION})?)?`;
 
 const PURE_INSERT = new RegExp(
   `^${STRUCTURAL_ACTION_PREFIX_PATTERN.insert}(?:\\s+(?:${NUMBERED_PLACEMENT}|${EDGE_PLACEMENT}))?${COURTESY_TAIL}$`,
@@ -373,7 +386,13 @@ function conservativeRequirement(clause: string): StructuralInstructionClassific
 function normalizedClause(value: string): string {
   return value
     .replace(/\s+/g, " ")
-    .replace(/^[\s,.;:—–-]+|[\s,.;:!?—–-]+$/g, "")
+    .replace(/^[\s,.;:—–-]+/, "")
+    // The trailing run is tried from its first character only. Tried from every
+    // character of a long run that does not reach the end, it was quadratic.
+    // Run after the leading strip, so a run the leading class stopped short of
+    // ("?" is not in it) still starts where that strip ended, as it did when
+    // both were one global pattern.
+    .replace(/(?<![\s,.;:!?—–-])[\s,.;:!?—–-]+$/, "")
     .trim();
 }
 

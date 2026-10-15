@@ -1,10 +1,12 @@
 import WebSocket, { type RawData } from "ws";
+import type { Prisma } from "@book-maker/db";
 import {
   authorizeVoiceRelay, finishVoiceRelay, VoiceRelayError,
   type VoiceRelayLease, type VoiceRelaySession
 } from "@book-maker/db/billing";
+import { recordVoiceUsage, voiceUsageModel, VoiceUsageMeter } from "./voiceRelayUsage.js";
 
-export type VoiceRelayClaim = { lease: VoiceRelayLease; session: VoiceRelaySession; deadline: Date };
+export type VoiceRelayClaim = { lease: VoiceRelayLease; session: VoiceRelaySession; deadline: Date; projectId: string | null };
 export type VoiceRelaySocket = Pick<WebSocket, "readyState" | "bufferedAmount" | "send" | "close" | "terminate" | "ping"> & {
   on(event: "message", listener: (data: RawData, binary: boolean) => void): unknown;
   on(event: "open" | "close" | "error" | "pong", listener: () => void): unknown;
@@ -14,9 +16,13 @@ type RelayDeps = {
   finish: typeof finishVoiceRelay;
   openProvider: (session: VoiceRelaySession) => VoiceRelaySocket;
   warn: (error: unknown) => void;
+  /** Writes a call's provider cost rows (`voiceRelayUsage.ts`). Its failures never reach the call. */
+  recordUsage: (rows: Prisma.ProviderCallLogCreateManyInput[]) => Promise<void>;
 };
 
 const PROVIDER_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
+/** How much metered usage a crashed process can lose: each call writes a cost segment at least this often. */
+const USAGE_FLUSH_MS = 60_000;
 const active = new Map<string, VoiceRelayConnection>();
 
 export async function stopLocalVoiceRelay(callId: string, reason = "ended"): Promise<void> {
@@ -38,6 +44,10 @@ export class VoiceRelayConnection {
   private budgetAt = Date.now();
   private frameBudget = 100;
   private frameAt = Date.now();
+  private readonly usage: VoiceUsageMeter;
+  private usageFlushedAt = Date.now();
+  /** Segment writes run one after another, and the stop waits for the last. */
+  private usageWrites: Promise<void> = Promise.resolve();
   private readonly timer: ReturnType<typeof setInterval>;
   private readonly heartbeat: ReturnType<typeof setInterval>;
   private readonly deps: RelayDeps;
@@ -49,8 +59,14 @@ export class VoiceRelayConnection {
         headers: { Authorization: `Token ${session.token}` }, handshakeTimeout: 10_000,
         maxPayload: 1024 * 1024, perMessageDeflate: false
       }),
-      warn: () => undefined, ...options
+      warn: () => undefined,
+      recordUsage: (rows) => recordVoiceUsage(rows, (error) => this.deps.warn(error)),
+      ...options
     };
+    this.usage = new VoiceUsageMeter({
+      callId: claim.lease.callId, userId: claim.lease.userId, projectId: claim.projectId,
+      provider: "gemini", model: voiceUsageModel(claim.session.model)
+    });
     this.deadline = claim.deadline.getTime();
     active.set(claim.lease.callId, this);
     // Attach listeners synchronously: Fastify can deliver the first setup
@@ -65,6 +81,7 @@ export class VoiceRelayConnection {
     this.heartbeat = setInterval(() => {
       if (!this.stopped && client.readyState === WebSocket.OPEN) client.ping();
       if (this.ready) void this.renew();
+      if (Date.now() - this.usageFlushedAt >= USAGE_FLUSH_MS) void this.flushUsage();
     }, 5_000);
     this.timer.unref();
     this.heartbeat.unref();
@@ -88,12 +105,29 @@ export class VoiceRelayConnection {
     const terminate = setTimeout(() => this.client.terminate(), 1000);
     terminate.unref();
     const stoppedAt = new Date(Math.min(Date.now(), this.deadline));
-    void this.deps.finish(this.claim.lease, stoppedAt, reason)
-      .catch((error: unknown) => this.deps.warn(error)).finally(() => {
-        if (active.get(this.claim.lease.callId) === this) active.delete(this.claim.lease.callId);
-        completed();
-      });
+    // Upstream is closed, so no usage report can follow this last segment.
+    const usageRecorded = this.flushUsage();
+    const settled = this.deps.finish(this.claim.lease, stoppedAt, reason).catch((error: unknown) => this.deps.warn(error));
+    void Promise.all([settled, usageRecorded]).finally(() => {
+      if (active.get(this.claim.lease.callId) === this) active.delete(this.claim.lease.callId);
+      completed();
+    });
     return this.stopping;
+  }
+
+  /**
+   * Hands everything metered since the last segment to the recorder. The meter
+   * is emptied before anything is awaited, so a report is never in two
+   * segments, and a failing recorder is reported and swallowed.
+   */
+  private flushUsage(): Promise<void> {
+    this.usageFlushedAt = Date.now();
+    const rows = this.usage.take();
+    if (rows.length === 0) return this.usageWrites;
+    this.usageWrites = this.usageWrites
+      .then(() => this.deps.recordUsage(rows))
+      .catch((error: unknown) => this.deps.warn(error));
+    return this.usageWrites;
   }
 
   private usable(): boolean {
@@ -143,6 +177,8 @@ export class VoiceRelayConnection {
       let frame: Record<string, any>;
       try { frame = JSON.parse(text); } catch { void this.stop("provider_error"); return; }
       if (!frame || typeof frame !== "object" || Array.isArray(frame)) { void this.stop("provider_error"); return; }
+      // Any message may carry the turn's billed usage beside its one payload.
+      this.usage.observe(frame);
       if (frame.sessionResumptionUpdate?.resumable === true && typeof frame.sessionResumptionUpdate.newHandle === "string") {
         this.resumeHandle = frame.sessionResumptionUpdate.newHandle;
       }

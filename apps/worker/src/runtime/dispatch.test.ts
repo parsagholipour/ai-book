@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => {
       project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
       page: { findMany: vi.fn() },
-      imageAsset: { count: vi.fn() },
+      imageAsset: { count: vi.fn(), findFirst: vi.fn(async () => null) },
       generationJob: {
         findUnique: vi.fn(),
         findFirst: vi.fn(),
@@ -38,7 +38,10 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { PrismaClientKnownRequestError: mocks.KnownRequestError }
 }));
-vi.mock("./queue.js", () => ({ queue: { add: mocks.queueAdd, getJob: mocks.queueGetJob } }));
+vi.mock("./queue.js", () => {
+  const queue = { add: mocks.queueAdd, getJob: mocks.queueGetJob };
+  return { queue, queueNamed: () => queue, allLaneQueues: [queue] };
+});
 vi.mock("./config.js", () => ({ config: { MAX_PARALLEL_PAGE_JOBS: 3 } }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => mocks.input }));
 

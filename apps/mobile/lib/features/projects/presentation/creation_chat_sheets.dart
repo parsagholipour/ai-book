@@ -182,7 +182,9 @@ class _TitleSheetState extends State<_TitleSheet> {
             TextField(
               controller: _controller,
               textInputAction: TextInputAction.done,
-              // The server accepts up to 160 characters for a title.
+              // The server accepts 1 to 160 characters for a title. One is a
+              // whole title in Chinese or Japanese ("雪"), so any non-empty
+              // text is saved.
               maxLength: 160,
               onSubmitted: (value) => Navigator.of(context).pop(value),
               decoration: const InputDecoration(labelText: 'Title'),
@@ -280,7 +282,8 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
     int pages,
     CreationChatController controller,
   ) async {
-    final limit = ref.read(billingProvider).asData?.value.maxBookPages;
+    final billing = ref.read(billingProvider).asData?.value;
+    final limit = billing?.maxBookPages;
     if (limit == null) {
       controller.setCustomTargetPages(pages);
       return;
@@ -288,7 +291,11 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
     final resolved = await _resolveLongBook(
       context,
       ref,
-      BookPageLimit(limit: limit, requestedPages: pages),
+      BookPageLimit(
+        limit: limit,
+        requestedPages: pages,
+        maxPages: billing!.paidMaxBookPages,
+      ),
     );
     if (resolved != null) controller.setCustomTargetPages(resolved);
   }
@@ -300,12 +307,18 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
     final presets = state.presets;
     // Watched (not read) so the page-cost estimate reacts to Finish and
     // in-book illustration changes made in this same sheet.
-    final creditCosts =
-        ref.watch(billingProvider).asData?.value.creditCosts ??
-        const <String, dynamic>{};
+    final billing = ref.watch(billingProvider).asData?.value;
+    final creditCosts = billing?.creditCosts ?? const <String, dynamic>{};
+    // Unknown billing keeps Ultra on the list: the server rules on the build.
+    final ultraEnabled = billing?.ultraTierEnabled ?? true;
+    // The effort Build will really start at, which every quote here follows.
+    final quality = startableQualityPreset(
+      presets.qualityPreset,
+      ultraEnabled: ultraEnabled,
+    );
     // Named on both image switches. Effort changes it — the top tier draws on a
     // better image model — so it is read against the chosen preset.
-    final imageCredits = _imageCredits(presets.qualityPreset, creditCosts);
+    final imageCredits = _imageCredits(quality, creditCosts);
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final colors = Theme.of(context).colorScheme;
     final tone = state.optionalDetails.tone.trim();
@@ -366,16 +379,13 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
                     presets: presets,
                     onAuto: controller.setPageCountAuto,
                     onCustom: controller.setCustomTargetPages,
-                    maxPages: ref
-                        .watch(billingProvider)
-                        .asData
-                        ?.value
-                        .maxBookPages,
+                    maxPages: billing?.maxBookPages,
+                    ceilingPages: billing?.paidMaxBookPages ?? maxPlanBookPages,
                     onLocked: (pages) => _unlockPages(pages, controller),
                     estimateCredits: (pages) => estimateProjectCredits(
                       bookType: presets.bookType,
                       bookTypeChoice: presets.bookTypeChoice,
-                      qualityPreset: presets.qualityPreset,
+                      qualityPreset: quality,
                       coverEnabled: presets.coverEnabled,
                       illustrationsEnabled: presets.illustrationsEnabled,
                       targetPages: pages,
@@ -389,8 +399,10 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
                     yourChoice: state.userChoices.contains(
                       CreationChoice.finish,
                     ),
-                    options: qualityPresetOptions,
-                    selected: presets.qualityPreset,
+                    options: qualityPresetOptionsFor(
+                      ultraEnabled: ultraEnabled,
+                    ),
+                    selected: quality,
                     onChanged: controller.setQualityPreset,
                     creditsPerPage: (quality) =>
                         _writingCreditsPerPage(presets, quality, creditCosts),
@@ -437,6 +449,7 @@ class _AdvancedSheetState extends ConsumerState<_AdvancedSheet> {
                         presets.bookType,
                         ref.watch(billingProvider).asData?.value.imageQuota,
                         imageCredits: imageCredits,
+                        bookTypeChoice: presets.bookTypeChoice,
                       ),
                     ),
                   ),
@@ -594,14 +607,16 @@ String _illustrationsSubtitle(
   String bookType,
   MobileImageQuota? quota, {
   int? imageCredits,
+  String? bookTypeChoice,
 }) {
   if (!enabled) {
     return 'No generated images inside the book.';
   }
-  final base = imageCredits == null
-      ? 'Up to ${visualLimitFor(bookType)} in-book illustrations.'
-      : 'Up to ${visualLimitFor(bookType)} in-book illustrations, '
-            '$imageCredits credits each.';
+  final each = imageCredits == null ? '' : ', $imageCredits credits each';
+  final base = bookTypeChoice == 'children_story'
+      ? 'A picture on every page, up to $pictureBookMaxPictures '
+            'pictures$each.'
+      : 'Up to ${visualLimitFor(bookType)} in-book illustrations$each.';
   if (quota == null) {
     return base;
   }

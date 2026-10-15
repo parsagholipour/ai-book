@@ -33,6 +33,7 @@ describe("mobile project status DTO", () => {
     vi.mocked(buildProjectStatus).mockResolvedValue(
       statusRecord({
         generationTimings: { planningMs: 72_000, bookMs: null },
+        waitingInLine: { booksAhead: 2 },
         project: {
           id: "project-1",
           title: "Progress Book",
@@ -110,6 +111,8 @@ describe("mobile project status DTO", () => {
       affectedPageIndexes: [3, 4]
     });
     expect(body.status.generationTimings).toEqual({ planningMs: 72_000, bookMs: null });
+    // A count of books, under a name the no-queue-internals rule below allows.
+    expect(body.status.waitingInLine).toEqual({ booksAhead: 2 });
     expect(body.status.failureMessage).toContain("while writing a page");
     expect(body.status.failureMessage).not.toContain("narrat");
     expect(body.status.failureMessage).not.toContain("GENERATE_PAGE");

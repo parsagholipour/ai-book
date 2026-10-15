@@ -8,9 +8,9 @@ import { existsSync } from "node:fs";
 import { objectStore, sweepTemporaryDirectories } from "@book-maker/storage";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { browserPoolStatus, closeSharedBrowser, loadConfig } from "@book-maker/core";
+import { browserPoolStatus, closeSharedBrowser, enforceProductionConfig, loadConfig, ProductionConfigError } from "@book-maker/core";
 import { loadCreditPricing, prisma } from "@book-maker/db";
-import { recoverMessageUsage } from "@book-maker/db/billing";
+import { recoverMessageUsage, setWelcomeGrantHold } from "@book-maker/db/billing";
 import { runAccountDeletionSweep } from "./accountDeletion.js";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { appUpdateRoutes, registerAppUpdateGate } from "./appUpdates.js";
@@ -18,18 +18,33 @@ import { registerAuth } from "./auth.js";
 import { corsOptionsFor } from "./cors.js";
 import { createGooglePlayVerifierFromConfig } from "./googlePlayBilling.js";
 import { googlePlayRtdnRoutes } from "./googlePlayRtdn.js";
+import { warnAboutUnkeyedSavedRouting } from "./generationTextModelRouting.js";
 import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
 import { createMailerFromConfig } from "./mailer.js";
+import { createBackgroundSweeps } from "./backgroundSweeps.js";
+import { runStorageDeletionSweep, STORAGE_DELETION_SWEEP_INTERVAL_MS } from "./storageDeletionSweep.js";
+import { PRUNE_INTERVAL_MS, runTablePruneSweep } from "./tablePruneSweep.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
 import { mobileGoogleAuthRoutes } from "./mobileGoogleAuth.js";
 import { mobileImportRoutes } from "./mobileImports.js";
 import { mobilePasswordResetRoutes } from "./mobilePasswordReset.js";
+import { mobileEmailVerificationRoutes } from "./mobileEmailVerification.js";
 import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
 import { sweepStaleVoiceCalls } from "./mobile/voiceCalls.js";
 import { startStudioImageSweep, studioImageSweepMode } from "./mobile/studioImageSweep.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { publicShareRoutes } from "./mobile/shares/publicShareRoutes.js";
-import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
+import {
+  createShareRescreener,
+  liveShareRescreenModeration,
+  SHARE_RESCREEN_SWEEP_INTERVAL_MS
+} from "./mobile/shares/shareRescreen.js";
+import { closeQueue, reconcileUndispatchedGenerationJobs, redisConnection } from "./queue.js";
+import { startOperatorAlerts } from "./monitoring/operatorAlerts.js";
+import { createMailHealth, MAIL_VERIFY_INTERVAL_MS, mailerFeedingHealth } from "./monitoring/mailHealth.js";
+import { monitoringRoutes } from "./monitoring/monitoringRoutes.js";
+import { createReadinessProbe, readinessDeps } from "./monitoring/readiness.js";
+import { readinessRoutes } from "./monitoring/readinessRoutes.js";
 import { loadSerializedProjectStatus } from "./mobile/projectStatusSerializers.js";
 import { BOOK_PUSH_SWEEP_INTERVAL_MS, runBookPushSweep } from "./push/bookPushSweep.js";
 import { createPushSenderFromConfig } from "./push/pushSender.js";
@@ -39,7 +54,10 @@ import { adminPricingRoutes } from "./routes/adminPricing.js";
 import { adminProjectExportRoutes } from "./routes/adminProjectExports.js";
 import { adminSafetyRoutes } from "./routes/adminSafety.js";
 import { adminAppUpdateRoutes } from "./routes/adminAppUpdates.js";
+import { adminSpendControlRoutes } from "./routes/adminSpendControls.js";
+import { spendBreaker } from "./spendBreaker.js";
 import { adminShareRoutes } from "./routes/adminShares.js";
+import { adminAccountRoutes } from "./routes/adminAccounts.js";
 import { projectRoutes } from "./routes/projects.js";
 
 const config = loadConfig();
@@ -83,6 +101,21 @@ app.setErrorHandler((error: FastifyError, request, reply) => {
   });
 });
 
+// Production refuses to start without Play billing, refund notices, a strong
+// operator password, password-reset mail, its public origin and every provider
+// key the default model routing can select (packages/core/src/productionConfig.ts).
+// The report goes to stderr as plain lines, every missing setting at once.
+try {
+  enforceProductionConfig(config, "api", {
+    warn: (issue) => app.log.warn({ event: "config.production_warning", variables: issue.variables }, issue.message),
+    mockAi: (message) => app.log.error({ event: "config.mock_ai_in_production" }, message)
+  });
+} catch (error) {
+  if (!(error instanceof ProductionConfigError)) throw error;
+  console.error(error.message);
+  process.exit(1);
+}
+
 if (config.NODE_ENV === "production" && config.TRUST_PROXY_HOPS === 0) {
   app.log.warn(
     { event: "trust_proxy.unconfigured" },
@@ -101,17 +134,21 @@ try {
   process.exit(1);
 }
 
+// Everything below up to `listen` only *defines* the periodic housekeeping;
+// none of it runs until the API is listening (`backgroundSweeps.start()` after
+// `app.listen`, src/backgroundSweeps.ts). Awaiting first passes here — an S3
+// listing, account deletions, calls to Google — once kept a new release from
+// listening until the deploy's health wait gave up on it.
+const HOUR_MS = 60 * 60 * 1000;
+
 // Renderers have local scratch space only. Reap stale directories after a process crash.
 const sweepTemporaryFiles = async () => {
   try {
-    await sweepTemporaryDirectories({ minAgeMs: 24 * 60 * 60 * 1000 });
+    await sweepTemporaryDirectories({ minAgeMs: 24 * HOUR_MS });
   } catch (error) {
     app.log.warn({ err: error }, "Temporary renderer cleanup failed");
   }
 };
-await sweepTemporaryFiles();
-const temporarySweepTimer = setInterval(() => void sweepTemporaryFiles(), 60 * 60 * 1000);
-temporarySweepTimer.unref();
 
 // Uploaded user files are kept for 6 months; generated books and plans are kept forever.
 const sweepAttachments = async () => {
@@ -127,9 +164,6 @@ const sweepAttachments = async () => {
     app.log.warn({ err: error }, "Attachment retention sweep failed");
   }
 };
-await sweepAttachments();
-const attachmentSweepTimer = setInterval(() => void sweepAttachments(), 24 * 60 * 60 * 1000);
-attachmentSweepTimer.unref();
 
 // Writing Studio pictures (uploads, uploaded covers, AI Studio illustrations)
 // that no row of their book names any more. Paced and bounded per pass; it
@@ -149,9 +183,6 @@ const sweepVoiceCalls = async () => {
     app.log.warn({ err: error }, "Voice call settlement sweep failed");
   }
 };
-await sweepVoiceCalls();
-const voiceCallSweepTimer = setInterval(() => void sweepVoiceCalls(), 30_000);
-voiceCallSweepTimer.unref();
 
 // Account deletion requests are carried out once their grace period passes.
 // Nothing completed one before: the app and the public page promised deletion
@@ -166,29 +197,18 @@ const sweepAccountDeletions = async () => {
     app.log.warn({ err: error }, "Account deletion sweep failed");
   }
 };
-await sweepAccountDeletions();
-const accountDeletionSweepTimer = setInterval(() => void sweepAccountDeletions(), 60 * 60 * 1000);
-accountDeletionSweepTimer.unref();
 
-let recoveringMessages = false;
 const recoverMessages = async () => {
-  if (recoveringMessages) return;
-  recoveringMessages = true;
   try {
     await recoverMessageUsage();
   } catch (error) {
     app.log.warn({ err: error }, "Message reservation recovery failed");
-  } finally {
-    recoveringMessages = false;
   }
 };
-await recoverMessages();
-const messageRecoveryTimer = setInterval(() => void recoverMessages(), 30_000);
-messageRecoveryTimer.unref();
 
 // Credit prices are operator-editable and live in the database. Load them before
 // anything can be charged, then re-read on a timer so a second API instance
-// picks up a change made through the first.
+// picks up a change made through the first. The one load the API waits for.
 const refreshPricing = async () => {
   try {
     await loadCreditPricing();
@@ -200,6 +220,12 @@ const refreshPricing = async () => {
 await refreshPricing();
 const pricingRefreshTimer = setInterval(() => void refreshPricing(), 15_000);
 pricingRefreshTimer.unref();
+
+// While AI is paused or free accounts' spend is past the breaker's soft cap or
+// monthly ceiling, a free account's welcome grant waits for a later balance
+// read (src/spendBreaker.ts). Paying readers' spend never holds it.
+spendBreaker.useLogger(app.log);
+setWelcomeGrantHold(() => spendBreaker.holdsWelcomeGrants());
 
 // Google renews subscriptions on its own schedule and only the app finding out
 // used to trigger the next month's credits. This asks Google directly for the
@@ -220,9 +246,6 @@ const sweepSubscriptionRenewals = async () => {
     app.log.warn({ err: error, event: "subscription.renewal_sweep_failed" }, "Subscription renewal sweep failed");
   }
 };
-await sweepSubscriptionRenewals();
-const subscriptionRenewalTimer = setInterval(() => void sweepSubscriptionRenewals(), 60 * 60 * 1000);
-subscriptionRenewalTimer.unref();
 
 const reconcileQueue = async () => {
   try {
@@ -240,25 +263,21 @@ const reconcileQueue = async () => {
     app.log.warn({ err: error, event: "generation.consistency_warning" }, "Generation queue reconciliation failed");
   }
 };
-await reconcileQueue();
-const queueReconcileTimer = setInterval(() => void reconcileQueue(), 5_000);
-queueReconcileTimer.unref();
 
 // Book-progress and book-ready notifications (src/push/bookPushSweep.ts). With
 // no FCM key configured the sender is null, a warning is logged once, and the
 // sweep never runs. A sweep still running when the next tick comes is not
-// doubled: each one reads a dozen queries per followed book.
+// doubled (the scheduler is single-flight): each one reads a dozen queries per
+// followed book.
 const pushSender = await createPushSenderFromConfig(config, app.log);
-let bookPushSweepRunning = false;
 const sweepBookPushes = async () => {
-  if (!pushSender || bookPushSweepRunning) {
+  if (!pushSender) {
     return;
   }
-  bookPushSweepRunning = true;
   try {
     const swept = await runBookPushSweep({
       sender: pushSender,
-      loadStatus: (projectId, userId) => loadSerializedProjectStatus(projectId, config, userId),
+      loadStatus: (projectId) => loadSerializedProjectStatus(projectId, config),
       log: app.log
     });
     if (swept.settled > 0 || swept.unregistered > 0 || swept.failed > 0) {
@@ -266,12 +285,89 @@ const sweepBookPushes = async () => {
     }
   } catch (error) {
     app.log.warn({ err: error, event: "push.book_sweep_failed" }, "Book push sweep failed");
-  } finally {
-    bookPushSweepRunning = false;
   }
 };
-const bookPushTimer = pushSender ? setInterval(() => void sweepBookPushes(), BOOK_PUSH_SWEEP_INTERVAL_MS) : null;
-bookPushTimer?.unref();
+
+// A deleted book's prefixes are deleted again until they stay empty
+// (src/storageDeletionSweep.ts): a failed delete is retried, and what a
+// stopping job wrote afterwards is swept up.
+const sweepStorageDeletions = async () => {
+  const swept = await runStorageDeletionSweep({ log: app.log });
+  if (swept.objectsDeleted > 0 || swept.completed > 0 || swept.failed > 0) {
+    app.log.info({ event: "storage.deletions_swept", ...swept }, "Deleted books' storage swept");
+  }
+};
+
+// A public share serves only text screened at its book's current revision
+// (src/mobile/shares/shareRescreen.ts). This re-screens a bounded batch of live
+// shares whose book has moved; the public routes ask the same rescreener for
+// a share someone opens, at most once per share and revision.
+const shareRescreener = createShareRescreener({ moderation: liveShareRescreenModeration(config), log: app.log });
+const sweepShareRescreens = async () => {
+  const swept = await shareRescreener.sweep();
+  if (swept.checked > 0) {
+    app.log.info({ event: "share.rescreens_swept", ...swept }, "Shared books re-screened");
+  }
+};
+
+// Provider call logs no book names, product events and dead sessions, past
+// their retention (src/tablePruneSweep.ts).
+const pruneTables = async () => {
+  const pruned = await runTablePruneSweep();
+  if (pruned.providerCallLogs > 0 || pruned.productEvents > 0 || pruned.sessions > 0) {
+    app.log.info({ event: "retention.tables_pruned", ...pruned }, "Rows past retention pruned");
+  }
+};
+
+// Password-reset codes and operator alerts share one transport. Its connection
+// and credentials are verified after listen and every ten minutes
+// (src/monitoring/mailHealth.ts); /api/ready's `mail` check reads that answer.
+const mailer = createMailerFromConfig(config, app.log);
+if (!mailer) {
+  app.log.warn(
+    { event: "email.unconfigured" },
+    "No SMTP_URL configured; password reset will answer 503 EMAIL_UNAVAILABLE"
+  );
+}
+const mailHealth = createMailHealth({ mailer, log: app.log });
+// The reader-facing sends report each outcome into that answer too, so a
+// mailer that breaks between verifications fails readiness at its first failed
+// code rather than at the next ten-minute verify.
+const readerMailer = mailerFeedingHealth(mailer, mailHealth);
+
+// Readiness (src/monitoring/readiness.ts): Postgres, Redis, the bucket, mail,
+// both worker lanes' heartbeats and their oldest waiting job. Served at
+// /api/ready for an uptime monitor and read by the operator alert sweep below;
+// never by the compose healthcheck, which polls the shallow /api/health.
+const readinessProbe = createReadinessProbe(
+  readinessDeps({
+    db: prisma,
+    redis: redisConnection,
+    storageReady: () => objectStore().ready(),
+    mailReady: () => mailHealth.readinessCheck()
+  }),
+  { log: app.log }
+);
+
+const backgroundSweeps = createBackgroundSweeps(
+  [
+    { name: "temporary_files", intervalMs: HOUR_MS, run: sweepTemporaryFiles },
+    { name: "attachment_retention", intervalMs: 24 * HOUR_MS, run: sweepAttachments },
+    { name: "voice_call_settlement", intervalMs: 30_000, run: sweepVoiceCalls },
+    { name: "account_deletions", intervalMs: HOUR_MS, run: sweepAccountDeletions },
+    { name: "message_recovery", intervalMs: 30_000, run: recoverMessages },
+    { name: "subscription_renewals", intervalMs: HOUR_MS, run: sweepSubscriptionRenewals },
+    { name: "queue_reconcile", intervalMs: 5_000, run: reconcileQueue },
+    ...(pushSender
+      ? [{ name: "book_pushes", intervalMs: BOOK_PUSH_SWEEP_INTERVAL_MS, initialDelayMs: BOOK_PUSH_SWEEP_INTERVAL_MS, run: sweepBookPushes }]
+      : []),
+    { name: "mail_verify", intervalMs: MAIL_VERIFY_INTERVAL_MS, run: () => mailHealth.verify() },
+    { name: "storage_deletions", intervalMs: STORAGE_DELETION_SWEEP_INTERVAL_MS, initialDelayMs: 60_000, run: sweepStorageDeletions },
+    { name: "share_rescreen", intervalMs: SHARE_RESCREEN_SWEEP_INTERVAL_MS, initialDelayMs: 30_000, run: sweepShareRescreens },
+    { name: "table_prune", intervalMs: PRUNE_INTERVAL_MS, initialDelayMs: 10 * 60_000, run: pruneTables }
+  ],
+  app.log
+);
 
 await app.register(cors, corsOptionsFor(config));
 // Ahead of auth, so a build the operator has retired is told to update before
@@ -287,27 +383,46 @@ await app.register(swagger, {
   }
 });
 await app.register(swaggerUi, { routePrefix: "/docs" });
-await app.register(mobileAuthRoutes);
+// Sign-up mails the first email-verification code; the welcome grant waits
+// for a confirmed one (src/mobileEmailVerification.ts).
+await app.register(mobileAuthRoutes, { mailer: readerMailer });
 await app.register(mobileGoogleAuthRoutes);
-const mailer = createMailerFromConfig(config, app.log);
-if (!mailer) {
-  app.log.warn(
-    { event: "email.unconfigured" },
-    "No SMTP_URL configured; password reset will answer 503 EMAIL_UNAVAILABLE"
-  );
-}
-await app.register(mobilePasswordResetRoutes, { mailer });
+await app.register(mobilePasswordResetRoutes, { mailer: readerMailer });
+await app.register(mobileEmailVerificationRoutes, { mailer: readerMailer });
+// Emails OPERATOR_ALERT_EMAIL when production is down or degraded, once per
+// firing and once on recovery (src/monitoring/operatorAlerts.ts); only logs
+// without it. Through the same transport as the password-reset mail.
+const operatorAlerts = startOperatorAlerts({
+  db: prisma,
+  probe: readinessProbe,
+  spendBreaker,
+  mailer,
+  recipient: config.OPERATOR_ALERT_EMAIL,
+  publicUrl: config.PUBLIC_API_URL,
+  log: app.log
+});
+await app.register(readinessRoutes, { probe: readinessProbe });
+// POST /api/admin/monitoring/test-alert: the owner's check that alert mail arrives.
+await app.register(monitoringRoutes, {
+  mailer,
+  mailHealth,
+  recipient: config.OPERATOR_ALERT_EMAIL,
+  publicUrl: config.PUBLIC_API_URL
+});
 await app.register(mobileProjectRoutes);
 await app.register(googlePlayRtdnRoutes, { config });
 await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);
 await app.register(appUpdateRoutes);
 // Outside /api/ and outside the auth surface; also named in deploy/nginx.conf.
-await app.register(publicShareRoutes);
+await app.register(publicShareRoutes, { rescreener: shareRescreener });
 await app.register(adminPricingRoutes);
 await app.register(adminSafetyRoutes);
 await app.register(adminAppUpdateRoutes);
+await app.register(adminSpendControlRoutes);
 await app.register(adminShareRoutes);
+// Suspend an account or turn its sharing off (src/accountModeration.ts).
+await app.register(adminAccountRoutes);
 await app.register(adminGenerationQualityRoutes);
 await app.register(adminProjectExportRoutes);
 await app.register(adminAnalyticsRoutes);
@@ -330,13 +445,9 @@ if (webDistDir) {
 }
 
 const shutdown = async () => {
-  clearInterval(temporarySweepTimer);
-  clearInterval(attachmentSweepTimer);
-  clearInterval(voiceCallSweepTimer);
-  clearInterval(messageRecoveryTimer);
+  backgroundSweeps.stop();
   clearInterval(pricingRefreshTimer);
-  clearInterval(queueReconcileTimer);
-  if (bookPushTimer) clearInterval(bookPushTimer);
+  operatorAlerts.stop();
   await studioImageSweep.stop();
   await app.close();
   // The lazy export rebuild renders in this process too, so the API holds a
@@ -378,6 +489,10 @@ for (const signal of TERMINATION_SIGNALS) {
 }
 
 await app.listen({ host: config.API_HOST, port: config.API_PORT });
+// Only now: the first pass of every sweep runs on a later tick and is never awaited.
+backgroundSweeps.start();
+// The Quality tab's saved routing outlives a removed key; say so once at boot.
+void warnAboutUnkeyedSavedRouting(config, app.log);
 
 function findWebDistDir(start = process.cwd()): string | undefined {
   let current = start;

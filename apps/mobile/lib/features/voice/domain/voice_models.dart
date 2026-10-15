@@ -37,12 +37,14 @@ class VoiceCharacter {
       name: json['name'] as String? ?? 'Character',
       role: json['role'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      traits: (json['traits'] as List<dynamic>? ?? const []).whereType<String>().toList(
-        growable: false,
-      ),
+      traits: (json['traits'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
       status: voiceCharacterStatusFrom(json['status'] as String?),
       needsPreparation: json['needsPreparation'] as bool? ?? false,
-      image: image is Map<String, dynamic> ? MobileProjectImage.fromJson(image) : null,
+      image: image is Map<String, dynamic>
+          ? MobileProjectImage.fromJson(image)
+          : null,
       libraryCharacterId: json['libraryCharacterId'] as String?,
       libraryPortraitUrl: json['libraryPortraitUrl'] as String?,
     );
@@ -132,7 +134,8 @@ class VoiceCast {
 
   /// Minutes the current balance pays for, floored — what the cast sheet
   /// promises has to be time the user definitely has.
-  int get affordableMinutes => creditsPerMinute <= 0 ? 0 : availableCredits ~/ creditsPerMinute;
+  int get affordableMinutes =>
+      creditsPerMinute <= 0 ? 0 : availableCredits ~/ creditsPerMinute;
 }
 
 /// Why a call did not start: the hold it needs, named so the toast, the cast
@@ -174,7 +177,8 @@ class VoiceCallSession {
       secondsRemaining: json['secondsRemaining'] as int? ?? 0,
       creditsPerMinute: json['creditsPerMinute'] as int? ?? 0,
       heartbeatSeconds: json['heartbeatSeconds'] as int? ?? 20,
-      maxCallSeconds: json['maxCallSeconds'] as int? ?? 1800,
+      // The server always sends it; a call ends at 15 minutes.
+      maxCallSeconds: json['maxCallSeconds'] as int? ?? 900,
     );
   }
 
@@ -237,7 +241,15 @@ class VoiceCallMeter {
 /// `preparing` is the first-call persona build; `ringing` is the socket
 /// handshake. They are separate states because they need different words —
 /// "Waking Marlow up" reads very differently from "Connecting".
-enum VoiceCallPhase { idle, preparing, ringing, connected, reconnecting, ended, failed }
+enum VoiceCallPhase {
+  idle,
+  preparing,
+  ringing,
+  connected,
+  reconnecting,
+  ended,
+  failed,
+}
 
 /// One line of the live transcript.
 class VoiceCallCaption {

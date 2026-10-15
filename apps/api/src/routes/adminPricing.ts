@@ -10,12 +10,21 @@
  * *before* committing it, priced through the same `estimateFullBookCreditCost`
  * production uses. Re-implementing the arithmetic in the browser would be the
  * obvious alternative and would drift the first time the formula changed.
+ *
+ * Every dollar figure here — the preview's "≈ $" and the console's projected
+ * profit, which multiplies by `creditUsdValue` — values a credit at
+ * `CHEAPEST_PAID_CREDIT_USD_VALUE`, the least a credit sold for money earns
+ * after Google's fee. It used to be the notional $0.01 (`CREDIT_USD_VALUE`),
+ * which no credit sells at, so the editor read every margin 3.5–4.7× too rosy
+ * (launch review, 2026-10-13; `../admin/CLAUDE.md`). A projection has no
+ * ledger behind it, so it takes the conservative value.
  */
 
 import {
   CREDIT_PRICING_KEYS,
   CREDIT_PRICING_LIMITS,
-  CREDIT_USD_VALUE,
+  CREDIT_PRICING_MINIMUMS,
+  CHEAPEST_PAID_CREDIT_USD_VALUE,
   DEFAULT_CREDIT_COSTS,
   type CreditPricing,
   type ModelTier,
@@ -34,7 +43,7 @@ import {
 } from "@book-maker/db";
 import { type FastifyPluginAsync, type FastifyReply } from "fastify";
 import { z } from "zod";
-import { markOperatorRequest } from "../requestAuth.js";
+import { requireOperatorActor } from "../requestAuth.js";
 import { resolveWindow } from "../admin/metrics.js";
 import { loadPricingDrivers } from "../admin/pricingDrivers.js";
 
@@ -102,7 +111,10 @@ const pricingValuesOpenApi = {
   additionalProperties: false,
   required: CREDIT_PRICING_KEYS,
   properties: Object.fromEntries(
-    CREDIT_PRICING_KEYS.map((key) => [key, { type: "integer", minimum: 0, maximum: CREDIT_PRICING_LIMITS[key] }])
+    CREDIT_PRICING_KEYS.map((key) => [
+      key,
+      { type: "integer", minimum: CREDIT_PRICING_MINIMUMS[key] ?? 0, maximum: CREDIT_PRICING_LIMITS[key] }
+    ])
   )
 } as const;
 
@@ -135,8 +147,10 @@ const previewBodyOpenApi = {
 } as const;
 
 export const adminPricingRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.get("/api/admin/pricing", { schema: { tags: ["admin"] } }, async (request) => {
-    await markOperatorRequest(request);
+  fastify.get("/api/admin/pricing", { schema: { tags: ["admin"] } }, async (request, reply) => {
+    if (!(await requireOperatorActor(request, reply))) {
+      return;
+    }
     const [state, revisions] = await Promise.all([
       getCreditPricingState(),
       listCreditPricingRevisions(REVISION_HISTORY_LIMIT)
@@ -145,7 +159,9 @@ export const adminPricingRoutes: FastifyPluginAsync = async (fastify) => {
       ...serializeState(state),
       defaults: { ...DEFAULT_CREDIT_COSTS },
       limits: { ...CREDIT_PRICING_LIMITS },
-      creditUsdValue: CREDIT_USD_VALUE,
+      // Every key's floor, so the console validates what the save will.
+      minimums: Object.fromEntries(CREDIT_PRICING_KEYS.map((key) => [key, CREDIT_PRICING_MINIMUMS[key] ?? 0])),
+      creditUsdValue: CHEAPEST_PAID_CREDIT_USD_VALUE,
       preview: previewFor(state.values),
       revisions: revisions.map((revision) => ({
         version: revision.version,
@@ -161,7 +177,10 @@ export const adminPricingRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/pricing",
     { attachValidation: true, schema: { tags: ["admin"], body: saveBodyOpenApi } },
     async (request, reply) => {
-      const operator = await markOperatorRequest(request);
+      const operator = await requireOperatorActor(request, reply);
+      if (!operator) {
+        return;
+      }
       const parsed = saveBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return sendValidationError(reply, parsed.error);
@@ -186,7 +205,10 @@ export const adminPricingRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/pricing/revert",
     { attachValidation: true, schema: { tags: ["admin"], body: revertBodyOpenApi } },
     async (request, reply) => {
-      const operator = await markOperatorRequest(request);
+      const operator = await requireOperatorActor(request, reply);
+      if (!operator) {
+        return;
+      }
       const parsed = revertBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return sendValidationError(reply, parsed.error);
@@ -217,7 +239,9 @@ export const adminPricingRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/pricing/drivers",
     { attachValidation: true, schema: { tags: ["admin"], querystring: driverQueryOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = driverQuerySchema.safeParse(request.query);
       if (!parsed.success) {
         return sendValidationError(reply, parsed.error);
@@ -231,7 +255,9 @@ export const adminPricingRoutes: FastifyPluginAsync = async (fastify) => {
     "/api/admin/pricing/preview",
     { attachValidation: true, schema: { tags: ["admin"], body: previewBodyOpenApi } },
     async (request, reply) => {
-      await markOperatorRequest(request);
+      if (!(await requireOperatorActor(request, reply))) {
+        return;
+      }
       const parsed = previewBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return sendValidationError(reply, parsed.error);
@@ -274,7 +300,7 @@ function previewFor(values: CreditPricing) {
       planningCredits: planning.credits,
       bookGenerationCredits: estimate.totalCredits,
       totalCredits: planning.credits + estimate.totalCredits,
-      estimatedUsd: Math.round((planning.credits + estimate.totalCredits) * CREDIT_USD_VALUE * 100) / 100,
+      estimatedUsd: Math.round((planning.credits + estimate.totalCredits) * CHEAPEST_PAID_CREDIT_USD_VALUE * 100) / 100,
       lineItems: [
         {
           code: "PLAN_GENERATION",

@@ -8,6 +8,7 @@
  */
 import {
   DEFAULT_BILLING_PRODUCTS,
+  RETIRED_BILLING_PRODUCT_SKUS,
   PLAN_ENTITLEMENT_TYPES,
   jsonRecord,
   type BillingOperation,
@@ -17,8 +18,19 @@ import {
 import { prisma } from "./client.ts";
 import { type BillingTx, hashPurchaseToken, jsonInput, runSerializable } from "./billingInternals.ts";
 import { grantCreditsTx } from "./billingLedger.ts";
-import { ensureCurrentPlanPeriodTx, grantSubscriptionPlanPeriodTx } from "./planPeriods.ts";
-import { recordPurchasePaymentTx } from "./purchasePayments.ts";
+import { ensureCurrentPlanPeriodTx } from "./planPeriods.ts";
+import { type PaymentLocalPrice, recordPurchasePaymentTx } from "./purchasePayments.ts";
+import { paidPriceMicros } from "./subscriptionAllowance.ts";
+import {
+  type OrderPurchaseRecord,
+  type PlannedAllowanceMonth,
+  type RecordedOrderMonth,
+  grantPlannedMonthTx,
+  keepPaidPeriodTx,
+  orderCreditsGranted,
+  planRecordedOrderMonthTx,
+  planVerifiedOrderMonthTx
+} from "./subscriptionMonths.ts";
 
 import { applyGooglePlayRefundTx, recordGooglePlayRefundTx, runGooglePlayTransaction } from "./googlePlayRefunds.ts";
 
@@ -47,9 +59,35 @@ export type VerifiedGooglePlayPurchase = {
     currentPeriodEnd?: Date | null | undefined;
     /** False once the reader has cancelled. Null when the provider did not say. */
     autoRenewing?: boolean | null | undefined;
+    /**
+     * Which phase of its offer the current period is: a free trial grants the
+     * plan but no credits and no payment; an introductory price grants the
+     * allowance at the offer's price. Null when Google did not say.
+     */
+    offerPhase?: "free_trial" | "introductory" | "base" | "proration" | null | undefined;
+    /** The Play Console offer ID, when the subscription was bought through an offer. */
+    offerId?: string | null | undefined;
+    /** Google's base-plan recurring price in the buyer's currency, before tax and discounts. */
+    recurringPrice?: { micros: number; currency: string } | null | undefined;
+    /** When Google will resume a paused or on-hold subscription on its own. */
+    resumesAt?: Date | null | undefined;
+    /**
+     * A plan change Play deferred to the end of the paid period (the app's
+     * downgrade, `ReplacementMode.DEFERRED`). Until `takesEffectAt` this token
+     * carries `fromProductSku`, which the linked token already paid for and was
+     * granted; `productSku` is the plan it renews into. Nothing is granted for
+     * it now, and the replaced plan keeps its entitlement and allowance.
+     */
+    deferredReplacement?: { fromProductSku: string; takesEffectAt: Date | null } | null | undefined;
   } | null | undefined;
   metadata?: Record<string, unknown> | undefined;
 };
+
+/**
+ * What the app says Play charged, from Play's own product details — analytics
+ * only, never a grant. Integer micros of an ISO 4217 currency.
+ */
+export type GooglePlayClientPrice = { micros: number; currency: string };
 
 export type GooglePlayPurchaseRecordResult = {
   purchaseRecordId: string;
@@ -58,6 +96,8 @@ export type GooglePlayPurchaseRecordResult = {
   ledgerEntryId: string | null;
   subscriptionStatus: string | null;
   entitlementType: string | null;
+  /** A plan change Play deferred: the plan it moves to and when. Nothing was granted for it. */
+  scheduledChange?: { productSku: string; startsAt: Date | null } | undefined;
 };
 
 export async function ensureDefaultProductCatalog(): Promise<void> {
@@ -92,11 +132,16 @@ export async function ensureDefaultProductCatalog(): Promise<void> {
       }
     });
   }
+  await prisma.productCatalog.updateMany({
+    where: { sku: { in: [...RETIRED_BILLING_PRODUCT_SKUS] }, active: true },
+    data: { active: false }
+  });
 }
 
 export async function recordVerifiedGooglePlayPurchase(options: {
   userId: string;
   verification: VerifiedGooglePlayPurchase;
+  clientPrice?: GooglePlayClientPrice | undefined;
 }): Promise<GooglePlayPurchaseRecordResult> {
   return runGooglePlayTransaction((tx) => recordVerifiedGooglePlayPurchaseTx(tx, options));
 }
@@ -104,8 +149,10 @@ export async function recordVerifiedGooglePlayPurchase(options: {
 async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
   userId: string;
   verification: VerifiedGooglePlayPurchase;
+  clientPrice?: GooglePlayClientPrice | undefined;
 }): Promise<GooglePlayPurchaseRecordResult> {
   const { userId, verification } = options;
+  const deferred = verification.kind === "subscription" ? verification.subscription?.deferredReplacement ?? null : null;
   const tokenHash = hashPurchaseToken(verification.purchaseToken);
   const now = new Date();
   const product = await tx.productCatalog.findUnique({
@@ -127,15 +174,21 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
 
   const existing = await tx.purchaseRecord.findFirst({
     where: { provider: "GOOGLE_PLAY", purchaseTokenHash: tokenHash },
-    select: { id: true, userId: true, creditsGranted: true, status: true, externalPurchaseId: true, metadata: true }
+    select: {
+      id: true, userId: true, creditsGranted: true, status: true, externalPurchaseId: true, metadata: true,
+      localPriceMicros: true, localCurrency: true, productId: true, purchaseTokenHash: true
+    }
   });
   if (existing && existing.userId !== userId) {
     throw new Error("This Google Play purchase is already linked to another account.");
   }
   const grantIdempotencyKey = googlePlayGrantIdempotencyKey(verification, tokenHash);
+  const paid = paidPriceMicros(product, verification);
+  const localPrice = paymentLocalPrice(verification, options.clientPrice, existing, paid.amountSource);
   const recordPayment = (purchaseRecordId: string) => recordPurchasePaymentTx(tx, {
     userId, purchaseRecordId, tokenHash, idempotencyKey: grantIdempotencyKey,
-    priceMicros: product.priceMicros, currency: product.currency, verification, now
+    priceMicros: paid.priceMicros, amountSource: paid.amountSource, currency: product.currency, verification, now,
+    localPrice
   });
   // Historical payment evidence survives even when the access-state guard
   // correctly ignores a stale receipt. The payment's own key/refund markers dedupe it.
@@ -172,9 +225,13 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
     return { purchaseRecordId: existing.id, status: "REVOKED", creditsGranted: existing.creditsGranted,
       ledgerEntryId: null, subscriptionStatus: null, entitlementType: null };
   }
-  if (verification.kind === "subscription" && verification.grantable && refund?.refundableQuantity !== 0) {
-    await retireReplacedSubscriptionTx(tx, userId, verification, tokenHash, now);
+  if (existing && verification.kind === "subscription" && !verification.grantable) {
+    const kept = await keepPaidPeriodTx(tx, { userId, product, purchase: existing, tokenHash, now });
+    if (kept) return kept;
   }
+  const retired = verification.kind === "subscription" && verification.grantable && refund?.refundableQuantity !== 0
+    ? await retireReplacedSubscriptionTx(tx, userId, verification, tokenHash, now, deferred !== null)
+    : null;
   const purchaseStatus = purchaseRecordStatusForVerification(verification);
   const recordData = {
     productId: product.id,
@@ -182,6 +239,12 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
     status: purchaseStatus,
     amountMicros: product.priceMicros,
     currency: product.currency,
+    // The app's latest report, kept where a later grant (a pending pack that
+    // clears through RTDN) can still find it. Never cleared by a report-less
+    // verification: the sweep and RTDN know nothing of the buyer's currency.
+    ...(options.clientPrice
+      ? { localPriceMicros: BigInt(options.clientPrice.micros), localCurrency: options.clientPrice.currency }
+      : {}),
     purchasedAt: verification.purchasedAt ?? null,
     verifiedAt: now,
     metadata: jsonInput(verificationMetadata(verification, tokenHash))
@@ -208,6 +271,28 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
       ledgerEntryId: null, subscriptionStatus: null, entitlementType: null };
   }
 
+  // The month this verification grants: the order's own (`subscriptionMonths.ts`),
+  // or — for a deferred downgrade — the old plan's, whose paid months the new
+  // token carries. Planned before the state row is written, because the row is
+  // due again when the next month starts, not only when Google's period ends.
+  let planned: PlannedAllowanceMonth | null = null;
+  let carried: RecordedOrderMonth | null = null;
+  if (verification.kind === "subscription" && verification.grantable) {
+    if (deferred) {
+      carried = retired ? await planRecordedOrderMonthTx(tx, { record: retired.record, periodEnd: deferred.takesEffectAt, now }) : null;
+    } else {
+      planned = await planVerifiedOrderMonthTx(tx, {
+        product, verification, purchaseRecordId: purchaseRecord.id, orderKey: grantIdempotencyKey,
+        // The token's first paid order: nothing earlier recorded on it, or this same order again.
+        firstOrder: !existing?.externalPurchaseId || existing.externalPurchaseId === (verification.externalPurchaseId ?? null),
+        // A switch that took effect where the old plan's paid time ran out carried no time over.
+        startsAtOldPlanEnd: hasDeferredReplacement(existing?.metadata) ||
+          (retired?.replacedPeriodEnd != null && retired.replacedPeriodEnd <= now),
+        now
+      });
+    }
+  }
+
   // Recorded whether or not this verification grants anything: an expired or
   // canceled subscription has to update its state row too, or the renewal sweep
   // keeps polling a subscription Google has already closed.
@@ -222,6 +307,8 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
       currentPeriodStart: verification.subscription.currentPeriodStart ?? null,
       currentPeriodEnd: verification.subscription.currentPeriodEnd ?? null,
       autoRenewing: verification.subscription.autoRenewing ?? null,
+      resumesAt: verification.subscription.resumesAt ?? null,
+      nextMonthAt: (deferred ? carried?.nextMonthAt : planned?.nextMonthAt) ?? null,
       metadata: verificationMetadata(verification, tokenHash)
     });
   }
@@ -248,8 +335,46 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
     };
   }
 
+  if (deferred) {
+    // A downgrade Play deferred to renewal: the token carries the old plan
+    // until then, and the old plan was paid for and granted under its own
+    // token. The new plan is granted nothing now. The old plan's entitlement
+    // moves onto this record — Google transfers the remaining time to this
+    // token, and a later switch away from it must take that entitlement down
+    // with it — and the allowance stays on the old period. A plan granted by
+    // the month (the yearly one) keeps being granted its paid months from this
+    // token: the old token is closed, so this row is the one the renewal sweep
+    // polls, at each of those months and then at `takesEffectAt`, when the new
+    // plan's first paid period grants as usual.
+    if (retired) {
+      await tx.userEntitlement.updateMany({
+        where: { purchaseRecordId: retired.record.id, status: "ACTIVE", type: { in: PLAN_ENTITLEMENT_TYPES } },
+        data: { purchaseRecordId: purchaseRecord.id }
+      });
+    }
+    const carriedEntry = carried
+      ? await grantPlannedMonthTx(tx, {
+          userId, productId: carried.productId, purchaseRecordId: carried.purchaseRecordId, tokenHash: carried.tokenHash,
+          description: carried.description, metadata: { ...carried.grantMetadata, carriedBy: "deferred_replacement" },
+          planned: carried, now
+        })
+      : null;
+    if (carried && retired) {
+      await tx.purchaseRecord.update({ where: { id: carried.purchaseRecordId },
+        data: { creditsGranted: orderCreditsGranted(carried, carriedEntry, retired.record.creditsGranted) } });
+    }
+    return {
+      purchaseRecordId: purchaseRecord.id,
+      status: purchaseRecord.status,
+      creditsGranted: purchaseRecord.creditsGranted,
+      ledgerEntryId: carried && !carried.alreadyGranted ? carriedEntry?.id ?? null : null,
+      subscriptionStatus: verification.subscription?.status ?? null,
+      entitlementType: null,
+      scheduledChange: { productSku: product.sku, startsAt: deferred.takesEffectAt }
+    };
+  }
+
   const quantity = verification.kind === "one_time" ? Math.max(1, Math.floor(verification.quantity ?? 1)) : 1;
-  const amountCredits = product.creditAmount * quantity;
   const grantMetadata = {
     productSku: product.sku,
     provider: "GOOGLE_PLAY",
@@ -266,6 +391,16 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
     // Entitlement before credits: if the grant fails and the app retries, a user
     // who has already paid is at least on the right plan in the meantime.
     if (entitlementType && subscriptionEntitlementIsActive(verification.subscription.status)) {
+      // A deferred change that has taken effect leaves the plan it replaced on
+      // this record; that one has run out now.
+      await tx.userEntitlement.updateMany({
+        where: {
+          purchaseRecordId: purchaseRecord.id,
+          status: "ACTIVE",
+          type: { in: PLAN_ENTITLEMENT_TYPES.filter((type) => type !== entitlementType) }
+        },
+        data: { status: "EXPIRED", expiresAt: now }
+      });
       await upsertSubscriptionEntitlement(tx, {
         userId,
         type: entitlementType,
@@ -277,26 +412,21 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
     }
   }
 
-  // A subscription's credits are the period's allowance — they reset at the next
-  // renewal rather than stacking up. Anything bought outright is added to the
-  // pool that never expires.
+  // A subscription's credits are a month's allowance — they reset at the next
+  // month rather than stacking up, and a period longer than a month is granted
+  // one month at a time (`subscriptionMonths.ts`). Anything bought outright is
+  // added to the pool that never expires.
+  const amountCredits = product.creditAmount * quantity;
   const ledgerEntry =
-    amountCredits <= 0
-      ? null
-      : verification.kind === "subscription"
-        ? await grantSubscriptionPlanPeriodTx(tx, {
-            userId,
-            productId: product.id,
-            purchaseRecordId: purchaseRecord.id,
-            tokenHash,
-            allowance: amountCredits,
-            periodStart: verification.subscription?.currentPeriodStart ?? null,
-            periodEnd: verification.subscription?.currentPeriodEnd ?? null,
-            idempotencyKey: grantIdempotencyKey,
-            description: `${product.title} monthly credits`,
-            metadata: grantMetadata,
-            now
+    verification.kind === "subscription"
+      ? planned
+        ? await grantPlannedMonthTx(tx, {
+            userId, productId: product.id, purchaseRecordId: purchaseRecord.id, tokenHash,
+            description: `${product.title} plan credits`, metadata: grantMetadata, planned, now
           })
+        : null
+      : amountCredits <= 0
+        ? null
         : await grantCreditsTx(tx, {
             userId,
             productId: product.id,
@@ -311,12 +441,15 @@ async function recordVerifiedGooglePlayPurchaseTx(tx: BillingTx, options: {
   // `creditsGranted` records what was actually deposited: a subscription
   // period that was adopted rather than re-granted deposits nothing
   // (`entry: null`), and stamping the full allowance onto it would overstate
-  // delivered credits everywhere the record is read back.
+  // delivered credits everywhere the record is read back. A subscription's is
+  // what its current order's months have granted so far.
   const updatedPurchase = await tx.purchaseRecord.update({
     where: { id: purchaseRecord.id },
     data: {
       status: "GRANTED",
-      creditsGranted: ledgerEntry ? amountCredits : purchaseRecord.creditsGranted
+      creditsGranted: verification.kind === "subscription"
+        ? orderCreditsGranted(planned, ledgerEntry, purchaseRecord.creditsGranted)
+        : ledgerEntry ? amountCredits : purchaseRecord.creditsGranted
     },
     select: { id: true, status: true, creditsGranted: true }
   });
@@ -387,12 +520,22 @@ async function staleSubscriptionVerificationResult(
   };
 }
 
-/** Only Google's verified replacement link may retire a previous purchase. */
+/**
+ * Only Google's verified replacement link may retire a previous purchase.
+ * Returns the retired record, and the paid end its token's state row held
+ * before this retired it.
+ *
+ * An immediate switch ends the old plan now. A deferred one (`deferred`) only
+ * closes the old token — Google reports it expired and moves its remaining
+ * time onto the new one — while the old plan's entitlement and allowance run
+ * to the end of the period they were paid for; the caller moves that
+ * entitlement onto the new record.
+ */
 async function retireReplacedSubscriptionTx(
-  tx: BillingTx, userId: string, verification: VerifiedGooglePlayPurchase, tokenHash: string, now: Date
-): Promise<void> {
+  tx: BillingTx, userId: string, verification: VerifiedGooglePlayPurchase, tokenHash: string, now: Date, deferred: boolean
+): Promise<{ record: OrderPurchaseRecord; replacedPeriodEnd: Date | null } | null> {
   const linkedToken = verification.metadata?.linkedPurchaseToken;
-  if (typeof linkedToken !== "string" || !linkedToken.trim()) return;
+  if (typeof linkedToken !== "string" || !linkedToken.trim()) return null;
   const oldHash = hashPurchaseToken(linkedToken);
   if (oldHash === tokenHash) throw new Error("A Google Play subscription cannot replace itself.");
   const previous = await tx.purchaseRecord.findFirst({
@@ -417,17 +560,28 @@ async function retireReplacedSubscriptionTx(
     : await tx.purchaseRecord.create({ data: {
         userId, provider: "GOOGLE_PLAY", purchaseTokenHash: oldHash, currency: "USD", status: "REVOKED", ...retirement
       } });
-  await tx.userEntitlement.updateMany({
-    where: { purchaseRecordId: retired.id, status: "ACTIVE" }, data: { status: "EXPIRED", expiresAt: now }
-  });
+  if (!deferred) {
+    await tx.userEntitlement.updateMany({
+      where: { purchaseRecordId: retired.id, status: "ACTIVE" }, data: { status: "EXPIRED", expiresAt: now }
+    });
+  }
   const subscription = await tx.subscriptionState.findFirst({
     where: { provider: "GOOGLE_PLAY", externalSubscriptionId: oldHash }
   });
   if (subscription) {
+    // Deferred, the old row keeps the end of the period it paid for; the new
+    // token's row carries the same date and is the one the sweep polls.
     await tx.subscriptionState.update({ where: { id: subscription.id }, data: {
-      status: "EXPIRED", autoRenewing: false, currentPeriodEnd: now, nextCreditGrantAt: null
+      status: "EXPIRED", autoRenewing: false, nextCreditGrantAt: null, ...(deferred ? {} : { currentPeriodEnd: now })
     } });
   }
+  return { record: retired, replacedPeriodEnd: subscription?.currentPeriodEnd ?? null };
+}
+
+/** Whether a record's last verification was a deferred plan change, before it took effect. */
+function hasDeferredReplacement(metadata: unknown): boolean {
+  const change = jsonRecord(jsonRecord(metadata).subscription).deferredReplacement;
+  return change !== null && typeof change === "object";
 }
 
 export type EndSubscriptionResult = {
@@ -504,6 +658,33 @@ function purchaseRecordStatusForVerification(verification: VerifiedGooglePlayPur
     : "FAILED";
 }
 
+/**
+ * The buyer's own price for the payment this verification records. The app's
+ * report wins; a pack pending when the app reported it is found again on its
+ * record. A full-price subscription period nobody verified from the app (the
+ * renewal sweep, RTDN) takes Google's recurring base-plan price, which is
+ * what that period charged before tax. Never decides anything but analytics.
+ */
+function paymentLocalPrice(
+  verification: VerifiedGooglePlayPurchase,
+  clientPrice: GooglePlayClientPrice | undefined,
+  existing: { localPriceMicros: bigint | null; localCurrency: string | null } | null,
+  amountSource: string
+): PaymentLocalPrice | null {
+  if (clientPrice) {
+    return { micros: BigInt(clientPrice.micros), currency: clientPrice.currency, source: "client" };
+  }
+  if (verification.kind === "one_time" && existing?.localPriceMicros != null && existing.localCurrency) {
+    return { micros: existing.localPriceMicros, currency: existing.localCurrency, source: "client" };
+  }
+  const recurring = verification.subscription?.recurringPrice;
+  if (verification.kind === "subscription" && amountSource === "catalog_snapshot" && recurring &&
+    (verification.subscription?.offerPhase === "base" || verification.subscription?.offerPhase == null)) {
+    return { micros: BigInt(recurring.micros), currency: recurring.currency, source: "play_recurring_price" };
+  }
+  return null;
+}
+
 function googlePlayGrantIdempotencyKey(verification: VerifiedGooglePlayPurchase, tokenHash: string): string {
   if (verification.kind === "subscription") {
     const periodKey =
@@ -530,6 +711,9 @@ async function upsertSubscriptionState(tx: BillingTx, options: {
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
   autoRenewing: boolean | null;
+  resumesAt: Date | null;
+  /** When the order's next month starts, if one does before its period ends. */
+  nextMonthAt?: Date | null | undefined;
   metadata: Record<string, unknown>;
 }): Promise<void> {
   const existing = await tx.subscriptionState.findFirst({
@@ -558,8 +742,17 @@ async function upsertSubscriptionState(tx: BillingTx, options: {
     // subscription whose verification carried no period end must NOT go null —
     // that drops a paying subscriber out of the sweep for good, so the next
     // sweep re-asks Google instead until an expiry is reported.
+    // A paused or on-hold subscription is asked about again when Google says
+    // it resumes, rather than every hour from a period end long past. A plan
+    // granted by the month inside a longer period (a yearly plan, or a switch's
+    // carried time) is asked about at each month's start: the sweep is what
+    // grants months two to twelve.
     nextCreditGrantAt:
-      options.status === "EXPIRED" ? null : (options.currentPeriodEnd ?? new Date()),
+      options.status === "EXPIRED"
+        ? null
+        : options.status === "PAUSED" && options.resumesAt && options.resumesAt > new Date()
+          ? options.resumesAt
+          : (options.nextMonthAt ?? options.currentPeriodEnd ?? new Date()),
     // When it was first seen to be ending, not when we last looked: the sweep
     // re-verifies a cancelled subscription every hour until it expires.
     canceledAt: cancelling ? (existing?.canceledAt ?? new Date()) : null,
@@ -637,7 +830,15 @@ function verificationMetadata(verification: VerifiedGooglePlayPurchase, tokenHas
       ? {
           status: verification.subscription.status,
           currentPeriodStart: verification.subscription.currentPeriodStart?.toISOString() ?? null,
-          currentPeriodEnd: verification.subscription.currentPeriodEnd?.toISOString() ?? null
+          currentPeriodEnd: verification.subscription.currentPeriodEnd?.toISOString() ?? null,
+          ...(verification.subscription.deferredReplacement
+            ? {
+                deferredReplacement: {
+                  fromProductSku: verification.subscription.deferredReplacement.fromProductSku,
+                  takesEffectAt: verification.subscription.deferredReplacement.takesEffectAt?.toISOString() ?? null
+                }
+              }
+            : {})
         }
       : null,
     ...verification.metadata

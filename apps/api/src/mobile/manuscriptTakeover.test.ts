@@ -157,6 +157,32 @@ describe("taking over a finished generated book", () => {
     expect((await publish(app, "project-gen", "request-publish-0001")).json().error.code).toBe("NOTHING_TO_PUBLISH");
   });
 
+  it("brings the book's dedication into the Studio's settings, so the first Update prints it rather than dropping it", async () => {
+    seedGeneratedBook(db);
+    project().bookMatter = { dedication: "For Mira, who kept the light", isbn: "978-0-00-000000-0" };
+    const body = (await takeOver(app, "project-gen")).json();
+
+    expect(body.manuscript).toMatchObject({ dedication: "For Mira, who kept the light", hasUnpublishedChanges: false });
+    expect(db.manuscripts[0]!.settings).toMatchObject({
+      dedication: "For Mira, who kept the light",
+      // Recorded as already published, so it is not a change waiting for an Update.
+      published: { dedication: "For Mira, who kept the light" }
+    });
+
+    // An Update writes it back where it came from, beside the matter the Studio does not own.
+    project().status = "COMPLETE";
+    const chapter = (await getChapter(app, "project-gen", body.manuscript.chapters[0].id)).json().chapter;
+    await saveChapter(app, "project-gen", { id: chapter.id, revision: chapter.revision, title: chapter.title }, `${chapter.markdown}\n\nThe end.`);
+    expect((await publish(app, "project-gen", "request-publish-after-takeover")).statusCode).toBe(200);
+    expect(project().bookMatter).toEqual({ dedication: "For Mira, who kept the light", isbn: "978-0-00-000000-0" });
+  });
+
+  it("opens with no dedication when the book had none", async () => {
+    seedGeneratedBook(db);
+    const body = (await takeOver(app, "project-gen")).json();
+    expect(body.manuscript.dedication).toBeNull();
+  });
+
   it("queues one free skip-review recompile, no cover, and seals every earlier edit", async () => {
     seedGeneratedBook(db);
     state.bookEditOperations.push(appliedEditOperationRecord({ id: "op-before", projectId: "project-gen", classifier: { kind: "local_patch" } }));
@@ -164,6 +190,8 @@ describe("taking over a finished generated book", () => {
     const compiles = db.enqueued.filter((job) => job.type === "COMPILE_EXPORT");
     expect(compiles).toHaveLength(1);
     expect(compiles[0]).toMatchObject({ contentRevision: 4, dispatch: false, payload: { planId: "plan-project-gen", skipFinalReview: true } });
+    // The generated book's charge is not this free compile's to refund (launch review B3).
+    expect(compiles[0]!.payload).toMatchObject({ freeEditRecompile: true, preEditProjectStatus: "COMPLETE" });
     expect(db.enqueued.some((job) => job.type === "GENERATE_IMAGE")).toBe(false);
 
     const before = state.bookEditOperations.find((operation) => operation.id === "op-before")!;

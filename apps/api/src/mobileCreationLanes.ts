@@ -31,7 +31,7 @@ const PHRASAL_FOR = /\b(?:look(?:s|ing|ed)?|search(?:es|ing|ed)?|wait(?:s|ing|ed
  * reports: how to structure them" as the book's audience (2026-09-30).
  */
 export function audienceFor(rawIdea: string): string {
-  const age = rawIdea.match(/\b([2-9]|10|11|12)\s*(-| )?(year|yr)s?\s*olds?\b/i)?.[0];
+  const age = rawIdea.match(/\b([2-9]|10|11|12)\s*(-| )?(year|yr)s?[\s-]*olds?\b/i)?.[0];
   if (age) {
     return age.replace(/\s+/g, " ");
   }

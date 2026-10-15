@@ -1,5 +1,7 @@
 import 'message_allowance.dart';
 
+export 'credit_log_models.dart';
+
 /// Plan tiers, cheapest first. The names match the server's `PlanTier`.
 const planTierOrder = <String>['free', 'creator', 'pro', 'max'];
 
@@ -15,7 +17,12 @@ class MobileBilling {
     this.messageAllowance,
     this.freeTier = const MobileFreeTier(),
     this.maxBookPages,
+    this.paidMaxBookPages = maxPlanBookPages,
+    this.ultraTierEnabled = true,
     this.purchaseAccountId,
+    this.welcomeCreditsPending = false,
+    this.welcomeCreditsPendingReason,
+    this.welcomeCreditsPendingCredits,
   });
 
   final CreditBalance credits;
@@ -45,6 +52,37 @@ class MobileBilling {
   /// cap — any paid plan, held only to the 600-page ceiling — and is also what
   /// a server that predates the cap sends, so nothing is locked against it.
   final int? maxBookPages;
+
+  /// The longest book *any* account may have generated right now — the
+  /// operator's `paidMaxBookPages`. Lengths past it are not offered at all:
+  /// no plan unlocks them, so they get neither a lock nor the long-book offer.
+  /// A server that predates the key sends nothing, which reads as the
+  /// 600-page request ceiling it always enforced.
+  final int paidMaxBookPages;
+
+  /// Whether the Ultra effort may start a new book. A server that predates
+  /// the operator switch sends nothing and always offered it, so absent reads
+  /// as on. Books already written at Ultra keep their tier either way.
+  final bool ultraTierEnabled;
+
+  /// True while this account's one-time welcome grant is owed but not yet
+  /// paid: the server holds a free account's grant while Tomeza is very busy
+  /// and pays it on a later balance read. An older server never sends it.
+  final bool welcomeCreditsPending;
+
+  /// Why the grant waits: `email_unverified` (the reader confirms the emailed
+  /// code) or `spend_hold` (nothing to do). Null when nothing is pending, and
+  /// from a server that predates email verification.
+  final String? welcomeCreditsPendingReason;
+
+  /// What the pending grant would pay, read from the server's price list —
+  /// the number "Verify your email to get your … free credits" names.
+  final int? welcomeCreditsPendingCredits;
+
+  /// The welcome credits are waiting for this reader to verify their email.
+  bool get welcomeCreditsAwaitEmailVerification =>
+      welcomeCreditsPending &&
+      welcomeCreditsPendingReason == 'email_unverified';
 
   factory MobileBilling.fromJson(Map<String, dynamic> json) {
     final entitlements = json['entitlements'] as List<dynamic>;
@@ -87,20 +125,44 @@ class MobileBilling {
           ? MobileFreeTier.fromJson(freeTier)
           : const MobileFreeTier(),
       maxBookPages: (json['maxBookPages'] as num?)?.toInt(),
+      paidMaxBookPages: _paidMaxBookPagesFrom(json),
+      ultraTierEnabled: _ultraTierEnabledFrom(json),
+      welcomeCreditsPending: json['welcomeCreditsPending'] == true,
+      welcomeCreditsPendingReason:
+          json['welcomeCreditsPendingReason'] as String?,
+      welcomeCreditsPendingCredits:
+          (json['welcomeCreditsPendingCredits'] as num?)?.toInt(),
     );
   }
+
+  /// The top-level field, then the price-table copy, then the old ceiling.
+  static int _paidMaxBookPagesFrom(Map<String, dynamic> json) {
+    final costs = json['creditCosts'];
+    final raw =
+        json['paidMaxBookPages'] ??
+        (costs is Map ? costs['paidMaxBookPages'] : null);
+    if (raw is! num || raw < 1) return maxPlanBookPages;
+    return raw.toInt().clamp(1, maxPlanBookPages);
+  }
+
+  /// The top-level flag, then the price table's 0/1, then on.
+  static bool _ultraTierEnabledFrom(Map<String, dynamic> json) {
+    final flag = json['ultraTierEnabled'];
+    if (flag is bool) return flag;
+    final costs = json['creditCosts'];
+    final raw = costs is Map ? costs['ultraTierEnabled'] : null;
+    return raw is num ? raw != 0 : true;
+  }
+
+  /// Whether a book of [pages] is past the longest book any plan writes —
+  /// the length every page picker stops at rather than locks.
+  bool exceedsBookPagesCeiling(int pages) => pages > paidMaxBookPages;
 
   /// Whether a book of [pages] is past this reader's length cap — the one
   /// question every page picker asks before it draws a lock.
   bool locksBookPages(int pages) {
     final limit = maxBookPages;
     return limit != null && pages > limit;
-  }
-
-  int get activeExportUnlockCount {
-    return entitlements
-        .where((entitlement) => entitlement.type == 'EXPORT_UNLOCK')
-        .length;
   }
 
   String get planTier => plan?.tier ?? 'free';
@@ -202,6 +264,8 @@ class MobileSubscriptionPlan {
     this.canCancelInApp = false,
     this.productSku,
     this.purchaseTokenHash,
+    this.pendingChangeSku,
+    this.pendingChangeAt,
   });
 
   final String tier;
@@ -223,9 +287,19 @@ class MobileSubscriptionPlan {
   final String? productSku;
   final String? purchaseTokenHash;
 
+  /// A downgrade Play deferred to the end of the paid period: the plan the
+  /// reader moves to, and when. Until then [productSku] is the plan being run
+  /// out. Null when nothing is scheduled, and from a server that predates it.
+  final String? pendingChangeSku;
+  final DateTime? pendingChangeAt;
+
   factory MobileSubscriptionPlan.fromJson(Map<String, dynamic> json) {
     final renewsAt = json['renewsAt'];
     final endsAt = json['endsAt'];
+    final pendingChange = json['pendingChange'];
+    final pendingChangeAt = pendingChange is Map<String, dynamic>
+        ? pendingChange['startsAt']
+        : null;
     return MobileSubscriptionPlan(
       tier: json['tier'] as String? ?? 'free',
       source: json['source'] as String? ?? 'free',
@@ -236,6 +310,12 @@ class MobileSubscriptionPlan {
       canCancelInApp: json['canCancelInApp'] as bool? ?? false,
       productSku: json['productSku'] as String?,
       purchaseTokenHash: json['purchaseTokenHash'] as String?,
+      pendingChangeSku: pendingChange is Map<String, dynamic>
+          ? pendingChange['productSku'] as String?
+          : null,
+      pendingChangeAt: pendingChangeAt is String
+          ? DateTime.tryParse(pendingChangeAt)
+          : null,
     );
   }
 
@@ -262,6 +342,10 @@ class MobileAllowance {
 
   /// What is left of it — this does not carry over.
   final int planCredits;
+
+  /// When the next month's credits arrive. The only date any surface may
+  /// give for a refill: Creator yearly refills every month, while its plan
+  /// (`MobileSubscriptionPlan.renewsAt`) renews once a year.
   final DateTime? resetsAt;
 
   factory MobileAllowance.fromJson(Map<String, dynamic> json) {
@@ -326,6 +410,8 @@ class VerifiedPurchase {
     required this.creditsGranted,
     this.subscriptionStatus,
     this.entitlementType,
+    this.scheduledChangeSku,
+    this.scheduledChangeAt,
   });
 
   final String id;
@@ -334,13 +420,29 @@ class VerifiedPurchase {
   final String? subscriptionStatus;
   final String? entitlementType;
 
+  /// A downgrade Play deferred to the renewal date: the plan the reader moves
+  /// to, and when. Nothing was granted for it. Null for every other purchase,
+  /// and from a server that predates it.
+  final String? scheduledChangeSku;
+  final DateTime? scheduledChangeAt;
+
   factory VerifiedPurchase.fromJson(Map<String, dynamic> json) {
+    final scheduled = json['scheduledChange'];
+    final startsAt = scheduled is Map<String, dynamic>
+        ? scheduled['startsAt']
+        : null;
     return VerifiedPurchase(
       id: json['id'] as String,
       status: json['status'] as String,
       creditsGranted: json['creditsGranted'] as int,
       subscriptionStatus: json['subscriptionStatus'] as String?,
       entitlementType: json['entitlementType'] as String?,
+      scheduledChangeSku: scheduled is Map<String, dynamic>
+          ? scheduled['productSku'] as String?
+          : null,
+      scheduledChangeAt: startsAt is String
+          ? DateTime.tryParse(startsAt)
+          : null,
     );
   }
 }
@@ -370,103 +472,6 @@ class CreditBalance {
       reserved: json['reserved'] as int,
       lifetimeGranted: json['lifetimeGranted'] as int,
       lifetimeSpent: json['lifetimeSpent'] as int,
-    );
-  }
-}
-
-/// What a credit log entry was, in the reader's terms. The server sends the
-/// name; anything it adds later that this list has not caught up with reads as
-/// [CreditLogKind.spend] or [CreditLogKind.bonus] depending on its direction.
-enum CreditLogKind {
-  purchase,
-  subscription,
-  monthly,
-  bonus,
-  spend,
-  refund,
-  expired,
-}
-
-/// One movement of credits: bought, granted, charged, or given back.
-///
-/// [credits] is always positive — [addsCredits] carries the sign. A [refunded]
-/// entry is history rather than a movement: the credits came straight back, so
-/// the balance never kept the change.
-class CreditLogEntry {
-  const CreditLogEntry({
-    required this.id,
-    required this.createdAt,
-    required this.addsCredits,
-    required this.credits,
-    required this.kind,
-    required this.title,
-    this.pending = false,
-    this.refunded = false,
-    this.projectId,
-    this.projectTitle,
-  });
-
-  final String id;
-  final DateTime createdAt;
-  final bool addsCredits;
-  final int credits;
-  final CreditLogKind kind;
-  final String title;
-
-  /// Held against work still running. The credits are gone from the balance,
-  /// but the charge is not settled and may still come back.
-  final bool pending;
-  final bool refunded;
-  final String? projectId;
-  final String? projectTitle;
-
-  factory CreditLogEntry.fromJson(Map<String, dynamic> json) {
-    final addsCredits = (json['direction'] as String?) != 'out';
-    return CreditLogEntry(
-      id: json['id'] as String,
-      createdAt:
-          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-          DateTime.now(),
-      addsCredits: addsCredits,
-      credits: json['credits'] as int? ?? 0,
-      kind: _creditLogKind(json['kind'] as String?, addsCredits: addsCredits),
-      title: json['title'] as String? ?? 'Credits',
-      pending: json['pending'] as bool? ?? false,
-      refunded: json['refunded'] as bool? ?? false,
-      projectId: json['projectId'] as String?,
-      projectTitle: json['projectTitle'] as String?,
-    );
-  }
-}
-
-CreditLogKind _creditLogKind(String? value, {required bool addsCredits}) {
-  return switch (value) {
-    'purchase' => CreditLogKind.purchase,
-    'subscription' => CreditLogKind.subscription,
-    'monthly' => CreditLogKind.monthly,
-    'bonus' => CreditLogKind.bonus,
-    'spend' => CreditLogKind.spend,
-    'refund' => CreditLogKind.refund,
-    'expired' => CreditLogKind.expired,
-    _ => addsCredits ? CreditLogKind.bonus : CreditLogKind.spend,
-  };
-}
-
-/// A page of credit history. [nextCursor] is null once the history has run out,
-/// which is what stops the list asking for more.
-class CreditLogPage {
-  const CreditLogPage({required this.entries, this.nextCursor});
-
-  final List<CreditLogEntry> entries;
-  final String? nextCursor;
-
-  factory CreditLogPage.fromJson(Map<String, dynamic> json) {
-    final entries = json['entries'] as List<dynamic>? ?? const [];
-    return CreditLogPage(
-      entries: entries
-          .map((item) => CreditLogEntry.fromJson(item as Map<String, dynamic>))
-          .toList(),
-      nextCursor: json['nextCursor'] as String?,
     );
   }
 }
@@ -517,6 +522,11 @@ class MobileBillingProduct {
     required this.creditAmount,
     required this.priceMicros,
     required this.currency,
+    this.billingPeriod,
+    this.offered = true,
+    this.introOfferId,
+    this.introOfferCredits,
+    this.monthlyCreditAmount,
   });
 
   final String sku;
@@ -527,6 +537,52 @@ class MobileBillingProduct {
   final int priceMicros;
   final String currency;
 
+  /// Whether the paywall lists this product for this reader. Every product is
+  /// still queried from Play and verified, so a restore finds an unlisted one.
+  /// A server that predates the field offered everything.
+  final bool offered;
+
+  /// ISO 8601 renewal period of a subscription ("P1M", "P1Y"); null for a
+  /// one-time product, and for a server that predates the field (monthly).
+  final String? billingPeriod;
+
+  /// The Play offer this plan is bought through when Play lists it for the
+  /// device's account (Play decides eligibility); null for none.
+  final String? introOfferId;
+
+  /// Credits the intro offer's discounted period grants — fewer than
+  /// [creditAmount], which the renewals after it grant. Null when there is no
+  /// intro offer, and from a server that predates the field.
+  final int? introOfferCredits;
+
+  /// What the plan grants at the start of each month of its paid time: 6,000
+  /// for Creator yearly, a monthly plan's own [creditAmount], null for a pack.
+  /// The one source of the monthly figure; see [creditsPerGrant].
+  final int? monthlyCreditAmount;
+
+  bool get isYearly => billingPeriod == 'P1Y';
+
+  /// Credits one grant carries: a pack's whole amount, a plan's monthly
+  /// allowance.
+  ///
+  /// Every plan is granted monthly, the yearly one too — Creator yearly is
+  /// billed once a year and grants 6,000 credits each month of the paid year,
+  /// each month's lapsing at its end like Creator monthly's. The server says
+  /// so in [monthlyCreditAmount]; [creditAmount] stays what one payment buys
+  /// in all (72,000 for the year), which is what value per price compares. A
+  /// server from before the field is read as twelve grants for a yearly plan.
+  int get creditsPerGrant {
+    if (!isSubscription) return creditAmount;
+    return monthlyCreditAmount ??
+        (isYearly ? creditAmount ~/ 12 : creditAmount);
+  }
+
+  /// "month" or "year", for "/ month" and "Renews monthly" alike.
+  String get periodNoun => isYearly ? 'year' : 'month';
+
+  /// "Renews monthly" or "Renews yearly".
+  String get renewsLabel => isYearly ? 'Renews yearly' : 'Renews monthly';
+
   factory MobileBillingProduct.fromJson(Map<String, dynamic> json) {
     return MobileBillingProduct(
       sku: json['sku'] as String,
@@ -536,6 +592,14 @@ class MobileBillingProduct {
       creditAmount: json['creditAmount'] as int,
       priceMicros: json['priceMicros'] as int,
       currency: json['currency'] as String,
+      offered: json['offered'] as bool? ?? true,
+      billingPeriod: json['billingPeriod'] as String?,
+      introOfferId: json['introOfferId'] as String?,
+      introOfferCredits: json['introOfferCredits'] as int?,
+      monthlyCreditAmount: switch (json['monthlyCreditAmount']) {
+        final int value when value > 0 => value,
+        _ => null,
+      },
     );
   }
 
@@ -545,7 +609,9 @@ class MobileBillingProduct {
 
   String get benefitLabel {
     if (isSubscription) {
-      return '${formatCredits(creditAmount)} credits each month';
+      return isYearly
+          ? '${formatCredits(creditsPerGrant)} credits every month, billed yearly'
+          : '${formatCredits(creditsPerGrant)} credits each month';
     }
     return '${formatCredits(creditAmount)} credits';
   }
@@ -574,26 +640,100 @@ class StoreProduct {
     required this.price,
     required this.rawPrice,
     required this.currencyCode,
+    this.offers = const [],
     this.source,
   });
 
   final String id;
   final String title;
   final String description;
+
+  /// What it costs: a one-time product's price, a subscription's base-plan
+  /// price for every period — never an offer's first phase.
   final String price;
   final double rawPrice;
   final String currencyCode;
+
+  /// Every discounted offer Play lists for this account — Play leaves out the
+  /// ones it is not eligible for. [introOfferFor] picks the one we sell.
+  final List<StoreIntroOffer> offers;
   final Object? source;
+
+  /// This product bought through [offer]: same id and listing, the offer's
+  /// store details, which carry the token Play charges the offer by.
+  StoreProduct throughOffer(StoreIntroOffer offer) => StoreProduct(
+    id: id,
+    title: title,
+    description: description,
+    price: price,
+    rawPrice: rawPrice,
+    currencyCode: currencyCode,
+    offers: offers,
+    source: offer.source ?? source,
+  );
+}
+
+/// The intro offer [product] is sold through, when the server names one and
+/// Play lists it for this account; otherwise null, and the base plan is sold.
+StoreIntroOffer? introOfferFor(
+  MobileBillingProduct? product,
+  StoreProduct? store,
+) {
+  final offerId = product?.introOfferId;
+  if (offerId == null || store == null) return null;
+  for (final offer in store.offers) {
+    if (offer.offerId == offerId) return offer;
+  }
+  return null;
+}
+
+/// A subscription's discounted opening periods, as Play prices them for this
+/// account. Bought through [source], and always shown with the price after it.
+class StoreIntroOffer {
+  const StoreIntroOffer({
+    required this.offerId,
+    required this.price,
+    required this.billingPeriod,
+    required this.cycles,
+    this.source,
+  });
+
+  final String offerId;
+
+  /// Play's formatted price for one discounted period.
+  final String price;
+
+  /// ISO 8601 length of one discounted period ("P1M").
+  final String billingPeriod;
+
+  /// How many discounted periods the offer lasts.
+  final int cycles;
+  final Object? source;
+
+  /// "first month", "first 3 months", "first year".
+  String get termLabel {
+    final unit = switch (billingPeriod) {
+      'P1Y' => 'year',
+      'P1W' => 'week',
+      _ => 'month',
+    };
+    return cycles <= 1 ? 'first $unit' : 'first $cycles ${unit}s';
+  }
 }
 
 class StoreProductQueryResult {
   const StoreProductQueryResult({
     required this.products,
     required this.notFoundIds,
+    this.error,
   });
 
   final List<StoreProduct> products;
   final List<String> notFoundIds;
+
+  /// Play's own account of a query it could not answer in full. Whatever it
+  /// did return is still for sale; everything else has no price.
+  final String? error;
 }
 
 class StorePurchaseUpdate {
@@ -604,10 +744,16 @@ class StorePurchaseUpdate {
     this.purchaseId,
     this.purchaseAccountId,
     this.errorMessage,
+    this.alreadyOwned = false,
     this.pendingCompletePurchase = false,
+    this.planChangeDeferred = false,
+    this.localPriceMicros,
+    this.localCurrency,
     this.source,
   });
 
+  /// Empty on a checkout Play could not complete: Back, or an error such as
+  /// ITEM_ALREADY_OWNED, arrives as one update with no purchase behind it.
   final String productId;
   final StorePurchaseStatus status;
   final String purchaseToken;
@@ -616,6 +762,24 @@ class StorePurchaseUpdate {
   /// Account identity retained by Google, including delayed/restored purchases.
   final String? purchaseAccountId;
   final String? errorMessage;
+
+  /// Play refused the checkout because the account already holds the product.
+  final bool alreadyOwned;
+
+  /// Play has not been told the purchase is acknowledged.
   final bool pendingCompletePurchase;
+
+  /// Play's answer to a downgrade it scheduled for the renewal date
+  /// (`ReplacementMode.deferred`): it says the change went through and hands
+  /// back no purchase, so [productId] is the plan switched to and the token
+  /// it issued is found by asking Play for owned purchases.
+  final bool planChangeDeferred;
+
+  /// What Play priced this purchase at for the buyer, in micros of
+  /// [localCurrency] before tax: the phase bought for a subscription, the
+  /// price times quantity for a pack. Null when this process does not know —
+  /// a subscription bought before it started. Analytics only.
+  final int? localPriceMicros;
+  final String? localCurrency;
   final Object? source;
 }

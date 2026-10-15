@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lookupSignupCountry } from "./signupCountry.js";
 vi.mock("./signupCountry.js", () => ({ lookupSignupCountry: vi.fn(async () => null) }));
 import {
+  ACCOUNT_DISABLED_MESSAGE,
   createMobileSession,
   hashPassword,
   hashToken,
@@ -13,6 +14,8 @@ import {
   verifyPassword,
   welcomeCreditIpHash
 } from "./mobileAuth.js";
+import { welcomeCreditIpKey } from "./welcomeCreditIp.js";
+import { passwordHashGate } from "./passwordHashing.js";
 
 const mockPrisma = vi.hoisted(() => ({
   user: {
@@ -217,6 +220,26 @@ describe("welcome credit IP hash", () => {
     const request = sessionRequest({ ip: clientIp, forwardedFor: "198.51.100.1" });
     expect(welcomeCreditIpHash(request, 2)).toBe(hashToken(`ip:${clientIp}`));
   });
+
+  it("counts one IPv6 network, not each address a device rotates through", () => {
+    const first = sessionRequest({ ip: "2001:db8:abcd:12:1111:2222:3333:4444" });
+    const rotated = sessionRequest({ ip: "2001:0db8:abcd:0012:9:8:7:6" });
+    const neighbour = sessionRequest({ ip: "2001:db8:abcd:13::1" });
+
+    expect(welcomeCreditIpHash(first, 2)).toBe(welcomeCreditIpHash(rotated, 2));
+    expect(welcomeCreditIpHash(first, 2)).not.toBe(welcomeCreditIpHash(neighbour, 2));
+  });
+
+  it.each([
+    ["2001:db8::1", "2001:db8:0:0::/64"],
+    ["::1", "0:0:0:0::/64"],
+    ["fe80::1%eth0", "fe80:0:0:0::/64"],
+    ["64:ff9b::192.0.2.1", "64:ff9b:0:0::/64"],
+    ["::ffff:203.0.113.10", "203.0.113.10"],
+    ["203.0.113.10", "203.0.113.10"]
+  ])("keys %s as %s", (ip, key) => {
+    expect(welcomeCreditIpKey(ip)).toBe(key);
+  });
 });
 
 describe("mobile auth routes", () => {
@@ -274,8 +297,8 @@ describe("mobile auth routes", () => {
         email: "Reader@Example.COM",
         password: "CorrectPass123",
         displayName: "Reader",
-        termsVersion: "2026-10-03",
-        privacyVersion: "2026-10-03",
+        termsVersion: "2026-10-13",
+        privacyVersion: "2026-10-13",
         termsAccepted: true,
         ageGuardianAttested: true
       }
@@ -289,8 +312,8 @@ describe("mobile auth routes", () => {
     expect(body.session.refreshToken).toMatch(/^bma_rt_/);
     expect(createCall.data.passwordCredential.create.passwordHash).not.toContain("CorrectPass123");
     expect(createCall.data.legalAcceptances.create).toMatchObject({
-      termsVersion: "2026-10-03",
-      privacyVersion: "2026-10-03",
+      termsVersion: "2026-10-13",
+      privacyVersion: "2026-10-13",
       termsAttested: true,
       ageGuardianAttested: true,
       source: "mobile_signup"
@@ -322,6 +345,8 @@ describe("mobile auth routes", () => {
     expect(response.statusCode).toBe(200);
     expect(body.user.email).toBe("reader@example.com");
     expect(body.session.accessToken).toMatch(/^bma_at_/);
+    expect(body.session.accessTokenExpiresIn).toBeGreaterThanOrEqual(15 * 60 - 5);
+    expect(body.session.accessTokenExpiresIn).toBeLessThanOrEqual(15 * 60);
     expect(mockPrisma.mobileSession.create).toHaveBeenCalledOnce();
     await app.close();
   });
@@ -364,8 +389,8 @@ describe("mobile auth routes", () => {
 
     expect(response.statusCode).toBe(201);
     expect(createCall.data.legalAcceptances.create).toMatchObject({
-      termsVersion: "2026-10-03",
-      privacyVersion: "2026-10-03",
+      termsVersion: "2026-10-13",
+      privacyVersion: "2026-10-13",
       termsAttested: true,
       ageGuardianAttested: true,
       source: "mobile_signup"
@@ -408,6 +433,10 @@ describe("mobile auth routes", () => {
     expect(body.session.accessToken).toMatch(/^bma_at_/);
     expect(body.session.refreshToken).toMatch(/^bma_rt_/);
     expect(body.session.refreshToken).not.toBe(RAW_REFRESH_TOKEN);
+    // The lifetime travels beside the absolute expiry: an app whose clock runs
+    // fast cannot tell when to refresh from the expiry alone.
+    expect(body.session.accessTokenExpiresIn).toBeGreaterThanOrEqual(15 * 60 - 5);
+    expect(body.session.accessTokenExpiresIn).toBeLessThanOrEqual(15 * 60);
     expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledOnce();
     await app.close();
   });
@@ -434,6 +463,27 @@ describe("mobile auth routes", () => {
       },
       data: { revokedAt: expect.any(Date) }
     });
+    await app.close();
+  });
+
+  it("tells a suspended reader their account is suspended, only once the password matched", async () => {
+    const passwordHash = await hashPassword("CorrectPass123");
+    mockPrisma.user.findUnique.mockResolvedValue({ ...activeUser(), status: "SUSPENDED", passwordCredential: { passwordHash } });
+    const app = await buildApp();
+    const signIn = (password: string) =>
+      app.inject({ method: "POST", url: "/api/mobile/auth/signin", payload: { email: "reader@example.com", password } });
+
+    const wrong = await signIn("WrongPass123");
+    const right = await signIn("CorrectPass123");
+
+    // A stranger guessing learns nothing the wrong password would not tell them.
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.json().error.code).toBe("INVALID_CREDENTIALS");
+    // The code the app signs out on, with the code's one sentence (accountModeration.ts).
+    expect(right.statusCode).toBe(403);
+    expect(right.json()).toEqual({ error: { code: "ACCOUNT_DISABLED", message: ACCOUNT_DISABLED_MESSAGE } });
+    expect(ACCOUNT_DISABLED_MESSAGE).toContain("suspended");
+    expect(mockPrisma.mobileSession.create).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -515,7 +565,110 @@ describe("mobile auth routes", () => {
     expect(third.json().error.code).toBe("RATE_LIMITED");
     await app.close();
   });
+
+  it("limits one address spraying invented emails at sign-in before any lookup or hash", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    const app = await buildApp({ signInNetworkRateLimit: { maxAttempts: 2, windowMs: 60_000 } });
+    // Every scrypt derivation enters through the gate, so its call count is the hash count.
+    const hashes = vi.spyOn(passwordHashGate, "run");
+    try {
+      const statuses: number[] = [];
+      for (const email of ["a@example.com", "b@example.com", "c@example.com"]) {
+        statuses.push((await signIn(app, { email, remoteAddress: "203.0.113.7" })).statusCode);
+      }
+
+      expect(statuses).toEqual([401, 401, 429]);
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledTimes(2);
+      expect(hashes).toHaveBeenCalledTimes(2);
+    } finally {
+      hashes.mockRestore();
+      await app.close();
+    }
+  });
+
+  it("limits one address spraying invented emails at sign-up before any lookup, hash or account", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue(activeUser());
+    const app = await buildApp({ signUpNetworkRateLimit: { maxAttempts: 2, windowMs: 60_000 } });
+    const hashes = vi.spyOn(passwordHashGate, "run");
+    try {
+      const statuses: number[] = [];
+      for (const email of ["a@example.com", "b@example.com", "c@example.com"]) {
+        statuses.push((await signUp(app, { email, remoteAddress: "203.0.113.7" })).statusCode);
+      }
+
+      expect(statuses).toEqual([201, 201, 429]);
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledTimes(2);
+      expect(mockPrisma.user.create).toHaveBeenCalledTimes(2);
+      expect(hashes).toHaveBeenCalledTimes(2);
+    } finally {
+      hashes.mockRestore();
+      await app.close();
+    }
+  });
+
+  it("counts an IPv6 caller by its /64 and an IPv4 caller by its address", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    const app = await buildApp({ signInNetworkRateLimit: { maxAttempts: 2, windowMs: 60_000 } });
+    const status = async (remoteAddress: string, email: string) =>
+      (await signIn(app, { email, remoteAddress })).statusCode;
+
+    expect(await status("2001:db8:abcd:12::1", "a@example.com")).toBe(401);
+    expect(await status("2001:db8:abcd:12:ffff::2", "b@example.com")).toBe(401);
+    expect(await status("2001:db8:abcd:12:1:2:3:4", "c@example.com")).toBe(429);
+    expect(await status("2001:db8:abcd:13::1", "d@example.com")).toBe(401);
+
+    expect(await status("203.0.113.10", "e@example.com")).toBe(401);
+    expect(await status("203.0.113.10", "f@example.com")).toBe(401);
+    expect(await status("203.0.113.11", "g@example.com")).toBe(401);
+    expect(await status("203.0.113.10", "h@example.com")).toBe(429);
+    await app.close();
+  });
+
+  it("answers sign-in with RATE_LIMITED while password hashing is at capacity", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      ...activeUser(),
+      passwordCredential: { passwordHash: await hashPassword("CorrectPass123") }
+    });
+    const app = await buildApp();
+    const release = occupyPasswordHashGate();
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/auth/signin",
+        payload: { email: "reader@example.com", password: "CorrectPass123" }
+      });
+
+      expect(response.statusCode).toBe(429);
+      expect(response.headers["retry-after"]).toBe("1");
+      expect(response.json().error.code).toBe("RATE_LIMITED");
+      expect(mockPrisma.mobileSession.create).not.toHaveBeenCalled();
+    } finally {
+      await release();
+    }
+
+    const retried = await app.inject({
+      method: "POST",
+      url: "/api/mobile/auth/signin",
+      payload: { email: "reader@example.com", password: "CorrectPass123" }
+    });
+    expect(retried.statusCode).toBe(200);
+    await app.close();
+  });
 });
+
+/** Fills every running slot and queue place of the shared hashing gate; returns the release. */
+function occupyPasswordHashGate(): () => Promise<void> {
+  let open!: () => void;
+  const held = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const holders = Array.from({ length: passwordHashGate.capacity }, () => passwordHashGate.run(() => held));
+  return async () => {
+    open();
+    await Promise.all(holders);
+  };
+}
 
 async function buildApp(options: Parameters<typeof mobileAuthRoutes>[1] = {}): Promise<FastifyInstance> {
   const app = Fastify();
@@ -523,26 +676,28 @@ async function buildApp(options: Parameters<typeof mobileAuthRoutes>[1] = {}): P
   return app;
 }
 
-async function signIn(app: FastifyInstance) {
+async function signIn(app: FastifyInstance, options: { email?: string; remoteAddress?: string } = {}) {
   return app.inject({
     method: "POST",
     url: "/api/mobile/auth/signin",
+    ...(options.remoteAddress ? { remoteAddress: options.remoteAddress } : {}),
     payload: {
-      email: "reader@example.com",
+      email: options.email ?? "reader@example.com",
       password: "wrong"
     }
   });
 }
 
-async function signUp(app: FastifyInstance) {
+async function signUp(app: FastifyInstance, options: { email?: string; remoteAddress?: string } = {}) {
   return app.inject({
     method: "POST",
     url: "/api/mobile/auth/signup",
+    ...(options.remoteAddress ? { remoteAddress: options.remoteAddress } : {}),
     payload: {
-      email: "reader@example.com",
+      email: options.email ?? "reader@example.com",
       password: "CorrectPass123",
-      termsVersion: "2026-10-03",
-      privacyVersion: "2026-10-03",
+      termsVersion: "2026-10-13",
+      privacyVersion: "2026-10-13",
       termsAccepted: true,
       ageGuardianAttested: true
     }

@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
+import { ValuationNote } from "./EconomicsNotes.js";
 import { GeneratedBooksSection } from "./GeneratedBooksSection.js";
 import { GeneratedPlansSection } from "./GeneratedPlansSection.js";
 import { compactCount, count, duration, percent, usd, usdFine } from "./format.js";
@@ -20,7 +21,11 @@ import type { AdminOperationEconomics, CostUsage, ModelCost, OperationEconomics,
  * and hiding it would make the page's totals disagree with the Costs tab.
  *
  * Refunded charges are netted out of every credit figure but shown in their own
- * column, because a run count that quietly shrank would be unreadable. Their
+ * column, because a run count that quietly shrank would be unreadable.
+ *
+ * "Earned" is the kept credits valued by where they came from, after Google's
+ * fee (`admin/creditValuation.ts`): a free reader's welcome credits earn
+ * nothing, so an operation they mostly used shows the loss it is. Their
  * provider spend stays in `Cost`, so an operation that refunded most of what it
  * charged reports a margin below zero — which is what actually happened.
  */
@@ -74,10 +79,12 @@ function OperationsBody(props: { data: AdminOperationEconomics; days: number }) 
         <p className="eyebrow">Margin on billed work · {windowLabel}</p>
         <p className="hero-figure">{usd(totals.marginUsd)}</p>
         <p className="muted">
-          {usd(totals.revenueUsd)} of credits kept across {count(totals.runs)} operations, against{" "}
+          {usd(totals.revenueUsd)} earned by the credits kept across {count(totals.runs)} operations (
+          {count(totals.paidCredits)} of {count(totals.credits)} of them paid for), against{" "}
           {usdFine(totals.providerUsd)} of provider spend those charges paid for — {percent(totals.marginPercent)}{" "}
           margin.
         </p>
+        <ValuationNote valuation={props.data.valuation} />
         {totals.refundedCredits > 0 ? (
           <p className="hero-caveat">
             <AlertTriangle size={14} aria-hidden />
@@ -96,7 +103,11 @@ function OperationsBody(props: { data: AdminOperationEconomics; days: number }) 
       </section>
 
       <div className="stat-grid">
-        <StatTile label="Charged" value={usd(totals.revenueUsd)} note={`${count(totals.credits)} credits kept`} />
+        <StatTile
+          label="Earned, net of Google"
+          value={usd(totals.revenueUsd)}
+          note={`${count(totals.credits)} credits kept · ${count(totals.paidCredits)} paid for`}
+        />
         <StatTile label="Cost to serve" value={usdFine(totals.providerUsd)} note="attributed provider spend" />
         <StatTile
           label="Refunded"
@@ -130,8 +141,9 @@ function OperationsTable(props: { operations: OperationEconomics[]; windowLabel:
       </div>
       <p className="muted chart-subtitle">
         Everything charged for in the {props.windowLabel}, against the provider calls those charges paid for. Runs and
-        credits count only charges that stuck; what was refunded has its own column. Open a row for the models that did
-        the work.
+        credits count only charges that stuck; what was refunded has its own column. Earned is what those credits
+        brought in after Google&apos;s fee, by where each came from — welcome credits earn nothing. Open a row for the
+        models that did the work.
       </p>
       {props.operations.length === 0 ? (
         <p className="muted">Nothing was charged in this window.</p>
@@ -144,7 +156,9 @@ function OperationsTable(props: { operations: OperationEconomics[]; windowLabel:
                 <th className="numeric">Runs</th>
                 <th className="numeric">Credits</th>
                 <th className="numeric">Refunded</th>
-                <th className="numeric">Charged</th>
+                <th className="numeric" title="Kept credits valued by source, after Google's fee; free credits earn $0">
+                  Earned
+                </th>
                 <th className="numeric">Cost</th>
                 <th className="numeric">Cost / run</th>
                 <th className="numeric">Margin</th>
@@ -196,7 +210,12 @@ function OperationsTable(props: { operations: OperationEconomics[]; windowLabel:
                           </>
                         )}
                       </td>
-                      <td className="numeric">{usd(operation.revenueUsd)}</td>
+                      <td className="numeric">
+                        {usd(operation.revenueUsd)}
+                        {operation.credits > 0 ? (
+                          <span className="muted admin-subtle">{count(operation.paidCredits)} paid credits</span>
+                        ) : null}
+                      </td>
                       <td className="numeric">{usdFine(operation.providerUsd)}</td>
                       <td className="numeric">
                         {operation.costPerRunUsd === null ? "—" : usdFine(operation.costPerRunUsd)}
@@ -216,7 +235,7 @@ function OperationsTable(props: { operations: OperationEconomics[]; windowLabel:
                         </td>
                       </tr>
                     ) : null}
-                    {/* Usage spans Credits/Refunded/Charged so the model's own
+                    {/* Usage spans Credits/Refunded/Earned so the model's own
                         spend still lands under Cost. */}
                     {isOpen
                       ? operation.models.map((model) => <ModelRow key={model.key} model={model} usageSpan={3} />)

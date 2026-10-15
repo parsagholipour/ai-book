@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../../billing/data/billing_repository.dart';
 import '../../voice/data/voice_repository.dart';
 import '../../voice/domain/voice_models.dart';
 import '../../voice/presentation/voice_call_launcher.dart';
@@ -26,6 +27,13 @@ Future<void> callLibraryCharacter({
   VoidCallback? onCastLoaded,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
+  // Calls are a plan perk: a free reader is offered the plans before the
+  // cast is even read. `launchVoiceCall` asks again for every other surface.
+  if (voiceCallsLockedByPlan(ref.read(billingProvider).asData?.value)) {
+    onCastLoaded?.call();
+    await showVoiceCallPlanOffer(context, ref);
+    return;
+  }
   final VoiceCast cast;
   try {
     cast = await ref.refresh(voiceCastProvider(null).future);

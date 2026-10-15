@@ -10,6 +10,16 @@ backgrounded — where a token refresh cannot be relied on. Lock-screen artwork 
 URI for the same reason: the media session fetches it outside the Dio client and without the
 bearer token.
 
+## Starting a narration
+
+- **Narrating is a plan perk; listening is not.** `audiobooksLockedByPlan`
+  (`audiobook_plan_offer.dart`) turns every narrator-picker door (`_openPicker`) into the plans for
+  a known free account, and the not-narrated page shows the plan sentence with a lock; a narration
+  that already exists always plays, and the quote, fetch and narrator samples stay open to everyone.
+  The server refuses the start itself with 403 `SUBSCRIPTION_REQUIRED` ("Audiobooks are part of the
+  Creator plan.", `apps/api/src/mobile/planPerks.ts`), whose sentence the picker shows verbatim if
+  billing was stale; an older build shows the same sentence as a snackbar.
+
 ## Playback and listening position
 
 - **The app plays local files, not a URL, and draws one timeline over many of them.** Chapter audio
@@ -43,3 +53,20 @@ bearer token.
   button sits on Play over audible narration. For the same reason Play cannot mean `play()` when
   the queue has finished — that is a no-op on silence — so `togglePlay` moves to the next chapter
   that has been downloaded since, and `caughtUp` says why playback stopped where it did.
+- **Offline, the chapters on this phone play, in order, and nothing is downloaded.** Every manifest
+  the server sends is kept as sent beside the narrations (`AudiobookCache.saveManifest`,
+  `tomeza_audiobook/<projectId>/manifest.json`, next to `progress.json`: `pruneOtherAudiobooks`
+  keeps it, `clearProject` takes it). When a fetch fails with `isOfflineFailure` the controller
+  goes offline (`AudiobookState.offline`) with the narration it already had or the kept manifest —
+  with neither, the failure is reported as before, never as an offer to narrate — and
+  `_syncDownloads` queues only chapters whose audio and timings are already on disk
+  (`storedChapter`, the same files and size check the downloads use), stopping at the first that
+  is not, because the queue is read positionally. A download that loses the connection mid-way
+  goes offline the same way and keeps what is queued playing. Offline it asks the server again
+  every 30 s rather than at a narrating book's 4 s; the first answer clears `offline` and the
+  remaining chapters download behind what is playing. The listening position is untouched: it is
+  device-local already. The screen shows `_OfflineBanner` ("Offline — 2 of 3 chapters on this
+  phone") in place of the narration banner — no sparkle, no moving bar, so a manifest kept mid-way
+  through narrating is not shown as narrating now — hides Change narrator and the re-narrate
+  banner, and says "Not on this phone yet" when nothing of the narration was downloaded.
+  `test/audiobook/audiobook_offline_test.dart`.

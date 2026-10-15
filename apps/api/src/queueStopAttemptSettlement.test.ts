@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   operationUpdateMany: vi.fn(),
   generationAttemptUpdateMany: vi.fn(),
   failGenerationAttempt: vi.fn(),
+  recordUserStopSettlement: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn()
 }));
@@ -37,6 +38,7 @@ vi.mock("@book-maker/db", () => ({
   }
 }));
 vi.mock("@book-maker/db/billing", () => ({
+  recordUserStopSettlementTx: mocks.recordUserStopSettlement,
   failGenerationAttempt: mocks.failGenerationAttempt,
   refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits
@@ -141,5 +143,52 @@ describe("settling a stopped run's paid attempt", () => {
     );
     expect(logged).toHaveBeenCalledOnce();
     logged.mockRestore();
+  });
+
+  it("stamps what the stop keeps inside the stop, before a delete can cascade the pages away", async () => {
+    // A stop is the reader's own, so it refunds only what was not delivered and
+    // lets an ended allowance lapse. What was delivered is counted here, in the
+    // stop's own transaction: both delete routes delete the project right after
+    // this returns, and a settlement that ran later (the reconciler, after the
+    // settlement below failed) would count no pages and refund everything.
+    const order: string[] = [];
+    const tx = {
+      project: { update: mocks.projectUpdate, updateMany: mocks.projectUpdateMany },
+      generationJob: { findMany: mocks.generationJobFindMany, updateMany: mocks.generationJobUpdateMany },
+      bookEditOperation: { findMany: mocks.operationFindMany, updateMany: mocks.operationUpdateMany },
+      generationAttempt: { updateMany: mocks.generationAttemptUpdateMany }
+    };
+    mocks.generationAttemptUpdateMany.mockImplementation(async () => {
+      order.push("obligation");
+      return { count: 1 };
+    });
+    mocks.recordUserStopSettlement.mockImplementation(async () => {
+      order.push("stamp");
+      return null;
+    });
+    mocks.failGenerationAttempt.mockImplementation(async () => {
+      order.push("settle");
+    });
+    mocks.transaction.mockImplementation(async (callback: (client: unknown) => Promise<unknown>) => {
+      const result = await callback(tx);
+      order.push("commit");
+      return result;
+    });
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(order).toEqual(["obligation", "stamp", "commit", "settle"]);
+    expect(mocks.recordUserStopSettlement).toHaveBeenCalledWith(tx, "attempt-book");
+  });
+
+  it("stamps nothing on an attempt another settlement already owns", async () => {
+    // The attempt was already terminal — a failure the reader did not cause got
+    // there first — so its charge settles as that failure, refunded whole.
+    mocks.generationAttemptUpdateMany.mockResolvedValue({ count: 0 });
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.recordUserStopSettlement).not.toHaveBeenCalled();
+    expect(mocks.failGenerationAttempt).toHaveBeenCalledWith("attempt-book", "Stopped by user", "CANCELED");
   });
 });

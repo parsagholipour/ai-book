@@ -9,9 +9,9 @@ afterEach(() => {
 describe("messagePolicy", () => {
   it.each([
     ["free", 1, 50, 50, "messageCreditsFree", "messageResetCreditsFree"],
-    ["creator", 0, 150, 100, "messageCreditsCreator", "messageResetCreditsCreator"],
-    ["pro", 0, 300, 150, "messageCreditsPro", "messageResetCreditsPro"],
-    ["max", 0, 600, 200, "messageCreditsMax", "messageResetCreditsMax"]
+    ["creator", 0, 60, 100, "messageCreditsCreator", "messageResetCreditsCreator"],
+    ["pro", 0, 120, 150, "messageCreditsPro", "messageResetCreditsPro"],
+    ["max", 0, 300, 200, "messageCreditsMax", "messageResetCreditsMax"]
   ] as const)(
     "reads %s defaults from that plan's own keys",
     (tier, creditsPerMessage, dailyLimit, resetCredits, messagePricingKey, resetPricingKey) => {

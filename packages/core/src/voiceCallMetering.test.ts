@@ -6,7 +6,8 @@ import {
   settleVoiceCall,
   voiceCallEndingReason,
   voiceCallSecondsRemaining,
-  voiceCallStartingCredits
+  voiceCallStartingCredits,
+  voiceRelayCallRunway
 } from "./voiceCallMetering.js";
 import { creditPricing, resetCreditPricing, setCreditPricing } from "./creditPricing.js";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,6 +16,15 @@ const perMinute = creditPricing().voiceCallPerMinute;
 
 afterEach(() => {
   resetCreditPricing();
+});
+
+describe("VOICE_CALL_POLICY", () => {
+  it("caps a call at fifteen minutes", () => {
+    // Every bound on a call's length derives from this one number: the relay's
+    // funded minutes, the settlement, the provider token and `maxCallSeconds`.
+    expect(VOICE_CALL_POLICY.maxCallMinutes).toBe(15);
+    expect(settleVoiceCall(30 * 60).billableMinutes).toBe(15);
+  });
 });
 
 describe("billableVoiceCallMinutes", () => {
@@ -118,6 +128,55 @@ describe("voiceCallEndingReason", () => {
     expect(
       voiceCallEndingReason({ elapsedSeconds: nearTheCap, heldCredits: 0, topUpFailed: true })
     ).toBe("credits");
+  });
+});
+
+describe("voiceRelayCallRunway", () => {
+  const lead = VOICE_CALL_POLICY.endingLeadSeconds;
+
+  it("runs to the cap while the balance can pay, however thin the hold is", () => {
+    // Ten seconds before the relay holds its next minute: the old meter said
+    // "out of credits, 0:10" here.
+    expect(voiceRelayCallRunway({ elapsedSeconds: 230, reservedMinutes: 4, affordableMinutes: 50 })).toEqual({
+      secondsRemaining: 900 - 230 - lead,
+      endingReason: null
+    });
+  });
+
+  it("names the cap for its last block and reaches zero ahead of the relay's deadline", () => {
+    expect(voiceRelayCallRunway({ elapsedSeconds: 900 - lead - 181, reservedMinutes: 12, affordableMinutes: 50 }))
+      .toEqual({ secondsRemaining: 181, endingReason: null });
+    expect(voiceRelayCallRunway({ elapsedSeconds: 900 - lead - 180, reservedMinutes: 12, affordableMinutes: 50 }))
+      .toEqual({ secondsRemaining: 180, endingReason: "limit" });
+    expect(voiceRelayCallRunway({ elapsedSeconds: 900 - lead, reservedMinutes: 15, affordableMinutes: 50 }))
+      .toEqual({ secondsRemaining: 0, endingReason: "limit" });
+    expect(voiceRelayCallRunway({ elapsedSeconds: 900, reservedMinutes: 15, affordableMinutes: 50 }).secondsRemaining)
+      .toBe(0);
+  });
+
+  it("names the credits when the balance runs out before the cap", () => {
+    // Four minutes held and two more affordable: the call can reach six, and
+    // says why once it is inside the last block.
+    expect(voiceRelayCallRunway({ elapsedSeconds: 100, reservedMinutes: 4, affordableMinutes: 2 })).toEqual({
+      secondsRemaining: 360 - 100 - lead,
+      endingReason: null
+    });
+    expect(voiceRelayCallRunway({ elapsedSeconds: 200, reservedMinutes: 4, affordableMinutes: 2 })).toEqual({
+      secondsRemaining: 360 - 200 - lead,
+      endingReason: "credits"
+    });
+    expect(voiceRelayCallRunway({ elapsedSeconds: 60, reservedMinutes: 3, affordableMinutes: 30 }).endingReason)
+      .toBeNull();
+  });
+
+  it("names the cap when the balance would run out at the cap anyway", () => {
+    expect(voiceRelayCallRunway({ elapsedSeconds: 800, reservedMinutes: 14, affordableMinutes: 1 }).endingReason)
+      .toBe("limit");
+  });
+
+  it("gives a free rate the whole cap", () => {
+    expect(voiceRelayCallRunway({ elapsedSeconds: 0, reservedMinutes: 3, affordableMinutes: Number.POSITIVE_INFINITY }))
+      .toEqual({ secondsRemaining: 900 - lead, endingReason: null });
   });
 });
 

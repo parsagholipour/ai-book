@@ -59,9 +59,11 @@ describe("explicit illustration slots", () => {
     workbook.subcategory = "Workbook or Study Guide";
     expect(interiorIllustrationSlotCount(workbook)).toBe(2);
     expect(estimateInteriorImageCount(workbook)).toBe(2);
+    // A KIDS book with no app type is a picture book: a 30-page one may have
+    // twelve pictures, so its ten every-third-page slots are all billed.
     const kids = project("every-third-page");
     expect(interiorIllustrationSlotCount(kids)).toBe(10);
-    expect(estimateInteriorImageCount(kids)).toBe(4);
+    expect(estimateInteriorImageCount(kids)).toBe(10);
   });
 
   it("never draws more interiors for an app book than its quote bills, spread across the story", () => {
@@ -70,13 +72,25 @@ describe("explicit illustration slots", () => {
       (input.mediaSettings as Record<string, unknown>).mobile = bookType ? { bookType } : {};
       return input;
     };
-    // A 12-page children's story: KIDS illustrates every page, the app quotes 4.
+    // A 12-page children's story is a picture book: a picture on every page.
     const story = appBook("KIDS", 12, "short_story");
     const pages = Array.from({ length: 12 }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(story, index));
-    expect(pages).toEqual([1, 4, 7, 10]);
+    expect(pages).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(interiorIllustrationSlotCount(story)).toBe(estimateInteriorImageCount(story));
     // Never a page the quote did not cover.
     expect(pageGetsInteriorIllustration(story, 13)).toBe(false);
+    // Past twelve pages, twelve pictures spread across the whole story.
+    const longer = appBook("KIDS", 16, "short_story");
+    expect(Array.from({ length: 16 }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(longer, index)))
+      .toEqual([1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15]);
+    // Never fewer pictures for a longer book: 13 pages used to draw 7.
+    expect(interiorIllustrationSlotCount(appBook("KIDS", 13, "short_story"))).toBe(12);
+    const longest = appBook("KIDS", 24, "short_story");
+    expect(Array.from({ length: 24 }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(longest, index)))
+      .toEqual([1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]);
+    // An adult short story keeps its four.
+    expect(estimateInteriorImageCount(appBook("STORY", 24, "short_story"))).toBe(4);
+    expect(estimateInteriorImageCount(appBook("STORY", 40, "short_story", "every-page"))).toBe(4);
     // A 24-page lead magnet's cadence picks seven pages; it is billed four.
     expect(interiorIllustrationSlotCount(appBook("BUSINESS", 24, "lead_magnet"))).toBe(4);
     for (const category of ["KIDS", "STORY", "BUSINESS", "EDUCATION", "SCIENCE", "CUSTOM"]) {

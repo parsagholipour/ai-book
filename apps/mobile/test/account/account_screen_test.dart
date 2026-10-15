@@ -13,12 +13,17 @@ import 'package:tomeza/features/account/presentation/account_screen.dart';
 import 'package:tomeza/features/account/presentation/archived_chats_screen.dart';
 import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/book_matter/data/book_matter_repository.dart';
+import 'package:tomeza/features/book_matter/domain/author_profile.dart';
+import 'package:tomeza/features/book_matter/presentation/author_profile_screen.dart';
 import 'package:tomeza/features/notifications/data/push_device_repository.dart';
 import 'package:tomeza/features/notifications/data/push_messaging.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 
 import '../app/app_test_fixtures.dart';
+import '../features/book_matter/fake_book_matter_repository.dart';
 import '../features/notifications/fake_push_messaging.dart';
 
 void main() {
@@ -43,6 +48,10 @@ void main() {
       find.byKey(const ValueKey('account-archived-chats')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('account-author-profile')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('account-appearance')), findsOneWidget);
     expect(find.byKey(const ValueKey('account-privacy-row')), findsOneWidget);
     expect(find.byKey(const ValueKey('account-support')), findsOneWidget);
@@ -57,6 +66,29 @@ void main() {
     expect(find.text('https://example.com/privacy'), findsOneWidget);
     expect(find.text('https://example.com/terms'), findsOneWidget);
     expect(find.text('Tomeza 1.0.0 (1)'), findsOneWidget);
+  });
+
+  testWidgets('a free account whose welcome grant the server is holding is '
+      'told it is on its way', (tester) async {
+    await _pumpHub(
+      tester,
+      billing: const MobileBilling(
+        credits: CreditBalance(
+          available: 0,
+          reserved: 0,
+          lifetimeGranted: 0,
+          lifetimeSpent: 0,
+        ),
+        entitlements: [],
+        products: [],
+        creditCosts: {},
+        freeTier: MobileFreeTier(welcomeCredits: 1000),
+        welcomeCreditsPending: true,
+      ),
+    );
+
+    expect(find.text('Your welcome credits are on their way.'), findsOneWidget);
+    expect(find.textContaining('one-time welcome credits'), findsNothing);
   });
 
   testWidgets('a build that cannot send notifications shows no row for '
@@ -155,6 +187,19 @@ void main() {
     expect(find.text('Plan & billing'), findsWidgets);
   });
 
+  testWidgets('the author profile row opens Author profile', (tester) async {
+    await _pumpHub(tester);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('account-author-profile')),
+      200,
+    );
+    await tester.tap(find.byKey(const ValueKey('account-author-profile')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AuthorProfileScreen), findsOneWidget);
+    expect(find.text('Pen name'), findsOneWidget);
+  });
+
   testWidgets('appearance sheet persists the chosen mode', (tester) async {
     final store = MemoryAppearanceStore();
     await _pumpHub(tester, appearance: store);
@@ -231,6 +276,7 @@ Future<void> _pumpHub(
   AuthRepository? auth,
   PushMessaging? push,
   PushDeviceRepository? pushDevices,
+  MobileBilling? billing,
   bool dark = false,
 }) async {
   final router = GoRouter(
@@ -249,6 +295,10 @@ Future<void> _pumpHub(
         path: '/account/credit-history',
         builder: (_, _) => const Scaffold(body: SizedBox.shrink()),
       ),
+      GoRoute(
+        path: authorProfileLocation,
+        builder: (_, _) => const AuthorProfileScreen(),
+      ),
     ],
   );
   addTearDown(router.dispose);
@@ -261,7 +311,9 @@ Future<void> _pumpHub(
         authRepositoryProvider.overrideWithValue(
           auth ?? FakeAuthRepository(initialSession: fakeSession()),
         ),
-        billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
+        billingRepositoryProvider.overrideWithValue(
+          FakeBillingRepository(billing: billing),
+        ),
         appearanceStoreProvider.overrideWithValue(
           appearance ?? MemoryAppearanceStore(),
         ),
@@ -269,6 +321,11 @@ Future<void> _pumpHub(
         appConfigProvider.overrideWithValue(_testConfig),
         projectsRepositoryProvider.overrideWithValue(FakeProjectsRepository()),
         creationRepositoryProvider.overrideWithValue(FakeCreationRepository()),
+        bookMatterRepositoryProvider.overrideWithValue(
+          FakeBookMatterRepository(
+            profile: const AuthorProfile(suggestedPenName: 'Mira'),
+          ),
+        ),
         if (push != null) pushMessagingProvider.overrideWithValue(push),
         if (pushDevices != null)
           pushDeviceRepositoryProvider.overrideWithValue(pushDevices),

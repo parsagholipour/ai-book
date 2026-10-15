@@ -5,10 +5,12 @@ import { createGoogleIdentityVerifier, type GoogleIdentityVerifier } from "./goo
 import { hasCurrentLegalAcceptance, legalAcceptanceEvidence } from "./legalAcceptance.js";
 import {
   authErrorResponseSchema, authSessionResponseSchema, authSessionResponse,
-  createMobileSession, isActiveUser, requestSessionContext, sendAuthError, verifyPassword
+  ACCOUNT_DISABLED_MESSAGE, createMobileSession, isActiveUser, requestSessionContext, sendAuthError, verifyPassword
 } from "./mobileAuth.js";
-import { InMemoryRateLimiter, identityRateLimitKey, rateLimitKey, sendRateLimitError } from "./rateLimit.js";
+import { passwordHashingErrorHandler } from "./passwordHashing.js";
+import { InMemoryRateLimiter, clientNetworkRateLimitKey, identityRateLimitKey, sendRateLimitError } from "./rateLimit.js";
 import { lookupSignupCountry } from "./signupCountry.js";
+import { noteUserActiveDay } from "./productAnalytics.js";
 
 const bodySchema = z.object({
   idToken: z.string().min(1).max(8192),
@@ -23,13 +25,17 @@ export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastif
   const verifier = options.verifier === undefined ? createGoogleIdentityVerifier() : options.verifier;
   const limiter = new InMemoryRateLimiter({ maxAttempts: 20, windowMs: 15 * 60 * 1000 });
   const signupLimiter = new InMemoryRateLimiter({ maxAttempts: 5, windowMs: 15 * 60 * 1000 });
+  // Linking an existing account verifies its password: a refused hash answers 429.
+  fastify.setErrorHandler(passwordHashingErrorHandler);
 
   fastify.post("/api/mobile/auth/google", { attachValidation: true, schema: routeSchema }, async (request, reply) => {
     const parsed = bodySchema.safeParse(request.body);
     if (request.validationError || !parsed.success) {
       return sendAuthError(reply, 400, "VALIDATION_ERROR", "Provide a Google sign-in token.");
     }
-    const limit = limiter.hit(rateLimitKey(request, "google"));
+    // Both per-caller limits count the client's network, not its address: an
+    // IPv6 client rotating through its /64 met a fresh bucket every request.
+    const limit = limiter.hit(clientNetworkRateLimitKey(request, "google"));
     if (!limit.allowed) return sendRateLimitError(reply, limit.retryAfterSeconds);
     if (!verifier) {
       return sendAuthError(reply, 503, "GOOGLE_SIGN_IN_UNAVAILABLE", "Google sign-in is not available right now. Use email instead.");
@@ -45,13 +51,24 @@ export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastif
 
     let user = await prisma.user.findUnique({ where: { googleSubject: identity.subject } });
     let created = false;
+    // Google vouches for an address only when its token says `email_verified`,
+    // which the verifier requires — so every Google path that lands on the
+    // account's own address marks it verified, and the welcome grant can settle.
+    const verifiedAt = new Date();
+    if (user && isActiveUser(user) && !user.emailVerifiedAt && user.email === identity.email) {
+      await prisma.user.updateMany({
+        where: { id: user.id, email: identity.email, emailVerifiedAt: null },
+        data: { emailVerifiedAt: verifiedAt }
+      });
+      user = { ...user, emailVerifiedAt: verifiedAt };
+    }
     if (!user) {
       const existing = await prisma.user.findUnique({
         where: { email: identity.email }, include: { passwordCredential: true }
       });
       if (existing) {
         if (!isActiveUser(existing)) {
-          return sendAuthError(reply, 403, "ACCOUNT_DISABLED", "This account is not active.");
+          return sendAuthError(reply, 403, "ACCOUNT_DISABLED", ACCOUNT_DISABLED_MESSAGE);
         }
         if (existing.googleSubject && existing.googleSubject !== identity.subject) {
           return sendAuthError(reply, 409, "GOOGLE_ACCOUNT_CONFLICT", "Use the Google account already connected to this account, or sign in with email.");
@@ -73,7 +90,8 @@ export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastif
                 id: existing.id, googleSubject: null, status: "ACTIVE", disabledAt: null,
                 passwordCredential: { is: { passwordHash: existing.passwordCredential.passwordHash } }
               },
-              data: { googleSubject: identity.subject }
+              // Found by `identity.email`, so this is the address Google vouched for.
+              data: { googleSubject: identity.subject, ...(existing.emailVerifiedAt ? {} : { emailVerifiedAt: verifiedAt }) }
             });
             if (linked.count !== 1) {
               return sendAuthError(reply, 409, "GOOGLE_ACCOUNT_CONFLICT", "Your account changed. Please sign in again.");
@@ -82,13 +100,15 @@ export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastif
             if (!isUniqueConflict(error)) throw error;
             return sendAuthError(reply, 409, "GOOGLE_ACCOUNT_CONFLICT", "Your account changed. Please sign in again.");
           }
+          user = { ...existing, emailVerifiedAt: existing.emailVerifiedAt ?? verifiedAt };
+        } else {
+          user = existing;
         }
-        user = existing;
       } else {
         if (!parsed.data.termsAccepted || !parsed.data.ageGuardianAttested) {
           return sendAuthError(reply, 409, "GOOGLE_SIGNUP_REQUIRED", "Accept the Terms and Privacy Policy and confirm the age requirement to create your account.");
         }
-        const signupLimit = signupLimiter.hit(rateLimitKey(request, "google-signup"));
+        const signupLimit = signupLimiter.hit(clientNetworkRateLimitKey(request, "google-signup"));
         if (!signupLimit.allowed) return sendRateLimitError(reply, signupLimit.retryAfterSeconds);
         const context = requestSessionContext(request);
         const countryCode = context.ipHash ? await lookupSignupCountry(request.ip).catch(() => {
@@ -99,6 +119,7 @@ export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastif
           user = await prisma.user.create({ data: {
             email: identity.email,
             googleSubject: identity.subject,
+            emailVerifiedAt: verifiedAt,
             ...(identity.displayName ? { displayName: identity.displayName } : {}),
             legalAcceptances: { create: legalAcceptanceEvidence(parsed.data, "mobile_google_signup", request) },
             welcomeCreditGrant: { create: {
@@ -116,8 +137,9 @@ export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastif
         }
       }
     }
-    if (!isActiveUser(user)) return sendAuthError(reply, 403, "ACCOUNT_DISABLED", "This account is not active.");
+    if (!isActiveUser(user)) return sendAuthError(reply, 403, "ACCOUNT_DISABLED", ACCOUNT_DISABLED_MESSAGE);
     const session = await createMobileSession(user.id, requestSessionContext(request));
+    noteUserActiveDay(user.id, request.log);
     return reply.code(created ? 201 : 200).send(
       authSessionResponse(user, session, created || await hasCurrentLegalAcceptance(user.id))
     );

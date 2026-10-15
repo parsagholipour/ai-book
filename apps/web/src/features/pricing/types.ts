@@ -26,6 +26,9 @@ export type CreditPricingKey =
   | "imageGeneration"
   | "coverRegeneration"
   | "premiumReview"
+  // Retired 2026-10-15 and held at 0 by the server: every finished book
+  // downloads free. Still in the saved price list, so the editor sends it back
+  // unchanged, but it has no field.
   | "exportUnlock"
   | "planRevision"
   | "planRevisionFast"
@@ -34,10 +37,12 @@ export type CreditPricingKey =
   | "bookTextEditBase"
   | "bookTextEditPerPage"
   | "pageRegenerationPerPage"
+  | "addedPagesBase"
   | "bookReplanBase"
   | "voiceCallPerMinute"
   | "audiobookBase"
   | "audiobookPerPage"
+  | "audiobookPer100Words"
   | "characterPortraitGeneration"
   // The quality tiers' own rates. The unsuffixed key above is the balanced one.
   | "fullBookBaseFast"
@@ -66,7 +71,11 @@ export type CreditPricingKey =
   | "welcomeCreditsAccountsPerIpLowMiddleIncome"
   | "freeIllustratedBooksPerMonth"
   | "freeManuscriptImportsPerMonth"
-  | "freeMaxBookPages";
+  | "freeMaxBookPages"
+  // Not prices either: the longest book any account may have generated, and
+  // the switch that lets new books start on Ultra effort.
+  | "paidMaxBookPages"
+  | "ultraTierEnabled";
 
 export type CreditPricingValues = Record<CreditPricingKey, number>;
 
@@ -106,6 +115,9 @@ export type PricingState = {
   updatedAt: string | null;
   defaults: CreditPricingValues;
   limits: CreditPricingValues;
+  /** Per-key floors; an older API sends none, which reads as 0 (1 for free messages). */
+  minimums?: Partial<CreditPricingValues>;
+  /** Dollars per credit for every projection: the cheapest paid credit, net of Google's fee. */
   creditUsdValue: number;
   preview: PricingPreview;
   revisions: PricingRevision[];

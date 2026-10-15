@@ -101,6 +101,13 @@ describe("worker job payload schemas", () => {
     expect(payload.legacyResumeMarker).toBe("kept");
   });
 
+  it.each([null, "Jane Doe", [42]])("refuses invalid import parsing hints: %j", (knownAuthors) => {
+    expect(() => parseWorkerJobData(jobNames.IMPORT_BOOK, {
+      ...validPayloads[jobNames.IMPORT_BOOK],
+      knownAuthors
+    })).toThrow(/knownAuthors/);
+  });
+
   it("validates the complete replan recovery contract on regenerated-book payloads", () => {
     const payload = parseWorkerJobData(jobNames.GENERATE_BOOK, {
       ...validPayloads[jobNames.GENERATE_BOOK],

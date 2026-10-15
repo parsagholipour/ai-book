@@ -24,6 +24,7 @@ import type {
 } from "./manuscriptDto.js";
 import type { ManuscriptAssistCreateBody } from "./manuscriptSchemas.js";
 import { liveChapters, manuscriptSource, type LoadedManuscript } from "./manuscriptStore.js";
+import { aiWorkKindForTier, assertAiCapacity } from "../aiCapacity.js";
 
 /**
  * The Writing Studio's long assists (spec "Long assists"): an illustration, a
@@ -233,6 +234,9 @@ export async function createLongAssist(options: {
   const chapter = validatedChapter(project, manuscript, body);
   const kind = body.kind;
   const tier = modelTierFromMediaSettings(project.mediaSettings);
+  // After the replay above and the author's own mistakes, before the slot and
+  // the charge; the route's ladder answers a refusal.
+  await assertAiCapacity(userId, aiWorkKindForTier(tier));
   const cost = longAssistCredits(kind, {
     tier,
     targetWords: body.targetWords,

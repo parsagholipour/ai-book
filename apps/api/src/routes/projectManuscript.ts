@@ -13,7 +13,7 @@ import {
   resolvePublicImageUrl,
   type BookPageMapPlan
 } from "@book-maker/core";
-import { prisma, researchCitationsForExport } from "@book-maker/db";
+import { bookMatterForExport, prisma, researchCitationsForExport } from "@book-maker/db";
 import { objectKey, objectStore } from "@book-maker/storage";
 
 /**
@@ -88,6 +88,7 @@ export async function compileProjectManuscript(
     category: project.category,
     language: project.language,
     ...(project.authorName ? { authorName: project.authorName } : {}),
+    matter: await bookMatterForExport(project),
     ...(cover
       ? {
           cover: {

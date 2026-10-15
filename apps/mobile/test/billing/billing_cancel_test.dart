@@ -211,6 +211,8 @@ class _FakeBillingRepository implements BillingRepository {
     String? transactionId,
     String? purchaseStatus,
     String? projectId,
+    int? localPriceMicros,
+    String? localCurrency,
   }) {
     throw UnimplementedError();
   }
@@ -241,6 +243,9 @@ class _SilentStoreClient implements StoreBillingClient {
 
   @override
   Future<void> restorePurchases() async {}
+
+  @override
+  Future<List<StorePurchaseUpdate>> queryOwnedPurchases() async => const [];
 
   @override
   Future<void> finishPurchase(

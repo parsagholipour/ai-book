@@ -16,10 +16,15 @@ class _PageCountPromptSheet extends StatefulWidget {
     required this.preflight,
     required this.estimateCredits,
     this.resolveLocked,
+    this.ceilingPages = maxPlanBookPages,
   });
 
   final MobileCreationBuildPreflight preflight;
   final int Function(int targetPages) estimateCredits;
+
+  /// The longest book any plan writes (`paidMaxBookPages`): a recommendation
+  /// past it is not offered, and a typed count past it is not accepted.
+  final int ceilingPages;
 
   /// Runs the long-book offer for a count past the free limit, answering with
   /// the count to use or null when the reader closed it.
@@ -40,7 +45,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
 
   int? get _customPages {
     final value = int.tryParse(_customController.text.trim());
-    if (value == null || value < 1 || value > 600) {
+    if (value == null || value < 1 || value > widget.ceilingPages) {
       return null;
     }
     return value;
@@ -49,12 +54,12 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
   /// The count Continue submits when the custom field is empty: the flagged
   /// recommendation, or the first option if the payload omitted the flag.
   MobilePageCountRecommendation? get _continueRecommendation {
-    for (final recommendation in widget.preflight.recommendations) {
+    final recommendations = _options;
+    for (final recommendation in recommendations) {
       if (recommendation.isRecommended) {
         return recommendation;
       }
     }
-    final recommendations = widget.preflight.recommendations;
     return recommendations.isEmpty ? null : recommendations.first;
   }
 
@@ -79,8 +84,22 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
   /// The recommendations, plus the free tier's longest book when every one of
   /// them is past it — a free reader is never left with only locked choices.
   List<MobilePageCountRecommendation> get _options {
-    final options = [...widget.preflight.recommendations]
-      ..sort((a, b) => a.targetPages.compareTo(b.targetPages));
+    final options = [
+      for (final option in widget.preflight.recommendations)
+        if (option.targetPages <= widget.ceilingPages) option,
+    ]..sort((a, b) => a.targetPages.compareTo(b.targetPages));
+    // Every recommendation was past what any plan writes: the longest book
+    // that can be written stands in, so Continue still has something to send.
+    if (options.isEmpty && widget.preflight.recommendations.isNotEmpty) {
+      final ceiling = widget.ceilingPages;
+      options.add(
+        MobilePageCountRecommendation(
+          targetPages: ceiling,
+          label: '$ceiling pages',
+          description: 'The longest book Tomeza writes right now.',
+        ),
+      );
+    }
     final max = widget.preflight.maxPages;
     if (max != null &&
         max > 0 &&
@@ -154,7 +173,7 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
                 labelText: 'Custom pages',
                 helperMaxLines: 4,
                 helperText: _customPages == null
-                    ? 'Enter a number from 1 to 600.'
+                    ? 'Enter a number from 1 to ${widget.ceilingPages}.'
                     : widget.preflight.locks(_customPages!)
                     ? '$_customPages pages needs a plan — free books go up '
                           'to ${widget.preflight.maxPages} pages.'

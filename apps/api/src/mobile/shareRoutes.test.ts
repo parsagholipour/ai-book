@@ -12,17 +12,21 @@ import {
   type DecisionResult,
   type GenerationTextModelRouting
 } from "@book-maker/core";
-import { ensureProjectExportEntitlementOrSpend, hasActiveProjectEntitlement, InsufficientCreditsError } from "@book-maker/db/billing";
-import type { FastifyInstance } from "fastify";
+import * as billing from "@book-maker/db/billing";
+import Fastify, { type FastifyInstance } from "fastify";
+import { registerAuth } from "../auth.js";
+import { adminShareRoutes } from "../routes/adminShares.js";
 import { USER_TEXT_MODERATION_OPTIONS } from "../userTextModeration.js";
 import { bearer, buildMobileApp, mockAccessTokens, mockPrisma, projectRecord, resetMobileHarness, teardownMobileHarness } from "./testing/mobileApiHarness.js";
+import { SHARE_TEXT_OFFLINE_REASON } from "./shares/shareCopy.js";
 import { installShareStore, publishSharedBook, seedShare, type ShareStore } from "./testing/shareTestSupport.js";
 
 /**
- * The author's share routes (`routes/shares.ts`): what a share costs, when,
- * and what the note's gate does with each of its outcomes. The share, slug and
- * report tables are an in-memory store, and the book is a real 12-sheet PDF
- * (two sheets of front matter, ten reading pages, so the preview cap is 5).
+ * The author's share routes (`routes/shares.ts`): that a share costs nothing,
+ * when the book's text is screened and which revision that stamps, and what
+ * the note's gate does with each of its outcomes. The share, slug and report
+ * tables are an in-memory store, and the book is a real 12-sheet PDF (two
+ * sheets of front matter, ten reading pages, so the preview cap is 5).
  */
 
 const AUTH = bearer("token-a");
@@ -72,8 +76,24 @@ function put(app: FastifyInstance, payload: Record<string, unknown>) {
   return app.inject({ method: "PUT", url: "/api/mobile/projects/project-1/share", headers: AUTH, payload });
 }
 
+/** What building the app calls on the billing module, before any route runs. */
+const APP_BOOT_BILLING_CALLS = new Set(["ensureDefaultProductCatalog"]);
+
+/**
+ * Nothing in the billing module ran beyond the app's own boot: no balance
+ * read, reservation, spend or entitlement — a share, full or preview, is free
+ * (the export unlock is gone).
+ */
+function expectNothingCharged() {
+  const called = Object.entries(billing)
+    .filter(([name, value]) => !APP_BOOT_BILLING_CALLS.has(name) && vi.isMockFunction(value) && value.mock.calls.length > 0)
+    .map(([name]) => name);
+  expect(called).toEqual([]);
+}
+
 beforeEach(async () => {
   resetMobileHarness();
+  delete (mockPrisma as { safetySettingsRevision?: unknown }).safetySettingsRevision;
   mockAccessTokens({ "token-a": "user-a" });
   store = installShareStore();
   events = [];
@@ -92,17 +112,22 @@ beforeEach(async () => {
   mockPrisma.project.findUnique.mockImplementation(async ({ where }: { where: { id?: string } }) => (where.id === "project-1" ? project : null));
   mockPrisma.page.findMany.mockImplementation(async () => pages);
   mockPrisma.libraryCharacter.findMany.mockResolvedValue([]);
-  vi.mocked(hasActiveProjectEntitlement).mockResolvedValue(false);
-  vi.mocked(ensureProjectExportEntitlementOrSpend).mockImplementation(async () => {
-    events.push("unlock");
-    return { entitlement: {} as never, chargedLedgerEntry: {} as never };
-  });
 });
 
 afterEach(teardownMobileHarness);
 
+/** The account row as the share routes read it, after an operator turned sharing off (`accountModeration.ts`). */
+function turnSharingOff() {
+  const queryRaw = mockPrisma.$queryRaw.getMockImplementation()!;
+  mockPrisma.$queryRaw.mockImplementation(async (strings: readonly string[], ...values: unknown[]) =>
+    strings.join("?").includes('FROM "User"') && values[0] === "user-a"
+      ? [{ status: "ACTIVE", sharingDisabledAt: new Date("2026-10-13T10:00:00.000Z") }]
+      : queryRaw(strings, ...values)
+  );
+}
+
 describe("share state", () => {
-  it("describes a finished, unshared book: reading pages, the preview cap, the unlock price", async () => {
+  it("describes a finished, unshared book: reading pages, the preview cap, and an unlock that costs nothing", async () => {
     const app = await buildApp();
 
     const response = await app.inject({ method: "GET", url: "/api/mobile/projects/project-1/share", headers: AUTH });
@@ -117,10 +142,11 @@ describe("share state", () => {
         readingPages: 10,
         maxPreviewPages: 5,
         likenessRequired: false,
-        exportUnlocked: false
+        // Installed builds ask for an unlock when these say otherwise; no book carries one any more.
+        exportUnlocked: true,
+        exportUnlockCredits: 0
       }
     });
-    expect(response.json().book.exportUnlockCredits).toBeGreaterThan(0);
     await app.close();
   });
 
@@ -153,7 +179,7 @@ describe("a preview", () => {
     expect(share.url).toMatch(new RegExp(`/s/${share.slug}$`));
     expect(store.slugs).toEqual([share.slug]);
     expect(shared.json().exportUnlockCharged).toBe(false);
-    expect(ensureProjectExportEntitlementOrSpend).not.toHaveBeenCalled();
+    expectNothingCharged();
     await app.close();
   });
 
@@ -167,90 +193,238 @@ describe("a preview", () => {
     expect(store.shares).toEqual([]);
     await app.close();
   });
+
+  it("offers and accepts only one page when a long biography has no measured content boundaries", async () => {
+    const published = await publishSharedBook("project-1", 17, 1);
+    project.pdfPageMap = {
+      kind: "cover-numbering", version: 2, hasCoverPage: true, pages: [], pdfDigest: published.digest
+    };
+    const app = await buildApp();
+
+    const state = await app.inject({ method: "GET", url: "/api/mobile/projects/project-1/share", headers: AUTH });
+    const oversized = await put(app, { mode: "preview", previewPages: 8, rightsConfirmed: true });
+    const allowed = await put(app, { mode: "preview", previewPages: 1, rightsConfirmed: true });
+
+    expect(state.json().book).toMatchObject({ shareable: true, readingPages: null, maxPreviewPages: 1 });
+    expect(oversized.statusCode).toBe(400);
+    expect(oversized.json().error.code).toBe("PREVIEW_TOO_LONG");
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json().share.previewPages).toBe(1);
+    expectNothingCharged();
+    await app.close();
+  });
 });
 
 describe("a full share", () => {
-  it("asks for the unlock on a locked book instead of charging", async () => {
+  it("is free: nothing is asked or charged, with or without the unlock the old app still offers", async () => {
+    const app = await buildApp();
+
+    const plain = await put(app, { mode: "full", rightsConfirmed: true, caption: "A cat, a lighthouse, a storm." });
+    const state = await app.inject({ method: "GET", url: "/api/mobile/projects/project-1/share", headers: AUTH });
+
+    expect(plain.statusCode).toBe(200);
+    expect(plain.json()).toMatchObject({
+      exportUnlockCharged: false,
+      share: { mode: "full", captionStatus: "allowed" },
+      book: { exportUnlocked: true, exportUnlockCredits: 0 }
+    });
+    expect(state.json().book).toMatchObject({ exportUnlocked: true, exportUnlockCredits: 0 });
+    expect(events).toEqual(["jev"]);
+    expectNothingCharged();
+    await app.close();
+  });
+
+  it("accepts and ignores acceptExportUnlock from an installed build", async () => {
+    const app = await buildApp();
+
+    const response = await put(app, { mode: "full", rightsConfirmed: true, acceptExportUnlock: true });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ exportUnlockCharged: false, share: { mode: "full", status: "active" } });
+    expectNothingCharged();
+    await app.close();
+  });
+
+  it("is free for an author's own book too, an import or a Studio book", async () => {
+    // An imported manuscript (`isAuthorManuscript`), which no plan ever covered under the unlock.
+    const settings = (project.mediaSettings ?? {}) as Record<string, unknown>;
+    project.mediaSettings = { ...settings, mobile: { ...((settings.mobile ?? {}) as Record<string, unknown>), import: { format: "docx" } } };
     const app = await buildApp();
 
     const response = await put(app, { mode: "full", rightsConfirmed: true });
 
-    expect(response.statusCode).toBe(402);
-    expect(response.json().error).toMatchObject({ code: "EXPORT_UNLOCK_REQUIRED" });
-    expect(response.json().error.creditsRequired).toBeGreaterThan(0);
-    expect(ensureProjectExportEntitlementOrSpend).not.toHaveBeenCalled();
-    expect(store.shares).toEqual([]);
-    await app.close();
-  });
-
-  it("charges the unlock exactly once, and only after the screen and the note's verdict", async () => {
-    const app = await buildApp();
-
-    const response = await put(app, { mode: "full", rightsConfirmed: true, acceptExportUnlock: true, caption: "A cat, a lighthouse, a storm." });
-
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ exportUnlockCharged: true, share: { mode: "full", captionStatus: "allowed" } });
-    expect(events).toEqual(["jev", "unlock"]);
-    expect(ensureProjectExportEntitlementOrSpend).toHaveBeenCalledOnce();
-    expect(ensureProjectExportEntitlementOrSpend).toHaveBeenCalledWith({
-      userId: "user-a",
-      projectId: "project-1",
-      idempotencyKey: "mobile:project:project-1:export-unlock"
-    });
+    expect(response.json()).toMatchObject({ exportUnlockCharged: false, book: { exportUnlocked: true, exportUnlockCredits: 0 } });
+    expectNothingCharged();
     await app.close();
   });
 
-  it("charges nothing when the note is refused after the unlock was offered", async () => {
+  it("writes nothing when the note is refused", async () => {
     jev = async () => jevVerdict("personal_info");
     const app = await buildApp();
 
-    const response = await put(app, { mode: "full", rightsConfirmed: true, acceptExportUnlock: true, caption: "Call Jane on 0912 345 6789" });
+    const response = await put(app, { mode: "full", rightsConfirmed: true, caption: "Call Jane on 0912 345 6789" });
 
     expect(response.statusCode).toBe(422);
     expect(response.json().error).toMatchObject({ code: "CAPTION_PERSONAL_INFO", reason: "personal_info" });
     expect(response.json().error.message).toMatch(/personal details/);
-    expect(ensureProjectExportEntitlementOrSpend).not.toHaveBeenCalled();
     expect(store.shares).toEqual([]);
     await app.close();
   });
 
-  it("charges nothing when the book's own text fails the screen", async () => {
+  it("writes nothing when the book's own text fails the screen", async () => {
     pages = [{ title: "One", markdown: HARMFUL }];
     const app = await buildApp();
 
-    const response = await put(app, { mode: "full", rightsConfirmed: true, acceptExportUnlock: true });
+    const response = await put(app, { mode: "full", rightsConfirmed: true });
 
     expect(response.statusCode).toBe(422);
     expect(response.json().error.code).toBe("CONTENT_RESTRICTED");
     expect(response.json().error.reason).toBeTruthy();
-    expect(ensureProjectExportEntitlementOrSpend).not.toHaveBeenCalled();
     expect(store.shares).toEqual([]);
     await app.close();
   });
 
-  it("writes nothing when the unlock cannot be paid for", async () => {
-    vi.mocked(ensureProjectExportEntitlementOrSpend).mockRejectedValueOnce(
-      new InsufficientCreditsError({ requiredCredits: 100, availableCredits: 3, reservedCredits: 0 } as never)
-    );
+  it.each([
+    { authorName: "CSAM" },
+    { bookMatter: { aboutAuthor: "This author writes about CSAM." } },
+    { bookMatter: { dedication: "For CSAM." } },
+    { bookMatter: { copyrightHolder: "CSAM" } }
+  ])("refuses stored printed matter before sharing (%j)", async (matter) => {
+    Object.assign(project, matter);
     const app = await buildApp();
 
-    const response = await put(app, { mode: "full", rightsConfirmed: true, acceptExportUnlock: true });
+    const response = await put(app, { mode: "full", rightsConfirmed: true });
 
-    expect(response.statusCode).toBe(402);
-    expect(response.json().error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toMatchObject({ code: "CONTENT_RESTRICTED", reason: "critical_illegal_harm" });
     expect(store.shares).toEqual([]);
+    expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ authorName: true, bookMatter: true })
+    }));
     await app.close();
   });
 
-  it("is free on a book that was already unlocked", async () => {
-    vi.mocked(hasActiveProjectEntitlement).mockResolvedValue(true);
+  it("shares allowed printed memorials and biographies without treating them as requests", async () => {
+    project.bookMatter = {
+      dedication: "To the victims of the terrorist attack, who taught us how to grieve.",
+      aboutAuthor: "Oma escaped on a fake passport in 1939."
+    };
     const app = await buildApp();
 
     const response = await put(app, { mode: "full", rightsConfirmed: true });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ exportUnlockCharged: false, share: { mode: "full" }, book: { exportUnlocked: true, exportUnlockCredits: 0 } });
-    expect(ensureProjectExportEntitlementOrSpend).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it.each([false, true])("screens stored matter using the current copyright policy (%s)", async (enabled) => {
+    Object.assign(mockPrisma, {
+      safetySettingsRevision: { findFirst: vi.fn(async () => ({ copyrightRestrictionsEnabled: enabled, sexualContentFilterEnabled: false })) }
+    });
+    project.bookMatter = { aboutAuthor: "Copy the entire copyrighted book without permission." };
+    const app = await buildApp();
+
+    const response = await put(app, { mode: "full", rightsConfirmed: true });
+
+    expect(response.statusCode).toBe(enabled ? 422 : 200);
+    if (enabled) {
+      expect(response.json().error).toMatchObject({ code: "COPYRIGHT_RESTRICTED", reason: "copyright" });
+      expect(store.shares).toEqual([]);
+    }
+    await app.close();
+  });
+});
+
+describe("the screened revision", () => {
+  it("stamps the revision the screen read the text at", async () => {
+    project.contentRevision = 7;
+    const app = await buildApp();
+
+    const response = await put(app, { mode: "preview", previewPages: 2, rightsConfirmed: true });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.shares[0]!.screenedContentRevision).toBe(7);
+    await app.close();
+  });
+
+  it("stamps the revision of the text it read, not the one the route loaded the book at", async () => {
+    // An edit lands between the route's read of the book and the screen's snapshot.
+    project.contentRevision = 7;
+    mockPrisma.project.findUnique.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id === "project-1" ? { ...project, contentRevision: 8 } : null
+    );
+    const app = await buildApp();
+
+    await put(app, { mode: "preview", previewPages: 2, rightsConfirmed: true });
+
+    expect(store.shares[0]!.screenedContentRevision).toBe(8);
+    await app.close();
+  });
+
+  it("screens a live share again when its book moved, even in the same mode", async () => {
+    seedShare(store, { screenedContentRevision: 0 });
+    project.contentRevision = 1;
+    pages = [{ title: "One", markdown: HARMFUL }];
+    const app = await buildApp();
+
+    const refused = await put(app, { mode: "preview", previewPages: 3 });
+    pages = [{ title: "One", markdown: "The cat slept through the storm." }];
+    const passed = await put(app, { mode: "preview", previewPages: 3 });
+
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json().error.code).toBe("CONTENT_RESTRICTED");
+    expect(passed.statusCode).toBe(200);
+    expect(store.shares[0]).toMatchObject({ status: "ACTIVE", previewPages: 3, screenedContentRevision: 1 });
+    await app.close();
+  });
+
+  it("tells the author why a re-screen turned the link off, and shares again through the create-time screen", async () => {
+    // A re-screen refused the book's changed text (`shareRescreen.ts`): revoked, with the system's reason.
+    const { slug: oldSlug } = seedShare(store, {
+      status: "REVOKED", takedownReason: SHARE_TEXT_OFFLINE_REASON, screenedContentRevision: 0
+    });
+    project.contentRevision = 1;
+    pages = [{ title: "One", markdown: HARMFUL }];
+    const app = await buildApp();
+
+    const state = await app.inject({ method: "GET", url: "/api/mobile/projects/project-1/share", headers: AUTH });
+    const stillRefused = await put(app, { mode: "preview", previewPages: 2, rightsConfirmed: true });
+    const afterRefusal = { ...store.shares[0] };
+    pages = [{ title: "One", markdown: "The cat slept through the storm." }];
+    project.contentRevision = 2;
+    const reshared = await put(app, { mode: "preview", previewPages: 2, rightsConfirmed: true });
+
+    expect(state.json().share).toMatchObject({ status: "revoked", stoppedReason: SHARE_TEXT_OFFLINE_REASON, takedownReason: null });
+    expect(stillRefused.statusCode).toBe(422);
+    expect(stillRefused.json().error.code).toBe("CONTENT_RESTRICTED");
+    expect(afterRefusal).toMatchObject({ status: "REVOKED", slug: oldSlug, takedownReason: SHARE_TEXT_OFFLINE_REASON });
+    expect(reshared.statusCode).toBe(200);
+    expect(reshared.json().share).toMatchObject({ status: "active", stoppedReason: null, takedownReason: null });
+    expect(reshared.json().share.slug).not.toBe(oldSlug);
+    expect(store.shares[0]).toMatchObject({ status: "ACTIVE", takedownReason: null, screenedContentRevision: 2 });
+    await app.close();
+  });
+
+  it("says nothing of a reason on a share its author stopped", async () => {
+    seedShare(store);
+    const app = await buildApp();
+
+    const stopped = await app.inject({ method: "DELETE", url: "/api/mobile/projects/project-1/share", headers: AUTH });
+
+    expect(stopped.json().share).toMatchObject({ status: "revoked", stoppedReason: null, takedownReason: null });
+    await app.close();
+  });
+
+  it("does not read the text again for a live share already screened at the current revision", async () => {
+    seedShare(store, { screenedContentRevision: 0 });
+    const app = await buildApp();
+
+    const response = await put(app, { mode: "preview", previewPages: 4 });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockPrisma.page.findMany).not.toHaveBeenCalled();
+    expect(store.shares[0]).toMatchObject({ previewPages: 4, screenedContentRevision: 0 });
     await app.close();
   });
 });
@@ -381,6 +555,19 @@ describe("likeness, take-downs and revokes", () => {
     await app.close();
   });
 
+  it("refuses an account whose sharing an operator turned off, before reading the book", async () => {
+    turnSharingOff();
+    const app = await buildApp();
+
+    const response = await put(app, { mode: "full", rightsConfirmed: true });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toMatchObject({ code: "SHARING_DISABLED", message: expect.stringContaining("Sharing is turned off") });
+    expect(mockPrisma.project.findFirst).not.toHaveBeenCalled();
+    expect(store.shares).toEqual([]);
+    await app.close();
+  });
+
   it("revokes, then re-shares under a new slug while the old one stays retired", async () => {
     const { slug: oldSlug } = seedShare(store);
     const app = await buildApp();
@@ -393,6 +580,86 @@ describe("likeness, take-downs and revokes", () => {
     expect(reshared.json().share.slug).not.toBe(oldSlug);
     expect(store.slugs).toEqual([oldSlug, reshared.json().share.slug]);
     await app.close();
+  });
+
+  it.each(["ACTIVE", "REVOKED"])("refuses an operator takedown during moderation of an %s share", async (status) => {
+    const { id, slug } = seedShare(store, { status });
+    let moderationStarted!: () => void;
+    let releaseModeration!: () => void;
+    const started = new Promise<void>((resolve) => { moderationStarted = resolve; });
+    const released = new Promise<void>((resolve) => { releaseModeration = resolve; });
+    jev = async () => {
+      moderationStarted();
+      await released;
+      return jevVerdict("allowed");
+    };
+    const app = await buildApp();
+    const admin = Fastify();
+    await registerAuth(admin, { WEB_PASSWORD: "" } as never);
+    await admin.register(adminShareRoutes);
+    const pending = put(app, {
+      mode: "full", rightsConfirmed: true, caption: "For my niece."
+    }).then((response) => response);
+
+    try {
+      await started;
+      const takenDown = await admin.inject({
+        method: "POST", url: `/api/admin/shares/${id}/moderation`,
+        payload: { action: "take_down", reason: "Copyrighted text" }
+      });
+      expect(takenDown.statusCode).toBe(200);
+      releaseModeration();
+      const response = await pending;
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe("SHARE_TAKEN_DOWN");
+      expect(store.shares[0]).toMatchObject({ slug, status: "TAKEN_DOWN", takedownReason: "Copyrighted text", caption: null });
+      expect(store.slugs).toEqual([slug]);
+      expect(store.reports).toEqual([]);
+    } finally {
+      releaseModeration();
+      await pending;
+      await app.close();
+      await admin.close();
+    }
+  });
+
+  it("returns the takedown conflict when the operator acts after the last preflight", async () => {
+    const { id, slug } = seedShare(store, { status: "REVOKED" });
+    const app = await buildApp();
+    const admin = Fastify();
+    await registerAuth(admin, { WEB_PASSWORD: "" } as never);
+    await admin.register(adminShareRoutes);
+    // The operator acts just as the write starts: after every route check, as
+    // the share transaction takes the account's lock.
+    const queryRaw = mockPrisma.$queryRaw.getMockImplementation()!;
+    let tookDown = false;
+    mockPrisma.$queryRaw.mockImplementation(async (strings: readonly string[], ...values: unknown[]) => {
+      const sql = strings.join("?");
+      if (!tookDown && sql.includes('FROM "User"') && sql.includes("FOR SHARE")) {
+        tookDown = true;
+        const response = await admin.inject({
+          method: "POST", url: `/api/admin/shares/${id}/moderation`,
+          payload: { action: "take_down", reason: "Copyrighted text" }
+        });
+        expect(response.statusCode).toBe(200);
+      }
+      return queryRaw(strings, ...values);
+    });
+
+    try {
+      const response = await put(app, { mode: "full", rightsConfirmed: true });
+
+      expect(tookDown).toBe(true);
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe("SHARE_TAKEN_DOWN");
+      expect(store.shares[0]).toMatchObject({ slug, status: "TAKEN_DOWN", takedownReason: "Copyrighted text" });
+      expect(store.slugs).toEqual([slug]);
+      expect(store.reports).toEqual([]);
+    } finally {
+      await app.close();
+      await admin.close();
+    }
   });
 });
 
@@ -424,6 +691,18 @@ describe("make a book like this", () => {
     await app.close();
   });
 
+  it("offers an Ultra or over-long format as one the remixer can start today", async () => {
+    seedShare(store, { slug: "Remix0Slug12" });
+    project = { ...project, mediaSettings: { mobile: { bookType: "lead_magnet", lengthPreset: "expanded", qualityPreset: "ultra", imagesEnabled: false } }, targetPages: 320 };
+    const app = await buildApp();
+
+    const presets = (await app.inject({ method: "GET", url: "/api/mobile/shares/Remix0Slug12/remix", headers: AUTH })).json().presets;
+
+    // Ultra is off at launch and no generated book passes 200 pages yet.
+    expect(presets).toMatchObject({ qualityPreset: "premium", targetPages: 200 });
+    await app.close();
+  });
+
   it("never sends an automatic book-type choice, which would let the chat drop the format", async () => {
     seedShare(store, { slug: "Remix0Slug12" });
     project = { ...project, mediaSettings: { mobile: { bookType: "workbook", bookTypeChoice: "auto", lengthPreset: "short", qualityPreset: "fast", imagesEnabled: false } } };
@@ -433,6 +712,32 @@ describe("make a book like this", () => {
 
     expect(presets.bookType).toBe("workbook");
     expect(presets).not.toHaveProperty("bookTypeChoice");
+    await app.close();
+  });
+
+  it("is refused to an account whose sharing an operator turned off", async () => {
+    seedShare(store, { slug: "Remix0Slug12" });
+    turnSharingOff();
+    const app = await buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/mobile/shares/Remix0Slug12/remix", headers: AUTH });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe("SHARING_DISABLED");
+    await app.close();
+  });
+
+  it("sends no title while the book has changed since the share's last screen", async () => {
+    seedShare(store, { slug: "Remix0Slug12", screenedContentRevision: 0 });
+    project = { ...project, contentRevision: 1 };
+    const app = await buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/mobile/shares/Remix0Slug12/remix", headers: AUTH });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().title).toBe("");
+    expect(response.body).not.toContain("The Lighthouse Cat");
+    expect(response.json().presets).toMatchObject({ pageCountMode: "custom" });
     await app.close();
   });
 

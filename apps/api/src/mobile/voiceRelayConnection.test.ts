@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
+vi.mock("@book-maker/db", async () => (await import("./testing/mobileApiMocks.js")).dbModuleMock());
 vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApiMocks.js")).billingModuleMock());
 import { VoiceRelayConnection, stopLocalVoiceRelay, type VoiceRelayClaim, type VoiceRelaySocket } from "./voiceRelayConnection.js";
 import { VoiceRelayError } from "@book-maker/db/billing";
@@ -28,13 +29,14 @@ let connections: VoiceRelayConnection[];
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-04T12:00:00Z")); connections = []; });
 afterEach(async () => { await Promise.all(connections.map((connection) => connection.stop("test_end"))); vi.clearAllTimers(); vi.useRealTimers(); });
 
-function setup() {
+function setup(model = "funded-model") {
   const client = new Socket();
   const provider = new Socket();
   const claim: VoiceRelayClaim = {
     lease: { callId: "call-1", userId: "user-a", leaseId: "owner-1" },
-    session: { token: "secret-provider-token", model: "funded-model", expiresAt: new Date(Date.now() + 1800_000).toISOString() },
-    deadline: new Date(Date.now() + 15_000)
+    session: { token: "secret-provider-token", model, expiresAt: new Date(Date.now() + 1800_000).toISOString() },
+    deadline: new Date(Date.now() + 15_000),
+    projectId: "project-1"
   };
   const authorize = vi.fn(async () => ({ deadline: new Date(Date.now() + 15_000), meter }));
   const finish = vi.fn(async () => {
@@ -45,14 +47,15 @@ function setup() {
   });
   const openProvider = vi.fn(() => provider);
   const warn = vi.fn();
-  const connection = new VoiceRelayConnection(client, claim, { authorize, finish, openProvider, warn });
+  const recordUsage = vi.fn(async (_rows: Array<Record<string, any>>) => undefined);
+  const connection = new VoiceRelayConnection(client, claim, { authorize, finish, openProvider, warn, recordUsage });
   connections.push(connection);
   provider.emit("open");
   async function ready() {
     provider.receive({ setupComplete: {} });
     await vi.advanceTimersByTimeAsync(0);
   }
-  return { client, provider, connection, claim, authorize, finish, ready, openProvider, warn };
+  return { client, provider, connection, claim, authorize, finish, ready, openProvider, warn, recordUsage };
 }
 const audio = (bytes = 3200) => ({ realtimeInput: { audio: { mimeType: "audio/pcm;rate=16000", data: Buffer.alloc(bytes).toString("base64") } } });
 
@@ -177,5 +180,115 @@ describe("server-owned voice connection", () => {
     expect(relay.finish).not.toHaveBeenCalled();
     await relay.connection.stop("ended");
     expect(next.readyState).toBe(WebSocket.CLOSED);
+  });
+});
+
+/** One turn's billed usage, as Gemini Live sends it beside the turn's content. */
+const turnUsage = (audioIn = 400) => ({
+  promptTokenCount: 800 + audioIn,
+  responseTokenCount: 300,
+  totalTokenCount: 1100 + audioIn,
+  promptTokensDetails: [{ modality: "TEXT", tokenCount: 800 }, { modality: "AUDIO", tokenCount: audioIn }],
+  responseTokensDetails: [{ modality: "AUDIO", tokenCount: 280 }, { modality: "TEXT", tokenCount: 20 }]
+});
+const LIVE_MODEL = "gemini-3.1-flash-live-preview";
+const recorded = (relay: ReturnType<typeof setup>) => relay.recordUsage.mock.calls.flatMap((call) => call[0]);
+
+describe("voice call provider usage", () => {
+  it("records the provider's own usage as a priced row for the caller and the book, and never forwards it", async () => {
+    const relay = setup(`models/${LIVE_MODEL}`); await relay.ready();
+    relay.provider.receive({ serverContent: { outputTranscription: { text: "hello" } }, usageMetadata: turnUsage() });
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage(600) });
+    expect(relay.client.sent.join()).not.toContain("usageMetadata");
+
+    await relay.connection.stop("ended");
+
+    expect(recorded(relay)).toEqual([expect.objectContaining({
+      userId: "user-a",
+      projectId: "project-1",
+      generationJobId: null,
+      provider: "gemini",
+      model: LIVE_MODEL,
+      purpose: "voice-call",
+      promptTokens: 2600,
+      outputTokens: 600,
+      // Both turns summed, each priced by modality: (1,600 text × $0.75 + 1,000 audio × $3)
+      // in and (560 audio × $12 + 40 text × $4.50) out, per million.
+      costHint: 0.01110,
+      metadata: expect.objectContaining({
+        operation: "voice.live", voiceCallId: "call-1", segment: 1, usageReports: 2,
+        inputByModality: { TEXT: 1600, AUDIO: 1000 }, outputByModality: { AUDIO: 560, TEXT: 40 },
+        provisional: false, costStatus: "priced"
+      })
+    })]);
+  });
+
+  it("writes a segment every minute and never counts a report in two", async () => {
+    const relay = setup(LIVE_MODEL); await relay.ready();
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage() });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(recorded(relay)).toHaveLength(1);
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage(600) });
+    await vi.advanceTimersByTimeAsync(60_000);
+    // A quiet minute writes nothing.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await relay.connection.stop("ended");
+
+    const rows = recorded(relay);
+    expect(rows.map((row) => [row.metadata.segment, row.promptTokens])).toEqual([[1, 1200], [2, 1400]]);
+  });
+
+  it("keeps one count across a private provider resume", async () => {
+    const relay = setup(LIVE_MODEL); await relay.ready();
+    const next = new Socket();
+    relay.openProvider.mockReturnValueOnce(next);
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage() });
+    relay.provider.receive({ sessionResumptionUpdate: { resumable: true, newHandle: "private-handle" } });
+    relay.provider.receive({ goAway: { timeLeft: "10s" }, usageMetadata: turnUsage(10) });
+    next.emit("open"); next.receive({ setupComplete: {} });
+    await vi.advanceTimersByTimeAsync(0);
+    next.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage(600) });
+    // The old socket is gone; nothing it might still say is counted.
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage(9_999) });
+
+    await relay.connection.stop("ended");
+
+    expect(recorded(relay).map((row) => [row.promptTokens, row.metadata.usageReports])).toEqual([[1200 + 810 + 1400, 3]]);
+  });
+
+  it("files a report it cannot price apart, unpriced, rather than guessing or dropping it", async () => {
+    const relay = setup(LIVE_MODEL); await relay.ready();
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage() });
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: { promptTokenCount: 900, responseTokenCount: 30 } });
+
+    await relay.connection.stop("ended");
+
+    expect(recorded(relay).map((row) => [row.costHint, row.promptTokens, row.metadata.costStatus])).toEqual([
+      [0.00525, 1200, "priced"],
+      [null, 900, "unknown_rate"]
+    ]);
+  });
+
+  it("records nothing for a call that reported no usage", async () => {
+    const relay = setup(LIVE_MODEL); await relay.ready();
+    await relay.connection.stop("ended");
+    expect(relay.recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("never lets a failing recorder reach the call or its settlement", async () => {
+    const relay = setup(LIVE_MODEL); await relay.ready();
+    relay.recordUsage.mockRejectedValueOnce(new Error("database away"));
+    relay.recordUsage.mockImplementationOnce(() => { throw new Error("recorder threw"); });
+    relay.provider.receive({ serverContent: { turnComplete: true }, usageMetadata: turnUsage() });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    relay.client.receive(audio());
+    expect(JSON.parse(relay.provider.sent.at(-1)!)).toEqual(audio());
+    relay.provider.receive({ serverContent: { outputTranscription: { text: "still here" } }, usageMetadata: turnUsage() });
+    expect(relay.client.sent.at(-1)).toContain("still here");
+
+    await relay.connection.stop("ended");
+    expect(relay.finish).toHaveBeenCalledOnce();
+    expect(relay.warn).toHaveBeenCalledTimes(2);
   });
 });

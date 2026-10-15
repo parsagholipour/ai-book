@@ -60,6 +60,7 @@ export type DecideArgs = {
   confidence: number;
   reasoning: string;
   assistantMessage: string;
+  responseLanguage?: string;
   editInstruction?: string;
   clarification: "none" | "scope";
   pageIndexes: number[];

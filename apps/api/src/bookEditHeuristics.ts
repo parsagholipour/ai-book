@@ -30,6 +30,8 @@ import type {
 import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "./bookPageNumbering.js";
 import { structuralPageEditFromMessage, structuralPageIntent } from "./bookEditStructure.js";
 import { codeLanguageRequest, pageIndexesNeedingCodeLanguage } from "./bookEditCodeScope.js";
+import { bookMatterIntent, mentionsBookMatter } from "./bookEditMatter.js";
+import { mentionsTomezaCreditRemoval, tomezaCreditIntent } from "./bookEditTomezaCredit.js";
 import { totalPrintedPages, type ReplanSettings, type StructuralPageEdit } from "@book-maker/core";
 
 /**
@@ -109,6 +111,15 @@ export function classifyWithHeuristics(
       impact: "small_text",
       clarification: "none"
     };
+  }
+
+  // Only ever the router's hint here: this function short-circuits nothing else.
+  if (stage === "complete" && mentionsBookMatter(message)) {
+    return bookMatterIntent({
+      confidence: 0.7,
+      reasoning: "The message names one of the book's matter pages.",
+      assistantMessage: "I’ll change that on the book’s title and credits pages."
+    });
   }
 
   if (asksQuestion || !looksLikeChangeRequest(message)) {
@@ -286,6 +297,29 @@ export function classifyWithDegradedHeuristics(
       impact: "small_text",
       clarification: "none"
     };
+  }
+
+  // The "Made with Tomeza" line, paraphrased past the recogniser: free, and
+  // never a page, so a router outage must not leave it to the catch-all clarify.
+  // Ahead of the matter detector, which reads "the Tomeza imprint" as a publisher.
+  if (stage === "complete" && mentionsTomezaCreditRemoval(message)) {
+    return tomezaCreditIntent({
+      confidence: 0.8,
+      reasoning: "The “Made with Tomeza” line is printed from the owner's plan, never from a page.",
+      assistantMessage: "I’ll take the “Made with Tomeza” line off this book."
+    });
+  }
+
+  // The book's matter pages, which the router would have picked: free and
+  // never a page, and ahead of the structural reader, which takes "remove the
+  // About the Author page" for a page of prose to delete. Whether it is one is
+  // all this decides; what changes is composed when it is applied.
+  if (stage === "complete" && mentionsBookMatter(message)) {
+    return bookMatterIntent({
+      confidence: 0.8,
+      reasoning: "The book's matter pages are printed from its details, never from a page.",
+      assistantMessage: "I’ll change that on the book’s title and credits pages."
+    });
   }
 
   // Before the continuation and before the structural battery: this is the

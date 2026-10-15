@@ -389,8 +389,6 @@ const _exports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     filename: 'book.pdf',
     contentType: 'application/pdf',
@@ -398,8 +396,6 @@ const _exports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',
@@ -410,8 +406,6 @@ const _readyExports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: true,
-    unlocked: true,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     filename: 'book.pdf',
     contentType: 'application/pdf',
@@ -419,8 +413,6 @@ const _readyExports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: true,
-    unlocked: true,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',

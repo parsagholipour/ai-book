@@ -45,7 +45,8 @@ function price(values: Partial<typeof DEFAULT_CREDIT_COSTS> | Record<string, num
 describe("ordinary message allowance", () => {
   it("uses welcome credits and never renews them into free messages at midnight or month rollover", async () => {
     db.state.accounts.delete(userId);
-    price({ welcomeCreditsEnabled: 1, welcomeCredits: 2 });
+    // One account per address, so the second one below is refused the grant.
+    price({ welcomeCreditsEnabled: 1, welcomeCredits: 2, welcomeCreditsAccountsPerIpLowMiddleIncome: 1 });
     db.state.welcomeGrants.set(userId, {
       userId, ipHash: "welcome-ip", countryCode: null, outcome: "PENDING", amountCredits: 0,
       ledgerEntryId: null, createdAt: now, settledAt: null
@@ -151,7 +152,7 @@ describe("ordinary message allowance", () => {
   });
 
   it.each([
-    ["free", 50, 50, 1], ["creator", 150, 100, 0], ["pro", 300, 150, 0], ["max", 600, 200, 0]
+    ["free", 50, 50, 1], ["creator", 60, 100, 0], ["pro", 120, 150, 0], ["max", 300, 200, 0]
   ] as const)("defaults %s to %i messages and a %i credit reset", (tier, dailyLimit, resetCredits, creditsPerMessage) => {
     expect(messagePolicy(tier)).toMatchObject({ dailyLimit, resetCredits, creditsPerMessage, resetEnabled: true });
   });

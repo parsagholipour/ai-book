@@ -1,5 +1,6 @@
 import { chargeActionTitle, retriedOperationId } from "./creditLogActions.js";
 import { type MobileCreditLogDto, type MobileCreditLogEntryDto, type MobileCreditLogKind } from "./dto.js";
+import { jsonRecord } from "./support.js";
 import { prisma } from "@book-maker/db";
 
 /**
@@ -10,7 +11,7 @@ import { prisma } from "@book-maker/db";
  * provider error — so every line here is built from `entryType`, `status` and
  * `operation` instead. Like the other serializers, this is the API contract.
  *
- * Three row shapes are easy to misread, and all three are load-bearing:
+ * Four row shapes are easy to misread, and all four are load-bearing:
  *
  *  - A **hold** (`RESERVED`) has already left the balance. It is shown as a
  *    charge with `pending`, because hiding it would leave a dip in the balance
@@ -20,6 +21,13 @@ import { prisma } from "@book-maker/db";
  *    `refunded` and the app draws it struck through rather than counting it.
  *  - A **refunded charge** that had already settled is a second, positive row —
  *    so a spend and its refund correctly read as two lines.
+ *  - A **settled refund debt** is an adjustment of 0 that names, in its title,
+ *    the monthly credits that paid it (`planDebtSettlementCredits`).
+ *
+ * A reader's own stop or delete refunds only what was not delivered, so its
+ * refund is titled for that rather than as a whole refund; and when part of it
+ * came from a month that has already ended, that part is a second, negative
+ * line that expired (`packages/db/src/userStopSettlement.ts`).
  */
 
 const DEFAULT_PAGE_SIZE = 30;
@@ -141,6 +149,7 @@ export function serializeCreditLogEntry(
 
 function creditLogKind(row: CreditLogRow): MobileCreditLogKind {
   if (isGooglePlayClawback(row)) return "spend";
+  if (planDebtSettlementCredits(row) !== null) return "monthly";
   if (row.entryType === "REFUND") {
     return "refund";
   }
@@ -169,24 +178,59 @@ function creditLogTitle(
   operationKinds: ReadonlyMap<string, string>
 ): string {
   if (isGooglePlayClawback(row)) return "Credits reversed after Google Play refund";
+  const settled = planDebtSettlementCredits(row);
+  if (settled !== null) {
+    return settled > 0
+      ? `Refunded purchase settled with ${settled.toLocaleString("en-US")} monthly credits`
+      : "Refunded purchase settled from your monthly credits";
+  }
   const operation =
     chargeActionTitle(kind === "refund" ? row.reversesEntry?.metadata : row.metadata, operationKinds) ??
     OPERATION_TITLES[row.operation] ??
     sentenceCase(row.operation);
   switch (kind) {
     case "refund":
-      return `${operation} refunded`;
+      return stoppedByReader(row) ? `${operation} stopped: unused credits returned` : `${operation} refunded`;
     case "expired":
-      return "Unused monthly credits expired";
+      return lapsedOnReturn(row) ? "Returned monthly credits expired" : "Unused monthly credits expired";
     default:
       return operation;
   }
+}
+
+/** A refund of a charge the reader stopped, which kept what had been delivered. */
+function stoppedByReader(row: CreditLogRow): boolean {
+  return jsonRecord(row.reversesEntry?.metadata).userStopSettlement !== undefined;
+}
+
+/** The part of a stop's refund that came from a month that had already ended. */
+function lapsedOnReturn(row: CreditLogRow): boolean {
+  return typeof jsonRecord(row.metadata).lapsedRefundOfEntryId === "string";
 }
 
 function isGooglePlayClawback(row: CreditLogRow): boolean {
   return row.entryType === "ADJUSTMENT" && row.amountCredits < 0 &&
     (row.operation === "PURCHASE_CREDIT_GRANT" || row.operation === "SUBSCRIPTION_CREDIT_GRANT") &&
     Boolean(row.reversesEntry);
+}
+
+/**
+ * The monthly credits a period boundary used to pay off a store refund's debt
+ * (`packages/db/src/planDebt.ts`), or null for any other row.
+ *
+ * The row moves credits from the allowance to the purchased pool, so its amount
+ * is 0 and the line reads `+0`: the total did not change, because the refund's
+ * own line already took the credits. What did change is the monthly meter,
+ * which now reads short of the plan's size — and this line is what says why. The
+ * number lives in the title because `credits` must stay the total's movement,
+ * or a reader adding up the log would count the refund twice.
+ */
+function planDebtSettlementCredits(row: CreditLogRow): number | null {
+  if (row.entryType !== "ADJUSTMENT") return null;
+  const settlement = jsonRecord(row.metadata).planDebtSettlement;
+  if (settlement === undefined) return null;
+  const credits = jsonRecord(settlement).credits;
+  return typeof credits === "number" && Number.isSafeInteger(credits) && credits > 0 ? credits : 0;
 }
 
 function sentenceCase(value: string): string {

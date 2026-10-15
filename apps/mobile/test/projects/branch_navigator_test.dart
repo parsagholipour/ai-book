@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/branch_navigator.dart';
+import 'package:tomeza/shared/ui/touch_target.dart';
 
 void main() {
   Widget host(BranchNavigator navigator) {
@@ -116,5 +117,48 @@ void main() {
     );
     expect(buttonWithTooltip('Previous branch').onPressed, isNull);
     expect(buttonWithTooltip('Next branch').onPressed, isNull);
+  });
+
+  testWidgets('the arrows are full-size touch targets that keep their size', (
+    tester,
+  ) async {
+    // They draw at 20dp in a 22dp box; a 48dp box made every bubble with
+    // branches taller, and 22dp of touch was easy to miss.
+    var previous = 0;
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: TouchTargetRegion(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: BranchNavigator(
+                  branch: const MobileProjectChatBranch(
+                    index: 2,
+                    total: 3,
+                    canGoPrevious: true,
+                    canGoNext: true,
+                  ),
+                  foreground: Colors.black,
+                  switching: false,
+                  onPrevious: () => previous++,
+                  onNext: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byTooltip('Previous branch')).height, 22);
+    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+
+    // A touch 8dp above the drawn arrow still reaches it.
+    final arrow = tester.getRect(find.byTooltip('Previous branch'));
+    await tester.tapAt(arrow.topCenter - const Offset(0, 8));
+    expect(previous, 1);
+    handle.dispose();
   });
 }

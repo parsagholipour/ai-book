@@ -6,7 +6,15 @@ import '../domain/character_models.dart';
 import 'character_reference_copy.dart';
 
 /// What the reader picked for one retained picture.
-enum CharacterImageAction { view, makeMain, showAsPhoto, draw, share, delete }
+enum CharacterImageAction {
+  view,
+  makeMain,
+  showAsPhoto,
+  draw,
+  share,
+  report,
+  delete,
+}
 
 /// The per-picture menu, opened by a long-press in the strip or the viewer's
 /// overflow.
@@ -96,6 +104,15 @@ Future<CharacterImageAction?> showCharacterImageActions(
             title: const Text('Share'),
             onTap: () => pick(CharacterImageAction.share),
           ),
+          // Reporting is for what a model drew. An upload — a photo, or the
+          // reader's own drawing adopted as it stands — is theirs.
+          if (image.source == CharacterImageSource.generated)
+            ListTile(
+              key: const ValueKey('character-image-report'),
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Report picture'),
+              onTap: () => pick(CharacterImageAction.report),
+            ),
           const Divider(height: 1),
           ListTile(
             key: const ValueKey('character-image-delete'),

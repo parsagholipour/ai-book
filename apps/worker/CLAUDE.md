@@ -1,6 +1,7 @@
 # Worker
 
-Consumes the `book-maker` BullMQ queue. All book generation happens here; the API never generates.
+Consumes the two BullMQ lanes — `book-maker` (long) and `book-maker-interactive` — with one
+`Worker` each, in one process. All book generation happens here; the API never generates.
 
 ## Adding a job type
 
@@ -14,6 +15,9 @@ Consumes the `book-maker` BullMQ queue. All book generation happens here; the AP
 5. Enqueue it through `enqueueWorkerJob` in `src/runtime/dispatch.ts`, never `queue.add` directly.
    It takes a `type` and derives the BullMQ name itself; add the type to `WORKER_FANOUT_JOB_TYPES`
    there if the worker fans it out.
+6. Give it a lane in `JOB_LANES` (`packages/core/src/jobLanes.ts`) — an exhaustive `Record`, so the
+   compiler asks. "Is a reader waiting on this with the app open?" picks interactive; minutes of
+   bulk work is long, and within long, "does it start a book's work or continue one?".
 
 The full cross-workspace footprint is about fourteen files — the four lists above are only the
 worker's share. Use the `add-job-type` skill, which walks the rest.
@@ -46,14 +50,34 @@ Handlers never construct adapters. `createLoggedProviders(job, providers, input)
 `providers/loggedAdapters.ts` wraps a job's provider set so every call is:
 
 - appended to the run log at `books/<projectId>/runs/<run>-<job>.jsonl.events/`
-- costed into `ProviderCallLog` (opened "live" when streaming starts, settled on completion)
+- costed into `ProviderCallLog` (opened "live" when streaming starts, settled on completion), under
+  the user the delivery spends for (`runtime/providerSpendUser.ts`, see `apps/api/src/admin/CLAUDE.md`)
 - checked for a user stop request, which raises `StopRequestedError`
 - retried on recoverable network errors, and for images, failed over to the other provider
 - for images both providers refused *by name*, retried once from a prompt describing an original
   character instead — see below
+- for text, prefixed with the operator's sexual-content rule while the filter is on
+  (`providers/contentSafetyRule.ts`, applied at the top of every `LoggingTextModelAdapter` method,
+  before the run log records the request; → apps/api/CLAUDE.md, "Content safety")
 
 If you add a provider call, route it through this wrapper or it will be invisible to both the
 cost accounting and the progress UI.
+
+- **A source read's provider calls are logged, costed to its owner, unretried by the SDK, and
+  stopped by its lease.** `runtime/sourceProcessing.ts` (the `SourceExtraction` lease loop that
+  reads an uploaded source) is not a BullMQ job and built its own providers: the SDK's two hidden
+  retries stacked on every request of the summary's own budget (up to fifteen HTTP calls a chunk
+  summary), no call had a cost
+  row, so the spend breaker never saw a long scanned PDF's OCR and summaries, and nothing stopped one
+  (pre-launch review, 2026-10-13). It now builds the text model with `maxRetries: 0`, wraps the set
+  with `createLoggedProviders` under a job that names only the owner (`data.userId`: the account's
+  run log, and no project or `GenerationJob` id for a cost row's key or a stop poll), runs the read
+  under `runWithProviderSpendUserId` (`runtime/providerSpendUser.ts`), writes the cloud OCR's cost
+  row itself from Gemini's own counts (a page the local OCR read has none), and aborts the call in
+  flight when the lease renewal finds nothing to renew — a source deleted with its draft or account,
+  or a lease taken over, is the only stop a source read has. Those rows have no `generationJobId`,
+  so the Operations tab counts them with inline spend (`UNBILLED_INLINE`); `purpose` is
+  `source-summary` / `source-ocr`.
 
 Text settlement merges exact result usage with usage observed on the same physical request.
 Missing counts remain unpriced, with `costStatus: unknown_usage`; a blank-line early stop records
@@ -246,7 +270,18 @@ The adapters themselves are in `packages/core/src/adapters/`.
 an `UnrecoverableError` so BullMQ does not retry. Anything else goes through
 `shouldRecoverJobAttempt` in `runtime/jobLifecycle.ts`, which wraps the pure policy in
 `packages/core/src/jobDispatch.ts`. Failed paid work must refund; see `refundFailedProjectCredits`,
-also in `runtime/jobLifecycle.ts`.
+also in `runtime/jobLifecycle.ts`. What a *stopped* run refunds is not decided here: the API's
+stop stamps the charge with what was delivered before the book can be deleted, and every
+settlement this runtime makes of that charge obeys the stamp (`packages/db/CLAUDE.md`).
+
+- **A job row that is gone was deleted with its book, and counts as stopped.**
+  `isStoppedGenerationJob(null)` used to answer false. Nothing deletes a `GenerationJob` but the
+  cascade from its project, and both delete routes stop the jobs and delete the project in one
+  request, so the stop markers stood on the row for milliseconds and an in-flight run usually next
+  looked after the row was gone. It kept drafting and drawing a deleted book until a write hit the
+  missing project — provider spend nobody pays for, since the stop had already settled what the
+  reader owed. Settlement is unchanged by the answer: `markStopped` and `markFailed` claim no
+  missing row, so neither refunds anything, and the API's stop had already settled the attempt.
 
 ## Queue state and run logs
 
@@ -255,6 +290,115 @@ also in `runtime/jobLifecycle.ts`.
   persisted but never reached Redis. Preserve that order or a crash between the two strands a book.
 - **Run logs are the debugging artifact.** Every provider call is appended as JSON lines under
   `books/<projectId>/runs/`. Read those before adding new logging.
+- **Every job type names its lane, and an enqueue routes by that map on both sides of the queue.**
+  One queue at concurrency 1 — production until 2026-10 — put every plan, chat edit, portrait
+  and assist behind whatever book was being written, and a composed book is one `generate-book`
+  job of 9–93 minutes; five approvals in an ad burst queued the fifth reader's plan edits for
+  hours. `JOB_LANES` (`packages/core/src/jobLanes.ts`) gives every `jobNames` entry a lane, and
+  `generationJobPlacement(type, payload)` is the only thing that picks a queue: the API's
+  `dispatchGenerationJob` and this side's `dispatchWorkerGenerationJob` are the repo's only two
+  `queue.add` calls, and both read the durable row's type and payload, so one row cannot land in
+  two lanes and BullMQ's job-id dedupe keeps holding. Three types are laned by payload because each
+  is two jobs: a compile that ends a generation (full review, expected GENERATING) is long, every
+  other compile is a reader waiting; a generation's pictures are long, a revision's cover or a
+  re-typeset is interactive; and a chat edit is interactive until it rewrites more than
+  `LONG_LANE_EDIT_PAGE_THRESHOLD` (40) pages, when it starts long work like a continuation — a
+  whole-book rewrite of a 200-page book held one of the two interactive slots for tens of minutes
+  while every reader's plan queued behind it (pre-launch review, 2026-10-13). That count is
+  `affectedPageIndexes` off the payload the Apply wrote (none for a verified `mode: "exact"`
+  replacement, which is code), and nothing rewrites an edit's payload, so every reader of
+  placement — both dispatches, readiness's oldest-QUEUED per lane, `waitingInLine`, the
+  per-account share and its doors — classifies the row through `jobLaneClass` and answers alike.
+  Inside the long lane a start (`GENERATE_BOOK`, `IMPORT_BOOK`, `CONTINUE_BOOK`,
+  `GENERATE_AUDIOBOOK`, a whole-book `APPLY_BOOK_EDIT`) carries `LONG_LANE_START_PRIORITY` and everything that
+  continues a book carries none, and BullMQ runs every unprioritized job first — so book A's
+  compile no longer queues behind books B–E's whole runs, and the reader's "N books ahead"
+  (`booksAheadInLongLane`) is the order the lane really runs in. The long lane keeps the name
+  `book-maker`, which is what drains a previous release's jobs; the reverse is not true, so a
+  rollback past the lanes waits for `book-maker-interactive` to empty (`docs/deployment.md`, "Job
+  lanes"). Every lookup of a Bull job by id — `prepareDurableJobId`, the API's requeue, stop and
+  `isBullJobActive`, the lost-delivery sweep — asks every lane (`clearLaneJobIdForAdd`,
+  `removeIdleLaneJobs`, `laneJobForSweep`), because a requeue can put a row in a different lane
+  from its last delivery and a lookup of one lane would miss the copy still running in the other.
+- **A row BullMQ reclaims while it still runs here waits for the original; it never runs beside
+  it.** A job whose lock was not renewed for `lockDuration` is handed out again while its first
+  execution carries on, and `markActive` accepts an ACTIVE row on purpose (a crashed worker's job
+  must resume), so nothing below the processor can tell the two apart. At concurrency 1 the copy
+  could only start after the original ended, and every handler's redelivery path is written for
+  that order: a COMPLETED row replays its tail, a settled attempt is refused at the stale check.
+  Run side by side, the credits survive — an attempt is never demoted from SUCCEEDED and a charge
+  has one reversal (`packages/db/CLAUDE.md`), and an import's completion is a compare-and-set one
+  copy loses — but the work does not: two `generate-book` runs draft the same chapters and pages
+  and both buy every provider call, the later write winning page by page, and two narrations pass
+  the READY skip together and pay for every chapter twice. So with two lanes and an interactive
+  concurrency of 2 in one process, `deliveryGuard.ts` keys running deliveries by the durable row id
+  (shared by both lanes, so a copy in the other queue is held too) and moves a second delivery to
+  `delayed` with `DelayedError` — no failure, no attempt spent — until the original is gone. It
+  defers rather than refuses because the original has lost its Bull lock and cannot finish its
+  own Bull job; the deferred copy is what settles it, through the replay paths above, exactly as
+  a reclaimed job did at concurrency 1. A BullMQ retry or a later redelivery is never held: the
+  guard is released in `finally`. The lock itself is 2 minutes (`LANE_LOCK_DURATION_MS`), four
+  times BullMQ's default, which reclaimed a job after as little as 15 s without a renewal (a Redis
+  restart; no job path does synchronous I/O, so a blocked event loop is not the expected cause).
+  The guard is one process's: a second worker process still needs a lock lost the same way, and
+  the handlers' own fences (delivery tokens, revision claims, the attempt state machine) answer it
+  as before.
+- **A job is reclaimed up to five times, and the sixth stall is settled the moment BullMQ makes
+  it.** `maxStalledCount` was BullMQ's default of one, and BullMQ's stall counter only rises, so the
+  *second* reclaim in a job's life failed it: two deploys (each stops the worker after a
+  five-minute drain) or a deploy and an OOM kill inside one 60–90 minute book. That failure never
+  calls the processor, so nothing settled the row until the lost-delivery sweep did, two hours
+  later, while the book read "generating" (pre-launch review, 2026-10-13). `LANE_MAX_STALLED_COUNT`
+  is 5 on both lanes (`runtime/laneWorkers.ts`). A reclaim is a resume, and has been since the
+  first one was allowed — `markActive` takes an ACTIVE row back, a composed book restarts at its
+  first unwritten chapter, a COMPLETED row replays its tail, a copy beside the original waits for it
+  (above) — so each costs at most what it interrupted, and the bound stays for a job that kills its
+  worker every time. Past it BullMQ 5 marks the job (`defa`) and the next worker to fetch it fails
+  it unrecoverably *before* the processor, so that worker's `failed` event is the only trace, and
+  `startLaneWorkers` listens to it: `settleStalledOutDelivery` (`runtime/lostDeliveries.ts`) fails
+  the row through `markFailed` behind the sweep's own claim on the row as read — unless the delivery
+  guard says the original still runs here (it settles itself), the row names another Bull job (a
+  requeue), or the row was written within half a lock (`STALLED_OUT_QUIET_MS`: a dead holder's lock
+  outlives it by at least that, so only a live holder in a second process is that fresh, and it is
+  left to the sweep). `close()` waits for a settlement in flight. That handler reads the job it was
+  handed, never a finished one back, so the rule below holds. The sweep stays for jobs Redis lost,
+  and reads its open rows as a lap — a `(updatedAt, id)` keyset a page per sweep, starting over after
+  a short page — because a row legitimately waiting is never written, and twenty of them used to
+  keep the oldest-twenty page to themselves while a lost job sat behind them.
+- **A finished Bull job is not a record, so retention may remove it and nothing may read one
+  back.** Nothing removed finished jobs, and production Redis is `maxmemory 256mb` with
+  `noeviction`: it would have refused every enqueue and lock renewal one day.
+  `GENERATION_JOB_RETENTION` keeps completed jobs a day (≤1,000 a lane) and failed ones a week
+  (≤2,000), on each job's options and on both Workers so an older release's jobs are trimmed too.
+  It is safe because the row is the record and dedupe is the row's: `dedupeKey` and the
+  QUEUED-without-`bullJobId` claim decide whether work exists, `prepareDurableJobId` removes a
+  finished copy before re-adding anyway (an add over a finished id in its own lane is a silent
+  no-op), the lost-delivery sweep reads `missing` exactly as `failed`, and a completed Bull job
+  always sits under a terminal row that sweep never selects. A late add after the first delivery
+  left Redis was always possible and is refused by `markActive` on the COMPLETED row. A new reader
+  of `returnvalue`, `failedReason` or a finished job's existence has to read the row instead.
+
+## Liveness
+
+- **A worker lane is alive exactly while its heartbeat key is, and the beat comes from the event
+  loop it vouches for.** A dead worker, a wedged one and a stuck queue were all invisible until a
+  reader complained (pre-launch review, 2026-10). `runtime/workerHeartbeat.ts` writes
+  `book-maker:worker-heartbeat:<queue>` (`workerHeartbeat.ts` in core) every 30 s with a 90 s TTL,
+  for each lane whose BullMQ `Worker` still `isRunning()`, carrying the pid, host, process start,
+  running jobs and concurrency for the alert email; the API's `/api/ready` and alert sweep read it
+  (`apps/api/CLAUDE.md`), and so does the compose healthcheck, which also requires the beat to be
+  its own container's (`scripts/worker-healthcheck.sh`, `scripts/CLAUDE.md`). Nothing has to notice
+  a death: the key stops existing. BullMQ's own consumer list — what the compose healthcheck asked
+  until 2026-10 — cannot replace it, because a process whose
+  event loop is wedged keeps its Redis connection and so stays listed; the beat is a timer on that
+  same loop, so a wedged process stops vouching for itself as surely as a dead one. One dead lane in
+  a live process stops alone. The keys are never deleted: a restart back inside 90 s is not an
+  outage, and the heartbeat stops only after `laneWorkers.close()`, so a worker draining its last
+  job still says it is alive. Keyed by queue, not process: two worker processes on a lane answer
+  "does it have a live consumer" together. A beat waiting on a reconnecting Redis is not doubled,
+  and a failing write is logged once per streak. It takes the Redis client as an argument, because
+  importing `runtime/queue.ts` opens a connection and only the entry point may. A new lane needs its
+  own readiness check in `apps/api/src/monitoring/readiness.ts`, which names the two it reads.
 
 ## Where the rest of the invariants live
 

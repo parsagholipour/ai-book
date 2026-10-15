@@ -7,10 +7,13 @@ import 'billing_controller.dart';
 import 'billing_export_offer_details.dart';
 import 'billing_export_plan_option.dart';
 import 'billing_plan_tiles.dart';
+import 'billing_shared_parts.dart';
 import 'billing_tier_style.dart';
 
-/// A subscription offer for someone trying to export their book. Plan choices
-/// share one checkout action; selecting a plan never starts a purchase.
+/// A subscription offer for someone opening a format only a plan includes (the
+/// Word file). Plan choices share one checkout action; selecting a plan never
+/// starts a purchase. A book's PDF and EPUB never lead here: once it is
+/// written they download free.
 class BillingExportOffer extends StatefulWidget {
   const BillingExportOffer({
     required this.format,
@@ -39,8 +42,7 @@ class _BillingExportOfferState extends State<BillingExportOffer> {
   String? _selectedSku;
 
   bool _isCurrent(MobileBillingProduct plan) =>
-      plan.sku == widget.state.billing?.plan?.productSku ||
-      billingTierForSku(plan.sku) == widget.state.billing?.planTier;
+      isHeldPlan(plan, widget.state.billing);
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +78,16 @@ class _BillingExportOfferState extends State<BillingExportOffer> {
         state.storeProducts.containsKey(selected.sku) &&
         !_isCurrent(selected) &&
         !busy;
+    final storeDown = !state.loading && !state.storeAvailable;
+    final forSale = plans.where((plan) => !_isCurrent(plan)).toList();
+    final unpriced = state.unpricedAmong(forSale);
+    // Play is unreachable, or sent no price for the plan in the checkout bar:
+    // the bar's button retries instead of reading "Plan unavailable".
+    final canRetry =
+        !accessIncluded &&
+        !busy &&
+        (storeDown ||
+            (selected != null && unpriced.any((p) => p.sku == selected.sku)));
     final pricedPlans = plans
         .where((plan) => state.storeProducts.containsKey(plan.sku))
         .toList();
@@ -148,15 +160,13 @@ class _BillingExportOfferState extends State<BillingExportOffer> {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  if (!state.storeAvailable ||
-                      state.missingProductIds.isNotEmpty)
+                  if (storeDown || unpriced.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4, bottom: 8),
-                      child: Text(
-                        'Some plans are temporarily unavailable from Google Play.',
-                        style: text.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
+                      child: BillingStorePricesNotice(
+                        storeDown: storeDown,
+                        allUnpriced: unpriced.length == forSale.length,
+                        onRetry: busy ? null : widget.onRetry,
                       ),
                     ),
                 ],
@@ -195,6 +205,7 @@ class _BillingExportOfferState extends State<BillingExportOffer> {
                 : canBuy
                 ? () => widget.onBuy(selected)
                 : null,
+            onRetry: canRetry ? widget.onRetry : null,
           ),
         ],
       ),

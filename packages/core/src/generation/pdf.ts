@@ -5,15 +5,23 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
 import { imageMarkdownRe, leadingCoverIllustration, resolveBookImageAsset } from "./bookImageAssets.js";
+import { bookIllustrationAt } from "./bookIllustrationMarkdown.js";
 import { withRenderPage } from "./browserPool.js";
 import { renderDocumentTempPath } from "./exportTempSweep.js";
 import { bookFontSetForLanguage, STORY_DISPLAY_FONT, STORY_ROUND_FONT, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
 import type { CompiledBookMarkdown } from "./markdown.js";
+import { bookMatterSheetCount } from "./bookMatterPages.js";
 import { bookPdfCss } from "./pdfCss.js";
 import { bookPdfLayout, bookPdfPaginationCss, fitBookPdfPageCount, type BookPdfPagination } from "./pdfPagination.js";
 import { expandFigureFences } from "./figures/figureHtml.js";
-import { BOOK_PDF_MEDIA_TYPE, BOOK_PDF_OPTIONS, buildBookPdfDocument } from "./pdfDocument.js";
+import {
+  BOOK_PDF_MEDIA_TYPE,
+  bookPdfPrintOptions,
+  bookPdfRenderBudgetFor,
+  buildBookPdfDocument,
+  type BookPdfRenderBudget
+} from "./pdfDocument.js";
 import {
   bookPageAnchorLinkNav,
   injectBookPageAnchorMarkers,
@@ -101,8 +109,10 @@ async function prepareMarkdownImagesForPdf(
       projectId: options.projectId
     });
 
+  const isIllustration = bookIllustrationAt(markdown);
   const localPaths = new Map<string, string>();
   for (const match of markdown.matchAll(imageMarkdownRe())) {
+    if (!isIllustration(match.index)) continue;
     const resolved = resolve(match[2] ?? "");
     if (resolved) {
       localPaths.set(resolved.assetPath, resolved.localPath);
@@ -121,7 +131,8 @@ async function prepareMarkdownImagesForPdf(
     })
   );
 
-  return markdown.replace(imageMarkdownRe(), (full: string, alt: string, src: string) => {
+  return markdown.replace(imageMarkdownRe(), (full: string, alt: string, src: string, offset: number) => {
+    if (!isIllustration(offset)) return full;
     const resolved = resolve(src);
     return resolved && readable.has(resolved.assetPath) ? `![${alt}](${resolved.assetPath})` : full;
   });
@@ -232,11 +243,23 @@ export async function generateBookPdfWithPageMap(
     imageStorageDir: options.imageStorageDir,
     assetRoot: options.projectId
       ? join(options.imageStorageDir, options.projectId)
-      : options.imageStorageDir
+      : options.imageStorageDir,
+    // Every render of this book — each fit pass, each Contents reprint — waits
+    // as long as a book this size needs, never puppeteer's one size for all.
+    budget: bookPdfRenderBudgetFor({
+      markdown: expanded,
+      targetPages: options.targetPageCount,
+      modelPages: plan?.pageAnchors.length
+    })
   };
   // A picture book's target counts story sheets. Frontmatter is additional;
   // compressing the complete PDF toward that number cannot remove scene breaks.
-  const fitted = await fitBookPdfPageCount(separate ? undefined : options.targetPageCount, async (adjustment) => {
+  // Every other book's target is the paid sheets plus the matter sheets the
+  // paid count never held (`bookMatterSheetCount`: a title page, every sheet a
+  // dedication prints, About the Author), which never cost the text its size.
+  const targetPages =
+    separate || options.targetPageCount === undefined ? undefined : options.targetPageCount + bookMatterSheetCount(markdown);
+  const fitted = await fitBookPdfPageCount(targetPages, async (adjustment) => {
     const html = await buildBookPdfDocument({
       markdown: expanded,
       css: `${fontCss}\n${bookPdfPaginationCss(bookPdfCss(profile), profile, adjustment)}${separate ? STORY_PAGE_PDF_CSS : ""}`,
@@ -254,7 +277,7 @@ export async function generateBookPdfWithPageMap(
 
 async function renderMappedPdfDocument(
   html: string,
-  renderOptions: { imageStorageDir: string; assetRoot: string },
+  renderOptions: { imageStorageDir: string; assetRoot: string; budget: BookPdfRenderBudget },
   plan: BookPageMapPlan | undefined,
   topMarginPt: number
 ): Promise<GenerateBookPdfResult> {
@@ -367,7 +390,7 @@ function chapterPagesEqual(a: readonly number[], b: readonly number[]): boolean 
  */
 async function renderPdfDocument(
   html: string,
-  options: { imageStorageDir: string; assetRoot: string }
+  options: { imageStorageDir: string; assetRoot: string; budget: BookPdfRenderBudget }
 ): Promise<Buffer> {
   await mkdir(options.imageStorageDir, { recursive: true });
   const documentPath = renderDocumentTempPath(options.imageStorageDir);
@@ -377,7 +400,7 @@ async function renderPdfDocument(
     // `withRenderPage` owns the one retry a shared browser needs, so the temp
     // document has to outlive it — hence the `finally` rather than a cleanup
     // inside the render.
-    return await printDocument(documentPath, options.assetRoot);
+    return await printDocument(documentPath, options.assetRoot, options.budget);
   } finally {
     // Covers every way this call can end except the ones where no code of ours
     // runs at all: a SIGKILL, an OOM kill, a container evicted mid-render.
@@ -386,7 +409,7 @@ async function renderPdfDocument(
   }
 }
 
-function printDocument(documentPath: string, assetRoot: string): Promise<Buffer> {
+function printDocument(documentPath: string, assetRoot: string, budget: BookPdfRenderBudget): Promise<Buffer> {
   return withRenderPage(async (page) => {
     // Manuscripts are content, never programs. Disabling script before the
     // first navigation is the only way to cover windows a document might open:
@@ -397,7 +420,7 @@ function printDocument(documentPath: string, assetRoot: string): Promise<Buffer>
     // Before the navigation, because the navigation is one of the things it
     // governs: this document, and this book's illustrations, and nothing else.
     await applyRenderResourcePolicy(page, { documentPath, assetRoot });
-    await page.goto(pathToFileURL(documentPath).href, { waitUntil: "load" });
+    await page.goto(pathToFileURL(documentPath).href, { waitUntil: "load", timeout: budget.navigationTimeoutMs });
     // Replaces md-to-pdf's `networkidle0` wait, which was a hard ≥500 ms floor
     // and the only thing sequencing web fonts and image decode before the
     // print. `page.pdf()` waits on `document.fonts.ready` itself in puppeteer
@@ -409,8 +432,8 @@ function printDocument(documentPath: string, assetRoot: string): Promise<Buffer>
       await Promise.all([...document.images].map((image) => image.decode().catch(() => undefined)));
     });
     await page.emulateMediaType(BOOK_PDF_MEDIA_TYPE);
-    return Buffer.from(await page.pdf(BOOK_PDF_OPTIONS));
-  });
+    return Buffer.from(await page.pdf(bookPdfPrintOptions(budget)));
+  }, { timeoutMs: budget.attemptTimeoutMs });
 }
 
 /**

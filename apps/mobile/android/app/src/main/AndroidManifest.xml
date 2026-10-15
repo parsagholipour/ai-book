@@ -121,5 +121,7 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:mimeType="application/epub+zip"/>
         </intent>
+        <!-- The Play Install Referrer service lives in the Play Store's package (InstallReferrer.kt). -->
+        <package android:name="com.android.vending"/>
     </queries>
 </manifest>

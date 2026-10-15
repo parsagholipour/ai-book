@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/account/data/appearance_store.dart';
 import '../features/account/domain/appearance_prefs.dart';
 import '../features/app_update/presentation/app_update_watcher.dart';
+import '../features/attribution/presentation/install_remix_watcher.dart';
+import '../features/auth/presentation/offline_session_notice.dart';
+import '../features/billing/presentation/billing_purchase_watcher.dart';
 import '../features/notifications/presentation/push_notifications_watcher.dart';
 import 'routing/app_router.dart';
 import 'theme/app_theme.dart';
@@ -35,7 +38,15 @@ class TomezaApp extends ConsumerWidget {
         router: router,
         child: PushNotificationsWatcher(
           router: router,
-          child: child ?? const SizedBox.shrink(),
+          child: InstallRemixWatcher(
+            router: router,
+            child: BillingPurchaseWatcher(
+              // A session opened without the server says so on every screen.
+              child: OfflineSessionNotice(
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+          ),
         ),
       ),
     );

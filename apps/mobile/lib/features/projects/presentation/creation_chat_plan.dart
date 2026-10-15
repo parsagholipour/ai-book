@@ -354,6 +354,11 @@ class _PlanBubbleState extends ConsumerState<_PlanBubble> {
                         child: _PlanDetails(
                           plan: plan,
                           project: current ? project : null,
+                          // The plan is the model's first draft of the book;
+                          // an author's own book never has one drawn here.
+                          onReport: project?.isAuthorManuscript ?? false
+                              ? null
+                              : () => _reportPlan(plan),
                         ),
                       ),
                     ],
@@ -369,6 +374,25 @@ class _PlanBubbleState extends ConsumerState<_PlanBubble> {
   /// the cover and illustration switches live on the project, not the plan.
   MobileProjectDetail? _projectFor(MobilePlan plan) =>
       ref.watch(projectDetailProvider(plan.projectId)).asData?.value;
+
+  /// The plan card is AI output the reader acts on before any book exists, so
+  /// it is reportable on its own (Google Play's AI-generated content policy).
+  void _reportPlan(MobilePlan plan) {
+    unawaited(
+      reportAiContent(
+        context: context,
+        title: 'Report this AI book plan',
+        submit: (reason, comment) => ref
+            .read(aiContentReportsApiProvider)
+            .reportPlan(
+              projectId: plan.projectId,
+              planId: plan.id,
+              reason: reason,
+              comment: comment,
+            ),
+      ),
+    );
+  }
 }
 
 /// "6 chapters · 24 pages": what a plan adds up to, from its own chapters.
@@ -385,9 +409,12 @@ String _planFacts(MobilePlan plan) {
 }
 
 class _PlanDetails extends StatelessWidget {
-  const _PlanDetails({required this.plan, this.project});
+  const _PlanDetails({required this.plan, this.project, this.onReport});
 
   final MobilePlan plan;
+
+  /// Sends the plan for review; null where there is nothing AI-made to report.
+  final VoidCallback? onReport;
 
   /// Present only for the plan the book is actually built from: its cover and
   /// illustration settings are what approval will charge for.
@@ -454,6 +481,7 @@ class _PlanDetails extends StatelessWidget {
           title: 'Audience',
           text: plan.audience,
         ),
+        if (onReport != null) PlanReportButton(onPressed: onReport!),
       ],
     );
   }
@@ -609,10 +637,10 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
               tooltip: widget.minimized
                   ? 'Expand question'
                   : 'Minimize question',
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              // A 22dp chevron with the platform's 48dp touch.
+              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
               padding: EdgeInsets.zero,
               iconSize: 22,
-              visualDensity: VisualDensity.compact,
               onPressed: widget.collapsed
                   ? null
                   : () => widget.onMinimizedChanged(!widget.minimized),

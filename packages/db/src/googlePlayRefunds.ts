@@ -1,4 +1,4 @@
-import { jsonRecord } from "@book-maker/core";
+import { PLAN_ENTITLEMENT_TYPES, jsonRecord } from "@book-maker/core";
 import type { GooglePlayRefund } from "./generated/prisma/client.ts";
 import { type BillingTx, effectivePlanCredits, hashPurchaseToken, jsonInput, runSerializable } from "./billingInternals.ts";
 import { ensureCreditAccountRow } from "./planPeriods.ts";
@@ -52,8 +52,14 @@ export async function recordGooglePlayRefundTx(tx: BillingTx, notice: GooglePlay
 }
 
 /** Reverse actual grants, never today's catalog price or a purchase's last-period summary.
- * Debits may make purchased credits negative: spent/refunded credits remain debt.
- * The durable marker, purchase state, ledger and balance commit together. */
+ * Debits may make purchased credits negative: spent/refunded credits remain debt, which
+ * purchases offset as they land and the next plan period boundary pays (`planDebt.ts`).
+ * The durable marker, purchase state, ledger and balance commit together.
+ *
+ * One order can hold many grants: a plan is granted a month at a time, so a refunded
+ * yearly order reverses every month it granted, each against its own month — the month
+ * the account is still on gives back what is left of it, and an earlier month counts
+ * what expired unspent at its end as never delivered. */
 export async function applyGooglePlayRefundTx(tx: BillingTx, refund: GooglePlayRefund): Promise<void> {
   const purchase = await tx.purchaseRecord.findFirst({
     where: { provider: "GOOGLE_PLAY", purchaseTokenHash: refund.purchaseTokenHash }
@@ -75,8 +81,13 @@ export async function applyGooglePlayRefundTx(tx: BillingTx, refund: GooglePlayR
     let fromPlan = 0;
     if (refund.productType === 1) {
       const grantPeriodKey = jsonRecord(grant.metadata).planPeriodKey;
-      const ownsCurrentPeriod = purchase.externalPurchaseId === refund.orderId &&
-        account.planPeriodKey?.startsWith(`sub:${refund.purchaseTokenHash}:`);
+      // The grant whose period the account is on holds what is left of the
+      // allowance. Asked of the order alone, every month of a yearly order
+      // "owned" it, and each one's reversal drained the live month again.
+      const ownsCurrentPeriod = typeof grantPeriodKey === "string"
+        ? grantPeriodKey === account.planPeriodKey
+        : purchase.externalPurchaseId === refund.orderId &&
+          account.planPeriodKey?.startsWith(`sub:${refund.purchaseTokenHash}:`);
       if (ownsCurrentPeriod) {
         fromPlan = Math.min(account.planCredits, amount);
       } else if (typeof grantPeriodKey === "string") {
@@ -126,6 +137,19 @@ export async function applyGooglePlayRefundTx(tx: BillingTx, refund: GooglePlayR
     await tx.userEntitlement.updateMany({ where: { purchaseRecordId: purchase.id, status: "ACTIVE" },
       data: { status: "REVOKED", expiresAt: new Date() } });
     if (refund.productType === 1) {
+      // A deferred downgrade moved this order's plan onto the token that
+      // replaced it, to run out there; the refund takes it down there too. It
+      // still names the order that paid for it.
+      const plans = await tx.userEntitlement.findMany({
+        where: { userId: purchase.userId, status: "ACTIVE", type: { in: PLAN_ENTITLEMENT_TYPES } },
+        select: { id: true, metadata: true }
+      });
+      for (const plan of plans) {
+        const paidBy = jsonRecord(plan.metadata);
+        if (paidBy.purchaseTokenHash === refund.purchaseTokenHash && paidBy.externalPurchaseId === refund.orderId) {
+          await tx.userEntitlement.update({ where: { id: plan.id }, data: { status: "REVOKED", expiresAt: new Date() } });
+        }
+      }
       const subscription = await tx.subscriptionState.findFirst({
         where: { provider: "GOOGLE_PLAY", externalSubscriptionId: refund.purchaseTokenHash }
       });

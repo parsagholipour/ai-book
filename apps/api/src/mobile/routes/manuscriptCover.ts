@@ -27,6 +27,7 @@ import {
 import type { MobileRouteContext } from "../routeContext.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import { authorProjectOrReply, manuscriptDto, projectSummaryDto } from "./manuscriptRouteSupport.js";
+import { requireAiCapacity } from "../aiCapacity.js";
 
 /**
  * The publish sheet's cover (spec "Covers") and the plan-review door into the
@@ -115,6 +116,8 @@ export async function registerMobileManuscriptCoverRoutes(fastify: FastifyInstan
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a request id with the cover.");
       }
+      // A drawn cover is an image call; ahead of the limiter so a refusal spends no bucket.
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "standard"))) return;
       if (!hitAuthenticatedLimit(draftLimiter, reply, auth.user.id, "manuscript-cover-generate")) return;
       const project = await authorProjectOrReply(reply, auth.user.id, id);
       if (!project) return;

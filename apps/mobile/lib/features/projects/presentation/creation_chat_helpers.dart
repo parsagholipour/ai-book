@@ -13,8 +13,13 @@ const creationChatLocalGreetingTurn = MobileCreationTurn(
   brief: MobileBookRecipe(lane: 'auto'),
   presets: defaultCreationPresets,
   detectedLane: 'auto',
+  // Every example is said by the person making the book. A child-facing
+  // phrasing ("Bedtime story for 5 year olds") reads, to a store reviewer, as
+  // an app aimed at children; the maker of a bedtime story is a parent.
+  // The server sends its own copy of this list (`quickReplies`); the two move
+  // together.
   quickReplies: <String>[
-    'Bedtime story for 5 year olds',
+    'A bedtime story for my 5-year-old',
     'Lead magnet about pricing',
     'Workbook for new coaches',
     'Short story about a garden mystery',

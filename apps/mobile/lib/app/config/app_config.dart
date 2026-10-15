@@ -18,11 +18,26 @@ enum AppEnvironment {
   staging,
   production;
 
-  static AppEnvironment parse(String value) {
-    return switch (value.trim().toLowerCase()) {
+  /// Reads the `APP_ENV` dart-define. Blank means "not given": production in
+  /// a release build, local otherwise, as when the define is absent. Anything
+  /// else that names no environment is refused rather than read as `local`:
+  /// in a release build that fallback was the emulator host
+  /// (`http://10.0.2.2:4001`) with the fake store, from one mistyped flag.
+  static AppEnvironment parse(
+    String value, {
+    bool releaseBuild = _isReleaseBuild,
+  }) {
+    final name = value.trim().toLowerCase();
+    if (name.isEmpty) {
+      return releaseBuild ? AppEnvironment.production : AppEnvironment.local;
+    }
+    return switch (name) {
+      'local' => AppEnvironment.local,
       'staging' => AppEnvironment.staging,
       'production' => AppEnvironment.production,
-      _ => AppEnvironment.local,
+      _ => throw StateError(
+        'APP_ENV "${value.trim()}" is not local, staging or production.',
+      ),
     };
   }
 }

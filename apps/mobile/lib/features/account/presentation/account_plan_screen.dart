@@ -107,11 +107,20 @@ class AccountPlanCard extends StatelessWidget {
     final quota = value?.imageQuota;
     final paid = value?.isPaidPlan ?? false;
     final cancelling = plan?.cancelAtPeriodEnd ?? false;
+    // A downgrade Play deferred: said in place of "Renews", which read as the
+    // plan above carrying on.
+    final planChange = paid && !cancelling
+        ? billingPlanChangeLine(context, value)
+        : null;
     final tier = value?.planTier ?? 'free';
     final nextPlan = value == null
         ? null
         : nextBetterPlan(
-            value.products.where((product) => product.isSubscription).toList(),
+            value.products
+                .where(
+                  (product) => product.isSubscription && product.offered,
+                )
+                .toList(),
             value.planTier,
           );
     final style = billingTierStyleForTier(tier);
@@ -153,7 +162,17 @@ class AccountPlanCard extends StatelessWidget {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          if (paid && !cancelling && plan?.renewsAt != null)
+                          if (planChange != null)
+                            Text(
+                              planChange,
+                              key: const ValueKey('account-plan-change'),
+                              style: text.bodyMedium?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            )
+                          else if (paid &&
+                              !cancelling &&
+                              plan?.renewsAt != null)
                             Text(
                               renewsLine(context, plan!.renewsAt!),
                               style: text.bodyMedium?.copyWith(

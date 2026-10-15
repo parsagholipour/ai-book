@@ -58,6 +58,20 @@ void main() {
     expect(repository.calls, isEmpty);
   });
 
+  test('signing out takes the notifications down and retires the token; the '
+      'next sign-in files the fresh one, even for the same account', () async {
+    await registrar.sync(userId: 'user-a');
+    await registrar.signOut();
+    await registrar.sync(userId: null);
+    await registrar.sync(userId: 'user-a');
+    expect(messaging.notificationsCleared, 1);
+    expect(messaging.tokensDeleted, 1);
+    expect(repository.calls, [
+      'register fcm-token-1 android',
+      'register fcm-token-2 android',
+    ]);
+  });
+
   test('a failed call is tried again on the next sync', () async {
     final failing = _FailingOnceRepository();
     final retrying = PushRegistrar(messaging: messaging, repository: failing);

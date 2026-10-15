@@ -103,29 +103,49 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
       { key: "bookTextEditPerPage", label: "Text edit per page — Balanced", help: "Added for each page the edit touches." },
       { key: "bookTextEditPerPagePremium", label: "Text edit per page — Extra polish", help: "Added for each page the edit touches, at premium prose rates." },
       { key: "bookTextEditPerPageUltra", label: "Text edit per page — Ultra effort", help: "Added for each page the edit touches, at Ultra effort rates." },
-      { key: "pageRegenerationPerPageFast", label: "Page rewrite per page — Quick draft", help: "Rewrites, chapter regenerations, continuations." },
-      { key: "pageRegenerationPerPage", label: "Page rewrite per page — Balanced", help: "Rewrites, chapter regenerations, continuations." },
+      { key: "pageRegenerationPerPageFast", label: "Page rewrite per page — Quick draft", help: "Rewriting existing pages and chapter regenerations." },
+      { key: "pageRegenerationPerPage", label: "Page rewrite per page — Balanced", help: "Rewriting existing pages and chapter regenerations." },
       {
         key: "pageRegenerationPerPagePremium",
         label: "Page rewrite per page — Extra polish",
-        help: "Rewrites, chapter regenerations, continuations, on the premium prose model."
+        help: "Rewriting existing pages and chapter regenerations, on the premium prose model."
       },
       {
         key: "pageRegenerationPerPageUltra",
         label: "Page rewrite per page — Ultra effort",
-        help: "Rewrites, chapter regenerations, continuations, on Ultra effort."
+        help: "Rewriting existing pages and chapter regenerations, on Ultra effort."
+      },
+      {
+        key: "addedPagesBase",
+        label: "Added pages base",
+        help: "Flat part of a chat continuation or a page insert. Each page added then costs the tier's Per page rate under Making a book, so more pages cost what a book of them would. Deleting or moving pages stays free."
       },
       { key: "bookReplanBase", label: "Replan base", help: "Added on top of a full regeneration of the book." }
     ]
   },
   {
-    title: "Reading and talking",
+    title: "Talking and listening",
+    // No download price here: every finished book downloads free since
+    // 2026-10-15, and `exportUnlock` stays in the table at 0 only so installed
+    // apps keep quoting books right (core `RETIRED_CREDIT_PRICING_KEYS`).
     blurb: "Charged at the point of use.",
     fields: [
-      { key: "exportUnlock", label: "Export unlock", help: "One-off unlock for PDF/EPUB download." },
-      { key: "voiceCallPerMinute", label: "Voice call per minute", help: "Rounded up; calls are capped at 30 minutes." },
-      { key: "audiobookBase", label: "Audiobook base", help: "Flat part of narrating a finished book." },
-      { key: "audiobookPerPage", label: "Audiobook per page", help: "Added for each page narrated. Charged against the real page count." },
+      {
+        key: "voiceCallPerMinute",
+        label: "Voice call per minute",
+        help: "Rounded up; calls are capped at 15 minutes. Voice calls need a plan — free accounts cannot start one. Cost per minute is unmeasured: check the Operations tab before lowering it."
+      },
+      { key: "audiobookBase", label: "Audiobook base", help: "Flat part of narrating a finished book. Audiobooks need a plan — free accounts cannot start one." },
+      {
+        key: "audiobookPer100Words",
+        label: "Audiobook per 100 words",
+        help: "Added for every hundred words read aloud, rounded up. Speech is billed by the second, so this is the rate that tracks cost."
+      },
+      {
+        key: "audiobookPerPage",
+        label: "Audiobook per page",
+        help: "Optional extra for each page narrated, on top of the word rate. Zero by default."
+      },
       {
         key: "characterPortraitGeneration",
         label: "Character portrait",
@@ -150,7 +170,24 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
       {
         key: "freeMaxBookPages",
         label: "Longest free book (pages)",
-        help: "The longest book a free reader can have written. Longer books, up to 600 pages, need a plan. 0 stops every free book."
+        help: "The longest book a free reader can have written. Longer books, up to the longest-book setting below, need a plan. 0 stops every free book."
+      }
+    ]
+  },
+  {
+    title: "Generation limits",
+    blurb: "Switches for every account, plans included. The app reads them from the billing payload, so a change needs no release; the server enforces them at every door that starts a book.",
+    fields: [
+      {
+        key: "paidMaxBookPages",
+        label: "Longest book anyone can generate (pages)",
+        help: "The app stops its page pickers here and longer requests are refused, on every plan. Imported and Studio books are not generated and are not limited. 30–600; raise it once a long illustrated compile is measured on the production host."
+      },
+      {
+        key: "ultraTierEnabled",
+        label: "Offer Ultra effort",
+        toggle: true,
+        help: "Off hides Ultra in the app's Effort picker and refuses a new book at Ultra. Books already on Ultra keep it for edits, rebuilds and retries."
       }
     ]
   }

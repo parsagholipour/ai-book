@@ -30,7 +30,11 @@ function matches(row: Row, where: Row | undefined): boolean {
     if (value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date)) {
       if ("not" in value) return row[key] !== value.not;
       if ("in" in value) return (value.in as unknown[]).includes(row[key]);
-      if ("path" in value) return true;
+      // A JSON path filter, as Prisma reads `targetSnapshot.kind`.
+      if ("path" in value) {
+        const found = (value.path as string[]).reduce<unknown>((at, step) => (at && typeof at === "object" ? (at as Row)[step] : undefined), row[key]);
+        return "equals" in value ? found === value.equals : true;
+      }
       return false;
     }
     return row[key] === value;
@@ -44,9 +48,37 @@ function apply(row: Row, data: Row): void {
   row.updatedAt = new Date();
 }
 
-export function installShareStore(): ShareStore {
+export function installShareStore(
+  options: {
+    /**
+     * The book's current `contentRevision`, for the re-screen sweep's join
+     * (`shareRescreen.ts`): ACTIVE shares whose stamp is missing or differs,
+     * oldest first, up to the statement's limit.
+     */
+    contentRevisionOf?: (projectId: string) => number | undefined;
+  } = {}
+): ShareStore {
   const store: ShareStore = { shares: [], slugs: [], reports: [] };
   let nextId = 0;
+  const queryRaw = mockPrisma.$queryRaw.getMockImplementation()!;
+  mockPrisma.$queryRaw.mockImplementation(async (strings: readonly string[], ...values: unknown[]) => {
+    const sql = strings.join("?");
+    if (sql.includes('FROM "BookShare"') && sql.includes("FOR UPDATE")) {
+      return store.shares.filter((share) => share.projectId === values[0]).map((share) => ({ id: share.id }));
+    }
+    if (sql.includes('FROM "BookShare"') && sql.includes('JOIN "Project"') && options.contentRevisionOf) {
+      const limit = values[values.length - 1] as number;
+      return store.shares
+        .filter((share) => {
+          const revision = options.contentRevisionOf!(share.projectId);
+          return share.status === "ACTIVE" && revision !== undefined && share.screenedContentRevision !== revision;
+        })
+        .sort((left, right) => left.createdAt - right.createdAt)
+        .slice(0, limit)
+        .map((share) => ({ id: share.id }));
+    }
+    return queryRaw(strings, ...values);
+  });
   mockPrisma.bookShare.findUnique.mockImplementation(async ({ where, select }: Row) => {
     const row = store.shares.find((share) => matches(share, where));
     return row ? pick(row, select) : null;
@@ -99,6 +131,10 @@ export function installShareStore(): ShareStore {
     store.reports.push(row);
     return row;
   });
+  mockPrisma.moderationReport.findMany.mockImplementation(async ({ where, take }: Row = {}) => {
+    const hit = store.reports.filter((report) => matches(report, where));
+    return take === undefined ? hit : hit.slice(0, take);
+  });
   mockPrisma.moderationReport.updateMany.mockImplementation(async ({ where, data }: Row) => {
     const hit = store.reports.filter((report) => matches(report, where));
     hit.forEach((row) => Object.assign(row, data));
@@ -107,7 +143,12 @@ export function installShareStore(): ShareStore {
   return store;
 }
 
-/** A share row as the store holds it, for a suite that starts from an existing share. */
+/**
+ * A share row as the store holds it, for a suite that starts from an existing
+ * share. It is screened at revision 0 — the revision `projectRecord` and the
+ * public suite's book carry — so it serves its book until a suite moves the
+ * book's revision or seeds another stamp.
+ */
 export function seedShare(store: ShareStore, overrides: Row = {}): Row {
   const now = new Date("2026-09-30T10:00:00.000Z");
   const row = {
@@ -125,6 +166,7 @@ export function seedShare(store: ShareStore, overrides: Row = {}): Row {
     likenessConfirmedAt: null,
     status: "ACTIVE",
     takedownReason: null,
+    screenedContentRevision: 0,
     viewCount: 0,
     createdAt: now,
     updatedAt: now,

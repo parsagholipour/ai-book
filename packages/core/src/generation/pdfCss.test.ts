@@ -32,9 +32,30 @@ function pageGeometryProjection(css: string): string {
  * the `verify-pdf-typography` skill. A digest bumped without that render is the
  * silent re-typeset this assertion exists to catch.
  */
-// Table redesign: all nine page counts preserved; eight fixtures identical,
-// with the intentional change confined to rich-blocks (the table fixture).
-const PAGE_GEOMETRY_SHA256 = "9960ac75b07730a3dd15eab893658e624ab7314ffb3a998c62f05451b323a3f9";
+// Book matter (2026-10-06): `@page pdf-front`, the title page behind a cover,
+// the matter sheet and About the Author. Rendered before/after: all nine
+// existing fixtures pixel-identical; only the new matter-pages fixture moved
+// (4 -> 5 pages, About the Author now opening its own sheet), as intended.
+// Then the dedication's size tiers (matterSheetLayout.ts): fixed margins on
+// `pdf-front`, the publication block carrying the bottom padding and moving
+// whole, block flow for a sheet that runs on, `overflow-wrap: anywhere` on the
+// reader's matter text. Rendered against the working tree before it: all ten
+// fixtures pixel-identical, matter-pages and title-page-en included; against
+// HEAD, matter-pages 4 -> 5 as above and the new long-dedication fixture
+// (HEAD has no matter-sheet rules), whose dedication now keeps to one sheet
+// where the house size printed two.
+// Then About the Author set in points (matterSheetLayout.ts): `@page pdf-back`
+// (house margins, numbered), the heading's padding and leading pinned, the
+// biography's size, leading and margins fixed per tier, `orphans`/`widows` 1,
+// and emoji read as one 1.25em grapheme in the dedication estimate. Rendered
+// against the working tree before it: all eleven fixtures pixel-identical,
+// matter-pages' house-size biography included; against HEAD, only the two
+// drifts above. Two new fixtures: long-about-author (sixty paragraphs at the
+// smallest size, the two sheets counted) and matter-pages-fa (© ۲۰۲۶).
+// 2,523 renders of biographies and 20 of emoji dedications printed exactly the
+// sheets `bookMatterSheetCount` counts, but one 3,700-character Chinese
+// biography (over the 1,500 limit) counted one more.
+const PAGE_GEOMETRY_SHA256 = "69f34b091f87bd0b018a9574cac80d868a5b3acf52bda983d26992a145bcc985";
 
 describe("bookPdfCss", () => {
   it("still lays every book out on the same page boxes", () => {

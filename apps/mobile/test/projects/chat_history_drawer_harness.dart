@@ -151,8 +151,6 @@ const drawerReadyExports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: true,
-    unlocked: true,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/book-1/export/pdf',
     filename: 'book.pdf',
     contentType: 'application/pdf',
@@ -160,8 +158,6 @@ const drawerReadyExports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: true,
-    unlocked: true,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/book-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',
@@ -172,8 +168,6 @@ const drawerExports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/book-1/export/pdf',
     filename: 'book.pdf',
     contentType: 'application/pdf',
@@ -181,8 +175,6 @@ const drawerExports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/book-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',

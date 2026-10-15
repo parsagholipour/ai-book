@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CREDIT_PRICE_KEYS, DEFAULT_CREDIT_COSTS, creditPricingInputSchema, normalizeCreditPricing } from "./creditPricing.js";
+import { estimateFullBookCreditCost, planGenerationCreditCost } from "./billing.js";
+import type { CreateProjectInput } from "./schemas/mediaSettings.js";
 import { welcomeCreditAmount, welcomeCreditIpLimit, welcomeCreditRegion } from "./welcomeCredits.js";
 
 const regional = {
@@ -86,11 +88,13 @@ describe("welcome credit IP limits", () => {
     }
   );
 
-  it("backfills existing pricing revisions with the current two/one defaults", () => {
+  it("backfills existing pricing revisions with the current three/two defaults", () => {
+    // Raised from two and one once a verified email gated the grant (migration
+    // 000110 moves a stored price list that still held the old pair).
     const old = normalizeCreditPricing({ welcomeCredits: 700 });
-    expect(welcomeCreditIpLimit("US", old)).toBe(2);
-    expect(welcomeCreditIpLimit("IN", old)).toBe(1);
-    expect(welcomeCreditIpLimit(null, old)).toBe(1);
+    expect(welcomeCreditIpLimit("US", old)).toBe(3);
+    expect(welcomeCreditIpLimit("IN", old)).toBe(2);
+    expect(welcomeCreditIpLimit(null, old)).toBe(2);
   });
 
   it("keeps country caps active with regional amounts off and preserves zero", () => {
@@ -99,5 +103,54 @@ describe("welcome credit IP limits", () => {
     expect(welcomeCreditIpLimit("US", pricing)).toBe(0);
     expect(welcomeCreditIpLimit("IN", pricing)).toBe(5);
     expect(welcomeCreditIpLimit(null, pricing)).toBe(5);
+  });
+});
+
+describe("the welcome grant and the first book", () => {
+  // What a free reader's first book costs on Balanced with a drawn cover: the
+  // book (one charge; its file downloads free) and its plan. If a price move makes one of these outgrow the grant, a
+  // new reader meets the paywall before they have a book — raise the grant with
+  // the price.
+  const firstBook = (category: string, bookType: string, targetPages: number) =>
+    ({
+      title: "First book",
+      prompt: "A first book",
+      category,
+      language: "en",
+      targetPages,
+      mediaSettings: { modelTier: "balanced", fullIllustrations: true, coverArtSource: "ai", mobile: { bookType } }
+    }) as unknown as CreateProjectInput;
+  const firstBookCredits = (input: CreateProjectInput) =>
+    estimateFullBookCreditCost(input, DEFAULT_CREDIT_COSTS).totalCredits +
+    planGenerationCreditCost(input, DEFAULT_CREDIT_COSTS).credits;
+  const grants = [
+    DEFAULT_CREDIT_COSTS.welcomeCredits,
+    DEFAULT_CREDIT_COSTS.welcomeCreditsHighIncome,
+    DEFAULT_CREDIT_COSTS.welcomeCreditsLowMiddleIncome
+  ];
+
+  it("covers the largest free non-picture book and its plan, with room for a chat", () => {
+    // The free page cap, illustrated, as the type billed for the most pictures.
+    const total = firstBookCredits(firstBook("EDUCATION", "workbook", DEFAULT_CREDIT_COSTS.freeMaxBookPages));
+    expect(total).toBe(945);
+    for (const amount of grants) expect(amount - total).toBeGreaterThanOrEqual(50);
+  });
+
+  it("covers every illustrated picture book up to the free page cap, and grows with every page", () => {
+    // min(pages, 12) pictures: twelve pages draw twelve and every longer book
+    // draws twelve too, so the price only climbs by the page rate. At 1,150 the
+    // grant left out every picture book of 22 pages or more.
+    expect(DEFAULT_CREDIT_COSTS.welcomeCredits).toBe(1_250);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 12))).toBe(1_071);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 16))).toBe(1_103);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 24))).toBe(1_167);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", DEFAULT_CREDIT_COSTS.freeMaxBookPages))).toBe(1_215);
+    let previous = 0;
+    for (let pages = 1; pages <= DEFAULT_CREDIT_COSTS.freeMaxBookPages; pages++) {
+      const total = firstBookCredits(firstBook("KIDS", "short_story", pages));
+      expect(total, `${pages} pages`).toBeGreaterThan(previous);
+      for (const amount of grants) expect(total, `${pages} pages`).toBeLessThanOrEqual(amount);
+      previous = total;
+    }
   });
 });

@@ -7,10 +7,15 @@ import { creditsBlockedResume, queueAttemptChatOperation } from "./editOperation
 import { pageLimitChatMessage, pageLimitRefusal, replannedBookPages } from "./bookPageLimit.js";
 import { numberingForProject } from "../bookPageNumbering.js";
 import { type QueuedChatEdit } from "./chatEditOptions.js";
-import { attachReplanCopyToCreationSession, createReplanProjectCopy } from "./projectRecords.js";
+import { attachReplanCopyToCreationSession, createReplanProjectCopy, replanCopyBookMatter } from "./projectRecords.js";
 import { cleanTargetLanguage, jsonInputValue, languageDisplayName } from "./support.js";
 import { enqueueGenerationJob } from "../queue.js";
-import { createProjectSchema, estimateFullBookCreditCost, inputWithReplanSettings } from "@book-maker/core";
+import {
+  createProjectSchema,
+  estimateBookReplanCreditCost,
+  estimateFullBookCreditCost,
+  inputWithReplanSettings
+} from "@book-maker/core";
 import { GenerationQuotaExceededError, getImageQuota } from "@book-maker/db/billing";
 import { imageLimitChatMessage } from "./projectChat.js";
 import { inputSnapshotFromProject } from "./projectSummarySerializers.js";
@@ -34,7 +39,8 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
   const refused = await refuseAuthorBookReplan({ project, userMessageId, intent });
   if (refused) return { reply: refused, operation: null };
   // Same settings the proposal was quoted from, or the user approves one price
-  // and is charged another.
+  // and is charged another. The copy is a new generated book, priced like any
+  // other: one charge, no export unlock, its finished file free.
   const replanSettings = intent.replanSettings ?? null;
   const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings });
   const pageLimit = await pageLimitRefusal(userId, replannedBookPages(intent, project));
@@ -74,6 +80,13 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
   const imageQuotaLimit = cost > 0 && estimateFullBookCreditCost(input).assumptions.estimatedInteriorImages > 0
     ? (await getImageQuota(userId))?.limit ?? null
     : null;
+  // The charge, itemised, rides the ledger entry the way plan approval's does,
+  // so a reader who reads the copy's pages as they are written and then deletes
+  // it keeps paying for what the copy delivered (`userStopSettlement.ts`). Kept
+  // only when it is the price being charged: an operator's price save landing
+  // between the two reads leaves no quote, and such a stop refunds whole.
+  const quote = estimateBookReplanCreditCost(input);
+  const creditEstimate = quote.totalCredits === cost ? quote : null;
   const targetLanguage = cleanTargetLanguage(intent.targetLanguage);
   const commandRequestId = options.executionCommandId ?? userMessageId;
   const operation = await createOpenBookEditOperation({
@@ -132,7 +145,8 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
       intent,
       sourceProjectId: project.id,
       operationId: operation.id,
-      ...(targetLanguage ? { targetLanguage } : {})
+      ...(targetLanguage ? { targetLanguage } : {}),
+      ...(creditEstimate ? { creditEstimate } : {})
     },
     enqueue: async (tx, { attemptId, ledgerEntry }) => {
       // The copy's `request` becomes the user-visible "Rebuilt from" header on
@@ -173,7 +187,7 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
         }
       });
     },
-    replyContent: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged.`,
+    replyContent: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged.${withheldMatterNote(project, targetLanguage)}`,
     // Getters, because both depend on the copy that `enqueue` creates: the
     // wrapper reads them only after the job is queued.
     get operationData() {
@@ -216,4 +230,17 @@ export async function queueChatBookReplanCopy(options: QueuedChatEdit): Promise<
     );
     return { reply, operation: null };
   });
+}
+
+/**
+ * A translated copy leaves the dedication and the biography behind
+ * (`replanCopyBookMatter`), so the reply says so rather than letting the reader
+ * find a book with neither page.
+ */
+function withheldMatterNote(project: QueuedChatEdit["project"], targetLanguage: string | null): string {
+  const { withheld } = replanCopyBookMatter(project, targetLanguage);
+  if (withheld.length === 0 || !targetLanguage) return "";
+  const names = withheld.map((field) => (field === "dedication" ? "dedication" : "About the Author")).join(" and ");
+  const both = withheld.length > 1;
+  return ` Your ${names} ${both ? "weren’t" : "wasn’t"} copied, so nothing prints untranslated — add ${both ? "them" : "it"} in ${languageDisplayName(targetLanguage)} from Title & credits once the copy is ready.`;
 }

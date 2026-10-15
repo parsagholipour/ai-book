@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => {
       project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
       page: { findMany: vi.fn() },
-      imageAsset: { count: vi.fn() },
+      imageAsset: { count: vi.fn(), findFirst: vi.fn(async () => null) },
       generationJob: {
         findUnique: vi.fn(),
         findFirst: vi.fn(),
@@ -41,7 +41,10 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { PrismaClientKnownRequestError: mocks.KnownRequestError }
 }));
-vi.mock("./queue.js", () => ({ queue: { add: mocks.queueAdd, getJob: mocks.queueGetJob } }));
+vi.mock("./queue.js", () => {
+  const queue = { add: mocks.queueAdd, getJob: mocks.queueGetJob };
+  return { queue, queueNamed: () => queue, allLaneQueues: [queue] };
+});
 vi.mock("./config.js", () => ({ config: { MAX_PARALLEL_PAGE_JOBS: 3 } }));
 
 const studioMediaSettings = {
@@ -66,15 +69,16 @@ vi.mock("../generation/projectInput.js", () => ({
 import {
   compilePolicyPayload,
   compilePublicationDedupeKey,
-  compilePublicationPolicyFromPayload,
-  EXPORT_PUBLICATION_PROJECT_STATUS
+  EXPORT_PUBLICATION_PROJECT_STATUS,
+  freeEditRecompilePolicy
 } from "@book-maker/core";
 import type { Job } from "bullmq";
 import { maybeCompileAfterCompletedJob, maybeCompileAfterFailedJob, maybeEnqueueCompile } from "./dispatch.js";
 import { runWithGenerationAttempt } from "./generationAttemptContext.js";
 
 const REVISION = 5;
-const publishPolicy = compilePublicationPolicyFromPayload({ skipFinalReview: true, [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING" });
+/** What `manuscriptPublish.ts` writes: a free edit's recompile, settling alone back to COMPLETE. */
+const publishPolicy = freeEditRecompilePolicy("COMPLETE");
 /** The compile row the publish transaction writes, after it stood down for the open cover. */
 const standDownPublishCompile = {
   id: "gj-publish-compile",
@@ -149,7 +153,15 @@ describe("a Studio publish's cover and compile", () => {
       type: "COMPILE_EXPORT",
       contentRevision: REVISION,
       ownsQualityVerdict: true,
-      payload: { planId: "plan-1", contentRevision: REVISION, skipFinalReview: true, [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING" }
+      payload: {
+        planId: "plan-1",
+        contentRevision: REVISION,
+        skipFinalReview: true,
+        [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING",
+        // The re-queued compile still settles alone (launch review B3).
+        freeEditRecompile: true,
+        preEditProjectStatus: "COMPLETE"
+      }
     });
     expect(compile.dedupeKey).toMatch(new RegExp(`^${standDownPublishCompile.dedupeKey}:pages-[0-9a-f]{24}$`));
     expect(compile).not.toHaveProperty("attemptId");
@@ -163,7 +175,13 @@ describe("a Studio publish's cover and compile", () => {
 
     expect(mocks.createdJobs[0]).toMatchObject({
       type: "COMPILE_EXPORT",
-      payload: { skipFinalReview: true, [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING" }
+      ownsQualityVerdict: true,
+      payload: {
+        skipFinalReview: true,
+        [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING",
+        freeEditRecompile: true,
+        preEditProjectStatus: "COMPLETE"
+      }
     });
   });
 

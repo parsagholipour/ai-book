@@ -6,8 +6,9 @@ import '../domain/export_models.dart';
 import 'project_export_actions.dart';
 
 // The files a finished book can leave the app as: one row per format, each
-// saying plainly what state it is in — being prepared, ready and how big, ready
-// after an unlock, or part of a plan the account does not have yet.
+// saying plainly what state it is in — being prepared, ready and how big, or
+// part of a plan the account does not have yet (the Word file). A written
+// book's PDF and EPUB have no lock.
 //
 // Drawn two ways. Embedded, it is the body of the hero's Export drawer; as a
 // card it is the "files from your last version" list that a book being edited
@@ -31,6 +32,8 @@ class ProjectExportPanel extends StatelessWidget {
   final String? busyAction;
   final Future<void> Function(MobileExportAvailability export) onOpen;
   final Future<void> Function(MobileExportAvailability export) onDownload;
+
+  /// Opens the plan offer for a format only a plan includes.
   final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
 
   /// Re-reads the book's files. Offered beside any file still being prepared,
@@ -112,28 +115,23 @@ class ProjectExportRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final availableCredits = billing?.credits.available;
     final name = projectExportFormatLabel(export);
     final isOpening = busyAction == projectExportDownloadAction(export);
     final isDownloading = busyAction == projectExportSaveAction(export);
+    // A locked row stays tappable: the tap opens the plan offer, and the
+    // server rules on the request either way.
     final locked = projectExportLockedBySubscription(export, billing);
-    final needsCredits = projectExportNeedsCredits(export, availableCredits);
-    // A locked row stays tappable: the tap opens the paywall, and the server
-    // rules on the request either way.
-    final toPaywall = locked || needsCredits;
     final canAct = export.available && !(isOpening || isDownloading);
     final phase = !export.available
         ? _ExportPhase.preparing
         : locked
         ? _ExportPhase.plan
-        : export.unlocked
-        ? _ExportPhase.ready
-        : _ExportPhase.unlock;
+        : _ExportPhase.ready;
 
     final info = _RowInfo(
       export: export,
       phase: phase,
-      state: _stateLine(export, phase, availableCredits),
+      state: _stateLine(export, phase),
     );
 
     final actions = switch (phase) {
@@ -142,17 +140,6 @@ class ProjectExportRow extends StatelessWidget {
         onPressed: canAct ? () => onOpenPaywall(export) : null,
         leading: const Icon(Icons.workspace_premium_outlined),
         label: 'Upgrade',
-      ),
-      _ExportPhase.unlock => AppButton.tonal(
-        onPressed: canAct
-            ? () => toPaywall ? onOpenPaywall(export) : onOpen(export)
-            : null,
-        loading: isOpening,
-        loadingLabel: 'Opening export',
-        leading: Icon(
-          needsCredits ? Icons.add_card_outlined : Icons.lock_open_outlined,
-        ),
-        label: needsCredits ? 'Get credits' : 'Unlock',
       ),
       _ExportPhase.ready => Row(
         mainAxisSize: MainAxisSize.min,
@@ -176,11 +163,10 @@ class ProjectExportRow extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final textScale = MediaQuery.textScalerOf(context).scale(1);
-        // Open and Share fit beside the state line on a phone; Upgrade and
-        // Unlock carry a longer label and would squeeze it to a sliver, so they
-        // sit beneath it. Large text stacks everything.
-        final wideAction =
-            phase == _ExportPhase.plan || phase == _ExportPhase.unlock;
+        // Open and Share fit beside the state line on a phone; Upgrade carries
+        // a longer label and would squeeze it to a sliver, so it sits beneath
+        // it. Large text stacks everything.
+        final wideAction = phase == _ExportPhase.plan;
         final stacked =
             textScale >= 1.3 ||
             constraints.maxWidth < 300 ||
@@ -209,12 +195,11 @@ class ProjectExportRow extends StatelessWidget {
     );
   }
 
-  /// One short line. The long form of each state lives in the paywall and the
-  /// reader's gate; a row only has to say what is true and what it costs.
+  /// One short line. The long form of the plan state lives in the paywall; a
+  /// row only has to say what is true.
   static String _stateLine(
     MobileExportAvailability export,
     _ExportPhase phase,
-    int? availableCredits,
   ) {
     switch (phase) {
       case _ExportPhase.preparing:
@@ -224,21 +209,11 @@ class ProjectExportRow extends StatelessWidget {
       case _ExportPhase.ready:
         final size = export.byteSize;
         return size == null ? 'Ready' : 'Ready · ${formatExportSize(size)}';
-      case _ExportPhase.unlock:
-        if (export.creditsRequired <= 0) {
-          return 'Ready to unlock';
-        }
-        final cost =
-            'Unlock for ${formatCredits(export.creditsRequired)} credits';
-        return availableCredits != null &&
-                availableCredits < export.creditsRequired
-            ? '$cost · you have $availableCredits'
-            : cost;
     }
   }
 }
 
-enum _ExportPhase { preparing, plan, ready, unlock }
+enum _ExportPhase { preparing, plan, ready }
 
 /// "2.4 MB", "612 KB": what a reader deciding whether to share over a slow
 /// connection wants to know, without the false precision of bytes.

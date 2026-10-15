@@ -76,7 +76,9 @@ import {
   bandhaRecapPages,
   MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
   PRESENTATION_ONLY_RECOMPILE,
-  PRESENTATION_RECOMPILE_FALLBACK_STATUS
+  PRESENTATION_RECOMPILE_FALLBACK_STATUS,
+  compilePolicyPayload,
+  freeEditRecompilePolicy
 } from "@book-maker/core";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
@@ -278,6 +280,23 @@ describe("compileExport publication policy", () => {
     expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
     expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
+  });
+
+  it("compiles a free edit's recompile exactly as the edit recompile it used to be", async () => {
+    // Only its failure is not the book's (`runtime/jobLifecycle.ts`): what it
+    // reviews, the status its verdict publishes, the edit it fences on and the
+    // character pass are the outcome compile's (launch review B3).
+    mocks.prisma.project.findUnique.mockResolvedValue(projectRecord("EDITING"));
+    await compileExport(job({ contentRevision: 4, skipFinalReview: true, exportPublicationProjectStatus: "EDITING" }));
+    await compileExport(job({ contentRevision: 4, ...compilePolicyPayload(freeEditRecompilePolicy("REVIEW_REQUIRED"), "EDITING") }));
+
+    // Everything but the per-run scratch directory the two renders wrote into.
+    const [edit, free] = mocks.publishCompiledExports.mock.calls.map((call) => {
+      const { pending: _scratch, ...publication } = call[0] as Record<string, unknown>;
+      return publication;
+    });
+    expect(free).toEqual(edit);
+    expect(free).toMatchObject({ expectedProjectStatus: "EDITING", ownsProjectStatus: true, status: "COMPLETE" });
   });
 
   it("lets detached ownership win when a payload also claims to be a presentation reprint", async () => {

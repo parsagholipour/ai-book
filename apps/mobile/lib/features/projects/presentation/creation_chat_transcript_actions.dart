@@ -218,4 +218,108 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
+
+  /// A failed edit's card: Retry re-runs it at the quoted price, or — when it
+  /// cannot be re-run — puts the request back in the composer to send again.
+  Future<void> _retryFailedOperation({
+    required MobileProjectDetail? project,
+    required MobileBookEditOperation operation,
+  }) async {
+    if (operation.isAutomaticRetryPending) {
+      _refreshOutput(operation.projectId);
+      return;
+    }
+    if (!operation.retryAvailable) {
+      final submittedText = operation.submittedText?.trim();
+      if (submittedText != null && submittedText.isNotEmpty) {
+        _revisionController.text = submittedText;
+        _revisionController.selection = TextSelection.collapsed(
+          offset: submittedText.length,
+        );
+      }
+      _refreshOutput(operation.projectId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showAppSnackBar(
+        SnackBar(
+          content: Text(
+            submittedText == null || submittedText.isEmpty
+                ? 'Edit the request below, then send it again.'
+                : 'The original request is ready to edit and send again.',
+          ),
+        ),
+      );
+      return;
+    }
+    final quote = operation.recoveryQuote;
+    if (quote == null) return;
+    final confirmed = await confirmPaidGenerationRetry(
+      context,
+      ref,
+      projectId: operation.projectId,
+      quote: quote,
+    );
+    if (confirmed == null || !mounted) return;
+    _updateState(() => _planBusyAction = 'retry-${operation.id}');
+    try {
+      final retried = await ref
+          .read(projectsRepositoryProvider)
+          .retryOperation(
+            projectId: operation.projectId,
+            operationId: operation.id,
+            requestId: createPlanRevisionRetryRequestId(operation.id),
+            retryToken: confirmed.retryToken,
+          );
+      if (!mounted) return;
+      _trackRetriedOperation(retried, project);
+      _refreshOutput(operation.projectId);
+    } catch (error) {
+      if (!mounted) return;
+      _updateState(() => _planBusyAction = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  /// A reply from the interview before the book. Google Play's AI-generated
+  /// content policy wants every AI reply reportable, and this is the first one
+  /// a reader sees — there is no book yet for "Report book" to cover it.
+  void _reportCreationReply(MobileCreationMessage message) {
+    final draftId =
+        ref.read(creationChatControllerProvider).draftId ?? widget.draftId;
+    final messageId = message.id;
+    if (draftId == null || messageId == null || messageId.isEmpty) return;
+    unawaited(
+      reportAiContent(
+        context: context,
+        title: 'Report this AI reply',
+        submit: (reason, comment) => ref
+            .read(aiContentReportsApiProvider)
+            .reportCreationReply(
+              draftId: draftId,
+              messageId: messageId,
+              reason: reason,
+              comment: comment,
+            ),
+      ),
+    );
+  }
+
+  /// A reply in the book chat drawn here, through the book chat's own route.
+  void _reportProjectReply(MobileProjectChatMessage message) {
+    unawaited(
+      reportAiContent(
+        context: context,
+        title: 'Report this AI reply',
+        submit: (reason, comment) => ref
+            .read(aiContentReportsApiProvider)
+            .reportChatReply(
+              projectId: message.projectId,
+              messageId: message.id,
+              reason: reason,
+              comment: comment,
+            ),
+      ),
+    );
+  }
 }

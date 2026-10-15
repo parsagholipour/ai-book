@@ -1,12 +1,12 @@
 import {
   compilePolicyPayload,
   compilePublicationDedupeKey,
-  compilePublicationPolicyFromPayload,
   createProjectSchema,
-  EXPORT_PUBLICATION_PROJECT_STATUS,
+  freeEditRecompilePolicy,
   jsonRecord,
   libraryCharactersFromMediaSettings,
   manuscriptWordCount,
+  parseBookMatter,
   readerChaptersFromPublishedMarkdown,
   shortKidsStoryPageLayout,
   type CreateProjectInput
@@ -106,7 +106,7 @@ async function openWorkRefusal(db: ManuscriptDb, projectId: string): Promise<Man
   // operation re-count covers a chat Apply, which inserts its QUEUED operation
   // before the transaction that creates its job.
   const openOperations = await db.bookEditOperation.count({ where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } } });
-  if (openOperations === 0 && !(await hasOpenProjectWork(projectId))) {
+  if (openOperations === 0 && !(await hasOpenProjectWork(projectId, db))) {
     return null;
   }
   const narrating = await db.generationJob.count({
@@ -339,12 +339,15 @@ async function takeOverInTransaction(
     .map((character) => character.id)
     .filter((id, index, ids) => Boolean(id) && ids.indexOf(id) === index)
     .slice(0, MANUSCRIPT_CAST_LIMIT);
+  // The book's dedication becomes the Studio's setting, which every publish
+  // from here on writes back onto the book's matter.
+  const matterRow = await tx.project.findUnique({ where: { id: projectId }, select: { bookMatter: true } });
   const settings: ManuscriptSettings = {
     layout,
     kind,
     artStyle,
     goalWords: null,
-    dedication: null,
+    dedication: parseBookMatter(matterRow?.bookMatter).dedication ?? null,
     castCharacterIds,
     published: null
   };
@@ -353,7 +356,9 @@ async function takeOverInTransaction(
 
   // 5. The free recompile under the author rules — the publish's policy, a row
   // in this commit dispatched after it — and the voice pass the AI tools read.
-  const policy = compilePublicationPolicyFromPayload({ skipFinalReview: true, [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING" });
+  // Free, so it never owns the generated book's charge: a failure or a delete
+  // puts the book back COMPLETE and refunds nothing the book was bought with.
+  const policy = freeEditRecompilePolicy("COMPLETE");
   const compile = await enqueueGenerationJob({
     projectId,
     type: "COMPILE_EXPORT",

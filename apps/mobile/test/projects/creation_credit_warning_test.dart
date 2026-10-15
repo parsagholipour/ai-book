@@ -9,8 +9,11 @@ import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
 
 class _BillingRepository extends FakeBillingRepository {
-  _BillingRepository(this.available);
+  _BillingRepository(this.available, {this.awaitingVerification = false});
   int available;
+
+  /// The welcome grant waits on this reader's email.
+  final bool awaitingVerification;
 
   @override
   Future<MobileBilling> getBilling() async => MobileBilling(
@@ -23,13 +26,20 @@ class _BillingRepository extends FakeBillingRepository {
     entitlements: const [],
     products: const [],
     creditCosts: billing().creditCosts,
+    welcomeCreditsPending: awaitingVerification,
+    welcomeCreditsPendingReason: awaitingVerification
+        ? 'email_unverified'
+        : null,
+    welcomeCreditsPendingCredits: awaitingVerification ? 1250 : null,
   );
 }
 
+/// The harness reader is on the free tier: 528 buys a 6-page book and its
+/// plan, 544 the whole 8 pages the chat settled on.
 Future<void> _start(
   WidgetTester tester,
   ScriptedCreationRepository creation, {
-  int credits = 678,
+  int credits = 528,
   MemoryCreationPrefsStore? prefs,
   _BillingRepository? repository,
 }) async {
@@ -94,11 +104,56 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('an email sign-up short of credits is offered the free ones '
+      'first', (tester) async {
+    final creation = ScriptedCreationRepository();
+    await _start(
+      tester,
+      creation,
+      repository: _BillingRepository(528, awaitingVerification: true),
+    );
+    await _build(tester);
+
+    expect(find.textContaining('you can make up to 6 pages'), findsOneWidget);
+    // In the warning itself; the home's own banner says it behind the dialog.
+    Finder inWarning(Finder finder) =>
+        find.descendant(of: find.byType(AlertDialog), matching: finder);
+    expect(
+      inWarning(find.text('Verify your email to get your 1,250 free credits.')),
+      findsOneWidget,
+    );
+    expect(
+      inWarning(find.widgetWithText(FilledButton, 'Verify email')),
+      findsOneWidget,
+    );
+    // The warning's own answers stay below it.
+    expect(inWarning(find.widgetWithText(FilledButton, 'Yes')), findsOneWidget);
+    await tester.teardownScreen();
+  });
+
+  testWidgets('a verified reader\'s warning names no verification', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await _start(tester, creation);
+    await _build(tester);
+
+    expect(find.textContaining('you can make up to 6 pages'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.textContaining('Verify your email'),
+      ),
+      findsNothing,
+    );
+    await tester.teardownScreen();
+  });
+
   testWidgets('an exact sufficient balance builds without a warning', (
     tester,
   ) async {
     final creation = ScriptedCreationRepository();
-    await _start(tester, creation, credits: 694);
+    await _start(tester, creation, credits: 544);
     await _build(tester);
     expect(find.text('Reduce the page count?'), findsNothing);
     expect(creation.buildCount, 1);
@@ -111,7 +166,7 @@ void main() {
     final creation = ScriptedCreationRepository();
     final repository = _BillingRepository(1200);
     await _start(tester, creation, repository: repository);
-    repository.available = 678;
+    repository.available = 528;
     await _build(tester);
     expect(find.textContaining('you can make up to 6 pages'), findsOneWidget);
     expect(creation.buildCount, 0);

@@ -5,15 +5,20 @@ vi.mock("@book-maker/db/billing", async () => (await import("./mobile/testing/mo
 
 import { recordVerifiedGooglePlayPurchase } from "@book-maker/db/billing";
 import { mockBilling, mockPrisma } from "./mobile/testing/mobileApiMocks.js";
-import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
+import { renewalRecheckDelayMs, runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
 
 const NOW = new Date("2026-07-16T00:00:00.000Z");
+
+const HOUR = 60 * 60 * 1000;
 
 function dueSubscription(overrides: Record<string, unknown> = {}) {
   return {
     id: "subscription-1",
     userId: "user-a",
     purchaseToken: "play-token-1",
+    // Due since the period Google last reported ended, an hour ago.
+    currentPeriodEnd: new Date(NOW.getTime() - HOUR),
+    nextCreditGrantAt: new Date(NOW.getTime() - HOUR),
     product: { sku: "tomeza.creator_monthly" },
     ...overrides
   };
@@ -41,6 +46,7 @@ function verifier(result: unknown = {}) {
 describe("subscription renewal sweep", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPrisma.subscriptionState.updateMany.mockResolvedValue({ count: 1 });
     mockBilling.recordVerifiedGooglePlayPurchase.mockResolvedValue({
       purchaseRecordId: "purchase-1",
       status: "GRANTED",
@@ -72,7 +78,9 @@ describe("subscription renewal sweep", () => {
           // own schedule, and one left out of the sweep would never be granted
           // again unless the user happened to open the app.
           status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED", "PAUSED"] },
-          nextCreditGrantAt: { lte: NOW }
+          nextCreditGrantAt: { lte: NOW },
+          // A deleted account's tombstone is never granted into.
+          user: { status: { in: ["ACTIVE", "SUSPENDED"] } }
         })
       })
     );
@@ -87,6 +95,8 @@ describe("subscription renewal sweep", () => {
       verification: expect.objectContaining({ kind: "subscription" })
     });
     expect(result).toEqual({ checked: 1, granted: 1, failed: 0 });
+    // A grant moved the row to its new period end itself; the sweep adds nothing.
+    expect(mockPrisma.subscriptionState.updateMany).not.toHaveBeenCalled();
   });
 
   it("counts a verification that grants nothing as checked but not granted", async () => {
@@ -127,9 +137,65 @@ describe("subscription renewal sweep", () => {
 
     expect(result).toEqual({ checked: 2, granted: 1, failed: 1 });
     expect(warn).toHaveBeenCalledTimes(1);
-    // Nothing writes `nextCreditGrantAt` on the failure path, so the row stays in
-    // the query and a Play outage cannot swallow a paid renewal.
-    expect(mockPrisma.subscriptionState.update).not.toHaveBeenCalled();
+    // The failed row stays in the query — a Play outage must not swallow a paid
+    // renewal — but behind the backoff, so it cannot hold the head of the queue.
+    expect(mockPrisma.subscriptionState.updateMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.subscriptionState.updateMany).toHaveBeenCalledWith({
+      where: { id: "subscription-1", nextCreditGrantAt: { lt: new Date(NOW.getTime() + HOUR) } },
+      data: { nextCreditGrantAt: new Date(NOW.getTime() + HOUR) }
+    });
+  });
+
+  it("pushes back every check that grants nothing, so 25 stuck rows cannot starve the renewals behind them", async () => {
+    const stuck = Array.from({ length: 25 }, (_, index) => dueSubscription({
+      id: `paused-${index}`, userId: `user-${index}`, purchaseToken: `token-${index}`,
+      // Paused for two months: Google keeps answering PAUSED with the old period end.
+      currentPeriodEnd: new Date(NOW.getTime() - 60 * 24 * HOUR)
+    }));
+    mockPrisma.subscriptionState.findMany.mockResolvedValueOnce(stuck);
+    mockBilling.recordVerifiedGooglePlayPurchase.mockResolvedValue({
+      purchaseRecordId: "purchase-1", status: "VERIFIED", creditsGranted: 0, ledgerEntryId: null,
+      subscriptionStatus: "PAUSED", entitlementType: null
+    });
+
+    await runSubscriptionRenewalSweep({
+      verifier: verifier({ grantable: false, subscription: { status: "PAUSED" } }),
+      packageName: "com.tomeza.tomeza",
+      now: NOW
+    });
+
+    expect(mockPrisma.subscriptionState.updateMany).toHaveBeenCalledTimes(25);
+    for (const [call] of mockPrisma.subscriptionState.updateMany.mock.calls) {
+      // A day out: long overdue means looked at daily, not hourly.
+      expect(call.data.nextCreditGrantAt).toEqual(new Date(NOW.getTime() + 24 * HOUR));
+    }
+  });
+
+  it("re-verifies a yearly plan at a month inside its paid year, and retries a failed month within the hour", async () => {
+    // Month 4 of a year that runs to next July: the row is due at the month's start, not the year's end.
+    const yearEnd = new Date("2027-07-01T00:00:00.000Z");
+    mockPrisma.subscriptionState.findMany.mockResolvedValueOnce([
+      dueSubscription({ product: { sku: "tomeza.creator_yearly" }, currentPeriodEnd: yearEnd, nextCreditGrantAt: new Date(NOW.getTime() - 60_000) })
+    ]);
+    const play = verifier({ productSku: "tomeza.creator_yearly", subscription: { status: "ACTIVE", currentPeriodEnd: yearEnd } });
+    play.verifyPurchase.mockRejectedValueOnce(new Error("Play unavailable"));
+
+    const result = await runSubscriptionRenewalSweep({ verifier: play, packageName: "com.tomeza.tomeza", now: NOW });
+
+    expect(play.verifyPurchase).toHaveBeenCalledWith(expect.objectContaining({ productId: "tomeza.creator_yearly" }));
+    expect(result).toEqual({ checked: 1, granted: 0, failed: 1 });
+    // The paid year has months to run, so nothing is overdue: the month is asked about again in an hour.
+    expect(mockPrisma.subscriptionState.updateMany).toHaveBeenCalledWith({
+      where: { id: "subscription-1", nextCreditGrantAt: { lt: new Date(NOW.getTime() + HOUR) } },
+      data: { nextCreditGrantAt: new Date(NOW.getTime() + HOUR) }
+    });
+  });
+
+  it("backs off from an hour toward a day the longer a row has been overdue", () => {
+    expect(renewalRecheckDelayMs(0)).toBe(HOUR);
+    expect(renewalRecheckDelayMs(-5 * HOUR)).toBe(HOUR);
+    expect(renewalRecheckDelayMs(6 * HOUR)).toBe(3 * HOUR);
+    expect(renewalRecheckDelayMs(90 * 24 * HOUR)).toBe(24 * HOUR);
   });
 
   it("skips rows with no product to verify against", async () => {

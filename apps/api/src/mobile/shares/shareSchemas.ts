@@ -13,9 +13,10 @@ export const SHARE_CAPTION_MAX_CHARS = 500;
  *
  * `rightsConfirmed` is required whenever the request would make a share live
  * that is not live now; `likenessConfirmed` whenever the book shows someone
- * drawn from a real photo and no live share has recorded it. `acceptExportUnlock`
- * is the author's yes to the PDF unlock price for a FULL share of a locked book —
- * without it the handler refuses rather than charging.
+ * drawn from a real photo and no live share has recorded it.
+ * `acceptExportUnlock` is accepted and ignored: it was the author's yes to the
+ * PDF unlock price of a FULL share, and no book carries an unlock any more
+ * (2026-10-15), but installed builds still send it.
  */
 export const shareBodySchema = z
   .object({
@@ -35,37 +36,13 @@ export const shareOpenApiBody = toOpenApiRequestBody(shareBodySchema);
 
 export const shareSlugParamsSchema = z.object({ slug: z.string().min(1).max(64) });
 
-/**
- * A 402 on the share route is one of two things, and both bodies must survive
- * the serializer: the unlock the author has not agreed to yet (`creditsRequired`)
- * and the unlock they could not afford (`INSUFFICIENT_CREDITS`'s three numbers).
- */
-export const shareUnlockError = {
-  type: "object",
-  properties: {
-    error: {
-      type: "object",
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        creditsRequired: { type: "integer" },
-        requiredCredits: { type: "integer" },
-        availableCredits: { type: "integer" },
-        reservedCredits: { type: "integer" }
-      },
-      required: ["code", "message"]
-    }
-  },
-  required: ["error"]
-} as const;
-
 /** Every refused note and every refused book text carries `reason`. */
 export const shareRefusalError = contentRestrictedError;
 
 export const shareRouteErrors = {
   400: mobileAuthError,
   401: mobileAuthError,
-  402: shareUnlockError,
+  403: mobileAuthError,
   404: mobileAuthError,
   409: mobileAuthError,
   422: shareRefusalError,

@@ -141,7 +141,7 @@ describe("failing an edit operation", () => {
       { refund: false }
     );
     expect(storedError()).toBe(
-      "Free plans include 3 illustrated books a month. Upgrade for unlimited, or turn visuals off."
+      "Free plans include 3 illustrated books a month. Upgrade to a plan for no monthly cap, or turn visuals off."
     );
 
     expect(logged).not.toHaveBeenCalled();

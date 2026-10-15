@@ -66,7 +66,7 @@ export function GeneratedPlansView(props: GeneratedPlansViewProps) {
         {props.list ? <span className="muted admin-count">{count(props.list.total)} total</span> : null}
       </div>
       <p className="muted chart-subtitle">
-        Plans generated in this window. Revenue and provider cost cover plan generation only; a book later generated
+        Plans generated in this window. Earnings and provider cost cover plan generation only; a book later generated
         from the plan is intentionally excluded.
       </p>
       {props.listError ? (
@@ -89,7 +89,9 @@ export function GeneratedPlansView(props: GeneratedPlansViewProps) {
                 <th>Plan</th>
                 <th>Owner</th>
                 <th className="numeric">Target pages</th>
-                <th className="numeric">Revenue</th>
+                <th className="numeric" title="The kept credits valued by where they came from, after Google's fee; welcome and operator credits earn $0">
+                  Earned
+                </th>
                 <th className="numeric">Provider cost</th>
                 <th className="numeric">Margin</th>
                 <th>Generated</th>

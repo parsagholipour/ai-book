@@ -53,7 +53,7 @@ const { prisma, createSourceService } = await import("../packages/db/src/index.t
 const { saveSourceUpload, hydrateSourceAttachments } = await import("../apps/api/src/mobile/sourceAttachments.ts");
 const { processNextSource } = await import("../apps/worker/src/runtime/sourceProcessing.ts");
 const { processWorkerJob } = await import("../apps/worker/src/processJob.ts");
-const { queue, connection } = await import("../apps/worker/src/runtime/queue.ts");
+const { queue, interactiveQueue, closeLaneQueues, connection } = await import("../apps/worker/src/runtime/queue.ts");
 const { createLiveFastJudgmentsTextModel } = await import("../apps/api/src/generationTextModelRouting.ts");
 const { enrichCreationTurnWithSearch, deterministicCreationTurn } = await import("../apps/api/src/mobileCreation.ts");
 const { loadProjectForChat } = await import("../apps/api/src/mobile/projectChat.ts");
@@ -137,7 +137,7 @@ try {
     if (!jobs.length) break;
     for (const job of jobs) {
       assert.equal(job.type, "COMPILE_EXPORT", "This text-only test should enqueue only export");
-      const delivery = await queue.getJob(job.bullJobId!);
+      const delivery = (await queue.getJob(job.bullJobId!)) ?? (await interactiveQueue.getJob(job.bullJobId!));
       assert(delivery, "Worker follow-up must reach Redis");
       await processWorkerJob(delivery);
     }
@@ -185,7 +185,7 @@ try {
   await writeFile(join(root, "results.json"), JSON.stringify(results, null, 2));
   const { closeSharedBrowser } = await import("../packages/core/src/generation/browserPool.js");
   await closeSharedBrowser();
-  await queue.close();
+  await closeLaneQueues();
   await connection.quit();
   await prisma.$disconnect();
   globalThis.fetch = originalFetch;

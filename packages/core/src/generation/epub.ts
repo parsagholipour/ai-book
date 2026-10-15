@@ -5,7 +5,9 @@ import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { marked } from "marked";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
+import { withoutXmlIllegalCharactersOrReferences } from "../xmlCharacters.js";
 import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
+import { bookIllustrationAt } from "./bookIllustrationMarkdown.js";
 import { highlightHtmlCodeBlocks } from "./highlightHtmlCodeBlocks.js";
 import { markdownLabels } from "./markdown.js";
 import { retagColorlessCodeFences } from "./retagColorlessCodeFences.js";
@@ -47,6 +49,10 @@ h1, h2, h3 { font-family: ${stack}; page-break-after: avoid; }
 img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
 hr { border: none; border-top: 1px solid #d7d7d7; margin: 1.5em 0; }
 pre, code { text-align: left; }
+.book-title-page, .book-matter-sheet { text-align: center; page-break-after: always; }
+.book-title-page { margin-top: 20%; }
+.book-matter-sheet__dedication { margin: 15% 0; font-style: ${profile.hasItalic ? "italic" : "normal"}; }
+.book-matter-sheet__publication { font-size: 0.8em; }
 ${profile.hasItalic ? "" : "em, i, cite, blockquote { font-style: normal; }\nem, i { font-weight: 600; }\n"}`;
 }
 
@@ -108,9 +114,12 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
     ...(story.frontmatter.trim() ? [{ title: options.title, markdown: rewriteLocalImages(story.frontmatter, options, images), kind: "frontmatter" as const }] : []),
     ...story.scenes.map((scene) => ({ title: scene.markdown.match(/^##\s+(.+)$/m)?.[1]?.trim() ?? `${options.title} (${scene.index})`,
       markdown: rewriteLocalImages(scene.markdown, options, images), kind: "section" as const })),
-    ...(story.backmatter?.trim() ? [{ title: markdownLabels(options.language).sources,
-      markdown: rewriteLocalImages(story.backmatter, options, images), kind: "section" as const }] : [])
-  ] : splitIntoChapters(localizedMarkdown, options.title);
+    // Give Sources and About the Author their own files, just as in flowing
+    // books, so re-import can lift the biography out of the manuscript text.
+    ...(story.backmatter?.trim() ? splitIntoChapters(
+      rewriteLocalImages(story.backmatter, options, images), markdownLabels(options.language).sources, backMatterTitles(options.language)
+    ) : [])
+  ] : splitIntoChapters(localizedMarkdown, options.title, backMatterTitles(options.language));
   const profile = scriptProfileForLanguage(options.language);
   const chapterBodies = await Promise.all(chapters.map((chapter) => renderMarkdownToXhtml(chapter.markdown, options.language)));
   const fragmentFiles = fragmentFileMap(
@@ -144,7 +153,8 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
 
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
-  zip.file(
+  addXmlDocument(
+    zip,
     "META-INF/container.xml",
     `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -154,7 +164,8 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
 </container>`
   );
   zip.file("OEBPS/styles.css", `${epubCss(profile)}\n${await readFile(bookPdfBaseStylesheetPaths().highlightCss, "utf8")}`);
-  zip.file(
+  addXmlDocument(
+    zip,
     "OEBPS/nav.xhtml",
     navXhtml(
       options.title,
@@ -164,7 +175,8 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
       tocLandmarkTarget
     )
   );
-  zip.file(
+  addXmlDocument(
+    zip,
     "OEBPS/toc.ncx",
     tocNcx({
       bookId,
@@ -175,7 +187,7 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
     })
   );
   for (const chapter of renderedChapters) {
-    zip.file(`OEBPS/${chapter.fileName}`, chapter.xhtml);
+    addXmlDocument(zip, `OEBPS/${chapter.fileName}`, chapter.xhtml);
   }
   for (const image of images.values()) {
     // Illustrations arrive as PNG/JPEG/WebP — already entropy-coded, so
@@ -184,7 +196,8 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
     // stored image entries are fully legal EPUB.
     zip.file(`OEBPS/${image.fileName}`, image.data, { compression: "STORE" });
   }
-  zip.file(
+  addXmlDocument(
+    zip,
     "OEBPS/content.opf",
     contentOpf({
       bookId,
@@ -211,6 +224,28 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
     await writeFile(options.outputPath, bytes);
   }
   return bytes;
+}
+
+/**
+ * Every XML document of the archive goes in through here, with the characters
+ * XML 1.0 forbids taken out. It is the one door all reader text passes,
+ * whichever way it came — a chapter body out of marked, a heading as a
+ * navigation label, the title and the author as metadata — and one such
+ * character anywhere is a file no reading system opens. The matter is cleaned
+ * where it is saved (`cleanMatterText`), but page text has no cleaning of its
+ * own: a Studio page, an import or a chat edit carries a pasted U+000B as
+ * surely as a dedication did. Stripping the markdown instead would move the
+ * offsets a story book's page boundaries are recorded at.
+ *
+ * Page text can also *spell* the character: marked passes `&#11;` through as
+ * an entity, `toXhtml` keeps every numeric reference, and XML refuses the
+ * reference exactly as it refuses U+000B. So the references go here too, read
+ * off the finished document, where a reference is always a reference — the
+ * same spelling shown inside code is `&amp;#11;` by now and is left alone. A
+ * document with nothing to strip goes in byte for byte as it was.
+ */
+function addXmlDocument(zip: JSZip, path: string, xml: string): void {
+  zip.file(path, withoutXmlIllegalCharactersOrReferences(xml));
 }
 
 /**
@@ -249,7 +284,11 @@ async function packageLocalImages(
   // A Set keeps insertion order, which is what makes the numbering below
   // first-appearance rather than filesystem-completion order.
   const orderedPaths = new Set<string>();
+  const isIllustration = bookIllustrationAt(markdown);
   for (const match of markdown.matchAll(imageMarkdownRe())) {
+    if (!isIllustration(match.index)) {
+      continue;
+    }
     const localPath = localPathFor(match[2] ?? "");
     if (localPath) {
       orderedPaths.add(localPath);
@@ -284,7 +323,11 @@ async function packageLocalImages(
 }
 
 function rewriteLocalImages(markdown: string, options: GenerateBookEpubOptions & { imageStorageDir: string }, images: ReadonlyMap<string, EpubImage>): string {
-  return markdown.replace(imageMarkdownRe(), (_full, alt: string, src: string) => {
+  const isIllustration = bookIllustrationAt(markdown);
+  return markdown.replace(imageMarkdownRe(), (full: string, alt: string, src: string, offset: number) => {
+    if (!isIllustration(offset)) {
+      return full;
+    }
     const localPath = resolveBookImageAsset(src, { imageStorageDir: options.imageStorageDir,
       publicApiBase: options.publicApiUrl.replace(/\/+$/, ""), projectId: options.projectId })?.localPath;
     const image = localPath ? images.get(localPath) : undefined;
@@ -294,7 +337,13 @@ function rewriteLocalImages(markdown: string, options: GenerateBookEpubOptions &
   });
 }
 
-function splitIntoChapters(markdown: string, bookTitle: string): EpubSourceChapter[] {
+/** The headings the compiler writes for back matter, as `splitIntoChapters` reads them. */
+function backMatterTitles(language: string | undefined): ReadonlySet<string> {
+  const labels = markdownLabels(language);
+  return new Set([labels.sources, labels.aboutAuthor]);
+}
+
+function splitIntoChapters(markdown: string, bookTitle: string, backMatter: ReadonlySet<string>): EpubSourceChapter[] {
   const lines = markdown.split("\n");
   const chapters: Array<{ title: string; lines: string[]; kind: EpubSourceChapter["kind"] }> = [];
   let current: { title: string; lines: string[]; kind: EpubSourceChapter["kind"] } = {
@@ -324,7 +373,10 @@ function splitIntoChapters(markdown: string, bookTitle: string): EpubSourceChapt
   }
   if (chapters.length === 0) {
     chapters.push({ title: bookTitle, lines: lines, kind: "section" });
-  } else if (!chapters.some((chapter) => chapter.kind === "section")) {
+  } else if (!chapters.some((chapter) => chapter.kind === "section" && !backMatter.has(chapter.title))) {
+    // No chapter heading before the back matter: the opening file holds the
+    // whole text, so it is what the navigation must lead with — or a short book
+    // with a biography lists "About the Author" and nothing else.
     chapters[0]!.kind = "section";
   }
   return chapters.map((chapter) => ({

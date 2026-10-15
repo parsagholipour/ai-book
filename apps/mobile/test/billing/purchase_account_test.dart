@@ -97,7 +97,11 @@ void main() {
               '/api/mobile/billing/google-play/verify' => {
                 'purchase': {
                   'id': 'purchase-1',
-                  'status': 'granted',
+                  // A pending payment is sent with no status, and Google still
+                  // reports it pending to the server.
+                  'status': (options.data as Map)['purchaseStatus'] == null
+                      ? 'pending'
+                      : 'granted',
                   'creditsGranted': 1000,
                 },
                 'billing': {
@@ -161,6 +165,15 @@ void main() {
         ),
       );
       await pumpEventQueue();
+      // The pending payment is recorded under A, the account that started it.
+      bool isVerify(RequestOptions r) => r.path.endsWith('/google-play/verify');
+      final pendingRecord = requests.singleWhere(isVerify);
+      expect(
+        pendingRecord.headers['Authorization'],
+        'Bearer ${sessionA.tokens.accessToken}',
+      );
+      expect(pendingRecord.data['purchaseStatus'], isNull);
+      expect(store.finished, isEmpty);
       watcher.close();
       await container.read(authControllerProvider.notifier).logout();
       await container
@@ -177,10 +190,7 @@ void main() {
         ),
       );
       await pumpEventQueue();
-      expect(
-        requests.where((r) => r.path.endsWith('/google-play/verify')),
-        isEmpty,
-      );
+      expect(requests.where(isVerify), [pendingRecord]);
       expect(store.finished, isEmpty);
 
       // A newly opened paywall (or restarted app) must also reject A's receipt.
@@ -198,10 +208,7 @@ void main() {
         ),
       );
       await pumpEventQueue();
-      expect(
-        requests.where((r) => r.path.endsWith('/google-play/verify')),
-        isEmpty,
-      );
+      expect(requests.where(isVerify), [pendingRecord]);
       expect(otherWatcher.read().state.error, contains('account that started'));
       otherWatcher.close();
       await pumpEventQueue();
@@ -226,9 +233,8 @@ void main() {
         ),
       );
       await pumpEventQueue();
-      final verify = requests.singleWhere(
-        (r) => r.path.endsWith('/google-play/verify'),
-      );
+      final verify = requests.where(isVerify).last;
+      expect(requests.where(isVerify), hasLength(2));
       expect(
         verify.headers['Authorization'],
         'Bearer ${sessionA.tokens.accessToken}',

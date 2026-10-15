@@ -97,6 +97,8 @@ export type ArtifactPublication = {
   pending: string | null;
   live: string;
   superseded: string;
+  /** Metadata may be removed if rollback cannot restore its revision claim. */
+  provenance?: true;
   /** Whether a predecessor existed and is now parked at `superseded`. */
   parked: boolean;
   /** Whether the new artifact has reached `live`. */
@@ -199,6 +201,32 @@ export async function installArtifacts(publications: ArtifactPublication[]): Pro
   }
 }
 
+/** Metadata outages must not roll back a successfully rendered book. */
+export async function installProvenanceArtifacts(publications: ArtifactPublication[]): Promise<void> {
+  for (const publication of publications) {
+    try {
+      await installArtifacts([publication]);
+    } catch (error) {
+      console.error(`Failed to publish export provenance ${publication.live}:`, error);
+      // Keeping the predecessor would leave a permanent mismatch: the API's
+      // metadata-only repair heals unknown records, never contradicted ones.
+      // Do not restore it here; its backup still belongs to SQL rollback.
+      await removeUncertainProvenance(publication);
+    }
+  }
+}
+
+async function removeUncertainProvenance(publication: ArtifactPublication): Promise<void> {
+  // A failed DELETE response may still have removed the live record. Keep that
+  // attempted mutation in the journal even when its backup could not be made.
+  publication.installed = true;
+  try {
+    await objectStore().delete(publication.live);
+  } catch (error) {
+    console.error(`Failed to remove uncertain export provenance ${publication.live}:`, error);
+  }
+}
+
 /**
  * Puts back exactly what `installArtifacts` moved, newest move first.
  *
@@ -224,6 +252,11 @@ export async function restoreSupersededArtifacts(publications: ArtifactPublicati
       publication.installed = false;
     } catch (error) {
       console.error(`Failed to restore ${publication.live} after an interrupted publication:`, error);
+      if (publication.provenance) {
+        // Even identical bytes must not retain the uncommitted revision. A
+        // missing record is repairable; a falsely exact one is trusted forever.
+        await removeUncertainProvenance(publication);
+      }
     }
   }
 }
@@ -309,6 +342,7 @@ export async function provenancePublications(options: {
       pending: prepared,
       live: exportProvenanceKey(options.projectId, format),
       superseded: `${superseded[format]}.provenance.json`,
+      provenance: true,
       parked: false,
       installed: false
     });

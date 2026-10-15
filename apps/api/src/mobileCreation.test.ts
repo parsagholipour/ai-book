@@ -50,6 +50,27 @@ describe("runCreationTurn", () => {
     expect(turn.assistantMessage.length).toBeGreaterThan(0);
   });
 
+  it("suggests books in the voice of the adult making them, never addressed to a child", () => {
+    const turn = greetingCreationTurn();
+
+    // The same list the app draws before the server answers (creation_chat_helpers.dart).
+    expect(turn.quickReplies).toEqual([
+      "A bedtime story for my 5-year-old",
+      "Lead magnet about pricing",
+      "Workbook for new coaches",
+      "Short story about a garden mystery"
+    ]);
+    for (const reply of turn.quickReplies) {
+      expect(reply).not.toMatch(/\b(?:\d+|five)[ -]year[ -]olds\b|\bfor (?:kids|children)\b/i);
+    }
+  });
+
+  it("reads the suggested bedtime story's reader off the age it names", () => {
+    const turn = deterministicCreationTurn({ messages: [{ role: "user", content: "A bedtime story for my 5-year-old" }] });
+
+    expect(turn.brief.audience).toBe("5-year-old");
+  });
+
   it("switches the book type when the user explicitly asks in chat", () => {
     const turn = deterministicCreationTurn({
       messages: [
@@ -397,6 +418,27 @@ describe("mobile creation title selection", () => {
 
     expect(titleForMobilePayload(optionalTitlePayload, deterministicAdvisor(optionalTitlePayload))).toBe("The Meadow Finish");
     expect(titleForMobilePayload(chatTitlePayload, deterministicAdvisor(chatTitlePayload))).toBe("Slow Steps Home");
+  });
+
+  it("keeps a one-character title through Build, and drops a capture with no letter or digit in it", () => {
+    // One character is a whole title in Chinese or Japanese; the old two-character
+    // floor dropped it silently at Build, and the book came out untitled.
+    const titleOf = (rawIdea: string, optionalDetails: Record<string, string> = {}) => {
+      const payload = mobileCreationDraftPayloadSchema.parse({
+        payloadVersion: 3,
+        rawIdea,
+        optionalDetails,
+        messages: [{ role: "user", content: rawIdea }]
+      });
+      return titleForMobilePayload(payload, deterministicAdvisor(payload));
+    };
+
+    expect(titleOf("A quiet winter story.", { title: "雪" })).toBe("雪");
+    expect(titleOf("A quiet winter story.\nTitle: 雪")).toBe("雪");
+    expect(titleOf('A short story about the road home, called "道".')).toBe("道");
+    expect(titleOf("A quiet winter story.\nTitle: X")).toBe("X");
+    expect(titleOf("A quiet winter story.\nTitle: -")).toBeUndefined();
+    expect(titleOf('A quiet winter story called "…".')).toBeUndefined();
   });
 
   it("never scaffolds a recipe title or title suggestions from the raw idea", () => {

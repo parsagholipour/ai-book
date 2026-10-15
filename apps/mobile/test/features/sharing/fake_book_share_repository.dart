@@ -32,8 +32,6 @@ BookShareBook shareBook({
   BookShareUnavailableReason? unavailableReason,
   int readingPages = 24,
   bool likenessRequired = false,
-  bool exportUnlocked = false,
-  int exportUnlockCredits = 100,
 }) {
   return BookShareBook(
     shareable: shareable,
@@ -41,8 +39,6 @@ BookShareBook shareBook({
     readingPages: readingPages,
     maxPreviewPages: readingPages ~/ 2 < 1 ? 1 : readingPages ~/ 2,
     likenessRequired: likenessRequired,
-    exportUnlocked: exportUnlocked,
-    exportUnlockCredits: exportUnlocked ? 0 : exportUnlockCredits,
   );
 }
 
@@ -55,6 +51,7 @@ BookShare bookShare({
   bool likenessConfirmed = false,
   BookShareStatus status = BookShareStatus.active,
   String? takedownReason,
+  String? stoppedReason,
   int viewCount = 3,
 }) {
   return BookShare(
@@ -72,6 +69,7 @@ BookShare bookShare({
     likenessConfirmed: status == BookShareStatus.active && likenessConfirmed,
     status: status,
     takedownReason: takedownReason,
+    stoppedReason: stoppedReason,
     viewCount: viewCount,
   );
 }
@@ -105,7 +103,7 @@ class FakeBookShareRepository implements BookShareRepository {
   Future<BookShareSnapshot> loadShare(String projectId) async => snapshot;
 
   @override
-  Future<BookShareSaved> saveShare(
+  Future<BookShareSnapshot> saveShare(
     String projectId,
     BookShareRequest request,
   ) async {
@@ -118,7 +116,6 @@ class FakeBookShareRepository implements BookShareRepository {
     }
     final note = request.caption?.trim();
     final hasNote = note != null && note.isNotEmpty;
-    final unlocking = request.acceptExportUnlock;
     final live = snapshot.activeShare;
     snapshot = BookShareSnapshot(
       share: bookShare(
@@ -134,15 +131,9 @@ class FakeBookShareRepository implements BookShareRepository {
             (request.likenessConfirmed || (live?.likenessConfirmed ?? false)),
         viewCount: snapshot.share?.viewCount ?? 0,
       ),
-      book: unlocking
-          ? shareBook(
-              readingPages: snapshot.book.readingPages ?? 24,
-              likenessRequired: snapshot.book.likenessRequired,
-              exportUnlocked: true,
-            )
-          : snapshot.book,
+      book: snapshot.book,
     );
-    return BookShareSaved(snapshot: snapshot, exportUnlockCharged: unlocking);
+    return snapshot;
   }
 
   @override

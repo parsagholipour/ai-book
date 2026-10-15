@@ -148,6 +148,15 @@ class VoiceCallController extends Notifier<VoiceCallState> {
         error: error.message,
         outOfCredits: true,
       );
+    } on PlanRequiredForCallException catch (error) {
+      // Calls are a plan perk and this account has none — the app's billing
+      // was stale, or this build predates the lock. The ended screen offers
+      // the plans rather than a ring-again that would only be refused.
+      state = state.copyWith(
+        phase: VoiceCallPhase.failed,
+        error: error.message,
+        planRequired: true,
+      );
     } catch (error) {
       state = state.copyWith(phase: VoiceCallPhase.failed, error: userFacingError(error));
       await _teardown();
@@ -379,6 +388,9 @@ class VoiceCallController extends Notifier<VoiceCallState> {
           throw InsufficientCreditsForCallException(
             creditsNeededToStartCallMessage(_requiredCreditsFrom(error)),
           );
+        }
+        if (error.code == 'SUBSCRIPTION_REQUIRED') {
+          throw PlanRequiredForCallException(error.message);
         }
         rethrow;
       }
@@ -736,6 +748,17 @@ class InsufficientCreditsForCallException implements Exception {
   String toString() => message;
 }
 
+/// The server refused the call because calls are a plan perk (403
+/// `SUBSCRIPTION_REQUIRED`). [message] is the server's own sentence.
+class PlanRequiredForCallException implements Exception {
+  const PlanRequiredForCallException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class VoiceCallState {
   const VoiceCallState({
     this.character,
@@ -751,6 +774,7 @@ class VoiceCallState {
     this.creditsPerMinute = 0,
     this.maxCallSeconds = 0,
     this.outOfCredits = false,
+    this.planRequired = false,
     this.recordingAvailable = false,
     this.exportingRecording = false,
     this.endingReason,
@@ -773,6 +797,9 @@ class VoiceCallState {
   final int creditsPerMinute;
   final int maxCallSeconds;
   final bool outOfCredits;
+
+  /// The call was refused because calls are a plan perk this account lacks.
+  final bool planRequired;
 
   /// Whether this call is being recorded on the device, and so whether there is
   /// anything to offer the caller. False when the spool could not be opened.
@@ -814,6 +841,7 @@ class VoiceCallState {
     int? creditsPerMinute,
     int? maxCallSeconds,
     bool? outOfCredits,
+    bool? planRequired,
     bool? recordingAvailable,
     bool? exportingRecording,
     VoiceCallEndingReason? endingReason,
@@ -834,6 +862,7 @@ class VoiceCallState {
       creditsPerMinute: creditsPerMinute ?? this.creditsPerMinute,
       maxCallSeconds: maxCallSeconds ?? this.maxCallSeconds,
       outOfCredits: outOfCredits ?? this.outOfCredits,
+      planRequired: planRequired ?? this.planRequired,
       recordingAvailable: recordingAvailable ?? this.recordingAvailable,
       exportingRecording: exportingRecording ?? this.exportingRecording,
       endingReason: endingReason ?? this.endingReason,

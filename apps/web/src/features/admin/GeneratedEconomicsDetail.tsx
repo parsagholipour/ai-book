@@ -46,8 +46,10 @@ export function GeneratedEconomicsDetailContent(props: {
   return (
     <div className="generated-book-detail">
       <div className="stat-grid stat-grid-dense generated-book-economics">
+        {/* What the kept credits earned after Google's fee, by where each came from
+            (`admin/creditValuation.ts`); a book made on welcome credits earned nothing. */}
         <DetailTile
-          label="Charged"
+          label="Earned, net of Google"
           value={usd(detail.revenueUsd)}
           note={`${count(detail.netCredits)} kept of ${count(detail.grossCredits)} credits · ${count(detail.chargeCount)} charges`}
         />

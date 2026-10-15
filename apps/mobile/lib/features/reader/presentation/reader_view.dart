@@ -58,9 +58,9 @@ class ReaderView extends ConsumerStatefulWidget {
     required this.export,
     required this.loader,
     required this.status,
-    required this.onOpenPaywall,
     this.onRefreshExport,
     this.openAtBookPage,
+    this.offline = false,
     super.key,
   });
 
@@ -68,7 +68,6 @@ class ReaderView extends ConsumerStatefulWidget {
   final MobileExportAvailability export;
   final ReaderDocumentLoader loader;
   final MobileProjectStatus status;
-  final VoidCallback onOpenPaywall;
 
   /// Re-reads the book's state and answers with the export it is now offering,
   /// or null when it cannot be read.
@@ -80,6 +79,12 @@ class ReaderView extends ConsumerStatefulWidget {
 
   /// A `Page.index` the caller wants opened, resolved once the document is up.
   final int? openAtBookPage;
+
+  /// The server is out of reach and [status] is the phone's copy of the last
+  /// one (`BookReaderScreen`). The book reads as normal; nothing that needs
+  /// the server is offered, and the banner slot says why instead of offering
+  /// a reload no download can answer.
+  final bool offline;
 
   @override
   ConsumerState<ReaderView> createState() => _ReaderViewState();
@@ -174,6 +179,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// double tap. See [_onReadingDoubleTap].
   bool _chromeToggledByTap = false;
   bool _updateDismissed = false;
+  bool _offlineNoticeDismissed = false;
   bool _stateLoaded = false;
   bool _awake = false;
   int _pageCount = 0;
@@ -216,6 +222,16 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     }
     _rememberOpenFileCoverPage();
     _syncDocument();
+    if (oldWidget.offline != widget.offline) {
+      _offlineNoticeDismissed = false;
+      // Back in reach with nothing on screen: the book was never on this
+      // phone, and now it can be fetched.
+      if (!widget.offline &&
+          widget.loader.document == null &&
+          widget.loader.stage == ReaderLoadStage.failed) {
+        unawaited(_retryDownload());
+      }
+    }
   }
 
   @override
@@ -574,6 +590,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   bool get _editingEnabled {
+    if (widget.offline) return false;
     const busy = {'generating', 'planning', 'editing'};
     return !busy.contains(widget.status.status.toLowerCase());
   }
@@ -595,7 +612,15 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   ReaderUpdateStatus get _updateStatus {
-    if (_updateDismissed || widget.loader.document == null) {
+    if (widget.loader.document == null) {
+      return ReaderUpdateStatus.none;
+    }
+    if (widget.offline) {
+      return _offlineNoticeDismissed
+          ? ReaderUpdateStatus.none
+          : ReaderUpdateStatus.offline;
+    }
+    if (_updateDismissed) {
       return ReaderUpdateStatus.none;
     }
     if (!widget.export.available) {
@@ -795,7 +820,13 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   void _dismissUpdate() {
-    setState(() => _updateDismissed = true);
+    setState(() {
+      if (widget.offline) {
+        _offlineNoticeDismissed = true;
+      } else {
+        _updateDismissed = true;
+      }
+    });
   }
 
   @override

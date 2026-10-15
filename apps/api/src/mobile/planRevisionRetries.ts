@@ -4,6 +4,7 @@ import { isValidGenerationRetryToken } from "./generationRetryQuote.js";
 import { fingerprintGenerationRequest, isPrismaUniqueConflict, jsonRecord } from "./support.js";
 import { prisma } from "@book-maker/db";
 import { startGenerationAttempt } from "@book-maker/db/billing";
+import { aiWorkKindForMediaSettings, assertAiCapacity } from "./aiCapacity.js";
 
 /**
  * Paid recovery for a failed plan revision. The failed attempt has already
@@ -94,7 +95,7 @@ export async function retryPlanRevisionOperation(options: {
 
   const project = await prisma.project.findFirst({
     where: { id: operation.projectId, userId: options.userId },
-    select: { currentPlanId: true }
+    select: { currentPlanId: true, mediaSettings: true }
   });
   if (!project || project.currentPlanId !== planId) {
     return {
@@ -109,6 +110,12 @@ export async function retryPlanRevisionOperation(options: {
       reason: "Another book update is already in progress. Retry this revision when it finishes.",
       terminal: false
     };
+  }
+
+  // A reader's retry asks the spend breaker; the API's own automatic retries
+  // finish work the reader already started, so they do not.
+  if (!options.automatic) {
+    await assertAiCapacity(options.userId, aiWorkKindForMediaSettings(project.mediaSettings));
   }
 
   const retryPayload = { ...payload };

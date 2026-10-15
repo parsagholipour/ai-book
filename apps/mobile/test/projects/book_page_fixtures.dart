@@ -27,16 +27,13 @@ const composedPrompt =
 MobileExportAvailability exportFile(
   String format, {
   bool available = true,
-  bool unlocked = true,
   bool subscription = false,
   int? bytes,
 }) {
   return MobileExportAvailability(
     format: format,
     available: available,
-    unlocked: unlocked,
     requiresSubscription: subscription,
-    creditsRequired: unlocked ? 0 : 150,
     downloadUrl: '/api/mobile/projects/project-1/export/$format',
     filename: 'book.$format',
     contentType: 'application/octet-stream',

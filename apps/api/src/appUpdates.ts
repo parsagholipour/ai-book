@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
-import { pathFromRequestUrl } from "./requestAuth.js";
+import { routedRequestPath } from "./requestAuth.js";
 
 /**
  * Operator-controlled app updates.
@@ -151,8 +151,10 @@ export async function currentAppUpdateReleases(now = Date.now()): Promise<AppUpd
 export function registerAppUpdateGate(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
     if (request.method === "OPTIONS") return;
-    const path = pathFromRequestUrl(request.url);
-    if (!path.startsWith("/api/mobile/") || path === APP_UPDATE_PATH) return;
+    // The matched route, as the auth hook reads it: `/%61pi/mobile/...` runs a
+    // mobile handler and is gated like one.
+    const path = routedRequestPath(request);
+    if (path === null || !path.startsWith("/api/mobile/") || path === APP_UPDATE_PATH) return;
     const client = readAppClient(request);
     if (!client) return;
     const update = decideAppUpdate(await currentAppUpdateReleases(), client);

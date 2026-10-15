@@ -7,8 +7,8 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
-import '../../../shared/ui/haptics.dart';
-import '../../billing/data/billing_repository.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../../projects/data/offline_library_store.dart';
 import '../../projects/data/projects_repository.dart';
 import '../../projects/domain/project_models.dart';
 import '../../projects/presentation/project_export_actions.dart';
@@ -44,20 +44,6 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   ReaderDocumentLoader? _loader;
-
-  /// Whether the paywall is on screen right now, so a rebuild underneath it
-  /// cannot open a second copy.
-  bool _paywallOpen = false;
-
-  /// Whether the shortfall has already been put to the reader once.
-  ///
-  /// Closing the paywall is an answer — "not now" — and the screen behind it
-  /// still needs credits, so re-offering on the rebuild that dismissal causes
-  /// makes the sheet impossible to close and takes the back button with it: a
-  /// reader who declined to unlock could not leave the book. The offer is
-  /// therefore made once on arrival, and the locked state behind it keeps a
-  /// button to ask for it again deliberately.
-  bool _unlockOffered = false;
 
   /// Whether the re-check of the book's state has been asked for yet.
   bool _refreshRequested = false;
@@ -108,44 +94,6 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     );
   }
 
-  /// Sends the reader to the paywall. Only an older server reaches this for
-  /// want of credits: one that serves the reader through the download route,
-  /// where an unlock the balance covers is spent by the download itself and a
-  /// balance that cannot cover it is what interrupts the reader. A server with
-  /// a read route (`MobileExportAvailability.readUrl`) charges nothing to read.
-  Future<void> _offerUnlock(
-    MobileExportAvailability export, {
-    MobilePdfPageNumbering? pageNumbering,
-  }) async {
-    if (_paywallOpen) return;
-    _paywallOpen = true;
-    _unlockOffered = true;
-    await openProjectExportPaywall(
-      context: context,
-      ref: ref,
-      projectId: widget.projectId,
-      export: export,
-      isMounted: () => mounted,
-    );
-    if (!mounted) return;
-    setState(() => _paywallOpen = false);
-    // A download that failed for want of credits is worth one more attempt now
-    // the reader has been to the shop: leaving it on its error card would make
-    // a purchase look like it changed nothing. Against the book's current state
-    // rather than this one — a trip through the store is long enough for the
-    // unlock, the balance and the compile behind that URL to have all moved.
-    final loader = _loader;
-    if (loader != null && loader.stage == ReaderLoadStage.failed) {
-      unawaited(
-        loader.load(
-          export,
-          refresh: _refreshExport,
-          pageNumbering: pageNumbering,
-        ),
-      );
-    }
-  }
-
   /// Re-reads the book's state and answers with the export it is now offering.
   ///
   /// The reader's retry comes through here rather than reusing the descriptor
@@ -168,9 +116,23 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final statusValue = ref.watch(projectStatusProvider(widget.projectId));
-    final billing = ref.watch(billingProvider).asData?.value;
+    final offlineSession = ref.watch(
+      authControllerProvider.select(
+        (auth) => auth.asData?.value?.offline ?? false,
+      ),
+    );
 
     _statusSettled |= _refreshRequested && !statusValue.isLoading;
+    // Out of reach of the server, the book on this phone is opened against
+    // the last status kept for it. A session that started offline does not
+    // wait for the status read to fail first; any other reader learns it
+    // from that read.
+    final unreachable =
+        statusValue.hasError && isOfflineFailure(statusValue.error);
+    if ((unreachable && (_statusSettled || offlineSession)) ||
+        (offlineSession && statusValue.isLoading && !statusValue.hasValue)) {
+      return _buildOffline(statusValue.value);
+    }
     if (!_statusSettled) {
       return ReaderScaffold(
         title: 'Reading',
@@ -195,11 +157,11 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
               ref.invalidate(projectStatusProvider(widget.projectId)),
         ),
       ),
-      data: (status) => _buildForStatus(status, billing?.credits.available),
+      data: _buildForStatus,
     );
   }
 
-  Widget _buildForStatus(MobileProjectStatus status, int? credits) {
+  Widget _buildForStatus(MobileProjectStatus status) {
     final export = status.exports.pdf;
     final loader = _loaderFor(ref.read(readerRepositoryProvider));
 
@@ -210,7 +172,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
         body: AppEmptyState(
           icon: Icons.menu_book_outlined,
           title: 'Still being written',
-          message: projectExportStateText(export, credits),
+          message: projectExportStateText(export),
           actionLabel: 'Try again',
           onAction: () =>
               ref.invalidate(projectStatusProvider(widget.projectId)),
@@ -218,45 +180,51 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       );
     }
 
-    // Reading needs no unlock when the server offers the reader its own route
-    // (`readUrl`), so the lock below is only an older server's: one that still
-    // makes the reader download through the route that spends it.
-    if (export.readUrl == null &&
-        projectExportNeedsCredits(export, credits) &&
-        loader.document == null) {
-      if (!_unlockOffered) {
-        // Scheduled rather than called inline: this runs during build.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && !_unlockOffered) {
-            unawaited(
-              _offerUnlock(export, pageNumbering: status.pdfPageNumbering),
-            );
-          }
-        });
-      }
-      return ReaderScaffold(
-        title: 'Reading',
-        projectId: widget.projectId,
-        body: AppEmptyState(
-          icon: Icons.lock_outline,
-          title: 'Unlock to read',
-          message: projectExportStateText(export, credits),
-          actionLabel: 'Get credits',
-          onAction: () => unawaited(
-            _offerUnlock(export, pageNumbering: status.pdfPageNumbering),
-          ),
-        ),
-      );
-    }
+    return _readerView(status);
+  }
 
+  /// The reader with no server to ask. [latest] is the freshest status this
+  /// run read; when it offers no PDF, the copy kept on this phone stands in.
+  /// Neither is shown as live: the reader only reads.
+  Widget _buildOffline(MobileProjectStatus? latest) {
+    final saved = ref.watch(offlineBookStatusProvider(widget.projectId));
+    final status = latest != null && latest.exports.pdf.available
+        ? latest
+        : saved.value?.status;
+    if (status != null) {
+      return _readerView(status, offline: true);
+    }
+    return ReaderScaffold(
+      title: 'Reading',
+      projectId: widget.projectId,
+      body: saved.isLoading
+          ? const ReaderOpeningState()
+          : AppEmptyState(
+              key: const Key('reader-offline-unsaved'),
+              icon: Icons.cloud_off_outlined,
+              title: 'Not on this phone yet',
+              message:
+                  "This book hasn't been opened on this phone, so there is "
+                  'nothing to read without a connection. Connect to the '
+                  'internet to open it.',
+              actionLabel: 'Try again',
+              onAction: () =>
+                  ref.invalidate(projectStatusProvider(widget.projectId)),
+            ),
+    );
+  }
+
+  /// One place builds the reader, online or not, so going back online keeps
+  /// the same [ReaderView] — its page, its markup and the document on screen.
+  Widget _readerView(MobileProjectStatus status, {bool offline = false}) {
+    final export = status.exports.pdf;
     return ReaderView(
       projectId: widget.projectId,
       export: export,
-      loader: loader,
+      loader: _loaderFor(ref.read(readerRepositoryProvider)),
       status: status,
+      offline: offline,
       openAtBookPage: widget.openAtBookPage,
-      onOpenPaywall: () =>
-          _offerUnlock(export, pageNumbering: status.pdfPageNumbering),
       onRefreshExport: _refreshExport,
     );
   }
@@ -362,9 +330,3 @@ Widget defaultReaderViewerBuilder(
 final readerViewerBuilderProvider = Provider<ReaderViewerBuilder>(
   (ref) => defaultReaderViewerBuilder,
 );
-
-/// Reports a successful unlock so the credit balance on other screens refreshes.
-void notifyReaderUnlockSpent(WidgetRef ref) {
-  AppHaptics.success();
-  ref.invalidate(billingProvider);
-}

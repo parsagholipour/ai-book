@@ -120,7 +120,7 @@ describe("changing a book's title from the chat", () => {
     expect(cover.commitCoverChange).toHaveBeenCalledWith(db, "project-1", {
       title: "Tiko and the Silver Sea",
       coverArtSource: "design",
-      drawCover: { purchase: false }
+      drawCover: { purchase: false, retypeset: true }
     });
     expect((reply as unknown as { content: string }).content).toBe(
       "Done — the book is now called “Tiko and the Silver Sea”. I’m setting the cover again with the new title and refreshing the exports. This one’s free."
@@ -141,6 +141,64 @@ describe("changing a book's title from the chat", () => {
       "project-1",
       expect.objectContaining({ mediaSettingsPatch: { storyPageDesign: expect.any(String) } })
     );
+  });
+
+  it("answers in the router's conversation language and records it", async () => {
+    db.imageAsset.findFirst.mockResolvedValue({ metadata: { coverArtSource: "design", coverDesignId: "moonlit-sea" } });
+    const { reply } = await run({ intent: { ...intent, bookTitle: "دریای نقره‌ای", responseLanguage: "fa" } });
+    expect(reply).toMatchObject({
+      content: "انجام شد — عنوان کتاب حالا «دریای نقره‌ای» است. دارم جلد را با عنوان جدید دوباره صفحه‌آرایی می‌کنم و فایل‌های خروجی را تازه می‌کنم. این تغییر رایگان است.",
+      metadata: { replyLanguage: "fa", charged: false, bookTitle: "دریای نقره‌ای" }
+    });
+  });
+
+  it("keeps the conversation's saved language when the intent carries none, and English by default", async () => {
+    db.imageAsset.findFirst.mockResolvedValue(null);
+    const persian = [{ role: "ASSISTANT", metadata: { replyLanguage: "fa" } }];
+    const fromHistory = await run({ activeMessages: persian });
+    expect(fromHistory.reply).toMatchObject({
+      content: "انجام شد — عنوان کتاب حالا «Tiko and the Silver Sea» است. دارم فایل‌های خروجی را تازه می‌کنم. این تغییر رایگان است.",
+      metadata: { replyLanguage: "fa" }
+    });
+    const english = await run();
+    expect(english.reply).toMatchObject({
+      content: "Done — the book is now called “Tiko and the Silver Sea”. I’m refreshing the exports. This one’s free.",
+      metadata: { replyLanguage: "en" }
+    });
+  });
+
+  it("charges and confirms a Persian AI-cover redraw in Persian, and its card keeps the English summary", async () => {
+    db.imageAsset.findFirst.mockResolvedValue({ metadata: { coverArtSource: "ai" } });
+    const persianIntent = { ...intent, responseLanguage: "fa" as const };
+    const proposed = await run({ intent: persianIntent });
+    const card = proposed.reply as unknown as { content: string; metadata: Record<string, any> };
+    expect(card.content).toContain("«Tiko and the Silver Sea»");
+    expect(card.content).toContain("«Apply»");
+    expect(card.metadata).toMatchObject({
+      replyLanguage: "fa",
+      editProposal: { summary: "Retitle the book “Tiko and the Silver Sea” and draw a new AI cover with it" }
+    });
+
+    billing.startGenerationAttempt.mockImplementation(async (options) => {
+      await options.create(db, { attemptId: "attempt-1", ledgerEntry: { id: "ledger-1" } });
+      return { attempt: { id: "attempt-1" }, replayed: false };
+    });
+    const cost = creditPricing().coverRegeneration;
+    const { reply } = await run({ intent: persianIntent, executeProposal: true, executionCommandId: "proposal-1", quotedCredits: cost });
+    expect(reply).toMatchObject({
+      content: "انجام شد — عنوان کتاب حالا «Tiko and the Silver Sea» است. دارم با این عنوان جلد تازه‌ای می‌کشم و فایل‌های خروجی را تازه می‌کنم.",
+      metadata: { replyLanguage: "fa", charged: true, creditsCharged: cost }
+    });
+    expect((reply as unknown as { content: string }).content).not.toContain(String(cost));
+  });
+
+  it("keeps a title's markdown literal in the bubble, and its bytes in the row", async () => {
+    db.imageAsset.findFirst.mockResolvedValue(null);
+    const { reply } = await run({ intent: { ...intent, bookTitle: "The *Silver* Sea" } });
+    const content = (reply as unknown as { content: string }).content;
+    expect(content).not.toContain("“The *Silver* Sea”");
+    expect(content.replace(/[﻿⁠]/g, "")).toContain("“The *Silver* Sea”");
+    expect(cover.commitCoverChange).toHaveBeenCalledWith(db, "project-1", expect.objectContaining({ title: "The *Silver* Sea" }));
   });
 
   it("sends an author to the Writing Studio, and leaves an unchanged title alone", async () => {

@@ -123,10 +123,18 @@ class _PlayerSkeleton extends StatelessWidget {
 
 /// A book with no narration: what it is, what it is like, and the one button.
 class _NotNarratedYet extends StatelessWidget {
-  const _NotNarratedYet({required this.onStart, required this.busy});
+  const _NotNarratedYet({
+    required this.onStart,
+    required this.busy,
+    this.planLocked = false,
+  });
 
   final VoidCallback onStart;
   final bool busy;
+
+  /// Narration is a plan perk this reader does not have yet: the page still
+  /// says what it would be, and the button opens the plans ([onStart] does).
+  final bool planLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -197,12 +205,27 @@ class _NotNarratedYet extends StatelessWidget {
                   ),
                 ),
               const SizedBox(height: 24),
+              if (planLocked) ...[
+                Text(
+                  audiobooksPlanMessage,
+                  key: const ValueKey('audiobook-plan-locked'),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               AppButton.primary(
-                label: 'Choose a narrator',
+                label: planLocked ? 'See plans' : 'Choose a narrator',
                 loadingLabel: 'Starting…',
                 loading: busy,
                 onPressed: onStart,
-                leading: const Icon(Icons.record_voice_over_outlined),
+                leading: Icon(
+                  planLocked
+                      ? Icons.lock_outline
+                      : Icons.record_voice_over_outlined,
+                ),
                 expanded: true,
               ),
             ],
@@ -586,6 +609,35 @@ class _StaleBanner extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Offline, and nothing of this narration is on the phone to play. Not an
+/// error and not a narration in progress: the way out is a connection, and
+/// "Try again" asks the server the moment there is one.
+class _NotOnThisPhone extends StatelessWidget {
+  const _NotOnThisPhone({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: AppEmptyState(
+          key: const ValueKey('audiobook-not-on-phone'),
+          icon: Icons.cloud_off_outlined,
+          title: 'Not on this phone yet',
+          message:
+              "This narration hasn't been downloaded to this phone. Connect "
+              'to the internet to listen — chapters stay on the phone after '
+              'that.',
+          actionLabel: 'Try again',
+          onAction: onRetry,
         ),
       ),
     );

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/app.dart';
 import 'package:tomeza/app/routing/app_router.dart';
+import 'package:tomeza/features/auth/presentation/auth_controller.dart';
 import 'package:tomeza/features/notifications/data/push_messaging.dart';
 
 import '../features/notifications/fake_push_messaging.dart';
@@ -119,6 +120,43 @@ void main() {
       'register fcm-token-2 android',
     ]);
   });
+
+  for (final lostSession in [false, true]) {
+    testWidgets('${lostSession ? 'a lost session' : 'logging out'} takes the '
+        'book notifications down and retires the token, and the next sign-in '
+        'files a fresh one', (tester) async {
+      final push = FakePushMessaging();
+      final devices = FakePushDeviceRepository();
+      await tester.pumpWidget(
+        _app(
+          auth: FakeAuthRepository(initialSession: fakeSession()),
+          push: push,
+          devices: devices,
+        ),
+      );
+      await _settle(tester);
+      final auth = ProviderScope.containerOf(
+        tester.element(find.byType(TomezaApp)),
+      ).read(authControllerProvider.notifier);
+
+      if (lostSession) {
+        auth.sessionLost();
+      } else {
+        await auth.logout();
+      }
+      await _settle(tester);
+      expect(push.notificationsCleared, 1);
+      expect(push.tokensDeleted, 1);
+      expect(find.text('Welcome back'), findsOneWidget);
+
+      await auth.signIn(email: 'reader@example.com', password: 'pass');
+      await _settle(tester);
+      expect(devices.calls, [
+        'register fcm-token-1 android',
+        'register fcm-token-2 android',
+      ]);
+    });
+  }
 
   testWidgets('files nothing for a reader who has not allowed notifications', (
     tester,

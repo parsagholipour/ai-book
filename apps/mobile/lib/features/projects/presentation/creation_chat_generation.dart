@@ -116,11 +116,19 @@ class _GenerationProgressBubbleState
       return;
     }
     setState(() => _busyAction = 'retry');
-    await onRetry(widget.projectId);
-    if (!mounted) {
-      return;
+    try {
+      await onRetry(widget.projectId);
+    } catch (error) {
+      // The retry reports its own failures; anything that still escapes it
+      // is said here rather than left as a spinner that never stops.
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _busyAction = null);
     }
-    setState(() => _busyAction = null);
   }
 
   @override
@@ -173,7 +181,7 @@ class _GenerationProgressBubbleState
         !reviewRequired &&
         (isGenerating || status.status == 'editing');
     final downloadExport = status.isComplete && !reviewRequired
-        ? primaryUnlockedAvailableExport(status.exports)
+        ? primaryAvailableExport(status.exports)
         : null;
     // An older API build sends no generationProgress, and an edit in
     // flight deliberately sends none: both fall through to the compact
@@ -704,7 +712,7 @@ class _CompletionDownloadButton extends StatelessWidget {
     final isDownloading = busyAction == action;
     final onPressed = isDownloading ? null : () => onDownload(export);
     const leading = Icon(Icons.open_in_new_outlined);
-    final label = projectExportDownloadLabel(export, false);
+    final label = projectExportDownloadLabel(export);
     return primary
         ? AppButton.primary(
             onPressed: onPressed,

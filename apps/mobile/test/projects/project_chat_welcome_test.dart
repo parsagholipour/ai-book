@@ -35,8 +35,6 @@ class _FreshBookRepository extends ScriptedProjectsRepository {
           pdf: MobileExportAvailability(
             format: 'pdf',
             available: true,
-            unlocked: true,
-            creditsRequired: 0,
             downloadUrl: '',
             filename: 'book.pdf',
             contentType: 'application/pdf',
@@ -44,8 +42,6 @@ class _FreshBookRepository extends ScriptedProjectsRepository {
           epub: MobileExportAvailability(
             format: 'epub',
             available: true,
-            unlocked: true,
-            creditsRequired: 0,
             downloadUrl: '',
             filename: 'book.epub',
             contentType: 'application/epub+zip',

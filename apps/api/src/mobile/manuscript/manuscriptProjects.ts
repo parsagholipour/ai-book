@@ -10,6 +10,7 @@ import { Prisma, prisma } from "@book-maker/db";
 import { MOBILE_PRODUCT_PRESETS } from "../schemas.js";
 import { isPrismaUniqueConflict } from "../support.js";
 import { newRowId, requestScopedId } from "./manuscriptBook.js";
+import { authorDefaultsForNewBook } from "../authorProfile.js";
 import { assertCastBelongsToUser, UnknownCastCharacterError } from "./manuscriptCast.js";
 import { ManuscriptWriteRefusal } from "./manuscriptChapters.js";
 import type { ManuscriptProject } from "./manuscriptDerivation.js";
@@ -115,6 +116,9 @@ export async function createStudioProject(
     published: null
   };
   const manuscriptId = newRowId("ms");
+  // The author's own book takes their pen name and matter pages like any other;
+  // the Studio's settings own the byline and dedication from here on.
+  const author = await authorDefaultsForNewBook(userId);
   try {
     await prisma.$transaction(async (tx) => {
       await tx.project.create({
@@ -122,6 +126,8 @@ export async function createStudioProject(
           id: projectId,
           userId,
           title,
+          ...(author.authorName ? { authorName: author.authorName } : {}),
+          ...(author.bookMatter ? { bookMatter: author.bookMatter } : {}),
           prompt: input.prompt,
           category: input.category,
           targetPages: input.targetPages,

@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
-import 'package:tomeza/features/projects/presentation/projects_home_screen.dart';
 
 import '../app/app_test_fixtures.dart';
 
@@ -65,17 +64,6 @@ void main() {
       expect(_summary(bookType: 'custom').hasDistinctBookType, isFalse);
       expect(_summary(bookType: 'custom').bookTypeLabel, 'Book');
     });
-  });
-
-  test('home-shelf meta omits the generic Book type', () {
-    expect(
-      projectMeta(_summary(bookType: 'custom', lengthPreset: 'custom', pageCount: 8)),
-      isNot(contains('Book')),
-    );
-    expect(
-      projectMeta(_summary(bookType: 'workbook')),
-      contains('Workbook'),
-    );
   });
 }
 

@@ -148,7 +148,8 @@ describe("mobile editable book and manual edits", () => {
     expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(expect.objectContaining({
       projectId: "project-1",
       type: "COMPILE_EXPORT",
-      payload: expect.objectContaining({ planId: "plan-1", skipFinalReview: true })
+      // Free, on a delivered book: it never owns the paid book's failure or charge (B3).
+      payload: expect.objectContaining({ planId: "plan-1", skipFinalReview: true, freeEditRecompile: true })
     }));
     // A manual edit rewrote the page, so this recompile keeps the verdict:
     // findings about the text the reader just replaced may not outlive it.

@@ -54,11 +54,24 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   String? _serverError;
   bool _googleBusy = false;
 
+  /// The session ended without the reader signing out (see
+  /// `AuthController.sessionLost`), so this screen says why it is here until
+  /// they try to sign in again.
+  bool _signedOut = false;
+
   bool get _isSignUp => widget.mode == AuthScreenMode.signUp;
 
   @override
   void initState() {
     super.initState();
+    _signedOut = ref.read(signedOutNoticeProvider).take();
+    if (_signedOut) {
+      // The screens the reader was on may have queued their own "Sign in
+      // again" snack bars on the way out; this notice says it once.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
+      });
+    }
     _emailFocus.addListener(() {
       if (!_emailFocus.hasFocus &&
           !_emailLeft &&
@@ -94,7 +107,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   void _showServerError(String? message) {
-    setState(() => _serverError = message);
+    setState(() {
+      _serverError = message;
+      if (message != null) _signedOut = false;
+    });
     if (message == null) return;
     AppHaptics.error();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -144,6 +160,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               : 'Sign in to continue your books.',
         ),
         const SizedBox(height: AppSpacing.lg),
+        if (_signedOut) ...[
+          const AppInlineNotice(
+            icon: Icons.lock_clock_outlined,
+            tone: AppTone.info,
+            title: 'You were signed out',
+            message: 'Sign in again to continue.',
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         _buildForm(isSubmitting),
         const SizedBox(height: AppSpacing.md),
         if (_isSignUp)
@@ -364,6 +389,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     setState(() {
       _submitted = true;
       _serverError = null;
+      _signedOut = false;
     });
     if (!_formKey.currentState!.validate()) {
       AppHaptics.warning();

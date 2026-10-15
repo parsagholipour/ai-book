@@ -2,7 +2,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createProjectSchema, makeFallbackPlan } from "@book-maker/core";
 
 const findUnique = vi.hoisted(() => vi.fn());
-vi.mock("@book-maker/db", () => ({ prisma: { project: { findUnique } }, researchCitationsForExport: async () => [] }));
+vi.mock("@book-maker/db", () => ({
+  prisma: { project: { findUnique } },
+  researchCitationsForExport: async () => [],
+  bookMatterForExport: async () => ({ year: 2026, madeWithCredit: false })
+}));
 
 import { compileProjectManuscript } from "./projectManuscript.js";
 

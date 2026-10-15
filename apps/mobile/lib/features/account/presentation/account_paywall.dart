@@ -11,7 +11,7 @@ Future<void> openAccountBillingPaywall(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  await showBillingPaywall(context, title: null);
+  await showBillingPaywall(context, title: null, trigger: PaywallTrigger.plans);
   if (context.mounted) {
     ref.invalidate(billingProvider);
   }

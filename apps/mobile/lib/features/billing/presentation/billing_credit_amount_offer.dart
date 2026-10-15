@@ -237,7 +237,7 @@ class BillingCreditAmountOffer extends StatelessWidget {
                           ? 'A monthly plan costs less upfront'
                           : 'Need credits every month?',
                       message: quote.betterPlan != null
-                          ? '${billingPlanName(quote.betterPlan!)} includes ${formatCredits(quote.betterPlan!.creditAmount)} credits for ${quote.betterPlanPriceLabel} per month. Renews monthly.'
+                          ? '${billingPlanName(quote.betterPlan!)} includes ${formatCredits(quote.betterPlan!.creditsPerGrant)} credits every month for ${quote.betterPlanPriceLabel} per ${quote.betterPlan!.periodNoun}. ${quote.betterPlan!.renewsLabel}.'
                           : 'Compare monthly credits, Word exports, and manuscript import.',
                     ),
                     Align(

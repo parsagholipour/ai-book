@@ -235,14 +235,28 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('the picker offers no price it was not told', (tester) async {
+  testWidgets('the picker shows the price the server quoted', (tester) async {
     repository.audiobook = null;
     await pumpScreen(tester);
 
     await tester.tap(find.text('Choose a narrator'));
     await settle(tester);
 
-    // The billing fixture ships no audiobook prices, so none are invented.
+    // Narration is priced by the words read aloud, which only the server
+    // counts: the sheet shows its quote rather than a formula of its own.
+    expect(find.text('Narrating this book costs'), findsOneWidget);
+    expect(find.textContaining('152'), findsWidgets);
+  });
+
+  testWidgets('the picker offers no price it was not told', (tester) async {
+    repository.audiobook = null;
+    repository.quoteError = Exception('offline');
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('Choose a narrator'));
+    await settle(tester);
+
+    // A quote that could not be read is not a price of zero, so none is invented.
     expect(find.text('Narrating this book costs'), findsNothing);
     expect(find.bySemanticsLabel('Play Zephyr preview'), findsOneWidget);
     expect(find.text('Pick a voice to continue'), findsOneWidget);

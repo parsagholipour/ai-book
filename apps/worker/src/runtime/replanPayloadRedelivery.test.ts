@@ -16,7 +16,10 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { PrismaClientKnownRequestError: class extends Error {} }
 }));
-vi.mock("./queue.js", () => ({ queue: { add: mocks.queueAdd, getJob: mocks.queueGetJob } }));
+vi.mock("./queue.js", () => {
+  const queue = { add: mocks.queueAdd, getJob: mocks.queueGetJob };
+  return { queue, queueNamed: () => queue, allLaneQueues: [queue] };
+});
 vi.mock("./config.js", () => ({ config: { MAX_PARALLEL_PAGE_JOBS: 3 } }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: vi.fn() }));
 

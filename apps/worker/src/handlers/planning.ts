@@ -6,7 +6,6 @@ import {
   strategyForInput
 } from "../generation/bookHelpers.js";
 import { strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
-import { embedResearchSourcesForProject } from "../generation/researchMemory.js";
 import { planRevisionConsistencyWarning } from "../generation/planRevisionSafety.js";
 import {
   authoritativeReplanMessage,
@@ -25,19 +24,15 @@ import { advanceJobStep, editOperationIdFromJob } from "../runtime/jobLifecycle.
 import { isStopRequestedError, type JobCompletion } from "../runtime/jobTypes.js";
 import { jsonPayloadToRecord } from "../runtime/serialization.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualitySettings.js";
-import { seedProjectStoryState } from "../generation/storyStateStore.js";
-import { bookPlanSchema, createProviders, critiquePlan, explicitLanguageRequest, mergePlanCriticPatch, mediaSettingsRowWriteback, normalizeProjectLanguage } from "@book-maker/core";
+import { claimPlanningCompletion } from "../runtime/planningCompletion.js";
+import { preparePlanningResearch, savePlanningResearch } from "./planningResearch.js";
+import { bookPlanSchema, createProviders, critiquePlan, explicitLanguageRequest, mergePlanCriticPatch, mediaSettingsRowWriteback, normalizeProjectLanguage, seedStoryStateFromPromises } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import type { PlanBookJob, RevisePlanJob } from "../runtime/jobPayloads.js";
 
 /**
  * `plan-book` and `revise-plan` jobs: research a brief and turn it into a BookPlan.
  */
-
-/** Identity for the redelivery dedupe of stored research sources. */
-function researchSourceIdentity(source: { query: string; title: string; url?: string | null | undefined }): string {
-  return [source.query, source.title, source.url ?? ""].join("\0");
-}
 
 export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
   const { projectId, inputSnapshot, generationJobId } = job.data;
@@ -83,8 +78,17 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
     }
   }
   const version = await nextPlanVersion(projectId);
+  const research = strategyUsesSemanticMemory(strategy)
+    ? await preparePlanningResearch(projectId, plan.researchNotes, providers.embedding)
+    : new Map();
 
   await prisma.$transaction(async (tx) => {
+    // Output, readiness and the paid verdict are indivisible. A crash after
+    // this commit is handled by the processor's existing COMPLETED replay.
+    await claimPlanningCompletion(tx, job, {
+      currentPlanId: project.currentPlanId,
+      contentRevision: project.contentRevision
+    });
     const planVersion = await tx.planVersion.create({
       data: {
         projectId,
@@ -97,7 +101,10 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
 
     await tx.project.update({
       where: { id: projectId },
-      data: { currentPlanId: planVersion.id, title: plan.title }
+      data: {
+        currentPlanId: planVersion.id, title: plan.title, status: "PLAN_READY",
+        storyState: seedStoryStateFromPromises(plan.promises ?? []) as Prisma.InputJsonValue
+      }
     });
 
     await tx.character.deleteMany({ where: { projectId } });
@@ -127,58 +134,9 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
       });
     }
 
-    if (plan.researchNotes.length > 0) {
-      // Existing-rows guard, mirroring embedResearchSourcesForProject: a
-      // redelivered plan-book re-runs this whole transaction, and unlike the
-      // cast above these rows were appended rather than replaced — doubling
-      // the book's Sources list forever (the compile rebuilds it from these
-      // rows on every export). Insert only the notes that are not already
-      // stored.
-      const existingSources = await tx.researchSource.findMany({
-        where: { projectId },
-        select: { query: true, title: true, url: true }
-      });
-      const storedKeys = new Set(existingSources.map((source) => researchSourceIdentity(source)));
-      const missingNotes = plan.researchNotes.filter((source) => !storedKeys.has(researchSourceIdentity(source)));
-      if (missingNotes.length > 0) {
-        await tx.researchSource.createMany({
-          data: missingNotes.map((source) => ({
-            projectId,
-            query: source.query,
-            title: source.title,
-            url: source.url ?? null,
-            summary: source.summary,
-            publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
-          }))
-        });
-      }
-    }
+    await savePlanningResearch(tx, projectId, plan.researchNotes, research);
   });
-  await seedProjectStoryState(projectId, plan.promises ?? []);
-  // Best-effort: the plan is already committed, and a failure past this point
-  // marks the project FAILED in a state `canRecoverGenerationJob` refuses to
-  // resume — the plan is newer than the job. Missing embeddings only degrade
-  // semantic recall, and page generation re-embeds as it goes. Only the
-  // sequential-pages strategy ever queries these embeddings, so other modes
-  // skip the calls entirely.
-  if (strategyUsesSemanticMemory(strategy)) {
-    try {
-      await embedResearchSourcesForProject(projectId, providers.embedding);
-    } catch (error) {
-      if (isStopRequestedError(error)) {
-        throw error;
-      }
-      console.warn(`Research embedding failed after plan save for project ${projectId}`, error);
-    }
-  }
-  return {
-    afterJobCompleted: async () => {
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { status: "PLAN_READY" }
-      });
-    }
-  };
+  return { durableCompletionCommitted: true };
 }
 
 export async function revisePlan(job: RevisePlanJob) {

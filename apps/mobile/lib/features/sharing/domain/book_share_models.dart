@@ -72,6 +72,7 @@ class BookShare {
     this.showAuthorName = false,
     this.likenessConfirmed = false,
     this.takedownReason,
+    this.stoppedReason,
     this.viewCount = 0,
     this.createdAt,
     this.updatedAt,
@@ -95,6 +96,14 @@ class BookShare {
 
   /// The operator's sentence, only while [status] is taken down.
   final String? takedownReason;
+
+  /// Why the system turned this link off, in the server's words: a re-screen
+  /// of the book's changed text refused it. Only on a stopped ([revoked])
+  /// share; null for one the author stopped. Sharing again is the ordinary
+  /// re-share, screened like any new link.
+  ///
+  /// [revoked]: BookShareStatus.revoked
+  final String? stoppedReason;
   final int viewCount;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -114,6 +123,10 @@ class BookShare {
       showAuthorName: json['showAuthorName'] as bool? ?? false,
       likenessConfirmed: json['likenessConfirmed'] as bool? ?? false,
       takedownReason: json['takedownReason'] as String?,
+      stoppedReason: switch (json['stoppedReason']) {
+        final String reason when reason.trim().isNotEmpty => reason.trim(),
+        _ => null,
+      },
       viewCount: (json['viewCount'] as num?)?.toInt() ?? 0,
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
@@ -130,8 +143,6 @@ class BookShareBook {
     this.readingPages,
     this.maxPreviewPages,
     this.likenessRequired = false,
-    this.exportUnlocked = false,
-    this.exportUnlockCredits = 0,
   });
 
   /// Whether a share can be made or changed right now.
@@ -152,12 +163,6 @@ class BookShareBook {
   /// be confirmed with that in mind.
   final bool likenessRequired;
 
-  /// The book's PDF unlock, which a full share needs, is already bought.
-  final bool exportUnlocked;
-
-  /// The live unlock price; 0 once the book is unlocked.
-  final int exportUnlockCredits;
-
   /// The preview cap the stepper runs to. A shareable book always has one;
   /// the floor keeps a stale answer from producing an empty range.
   int get previewCap => math.max(1, maxPreviewPages ?? 1);
@@ -172,8 +177,8 @@ class BookShareBook {
       readingPages: (json['readingPages'] as num?)?.toInt(),
       maxPreviewPages: (json['maxPreviewPages'] as num?)?.toInt(),
       likenessRequired: json['likenessRequired'] as bool? ?? false,
-      exportUnlocked: json['exportUnlocked'] as bool? ?? false,
-      exportUnlockCredits: (json['exportUnlockCredits'] as num?)?.toInt() ?? 0,
+      // An older server also sends `exportUnlocked` and
+      // `exportUnlockCredits`: a full share is free now, so neither is read.
     );
   }
 }
@@ -200,24 +205,6 @@ class BookShareSnapshot {
   }
 }
 
-/// What a save answered: the new state, and whether it spent the unlock.
-class BookShareSaved {
-  const BookShareSaved({
-    required this.snapshot,
-    this.exportUnlockCharged = false,
-  });
-
-  final BookShareSnapshot snapshot;
-  final bool exportUnlockCharged;
-
-  factory BookShareSaved.fromJson(Map<String, dynamic> json) {
-    return BookShareSaved(
-      snapshot: BookShareSnapshot.fromJson(json),
-      exportUnlockCharged: json['exportUnlockCharged'] as bool? ?? false,
-    );
-  }
-}
-
 /// The body of `PUT /api/mobile/projects/:id/share`.
 class BookShareRequest {
   const BookShareRequest({
@@ -227,7 +214,6 @@ class BookShareRequest {
     this.showAuthorName = false,
     this.rightsConfirmed = false,
     this.likenessConfirmed = false,
-    this.acceptExportUnlock = false,
   });
 
   final BookShareMode mode;
@@ -239,20 +225,6 @@ class BookShareRequest {
   final bool rightsConfirmed;
   final bool likenessConfirmed;
 
-  /// The author's yes to the unlock price, for a full share of a locked book.
-  final bool acceptExportUnlock;
-
-  /// This request, sent after the author agreed to the unlock price.
-  BookShareRequest withUnlockAccepted() => BookShareRequest(
-    mode: mode,
-    previewPages: previewPages,
-    caption: caption,
-    showAuthorName: showAuthorName,
-    rightsConfirmed: rightsConfirmed,
-    likenessConfirmed: likenessConfirmed,
-    acceptExportUnlock: true,
-  );
-
   Map<String, dynamic> toJson() {
     final note = caption?.trim();
     return {
@@ -262,7 +234,6 @@ class BookShareRequest {
       'showAuthorName': showAuthorName,
       'rightsConfirmed': rightsConfirmed,
       'likenessConfirmed': likenessConfirmed,
-      'acceptExportUnlock': acceptExportUnlock,
     };
   }
 }

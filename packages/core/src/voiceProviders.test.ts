@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "./config.js";
 import {
+  GEMINI_LIVE_CONTEXT_COMPACTION,
   GeminiLiveVoiceProvider,
   OpenAIRealtimeVoiceProvider,
+  estimateInstructionTokens,
+  geminiLiveContextCompression,
   selectGeminiLiveVoice,
   selectOpenAIRealtimeVoice,
   voiceProviderOptions
@@ -186,7 +189,9 @@ describe("voice providers", () => {
       provider: "gemini_live",
       model: "gemini-3.1-flash-live-preview",
       voiceId: "Sulafat",
-      expiresAt: "2026-06-09T10:30:00.000Z",
+      // The window to open, the 15-minute cap and a minute's slack: the relay's
+      // funded deadline always comes before Google's.
+      expiresAt: "2026-06-09T10:17:00.000Z",
       newSessionExpiresAt: "2026-06-09T10:01:00.000Z"
     });
     const params = createAuthToken.mock.calls[0]?.[0] as any;
@@ -206,6 +211,34 @@ describe("voice providers", () => {
     });
     expect(params.config.lockAdditionalFields).toContain("systemInstruction");
     expect(params.config.lockAdditionalFields).toContain("realtimeInputConfig");
+    // Compaction is counted above the instruction the token carries.
+    const instructionTokens = estimateInstructionTokens(params.config.liveConnectConstraints.config.systemInstruction);
+    expect(params.config.liveConnectConstraints.config.contextWindowCompression).toEqual({
+      triggerTokens: String(instructionTokens + 8_000),
+      slidingWindow: { targetTokens: String(instructionTokens + 3_000) }
+    });
+    expect(params.config.lockAdditionalFields).toContain("contextWindowCompression");
+  });
+
+  it("compacts a call down to the persona plus the last few minutes, whatever the persona's size", () => {
+    expect(GEMINI_LIVE_CONTEXT_COMPACTION).toEqual({ conversationTriggerTokens: 8_000, conversationTargetTokens: 3_000 });
+    // Short first-call persona: the window never gets near the old 24k trigger.
+    expect(geminiLiveContextCompression("x".repeat(6_000))).toEqual({
+      triggerTokens: "9500",
+      slidingWindow: { targetTokens: "4500" }
+    });
+    // A returning caller's 7,000-token instruction still keeps 3,000 tokens —
+    // two minutes — of conversation; a fixed 12k/6k would have kept its last turn.
+    expect(geminiLiveContextCompression("x".repeat(28_000))).toEqual({
+      triggerTokens: "15000",
+      slidingWindow: { targetTokens: "10000" }
+    });
+    // By script: four ASCII characters a token, three Persian letters, one ideograph.
+    expect(estimateInstructionTokens("abcdefgh")).toBe(2);
+    expect(estimateInstructionTokens("سلام دنیا")).toBe(3); // 8 letters / 3 + a space / 4, rounded up
+    expect(estimateInstructionTokens("你好世界")).toBe(4);
+    expect(estimateInstructionTokens("안녕")).toBe(2);
+    expect(estimateInstructionTokens("")).toBe(0);
   });
 
   it("creates Gemini Live sessions with manual input control for group characters", async () => {

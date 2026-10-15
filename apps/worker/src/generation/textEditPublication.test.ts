@@ -507,7 +507,12 @@ describe("text edit publication follow-up", () => {
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith(
       "project-1",
       "plan-1",
-      { skipFinalReview: true },
+      // The edit's recompile carries the status a failed render puts back.
+      {
+        review: { skipFinalReview: true, withoutQualityVerdict: false },
+        expectedProjectStatus: "EDITING",
+        ownership: { kind: "freeEdit", fallbackStatus: "REVIEW_REQUIRED" }
+      },
       { contentRevision: 8, requireContentRevisionMatch: true }
     );
     expect(project.status).toBe("REVIEW_REQUIRED");

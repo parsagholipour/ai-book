@@ -8,10 +8,13 @@ import '../projects/chat_session_page_fixture.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:tomeza/app/app.dart';
 import 'package:tomeza/features/account/data/app_version.dart';
 import 'package:tomeza/features/account/data/appearance_store.dart';
 import 'package:tomeza/features/app_update/data/app_update_repository.dart';
+import 'package:tomeza/features/attribution/data/install_attribution_tracker.dart';
+import 'package:tomeza/features/attribution/data/install_referrer_source.dart';
 import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
@@ -26,17 +29,22 @@ import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/sharing/data/book_share_repository.dart';
 import 'package:tomeza/features/sharing/data/pending_remix.dart';
 
+/// [authRepository] null keeps the real one, for a test that drives auth
+/// through the API client it builds; [overrides] then supplies its transport.
 Widget testApp({
-  required AuthRepository authRepository,
+  required AuthRepository? authRepository,
   FakeProjectsRepository? projectsRepository,
   FakeBillingRepository? billingRepository,
   FakeCreationRepository? creationRepository,
   BookShareRepository? shareRepository,
   PushMessaging? pushMessaging,
   PushDeviceRepository? pushDeviceRepository,
+  InstallAttributionTracker? installAttribution,
+  List<Override> overrides = const [],
 }) {
   return ProviderScope(
     overrides: [
+      ...overrides,
       if (pushMessaging != null)
         pushMessagingProvider.overrideWithValue(pushMessaging),
       if (pushDeviceRepository != null)
@@ -45,7 +53,8 @@ Widget testApp({
       pendingRemixStoreProvider.overrideWithValue(MemoryPendingRemixStore()),
       if (shareRepository != null)
         bookShareRepositoryProvider.overrideWithValue(shareRepository),
-      authRepositoryProvider.overrideWithValue(authRepository),
+      if (authRepository != null)
+        authRepositoryProvider.overrideWithValue(authRepository),
       creationRepositoryProvider.overrideWithValue(
         creationRepository ?? FakeCreationRepository(),
       ),
@@ -61,9 +70,27 @@ Widget testApp({
         MemoryAppUpdatePromptStore(),
       ),
       appVersionProvider.overrideWith((ref) async => 'Tomeza 1.0.0 (1)'),
+      // Always overridden: the file-backed store calls path_provider. An
+      // install with no referrer, unless a test hands in its own tracker.
+      installAttributionProvider.overrideWithValue(
+        installAttribution ??
+            InstallAttributionTracker(
+              source: const _NoInstallReferrer(),
+              store: MemoryInstallAttributionStore(),
+              report: (_) async => true,
+            ),
+      ),
     ],
     child: const TomezaApp(),
   );
+}
+
+/// An install Play has nothing to say about, without asking the platform.
+class _NoInstallReferrer implements InstallReferrerSource {
+  const _NoInstallReferrer();
+
+  @override
+  Future<InstallReferrerAnswer> read() async => const InstallReferrerNone();
 }
 
 class FakeAuthRepository implements AuthRepository {
@@ -73,10 +100,25 @@ class FakeAuthRepository implements AuthRepository {
     this.signInError,
     this.requestPasswordResetError,
     this.resetPasswordError,
+    this.offlineRestores = 0,
+    this.sessionDiesOffline = false,
+    this.signUpEmailVerified = true,
   }) : _session = initialSession;
+
+  /// Whether a new email account arrives verified (a server that predates
+  /// verification says nothing, which reads as verified).
+  final bool signUpEmailVerified;
 
   AuthSession? _session;
   final Object? restoreError;
+
+  /// How many restores answer as the real repository does when the server is
+  /// out of reach but the phone holds the account: the stored session, offline.
+  int offlineRestores;
+
+  /// The first restore after the offline ones finds the session dead.
+  final bool sessionDiesOffline;
+  int restoreCalls = 0;
   final Object? signInError;
   final Object? requestPasswordResetError;
   final Object? resetPasswordError;
@@ -85,10 +127,21 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   Future<AuthSession?> restoreSession() async {
+    restoreCalls += 1;
     final error = restoreError;
     if (error != null) {
       throw error;
     }
+    final session = _session;
+    if (offlineRestores > 0 && session != null) {
+      offlineRestores -= 1;
+      return AuthSession(
+        user: session.user,
+        tokens: session.tokens,
+        offline: true,
+      );
+    }
+    if (sessionDiesOffline) _session = null;
     return _session;
   }
 
@@ -113,7 +166,11 @@ class FakeAuthRepository implements AuthRepository {
     bool termsAccepted = false,
     bool ageGuardianAttested = false,
   }) async {
-    _session = fakeSession(email: email, displayName: displayName);
+    _session = fakeSession(
+      email: email,
+      displayName: displayName,
+      emailVerified: signUpEmailVerified,
+    );
     return _session!;
   }
 
@@ -658,6 +715,8 @@ class FakeBillingRepository implements BillingRepository {
     String? transactionId,
     String? purchaseStatus,
     String? projectId,
+    int? localPriceMicros,
+    String? localCurrency,
   }) async {
     return GooglePlayVerificationResult(
       purchase: const VerifiedPurchase(
@@ -674,6 +733,7 @@ AuthSession fakeSession({
   String email = 'creator@example.com',
   String? displayName = 'Mira',
   bool legalAcceptanceRequired = false,
+  bool emailVerified = true,
 }) {
   return AuthSession(
     user: AuthUser(
@@ -684,6 +744,7 @@ AuthSession fakeSession({
       createdAt: DateTime.utc(2026, 6, 1),
       updatedAt: DateTime.utc(2026, 6, 1),
       legalAcceptanceRequired: legalAcceptanceRequired,
+      emailVerified: emailVerified,
     ),
     tokens: MobileSessionTokens(
       accessToken: 'access-token',
@@ -716,8 +777,6 @@ MobileProjectSummary fakeProject() {
       pdf: MobileExportAvailability(
         format: 'pdf',
         available: false,
-        unlocked: false,
-        creditsRequired: 150,
         downloadUrl: '/api/mobile/projects/project-1/export/pdf',
         filename: 'Audience-Growth-Workbook.pdf',
         contentType: 'application/pdf',
@@ -725,8 +784,6 @@ MobileProjectSummary fakeProject() {
       epub: MobileExportAvailability(
         format: 'epub',
         available: false,
-        unlocked: false,
-        creditsRequired: 150,
         downloadUrl: '/api/mobile/projects/project-1/export/epub',
         filename: 'Audience-Growth-Workbook.epub',
         contentType: 'application/epub+zip',

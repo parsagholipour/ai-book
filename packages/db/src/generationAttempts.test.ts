@@ -137,7 +137,6 @@ vi.mock("./billingLedger.ts", () => ({
   commitReservedCreditsTx: fake.commit,
   refundCreditLedgerEntryTx: fake.refund
 }));
-vi.mock("./billingEntitlements.ts", () => ({ grantProjectEntitlementTx: vi.fn() }));
 vi.mock("./planPeriods.ts", () => ({ consumeIllustratedBookUseTx: vi.fn() }));
 
 const {
@@ -181,6 +180,32 @@ describe("generation attempt command claims", () => {
     expect(fake.commit).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledTimes(1);
     expect(fake.tx.generationJob.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("charges a book once and grants nothing beside it: the finished file downloads free", async () => {
+    // A paid reader's approval used to grant an EXPORT_UNLOCK entitlement in
+    // this transaction; the per-book unlock was retired on 2026-10-15.
+    const started = await startGenerationAttempt({
+      userId: "user-1",
+      commandKey: "mobile:plan-approval:plan-1",
+      requestFingerprint: "fingerprint-1",
+      operation: "FULL_BOOK_GENERATION",
+      quotedCredits: 900,
+      projectId: "project-1",
+      description: "Book generation",
+      create: async (_tx, { attemptId }) => {
+        fake.enqueueJob("job-1", attemptId);
+        return { projectId: "project-1", primaryJobId: "job-1" };
+      }
+    });
+
+    expect(started.replayed).toBe(false);
+    expect(fake.reserve).toHaveBeenCalledTimes(1);
+    expect(fake.reserve).toHaveBeenCalledWith(fake.tx, expect.objectContaining({ amountCredits: 900 }));
+    expect(fake.commit).toHaveBeenCalledTimes(1);
+    // The transaction this attempt ran in has no entitlement table at all, so a
+    // grant written beside the charge would have thrown rather than committed.
+    expect(fake.tx).not.toHaveProperty("userEntitlement");
   });
 
   it("lets differently keyed concurrent retry commands create only one child", async () => {
@@ -303,7 +328,6 @@ describe("generation attempt command claims", () => {
         quotedCredits: 900,
         projectId: "project-1",
         description: "Book generation",
-        grantExportEntitlement: true,
         create
       })
     ).rejects.toBeInstanceOf(GenerationAttemptJobClaimError);

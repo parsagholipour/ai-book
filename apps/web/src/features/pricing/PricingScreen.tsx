@@ -1,9 +1,9 @@
 import { Coins, History, Loader2, RotateCcw, Save, Undo2 } from "lucide-react";
 import { Button } from "../shared/Button.js";
 import { PRICING_FIELD_GROUPS } from "./pricingFields.js";
-import { ProfitSection } from "./ProfitSection.js";
+import { creditValueNote, ProfitSection } from "./ProfitSection.js";
 import type { CreditPricingKey, PricingPreview, PricingRevision } from "./types.js";
-import { usePricing } from "./usePricing.js";
+import { pricingMinimum, usePricing } from "./usePricing.js";
 
 /**
  * Operator-facing editor for credit prices and free-plan limits.
@@ -64,7 +64,7 @@ export function PricingScreen() {
                         ) : (
                           <input
                             type="number"
-                            min={field.key === "messageCreditsFree" ? 1 : 0}
+                            min={pricingMinimum(field.key, pricing.state!.minimums)}
                             max={pricing.state!.limits[field.key]}
                             step={1}
                             value={pricing.draft![field.key]}
@@ -101,7 +101,7 @@ export function PricingScreen() {
                 />
               </label>
               {pricing.invalidKeys.length > 0 ? (
-                <p className="pricing-invalid">Every setting must be a whole number, zero or more.</p>
+                <p className="pricing-invalid">Every setting must be a whole number, at or above its minimum.</p>
               ) : null}
               <div className="pricing-actions">
                 <Button
@@ -174,7 +174,10 @@ function PreviewPanel(props: { preview: PricingPreview | null; creditUsdValue: n
       </p>
       <p className="pricing-total">
         {props.preview.totalCredits.toLocaleString()} credits
-        <span className="muted"> ≈ ${props.preview.estimatedUsd.toFixed(2)}</span>
+        <span className="muted">
+          {" "}
+          ≈ ${props.preview.estimatedUsd.toFixed(2)} {creditValueNote(props.creditUsdValue)}
+        </span>
       </p>
       {/* The tiers are priced apart, so one total describes a third of the
           books being sold. The breakdown below stays the balanced one. */}

@@ -664,11 +664,11 @@ const pdfExportQuerySchema = z.object({
  * The operator console's download surface for the compiled book.
  *
  * Every handler here takes an *operator* actor, not merely an owning one. These
- * routes render inline when a file is missing and they charge nothing: the
- * reader's export unlock lives on `/api/mobile/projects/:id/export/*`, which
- * never renders. Ownership alone let a mobile bearer take the same book down
- * the free path — and drive an unbounded Chromium render inside a Fastify
- * handler while it was there.
+ * routes render inline when a file is missing; the reader's downloads live on
+ * `/api/mobile/projects/:id/export/*`, which never renders and keeps the Word
+ * file behind a plan. Ownership alone let a mobile bearer take the same book
+ * down this path — past the Word gate, and driving an unbounded Chromium render
+ * inside a Fastify handler while it was there.
  */
 export function registerProjectExportRoutes(fastify: FastifyInstance, appConfig: AppConfig): void {
   fastify.get("/api/projects/:id/book", async (request, reply) => {

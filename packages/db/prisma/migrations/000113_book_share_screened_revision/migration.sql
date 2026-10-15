@@ -1,0 +1,13 @@
+-- The content revision a share's text was screened at
+-- (apps/api/src/mobile/shares/shareRescreen.ts). A share used to be screened
+-- only when it was created or changed mode, while the public PDF follows the
+-- book's current compile, so every later edit reached strangers unscreened
+-- (launch review 2026-10-15, C2). The public routes now serve a share only
+-- while this equals "Project"."contentRevision", and a background sweep
+-- re-screens the ones whose book has moved.
+--
+-- Nullable with no default and no backfill: a metadata-only change, no table
+-- rewrite. Null means "never screened at any known revision", so every share
+-- live before this migration reads as being updated until the sweep (or a
+-- visit to its page) screens it once at the book's current revision.
+ALTER TABLE "BookShare" ADD COLUMN "screenedContentRevision" INTEGER;

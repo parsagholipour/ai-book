@@ -2,9 +2,11 @@ import {
   chapterHeadingStylePreference,
   storyPageDesignPreference,
   compilePublicationPolicyFromPayload,
+  editRecompilePolicy,
+  FREE_EDIT_RECOMPILE,
   includeSourcesPreference,
   isImportedManuscript,
-  MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
+  preEditProjectStatus,
   type CompilePublicationPolicy,
   type SettledProjectStatus
 } from "@book-maker/core";
@@ -23,28 +25,45 @@ import { exportPublicationCommittedAt } from "../generation/exportPublicationEvi
  * handle, so the policy can be exercised without a broker.
  */
 
-/** The policy each edit handler uses when its own compile is first queued. */
-function compileRecoveryPolicyFromEdit(kind: BookEditOperationKind): CompilePublicationPolicy {
+/**
+ * The policy each edit handler uses when its own compile is first queued.
+ *
+ * Every chat edit of a delivered book queues an edit's recompile
+ * (`editRecompilePolicy`): it owns its verdict and never the book's failure, and
+ * puts `fallbackStatus` back if it fails. A recovered one has to say the same,
+ * or the same failed render fails the book when it is rebuilt here. The
+ * fallback is the stamp on the edit's own apply job (`PRE_EDIT_PROJECT_STATUS`),
+ * COMPLETE when there is none to read.
+ */
+function compileRecoveryPolicyFromEdit(
+  kind: BookEditOperationKind,
+  fallbackStatus: SettledProjectStatus = "COMPLETE"
+): CompilePublicationPolicy {
   switch (kind) {
     case "ADD_IMAGE":
     case "MOVE_IMAGE":
     case "REMOVE_IMAGE":
-      return compilePublicationPolicyFromPayload({
-        skipFinalReview: true,
-        [MARKDOWN_RECOMPILE_WITHOUT_VERDICT]: true
-      });
+      return editRecompilePolicy(fallbackStatus, { skipFinalReview: true, withoutQualityVerdict: true });
+    case "MANUAL_EDIT":
+    case "MANUSCRIPT_PUBLISH":
+      // Free edits: their own compiles are free edits' (`freeEditRecompilePolicy`),
+      // so a recovered one must not own the paid book's failure either. The
+      // pre-edit status is not on the operation, so a failure puts the book back
+      // COMPLETE, which is what the API's own dispatch fallbacks for these choose.
+      return compilePublicationPolicyFromPayload({ skipFinalReview: true, [FREE_EDIT_RECOMPILE]: true });
     case "LOCAL_PATCH":
     case "PAGE_REWRITE":
     case "CHAPTER_REGENERATE":
-    case "MANUAL_EDIT":
-    case "MANUSCRIPT_PUBLISH":
+      return editRecompilePolicy(fallbackStatus);
     // A title change commits its compile beside it, so this is reached only if
     // that row went missing; the manuscript did not move.
     case "BOOK_TITLE":
       return compilePublicationPolicyFromPayload({ skipFinalReview: true });
+    // A page change reviews the whole book, and its compile is an edit's.
+    case "RESTRUCTURE_PAGES":
+      return editRecompilePolicy(fallbackStatus, { skipFinalReview: false, withoutQualityVerdict: false });
     case "PLAN_REVISION":
     case "BOOK_REPLAN":
-    case "RESTRUCTURE_PAGES":
       return compilePublicationPolicyFromPayload({});
     case "CONTINUE_BOOK":
       // A continuation publishes its manuscript while the project remains
@@ -59,10 +78,9 @@ function compileRecoveryPolicyFromEdit(kind: BookEditOperationKind): CompilePubl
       // answers EDITING for an EDITING project. Which is also why the arm
       // above stays unpinned: a replan copy's tail is the only thing that
       // settles it, so a status the tail never saw is one the derived policy
-      // should follow rather than refuse to publish over.
-      return compilePublicationPolicyFromPayload({
-        exportPublicationProjectStatus: "EDITING"
-      });
+      // should follow rather than refuse to publish over. An edit's recompile
+      // is always pinned to EDITING, which is the pin this arm needs.
+      return editRecompilePolicy(fallbackStatus, { skipFinalReview: false, withoutQualityVerdict: false });
     default: {
       const exhaustive: never = kind;
       return exhaustive;
@@ -95,6 +113,13 @@ function currentRevisionCompileRecoveryPolicy(project: {
   return project.status === "GENERATING" ? compilePublicationPolicyFromPayload({}) : null;
 }
 
+/** An APPLIED edit as recovery reads it; its apply job's payload carries the pre-edit status. */
+export type RecoveryEditOperation = {
+  kind: BookEditOperationKind;
+  status: string;
+  generationJob?: { payload: unknown } | null;
+};
+
 export function strandedCompileRecoveryPolicy(project: {
   status: string;
   contentRevision: number;
@@ -106,7 +131,7 @@ export function strandedCompileRecoveryPolicy(project: {
     ownsQualityVerdict?: boolean;
     qualityReport?: unknown;
   }[];
-  editOperations: readonly { kind: BookEditOperationKind; status: string }[];
+  editOperations: readonly RecoveryEditOperation[];
 }): CompilePublicationPolicy | null {
   const currentRevisionPolicy = currentRevisionCompileRecoveryPolicy(project);
   if (currentRevisionPolicy) {
@@ -114,7 +139,9 @@ export function strandedCompileRecoveryPolicy(project: {
   }
   const edit = project.editOperations[0];
   if (edit) {
-    return edit.status === "APPLIED" ? compileRecoveryPolicyFromEdit(edit.kind) : null;
+    return edit.status === "APPLIED"
+      ? compileRecoveryPolicyFromEdit(edit.kind, preEditProjectStatus(edit.generationJob?.payload))
+      : null;
   }
 
   // An import stamps its book COMPLETE in the commit that writes its pages, so
@@ -166,12 +193,13 @@ export function strandedCompileRecoveryPolicy(project: {
   // absent old report cannot justify COMPLETE, so the one-time legacy lane
   // conservatively leaves the reader in REVIEW_REQUIRED while preserving the
   // prior verdict (the recovered compile itself owns no quality verdict).
-  const outcomePredecessor = project.jobs.find((job) =>
-    job.contentRevision === project.contentRevision - 1 &&
-    job.status === "COMPLETED" &&
-    job.ownsQualityVerdict === true &&
-    compilePublicationPolicyFromPayload(job.payload).ownership.kind === "outcome"
-  );
+  const outcomePredecessor = project.jobs.find((job) => {
+    const kind = compilePublicationPolicyFromPayload(job.payload).ownership.kind;
+    return job.contentRevision === project.contentRevision - 1 &&
+      job.status === "COMPLETED" &&
+      job.ownsQualityVerdict === true &&
+      (kind === "outcome" || kind === "freeEdit");
+  });
   if (outcomePredecessor && hasPresentationPreference(project.mediaSettings)) {
     return {
       review: { skipFinalReview: true, withoutQualityVerdict: false },
@@ -252,7 +280,7 @@ export async function loadStrandedCompileRecoveryPolicy(
             appliedAt: { gte: boundary }
           },
           orderBy: [{ appliedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
-          select: { kind: true, status: true, appliedAt: true }
+          select: { kind: true, status: true, appliedAt: true, generationJob: { select: { payload: true } } }
         })
       : Promise.resolve(null),
     prisma.bookEditOperation.findFirst({

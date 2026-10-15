@@ -36,11 +36,12 @@ describe("recordInlineDecisionAttempt", () => {
       }
     };
 
-    await recordInlineDecisionAttempt(attempt, { projectId: "project-1" });
+    await recordInlineDecisionAttempt(attempt, { projectId: "project-1", userId: "reader-1" });
 
     expect(row()).toMatchObject({
       projectId: "project-1",
       generationJobId: null,
+      userId: "reader-1",
       provider: JEV_SELECTION.provider,
       model: JEV_SELECTION.model,
       purpose: "moderation.book_share_caption",
@@ -68,12 +69,13 @@ describe("recordInlineDecisionAttempt", () => {
         error: Object.assign(new Error("Jev did not answer"), { status: 504 }),
         escalationReason: "provider_failure"
       },
-      { projectId: null }
+      { projectId: null, userId: "reader-1" }
     );
 
     expect(row()).toMatchObject({
       projectId: null,
       generationJobId: null,
+      userId: "reader-1",
       provider: "deepseek",
       promptTokens: null,
       outputTokens: null,
@@ -92,7 +94,7 @@ describe("recordInlineDecisionAttempt", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
-      recordInlineDecisionAttempt({ request: REQUEST, selection: JEV_SELECTION, role: "primary", durationMs: 1 }, { projectId: null })
+      recordInlineDecisionAttempt({ request: REQUEST, selection: JEV_SELECTION, role: "primary", durationMs: 1 }, { projectId: null, userId: null })
     ).resolves.toBeUndefined();
     expect(log).toHaveBeenCalled();
     log.mockRestore();

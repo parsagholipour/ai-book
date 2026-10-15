@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   executeRawUnsafe: vi.fn(),
   queryRawUnsafe: vi.fn(),
   failAttempt: vi.fn(),
-  generationAttemptUpdateMany: vi.fn(),
+  // Answers like Prisma: the stop stamps the charge of an attempt it claimed.
+  generationAttemptUpdateMany: vi.fn(async () => ({ count: 1 })),
   refundEntry: vi.fn(),
   refundLatest: vi.fn()
 }));
@@ -41,6 +42,7 @@ vi.mock("@book-maker/db", () => ({
   }
 }));
 vi.mock("@book-maker/db/billing", () => ({
+  recordUserStopSettlementTx: vi.fn(),
   failGenerationAttempt: mocks.failAttempt,
   refundCreditLedgerEntry: mocks.refundEntry,
   refundLatestProjectOperationCredits: mocks.refundLatest,

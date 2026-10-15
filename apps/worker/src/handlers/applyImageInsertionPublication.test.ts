@@ -70,7 +70,8 @@ vi.mock("@book-maker/core", async () => {
 
 import { applyImageInsertion } from "./applyImageInsertion.js";
 
-const COMPILE_OPTIONS = { skipFinalReview: true, withoutQualityVerdict: true };
+/** An added picture's recompile is an edit's: no review, no verdict, never the book's failure. */
+const COMPILE_OPTIONS = expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) });
 
 beforeEach(() => {
   vi.clearAllMocks();

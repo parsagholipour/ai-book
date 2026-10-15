@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => {
       project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
       page: { findMany: vi.fn() },
-      imageAsset: { count: vi.fn() },
+      imageAsset: { count: vi.fn(), findFirst: vi.fn(async () => null) },
       generationJob: {
         findUnique: vi.fn(),
         findFirst: vi.fn(),
@@ -31,7 +31,10 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { PrismaClientKnownRequestError: mocks.KnownRequestError }
 }));
-vi.mock("./queue.js", () => ({ queue: { add: mocks.queueAdd, getJob: mocks.queueGetJob } }));
+vi.mock("./queue.js", () => {
+  const queue = { add: mocks.queueAdd, getJob: mocks.queueGetJob };
+  return { queue, queueNamed: () => queue, allLaneQueues: [queue] };
+});
 vi.mock("./config.js", () => ({ config: { MAX_PARALLEL_PAGE_JOBS: 3 } }));
 vi.mock("../generation/projectInput.js", () => ({
   inputForPlanVersion: () => ({
@@ -344,7 +347,11 @@ describe("maybeEnqueueCompile publication-policy identity", () => {
       contentRevision: 8,
       exportPublicationProjectStatus: "EDITING",
       skipFinalReview: true,
-      markdownRecompileWithoutVerdict: true
+      markdownRecompileWithoutVerdict: true,
+      // An edit's recompile: a failed render puts the pre-edit status back,
+      // COMPLETE when the edit's apply job carries no stamp.
+      freeEditRecompile: true,
+      preEditProjectStatus: "COMPLETE"
     });
     expect(createdCompile().ownsQualityVerdict).toBe(false);
     expect(mocks.prisma.generationJob.findMany).toHaveBeenCalledWith(
@@ -354,6 +361,32 @@ describe("maybeEnqueueCompile publication-policy identity", () => {
     );
     expect(mocks.prisma.bookEditOperation.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { projectId: "project-1", status: "APPLIED" } })
+    );
+  });
+
+  it("recovers a paid edit's recompile with the pre-edit status its apply job carried", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 8 });
+    mocks.prisma.bookEditOperation.findFirst.mockResolvedValue({
+      kind: "PAGE_REWRITE",
+      status: "APPLIED",
+      generationJob: { payload: { operationId: "op-1", preEditProjectStatus: "REVIEW_REQUIRED" } }
+    });
+
+    await maybeEnqueueCompile("project-1", "plan-1");
+
+    expect(createdCompile().payload).toEqual({
+      planId: "plan-1",
+      contentRevision: 8,
+      exportPublicationProjectStatus: "EDITING",
+      skipFinalReview: true,
+      freeEditRecompile: true,
+      preEditProjectStatus: "REVIEW_REQUIRED"
+    });
+    expect(createdCompile().ownsQualityVerdict).toBe(true);
+    expect(mocks.prisma.bookEditOperation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: { kind: true, status: true, generationJob: { select: { payload: true } } }
+      })
     );
   });
 

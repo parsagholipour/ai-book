@@ -15,6 +15,15 @@ service account. The endpoint checks the Google signature, issuer, expiry, audie
 and app package. It returns 503 if configuration is incomplete, including in mock billing mode.
 Operator cookies and mobile access tokens do not authenticate this endpoint.
 
+**In production all of these are required.** The API refuses to start — and the deploy refuses the
+release before it stops the running one — while `GOOGLE_PLAY_PACKAGE_NAME`, the service account
+(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` or `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE`, a key with `client_email`
+and `private_key`), `GOOGLE_PLAY_RTDN_AUDIENCE` or `GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL` is
+missing. Without the first two every purchase answers 503 and Google refunds it after three days;
+without the RTDN pair this endpoint answers 503 and refunds never take credits back. The mock
+verifier cannot stand in: `MOCK_GOOGLE_PLAY_BILLING` is forced off outside development and test.
+The full list of required settings is in [deployment.md](deployment.md#required-settings).
+
 ## Connect Google Play
 
 1. Enable the Pub/Sub API in the Google Cloud project and create a topic for Play notifications.
@@ -46,9 +55,13 @@ and [authenticated push subscriptions](https://docs.cloud.google.com/pubsub/docs
 ## Accounting and delivery
 
 - Refunds reverse the actual recorded grant, preserving historical pricing. A 1,000-credit purchase
-  spent down to 200 becomes **−800 purchased credits** after its refund. Future purchases and grants
-  offset that debt; the balance is never clamped to zero. Ordinary credit reservations enforce the
-  resulting total balance. Previously downloaded books cannot be recalled.
+  spent down to 200 becomes **−800 purchased credits** after its refund. Purchases and welcome credits
+  offset that debt as they land in the same pool. A subscription allowance pays it at the next period
+  boundary: first the outgoing allowance's remainder the debt was hiding, then the new allowance, so
+  a reader who owes 800 starts a 6,000-credit month with 5,200 and the month after with 6,000. A refund
+  arriving mid-period leaves the allowance alone until that boundary. The balance is never clamped to
+  zero. Ordinary credit reservations enforce the resulting total balance. Previously downloaded books
+  cannot be recalled.
 - A cumulative reversal is linked to each grant. Repeated deliveries, different Pub/Sub message IDs,
   repeated partial refunds, and a later full refund cannot debit the same value twice. The reversal's
   metadata records each incremental settlement and its balance.

@@ -224,7 +224,7 @@ Object? _generationScrollKey(AsyncValue<MobileProjectStatus>? statusValue) {
       status.hasFailure,
       status.quality.state,
       // Export actions change the bubble height when they appear.
-      primaryUnlockedAvailableExport(status.exports)?.format,
+      primaryAvailableExport(status.exports)?.format,
     ),
   );
 }

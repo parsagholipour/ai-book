@@ -112,22 +112,26 @@ class CreditLogTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  creditLogAmountLabel(entry),
-                  maxLines: 1,
-                  softWrap: false,
-                  style: text.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: amountColor,
-                    decoration: entry.refunded
-                        ? TextDecoration.lineThrough
-                        : null,
+              // A line that moved nothing in total — a refund debt paid from
+              // the monthly allowance — says so in its title, not as "+0".
+              if (entry.credits != 0) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    creditLogAmountLabel(entry),
+                    maxLines: 1,
+                    softWrap: false,
+                    style: text.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: amountColor,
+                      decoration: entry.refunded
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -315,7 +319,9 @@ IconData creditLogIconFor(CreditLogEntry entry) {
 /// inconsistently, and this is the one number on the screen that must be exact.
 String creditLogSemanticLabel(CreditLogEntry entry) {
   final credits = '${formatCredits(entry.credits)} credits';
-  final movement = entry.refunded
+  final movement = entry.credits == 0
+      ? null
+      : entry.refunded
       ? '$credits refunded'
       : entry.addsCredits
       ? '$credits added'
@@ -325,7 +331,7 @@ String creditLogSemanticLabel(CreditLogEntry entry) {
   final book = entry.projectTitle;
   return [
     entry.title,
-    movement,
+    ?movement,
     if (book != null && book.isNotEmpty) book,
     timeLabelFor(entry.createdAt),
   ].join(', ');

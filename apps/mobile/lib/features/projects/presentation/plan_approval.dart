@@ -15,7 +15,7 @@ import '../domain/project_models.dart';
 // this file, which the screen already imports.
 export '../domain/plan_revision_suggestions.dart'
     show planRevisionSuggestions, planRevisionSuggestionsFor;
-export 'book_plan_review.dart' show PlanChapterList;
+export 'book_plan_review.dart' show PlanChapterList, PlanReportButton;
 
 /// Shared credit/paywall/confirm + approve flow used by the project detail
 /// screen and the in-chat plan stage so approval behaves identically.
@@ -50,6 +50,18 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   if (!context.mounted) {
     return null;
   }
+  // Past the longest book any plan writes there is nothing to buy: the server
+  // answers BOOK_LENGTH_UNAVAILABLE, so say its sentence before anything else.
+  if (billing.exceedsBookPagesCeiling(project.targetPages)) {
+    ScaffoldMessenger.of(context).showAppSnackBar(
+      SnackBar(
+        content: Text(
+          "Books longer than ${billing.paidMaxBookPages} pages aren't available yet.",
+        ),
+      ),
+    );
+    return null;
+  }
   // A plan sized while subscribed, approved after the plan lapsed. The server
   // refuses it too; asking first means the offer, not an error. The length
   // cannot be changed from here — the plan's chapters are already sized to it
@@ -62,6 +74,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
       limit: BookPageLimit(
         limit: maxPages,
         requestedPages: project.targetPages,
+        maxPages: billing.paidMaxBookPages,
       ),
       canShorten: false,
     );
@@ -76,11 +89,6 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
     }
   }
 
-  final hasProjectUnlock = billing.entitlements.any(
-    (entitlement) =>
-        entitlement.type == 'EXPORT_UNLOCK' &&
-        entitlement.projectId == project.id,
-  );
   if (!context.mounted) {
     return null;
   }
@@ -100,10 +108,13 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
         await showBillingPaywall(
           context,
           projectId: project.id,
+          trigger: PaywallTrigger.imageLimit,
           title: 'Out of illustrated books',
           message:
               'Your plan includes ${quota.limit} illustrated books a month and you have used all of them. '
-              'Upgrade for unlimited illustrations.',
+              // Illustrations still cost credits on a plan; only the count
+              // of illustrated books stops being capped.
+              'Paid plans have no monthly cap on illustrated books.',
         );
         ref.invalidate(billingProvider);
       }
@@ -112,6 +123,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
     disableIllustrations = true;
   }
 
+  // The book's one price: once it is written its files download free.
   final estimate = disableIllustrations
       ? estimateProjectCredits(
           bookType: project.bookType,
@@ -137,8 +149,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
         credits: estimate,
         reason:
             'Writing this ${project.lengthPresetLabel.toLowerCase()} '
-            '${project.bookTypeLabel.toLowerCase()}, preparing its visuals and '
-            'unlocking its export.',
+            '${project.bookTypeLabel.toLowerCase()} and preparing its visuals.',
       ),
     );
     ref.invalidate(billingProvider);
@@ -150,9 +161,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   final approved = await showAppConfirmationDialog(
     context,
     title: 'Approve this plan?',
-    message: hasProjectUnlock
-        ? 'This project already has an export unlock. Starting the full book can still spend writing credits.'
-        : disableIllustrations
+    message: disableIllustrations
         ? 'Written without in-book illustrations. $estimateSummary'
         : estimateSummary,
     confirmLabel: 'Approve and start writing',
@@ -215,7 +224,8 @@ Future<_ImageLimitChoice?> _askImageLimitChoice(
       content: Text(
         'Your plan includes ${quota.limit} illustrated books a month and you '
         'have used all of them. You can still write this book now without '
-        'in-book illustrations, or upgrade for unlimited.',
+        'in-book illustrations, or upgrade to a plan with no monthly cap on '
+        'illustrated books.',
       ),
       actions: [
         AppButton.text(

@@ -134,6 +134,14 @@ class BillingExportOfferDetails extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               const _Benefit(
+                icon: Icons.menu_book_outlined,
+                title: 'Longer books and more pictures',
+                description:
+                    'Longer books, no monthly cap on illustrated books, '
+                    'voice calls and audiobooks.',
+              ),
+              const SizedBox(height: 14),
+              const _Benefit(
                 icon: Icons.auto_stories_outlined,
                 title: 'Keep your next book moving',
                 description:
@@ -156,9 +164,9 @@ class BillingExportOfferDetails extends StatelessWidget {
           children: [
             Text(
               'Your plan adds credits each month. Building a book plan, writing, '
-              'editing, illustrations, and export unlocks use credits. Planning '
-              'costs are listed in Account; writing costs depend on your book '
-              'and settings. Monthly credits reset each billing period; credits '
+              'editing and illustrations use credits; downloading a finished '
+              'book does not. Planning costs are listed in Account; writing '
+              'costs depend on your book and settings. Monthly credits reset each billing period; credits '
               'bought separately never expire. Paid plans also remove the monthly '
               'illustrated-book limit; creating illustrations still uses credits.',
               style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),

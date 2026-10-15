@@ -21,6 +21,7 @@ import {
   type MobileProjectCreateRequestDto,
   type MobileProjectRecord
 } from "./dto.js";
+import { authorDefaultsForNewBook } from "./authorProfile.js";
 import { type ProjectForChat } from "./projectChat.js";
 import { planOperation } from "./projectStatusSerializers.js";
 import {
@@ -39,8 +40,11 @@ import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   createProjectSchema,
   includeCoverForSource,
+  maxGeneratedBookPages,
   mediaSettingsSchema,
   mediaSettingsWithReplanSettings,
+  normalizeProjectLanguage,
+  parseBookMatter,
   planGenerationCreditCost,
   type ReplanSettings
 } from "@book-maker/core";
@@ -49,6 +53,8 @@ import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-ma
 import { z } from "zod";
 import { requestedPageCountScope } from "./pageCountScope.js";
 import { manuscriptSummarySelect } from "./manuscript/manuscriptSerializers.js";
+import { aiWorkKindForTier, assertAiCapacity } from "./aiCapacity.js";
+import { UltraTierUnavailableError, ultraTierRefused } from "./ultraTier.js";
 
 /**
  * Creating and loading mobile Project rows, including page-count resolution and
@@ -324,7 +330,10 @@ export function normalizePageCountRecommendations(
   fallback: MobilePageCountRecommendationDto[]
 ): MobilePageCountRecommendationDto[] {
   const parsed = mobilePageCountRecommendationAiSchema.safeParse({ recommendations });
-  return parsed.success
+  // A length past the generated-book ceiling (`paidMaxBookPages`) would be
+  // refused at Build, so a model that offers one is not believed at all.
+  const ceiling = maxGeneratedBookPages();
+  return parsed.success && parsed.data.recommendations.every((option) => option.targetPages <= ceiling)
     ? parsed.data.recommendations.sort((a, b) => a.targetPages - b.targetPages)
     : fallback;
 }
@@ -334,14 +343,21 @@ export async function createMobileProjectRecord(
   input: MobileCreateProjectInput,
   db: Prisma.TransactionClient | typeof prisma = prisma
 ): Promise<MobileProjectRecord> {
-  const template = await db.template.findFirst({
-    where: input.templateSlug ? { slug: input.templateSlug } : { category: input.category }
-  });
+  const [template, author] = await Promise.all([
+    db.template.findFirst({
+      where: input.templateSlug ? { slug: input.templateSlug } : { category: input.category }
+    }),
+    // The book's copy of its owner's author profile: the pen name unless the
+    // creation named an author, and the matter pages (`authorProfile.ts`).
+    authorDefaultsForNewBook(userId, db)
+  ]);
+  const authorName = input.authorName ?? author.authorName;
   return (await db.project.create({
     data: {
       userId,
       title: input.title ?? UNTITLED_MOBILE_PROJECT_TITLE,
-      ...(input.authorName ? { authorName: input.authorName } : {}),
+      ...(authorName ? { authorName } : {}),
+      ...(author.bookMatter ? { bookMatter: jsonInputValue(author.bookMatter) } : {}),
       prompt: input.prompt,
       category: input.category,
       ...(input.subcategory ? { subcategory: input.subcategory } : {}),
@@ -389,12 +405,14 @@ export async function createReplanProjectCopy(options: {
     }
   });
   const db = options.transaction ?? prisma;
+  const { bookMatter } = replanCopyBookMatter(source, targetLanguage);
   const copy = (await db.project.create({
     data: {
       userId: options.userId,
       title: revisedCopyTitle(source.title),
       ...(source.subtitle ? { subtitle: source.subtitle } : {}),
       ...(source.authorName ? { authorName: source.authorName } : {}),
+      ...(bookMatter !== undefined ? { bookMatter: jsonInputValue(bookMatter) } : {}),
       ...(source.coverTagline ? { coverTagline: source.coverTagline } : {}),
       prompt: source.prompt,
       category: source.category,
@@ -418,6 +436,41 @@ export async function createReplanProjectCopy(options: {
     });
   }
   return copy;
+}
+
+/** The matter fields that are the reader's own prose, written in the book's language. */
+export type ReplanCopyWithheldMatter = "dedication" | "aboutAuthor";
+
+/**
+ * The matter a replan copy starts with, and the prose it leaves behind.
+ *
+ * The rebuilt book is the same book to its reader, so its dedication,
+ * publication details and biography come with it verbatim, as its byline does.
+ * A copy rebuilt in another language is the exception: the compile prints every
+ * matter label in the copy's language and nothing translates the reader's own
+ * prose, so a Spanish copy printed "Sobre el autor" over the English biography.
+ * Translating it is not this path's to do — matter is the reader's words, never
+ * generated (core `schemas/bookMatter.ts`), and a dedication or biography a
+ * model writes prints only past the grounding review the chat's matter composer
+ * runs. So a translation keeps the fields that read the same in any language
+ * (website, © holder and year, imprint, ISBN, the rights toggle) and withholds
+ * the dedication and the biography; the apply reply names what stayed behind.
+ */
+export function replanCopyBookMatter(
+  source: { bookMatter: unknown; language: string },
+  targetLanguage: string | null
+): { bookMatter: unknown; withheld: ReplanCopyWithheldMatter[] } {
+  if (source.bookMatter === null || source.bookMatter === undefined) return { bookMatter: undefined, withheld: [] };
+  const changesLanguage =
+    targetLanguage !== null &&
+    normalizeProjectLanguage(targetLanguage).toLowerCase() !== normalizeProjectLanguage(source.language).toLowerCase();
+  if (!changesLanguage) return { bookMatter: source.bookMatter, withheld: [] };
+  const { dedication, aboutAuthor, ...neutral } = parseBookMatter(source.bookMatter);
+  const withheld: ReplanCopyWithheldMatter[] = [
+    ...(dedication ? (["dedication"] as const) : []),
+    ...(aboutAuthor ? (["aboutAuthor"] as const) : [])
+  ];
+  return { bookMatter: Object.keys(neutral).length > 0 ? neutral : undefined, withheld };
 }
 
 export async function attachReplanCopyToCreationSession(options: {
@@ -533,6 +586,13 @@ export async function queueInitialMobilePlan(
     if (existingJob) {
       throw new GenerationAttemptConflictError("Planning has already started for this project.");
     }
+    // A start, not a replay of one already paid for: a new book may not start
+    // at Ultra while the operator has it off (`ultraTier.ts`), and the spend
+    // breaker answers before anything is reserved.
+    if (ultraTierRefused(planQuote.modelTier)) {
+      throw new UltraTierUnavailableError();
+    }
+    await assertAiCapacity(userId, aiWorkKindForTier(planQuote.modelTier));
   }
   const started = await startGenerationAttempt({
     userId,

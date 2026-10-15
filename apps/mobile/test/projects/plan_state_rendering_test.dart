@@ -80,6 +80,71 @@ void main() {
     expect(revisionMessage, contains('No preference.'));
   });
 
+  // Google Play's AI-generated content policy: the plan is AI output the reader
+  // judges before any book exists, so both of its book-page cards report it.
+  testWidgets('the plan review and the folded plan offer Report plan', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 3200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    var reported = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              ProjectPlanReview(
+                project: fakeProjectWithPlan(),
+                plan: fakePlan(),
+                revisionController: TextEditingController(),
+                busyAction: null,
+                onQuestionAnswers: (_) async {},
+                onRevisionRequest: (_) async {},
+                onReport: () => reported += 1,
+              ),
+              PlanSummaryCard(plan: fakePlan(), onReport: () => reported += 1),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final reports = find.byKey(const ValueKey('plan-report'));
+    expect(reports, findsOneWidget);
+    await tester.tap(reports);
+    await tester.pump();
+    expect(reported, 1);
+
+    // Folded, the summary shows nothing to report until it is opened.
+    await tester.tap(find.text('Book plan'));
+    await tester.pumpAndSettle();
+    expect(reports, findsNWidgets(2));
+    await tester.tap(reports.last);
+    await tester.pump();
+    expect(reported, 2);
+
+    // Without a handler (an author's own book) there is no Report at all.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              ProjectPlanReview(
+                project: fakeProjectWithPlan(),
+                plan: fakePlan(),
+                revisionController: TextEditingController(),
+                busyAction: null,
+                onQuestionAnswers: (_) async {},
+                onRevisionRequest: (_) async {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('plan-report')), findsNothing);
+  });
+
   // A question several chips answer at once keeps them all: the card used to
   // replace the previous pick, so the revision only ever heard the last chip.
   testWidgets('a multi-answer question revises with every chip picked', (
@@ -363,8 +428,6 @@ const fakeExports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     filename: 'Launch-Course-Workbook.pdf',
     contentType: 'application/pdf',
@@ -372,8 +435,6 @@ const fakeExports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'Launch-Course-Workbook.epub',
     contentType: 'application/epub+zip',

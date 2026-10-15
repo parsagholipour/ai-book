@@ -28,7 +28,7 @@ MobileBilling _billing(int available) => MobileBilling(
   ),
   entitlements: const [],
   products: const [],
-  creditCosts: const {'exportUnlock': 100},
+  creditCosts: const {},
 );
 
 class _Sheet {
@@ -166,10 +166,13 @@ void main() {
     expect(request.mode, BookShareMode.preview);
     expect(request.previewPages, 12);
     expect(request.rightsConfirmed, isTrue);
-    expect(request.acceptExportUnlock, isFalse);
+    expect(request.toJson().containsKey('acceptExportUnlock'), isFalse);
     expect(request.toJson()['caption'], isNull);
 
-    expect(find.text('Shared · Preview 12 of 24 printed pages'), findsOneWidget);
+    expect(
+      find.text('Shared · Preview 12 of 24 printed pages'),
+      findsOneWidget,
+    );
     // A new link goes straight to the system share sheet.
     expect(sheet.shared, [shareUrl]);
   });
@@ -249,64 +252,38 @@ void main() {
     expect(sheet.shared, isEmpty);
   });
 
-  testWidgets('Full on a locked book shows the unlock price and asks before '
-      'spending it', (tester) async {
-    final repo = FakeBookShareRepository(
-      snapshot: BookShareSnapshot(book: shareBook(exportUnlockCredits: 100)),
-    );
-    await _Sheet(repo).open(tester);
-
-    await tapText(tester, 'Full book');
-    expect(find.text('Full sharing uses the export unlock'), findsOneWidget);
-    expect(find.textContaining('This uses 100 credits'), findsOneWidget);
-    expect(find.textContaining('Previews are free.'), findsOneWidget);
-    expect(find.text('Unlock and share'), findsOneWidget);
-
-    await tapText(tester, BookShareForm.rightsLabel);
-    await tapText(tester, 'Unlock and share');
-    expect(find.text('Unlock this book?'), findsOneWidget);
-    await tester.tap(inDialog('Not now'));
-    await settle(tester);
-    expect(repo.saves, isEmpty);
-
-    await tapText(tester, 'Unlock and share');
-    await tester.tap(inDialog('Unlock and share'));
-    await settle(tester);
-
-    final request = repo.saves.single;
-    expect(request.mode, BookShareMode.full);
-    expect(request.acceptExportUnlock, isTrue);
-    expect(request.toJson().containsKey('previewPages'), isFalse);
-    expect(find.text('Shared · Full book'), findsOneWidget);
-  });
-
-  testWidgets('Full on a locked book the balance cannot cover offers credits', (
+  testWidgets('a full share is free: no price, no question, no unlock sent', (
     tester,
   ) async {
+    // A balance under the old unlock price changes nothing: the full share
+    // used to charge the book's export unlock, and that unlock is gone.
     final repo = FakeBookShareRepository(
-      snapshot: BookShareSnapshot(book: shareBook(exportUnlockCredits: 100)),
+      snapshot: BookShareSnapshot(book: shareBook()),
     );
     await _Sheet(repo, available: 40).open(tester);
 
     await tapText(tester, 'Full book');
     expect(
-      find.textContaining('You need 100 credits and have 40.'),
+      find.text(
+        'Readers can read the whole book. Sharing it in full is '
+        'free.',
+      ),
       findsOneWidget,
     );
-    expect(find.text('Get credits'), findsOneWidget);
-    expect(find.text('Unlock and share'), findsNothing);
-  });
-
-  testWidgets('an unlocked book shares in full with no price', (tester) async {
-    final repo = FakeBookShareRepository(
-      snapshot: BookShareSnapshot(book: shareBook(exportUnlocked: true)),
-    );
-    await _Sheet(repo).open(tester);
-
-    await tapText(tester, 'Full book');
-    expect(find.textContaining('already unlocked'), findsOneWidget);
     expect(find.textContaining('credits'), findsNothing);
+    expect(find.textContaining('nlock'), findsNothing);
+    expect(find.text('Get credits'), findsNothing);
     expect(find.text('Share full book'), findsOneWidget);
+
+    await tapText(tester, BookShareForm.rightsLabel);
+    await tapText(tester, 'Share full book');
+    expect(find.byType(AlertDialog), findsNothing);
+
+    final request = repo.saves.single;
+    expect(request.mode, BookShareMode.full);
+    expect(request.toJson().containsKey('previewPages'), isFalse);
+    expect(request.toJson().containsKey('acceptExportUnlock'), isFalse);
+    expect(find.text('Shared · Full book'), findsOneWidget);
   });
 
   testWidgets('a note held for review says so, in exactly those words', (
@@ -396,6 +373,73 @@ void main() {
     expect(
       find.text('This book contains content that can’t be shared publicly.'),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('a link the system turned off says why, and shares again as '
+      'usual', (tester) async {
+    const reason =
+        'This link was turned off because your latest changes didn\'t pass '
+        'our content check. Edit the book and share it again.';
+    final repo = FakeBookShareRepository(
+      snapshot: BookShareSnapshot(
+        book: shareBook(),
+        share: bookShare(
+          status: BookShareStatus.revoked,
+          previewPages: 6,
+          stoppedReason: reason,
+        ),
+      ),
+    );
+    await _Sheet(repo).open(tester);
+
+    // The form, with the old settings and the server's sentence in the
+    // notice slot — not the generic line, and not the taken-down view.
+    expect(find.text(reason), findsOneWidget);
+    expect(
+      find.text('Sharing stopped. The link no longer works.'),
+      findsNothing,
+    );
+    expect(find.text('6 of 24 printed pages'), findsOneWidget);
+    expect(find.textContaining('moderator'), findsNothing);
+
+    // Text that still fails is refused like any new share, and the reason
+    // stays beside it.
+    repo.saveError = const ApiException(
+      code: 'CONTENT_RESTRICTED',
+      message: 'This book contains content that can’t be shared publicly.',
+      statusCode: 422,
+    );
+    await tapText(tester, BookShareForm.rightsLabel);
+    await tapText(tester, 'Share preview');
+    expect(find.text('This book can’t be shared publicly'), findsOneWidget);
+    expect(find.text(reason), findsOneWidget);
+
+    // Fixed text shares again: a live link, and the reason is gone.
+    await tapText(tester, 'Share preview');
+    expect(repo.saves.last.rightsConfirmed, isTrue);
+    expect(find.text('Shared · Preview 6 of 24 printed pages'), findsOneWidget);
+    expect(find.text(reason), findsNothing);
+  });
+
+  test('stoppedReason is read only when the server sends one', () {
+    Map<String, dynamic> wire(Object? reason) => {
+      'slug': shareSlug,
+      'url': shareUrl,
+      'mode': 'preview',
+      'status': 'revoked',
+      'previewPages': 6,
+      'stoppedReason': reason,
+    };
+    expect(
+      BookShare.fromJson(wire('Turned off.')).stoppedReason,
+      'Turned off.',
+    );
+    expect(BookShare.fromJson(wire(null)).stoppedReason, isNull);
+    expect(BookShare.fromJson(wire('  ')).stoppedReason, isNull);
+    expect(
+      BookShare.fromJson(wire(null)..remove('stoppedReason')).stoppedReason,
+      isNull,
     );
   });
 

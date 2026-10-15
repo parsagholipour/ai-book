@@ -13,7 +13,9 @@
  *
  * **"Revenue" means two different things and the dashboard shows both.** Cash
  * collected (the net of `PurchasePayment` amounts and refunds) is cash during the
- * window. Credits delivered is the notional value of work done in the window,
+ * window, shown both at catalog price and net of Google's fee (`cashRevenue.ts`).
+ * Credits delivered is the value of work done in the window, each credit valued
+ * by where it came from (`creditValuation.ts`) — welcome credits at nothing —
  * which is what actually pairs against provider spend for unit economics.
  * They diverge because a reader buys credits on one day and spends them on
  * another; reporting either alone would misstate a margin.
@@ -24,8 +26,15 @@
  * not a whole-refund predicate.
  */
 
-import { CREDIT_USD_VALUE } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
+import { loadWindowPayments, summarizePayments, type CashSummary, type CurrencyRevenue } from "./cashRevenue.js";
+import {
+  creditValuationSummary,
+  loadOutstandingPaidCredits,
+  loadValuedSpends,
+  type CreditValuationSummary,
+  type ValuedSpend
+} from "./creditValuation.js";
 import { loadShareFunnel, type ShareFunnel } from "./shareFunnel.js";
 
 export type AdminWindow = { days: number; since: Date; until: Date };
@@ -49,7 +58,10 @@ export function netSettledCredits(spendCredits: number, refundCredits: number): 
 
 export type MoneySeriesPoint = {
   date: string;
+  /** Catalog USD less refunds, before Google's fee. */
   cashUsd: number;
+  /** `cashUsd` less Google's fee. */
+  cashNetUsd: number;
   providerUsd: number;
   creditsDeliveredUsd: number;
   newUsers: number;
@@ -60,24 +72,38 @@ export type NamedTotal = { key: string; label: string; value: number; secondary?
 
 export type AdminOverview = {
   window: { days: number; since: string; until: string };
-  creditUsdValue: number;
+  /** How every credit figure below was turned into dollars (`creditValuation.ts`). */
+  valuation: CreditValuationSummary;
   money: {
+    /** Catalog USD less refunds — what readers were charged, before Google's fee. */
     cashCollectedUsd: number;
+    /** Google's service fee on `cashCollectedUsd`. */
+    playFeeUsd: number;
+    /** What reaches us: `cashCollectedUsd` less Google's fee. */
+    cashNetUsd: number;
     providerSpendUsd: number;
+    /** Net cash less provider spend. */
     cashMarginUsd: number;
     cashMarginPercent: number | null;
     creditsDelivered: number;
+    /** Delivered credits valued by source; welcome and operator credits are worth $0. */
     creditsDeliveredUsd: number;
+    /** The delivered credits someone paid for; the rest were free. */
+    paidCreditsDelivered: number;
     /** Charges made in the window that were later given back. Not in the above. */
     creditsRefunded: number;
     creditsRefundedUsd: number;
     unitMarginUsd: number;
     unitMarginPercent: number | null;
-    /** Credits bought but not yet spent — an obligation, not income. */
+    /** Credits held but not yet spent — an obligation, not income. Welcome credits included. */
     creditsOutstanding: number;
+    /** The bought-and-paid-for part of the bought pools, and what it was bought for. */
+    paidCreditsOutstanding: number;
     creditsOutstandingUsd: number;
     unpricedCalls: number;
   };
+  /** The window's orders in the buyer's own currency, never converted. */
+  revenueByCurrency: CurrencyRevenue[];
   people: {
     totalUsers: number;
     newUsers: number;
@@ -116,14 +142,19 @@ export function resolveWindow(days: number): AdminWindow {
 
 export async function loadAdminOverview(window: AdminWindow): Promise<AdminOverview> {
   const inWindow = { gte: window.since, lte: window.until };
+  // Read once, shared by the totals and the daily series so the two cannot disagree.
+  const [payments, valued] = await Promise.all([
+    loadWindowPayments(window).then(summarizePayments),
+    loadValuedSpends({ kind: "window", since: window.since, until: window.until })
+  ]);
 
   const [money, people, work, sharing, series, creditsByOperation, spendByProvider, projectsByStatus, jobsByType] =
     await Promise.all([
-      loadMoney(window),
+      loadMoney(window, payments, valued),
       loadPeople(window),
       loadWork(window),
       loadShareFunnel(window),
-      loadSeries(window),
+      loadSeries(window, payments, valued),
       loadCreditsByOperation(inWindow),
       loadSpendByProvider(inWindow),
       loadProjectsByStatus(),
@@ -132,8 +163,9 @@ export async function loadAdminOverview(window: AdminWindow): Promise<AdminOverv
 
   return {
     window: { days: window.days, since: window.since.toISOString(), until: window.until.toISOString() },
-    creditUsdValue: CREDIT_USD_VALUE,
+    valuation: creditValuationSummary(),
     money,
+    revenueByCurrency: payments.byCurrency,
     people,
     work,
     sharing,
@@ -145,13 +177,9 @@ export async function loadAdminOverview(window: AdminWindow): Promise<AdminOverv
   };
 }
 
-async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
+async function loadMoney(window: AdminWindow, cash: CashSummary, valued: readonly ValuedSpend[]): Promise<AdminOverview["money"]> {
   const inWindow = { gte: window.since, lte: window.until };
-  const [cash, provider, unpriced, delivered, refunded, accounts] = await Promise.all([
-    prisma.purchasePayment.aggregate({
-      _sum: { amountMicros: true, refundedAmountMicros: true },
-      where: { paidAt: inWindow }
-    }),
+  const [provider, unpriced, delivered, refunded, accounts, outstandingPaid] = await Promise.all([
     prisma.providerCallLog.aggregate({
       _sum: { costHint: true },
       where: { costHint: { not: null }, createdAt: inWindow }
@@ -168,32 +196,38 @@ async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
         reversesEntry: { is: { ...SETTLED_CHARGE, createdAt: inWindow } }
       }
     }),
-    prisma.userCreditAccount.aggregate({ _sum: { availableCredits: true, reservedCredits: true } })
+    prisma.userCreditAccount.aggregate({ _sum: { availableCredits: true, reservedCredits: true } }),
+    loadOutstandingPaidCredits()
   ]);
 
-  const cashCollectedUsd = round2(Number((cash._sum.amountMicros ?? 0n) - (cash._sum.refundedAmountMicros ?? 0n)) / 1_000_000);
   const providerSpendUsd = round2(provider._sum.costHint ?? 0);
   const creditsRefunded = Math.max(refunded._sum.amountCredits ?? 0, 0);
   const creditsDelivered = netSettledCredits(delivered._sum.amountCredits ?? 0, refunded._sum.amountCredits ?? 0);
-  const creditsDeliveredUsd = round2(creditsDelivered * CREDIT_USD_VALUE);
+  // Only paying readers' charges come back valued; everyone else's are worth $0.
+  const creditsDeliveredUsd = round2(valued.reduce((sum, spend) => sum + spend.usd, 0));
   // Charges from this window that a refund has since reversed. Their provider
   // calls are still real spend, which is why the unit margin below reads them
   // as cost with no revenue behind them rather than netting both away.
+  const creditsRefundedUsd = round2(valued.reduce((sum, spend) => sum + spend.refundedUsd, 0));
   const creditsOutstanding = (accounts._sum.availableCredits ?? 0) + (accounts._sum.reservedCredits ?? 0);
 
   return {
-    cashCollectedUsd,
+    cashCollectedUsd: cash.collectedUsd,
+    playFeeUsd: cash.feeUsd,
+    cashNetUsd: cash.netUsd,
     providerSpendUsd,
-    cashMarginUsd: round2(cashCollectedUsd - providerSpendUsd),
-    cashMarginPercent: percentOf(cashCollectedUsd - providerSpendUsd, cashCollectedUsd),
+    cashMarginUsd: round2(cash.netUsd - providerSpendUsd),
+    cashMarginPercent: percentOf(cash.netUsd - providerSpendUsd, cash.netUsd),
     creditsDelivered,
     creditsDeliveredUsd,
+    paidCreditsDelivered: Math.round(valued.reduce((sum, spend) => sum + spend.paidCredits, 0)),
     creditsRefunded,
-    creditsRefundedUsd: round2(creditsRefunded * CREDIT_USD_VALUE),
+    creditsRefundedUsd,
     unitMarginUsd: round2(creditsDeliveredUsd - providerSpendUsd),
     unitMarginPercent: percentOf(creditsDeliveredUsd - providerSpendUsd, creditsDeliveredUsd),
     creditsOutstanding,
-    creditsOutstandingUsd: round2(creditsOutstanding * CREDIT_USD_VALUE),
+    paidCreditsOutstanding: outstandingPaid.credits,
+    creditsOutstandingUsd: round2(outstandingPaid.usd),
     unpricedCalls: unpriced
   };
 }
@@ -258,9 +292,7 @@ async function loadWork(window: AdminWindow): Promise<AdminOverview["work"]> {
 
 type SeriesRow = {
   day: Date;
-  cash_micros: bigint | null;
   provider_usd: number | null;
-  credits_spent: bigint | null;
   new_users: bigint | null;
   books_completed: bigint | null;
 };
@@ -272,8 +304,13 @@ type SeriesRow = {
  * as zeroes — a line chart that silently skips them reads as if nothing
  * happened *and* compresses the time axis, which is the more misleading of the
  * two failures.
+ *
+ * Cash and delivered value are bucketed here from the rows the totals were
+ * computed from, by UTC day — the same days the series is keyed by — so a
+ * chart and its headline can never disagree. A charge's delivered value stays
+ * on the day it was made, a partial refund leaving the kept part there.
  */
-async function loadSeries(window: AdminWindow): Promise<MoneySeriesPoint[]> {
+async function loadSeries(window: AdminWindow, cash: CashSummary, valued: readonly ValuedSpend[]): Promise<MoneySeriesPoint[]> {
   const rows = await prisma.$queryRaw<SeriesRow[]>`
     WITH days AS (
       SELECT generate_series(
@@ -284,19 +321,10 @@ async function loadSeries(window: AdminWindow): Promise<MoneySeriesPoint[]> {
     )
     SELECT
       days.day,
-      (SELECT SUM(p."amountMicros" - p."refundedAmountMicros") FROM "PurchasePayment" p
-        WHERE p."paidAt" >= ${window.since} AND p."paidAt" <= ${window.until}
-          AND date_trunc('day', p."paidAt") = days.day) AS cash_micros,
+      -- Bounded by the series' own days so each lookup can ride the createdAt index.
       (SELECT SUM(l."costHint") FROM "ProviderCallLog" l
-        WHERE l."costHint" IS NOT NULL AND date_trunc('day', l."createdAt") = days.day) AS provider_usd,
-      -- Same rule as netSettledCredits: original charge less its cumulative reversal.
-      -- A partial refund therefore leaves the delivered portion on the original day.
-      (SELECT SUM(GREATEST(ABS(e."amountCredits") - COALESCE(r."amountCredits", 0), 0))
-        FROM "CreditLedgerEntry" e
-        LEFT JOIN "CreditLedgerEntry" r
-          ON r."reversesEntryId" = e.id AND r."entryType" = 'REFUND' AND r.status = 'SETTLED'
-        WHERE e."entryType" = 'SPEND' AND e.status = 'SETTLED'
-          AND date_trunc('day', e."createdAt") = days.day) AS credits_spent,
+        WHERE l."costHint" IS NOT NULL
+          AND l."createdAt" >= days.day AND l."createdAt" < days.day + interval '1 day') AS provider_usd,
       (SELECT COUNT(*) FROM "User" u WHERE date_trunc('day', u."createdAt") = days.day) AS new_users,
       (SELECT COUNT(*) FROM "Project" pr
         WHERE pr.status = 'COMPLETE' AND date_trunc('day', pr."updatedAt") = days.day) AS books_completed
@@ -304,13 +332,21 @@ async function loadSeries(window: AdminWindow): Promise<MoneySeriesPoint[]> {
     ORDER BY days.day ASC
   `;
 
+  const deliveredByDay = new Map<string, number>();
+  for (const spend of valued) {
+    const key = spend.createdAt.toISOString().slice(0, 10);
+    deliveredByDay.set(key, (deliveredByDay.get(key) ?? 0) + spend.usd);
+  }
+
   return rows.map((row) => {
-    const credits = Number(row.credits_spent ?? 0n);
+    const date = row.day.toISOString().slice(0, 10);
+    const day = cash.byDay.get(date);
     return {
-      date: row.day.toISOString().slice(0, 10),
-      cashUsd: round2(Number(row.cash_micros ?? 0n) / 1_000_000),
+      date,
+      cashUsd: day?.collectedUsd ?? 0,
+      cashNetUsd: day?.netUsd ?? 0,
       providerUsd: round2(row.provider_usd ?? 0),
-      creditsDeliveredUsd: round2(credits * CREDIT_USD_VALUE),
+      creditsDeliveredUsd: round2(deliveredByDay.get(date) ?? 0),
       newUsers: Number(row.new_users ?? 0n),
       booksCompleted: Number(row.books_completed ?? 0n)
     };

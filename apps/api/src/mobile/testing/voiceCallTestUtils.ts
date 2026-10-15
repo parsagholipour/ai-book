@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { getCreditBalance, reserveCredits, startVoiceRelayCall } from "@book-maker/db/billing";
+import { getCreditBalance, hasActiveSubscriptionEntitlement, reserveCredits, startVoiceRelayCall } from "@book-maker/db/billing";
 import { VOICE_CALL_POLICY, creditPricing } from "@book-maker/core";
 import {
   buildMobileApp,
@@ -83,6 +83,11 @@ export async function buildVoiceApp(options: Record<string, unknown> = {}) {
 }
 
 /** The shared beforeEach body: a fresh harness with a funded, callable user. */
+/** Voice calls and narration are plan perks (`planPerks.ts`); most suites call as a subscriber. */
+export function allowPaidPlan(paid = true) {
+  vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(paid);
+}
+
 export function resetVoiceCallTestState() {
   resetMobileHarness();
   process.env.GEMINI_API_KEY = "test-key";

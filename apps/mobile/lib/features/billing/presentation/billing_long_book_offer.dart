@@ -9,6 +9,7 @@ import '../domain/billing_models.dart';
 import 'billing_controller.dart';
 import 'billing_export_plan_option.dart';
 import 'billing_plan_tiles.dart';
+import 'billing_shared_parts.dart';
 import 'billing_tier_style.dart';
 
 /// The offer a free reader meets when the book they want is longer than the
@@ -57,8 +58,7 @@ class _BillingLongBookOfferState extends State<BillingLongBookOffer> {
   String? _selectedSku;
 
   bool _isCurrent(MobileBillingProduct plan) =>
-      plan.sku == widget.state.billing?.plan?.productSku ||
-      billingTierForSku(plan.sku) == widget.state.billing?.planTier;
+      isHeldPlan(plan, widget.state.billing);
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +91,16 @@ class _BillingLongBookOfferState extends State<BillingLongBookOffer> {
         state.storeProducts.containsKey(selected.sku) &&
         !_isCurrent(selected) &&
         !busy;
+    final storeDown = !state.loading && !state.storeAvailable;
+    final forSale = plans.where((plan) => !_isCurrent(plan)).toList();
+    final unpriced = state.unpricedAmong(forSale);
+    // Play is unreachable, or sent no price for the plan in the checkout bar:
+    // the bar's button retries instead of reading "Plan unavailable".
+    final canRetry =
+        !included &&
+        !busy &&
+        (storeDown ||
+            (selected != null && unpriced.any((p) => p.sku == selected.sku)));
     final pricedPlans = plans
         .where((plan) => state.storeProducts.containsKey(plan.sku))
         .toList();
@@ -165,15 +175,13 @@ class _BillingLongBookOfferState extends State<BillingLongBookOffer> {
                     ),
                     const SizedBox(height: AppSpacing.xs),
                   ],
-                  if (!state.storeAvailable ||
-                      state.missingProductIds.isNotEmpty)
+                  if (storeDown || unpriced.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4, bottom: 8),
-                      child: Text(
-                        'Some plans are temporarily unavailable from Google Play.',
-                        style: text.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
+                      child: BillingStorePricesNotice(
+                        storeDown: storeDown,
+                        allUnpriced: unpriced.length == forSale.length,
+                        onRetry: busy ? null : widget.onRetry,
                       ),
                     ),
                 ],
@@ -181,9 +189,13 @@ class _BillingLongBookOfferState extends State<BillingLongBookOffer> {
                 _LongBookPerks(maxPages: limit.maxPages),
                 const SizedBox(height: AppSpacing.sm),
                 if (!included) ...[
+                  // The chosen plan's own term: Creator yearly is on this list,
+                  // and "Plans renew monthly" was wrong for it.
                   Text(
-                    'Plans renew monthly and cancel anytime in Google Play. '
-                    'Books you have already made stay yours.',
+                    '${selected?.renewsLabel ?? 'Renews monthly'}; cancel '
+                    'anytime in Google Play. Books you have already made stay '
+                    'yours.',
+                    key: const ValueKey('long-book-renewal'),
                     textAlign: TextAlign.center,
                     style: text.bodySmall?.copyWith(
                       color: colors.onSurfaceVariant,
@@ -236,6 +248,7 @@ class _BillingLongBookOfferState extends State<BillingLongBookOffer> {
                 : canBuy
                 ? () => widget.onBuy(selected)
                 : null,
+            onRetry: canRetry ? widget.onRetry : null,
           ),
         ],
       ),
@@ -516,8 +529,8 @@ class _LongBookPerks extends StatelessWidget {
           const SizedBox(height: 14),
           const _Perk(
             icon: Icons.palette_outlined,
-            title: 'Unlimited illustrated books',
-            description: 'No monthly cap on books with pictures.',
+            title: 'No monthly cap on illustrated books',
+            description: 'Pictures still use credits.',
           ),
           const SizedBox(height: 14),
           const _Perk(

@@ -177,7 +177,10 @@ export const mediaSettingsSchema = z.object({
 export const PROJECT_PROMPT_MAX_LENGTH = 20000;
 
 export const createProjectSchema = z.object({
-  title: z.string().min(2).max(160).optional(),
+  // One character is a whole title in Chinese or Japanese (雪, 道), so the
+  // floor is one; every surface that takes a title from a reader matches it,
+  // since a stored title below this floor is a book no job can parse.
+  title: z.string().min(1).max(160).optional(),
   subtitle: z.string().max(180).optional(),
   authorName: z.string().max(120).optional(),
   coverTagline: z.string().max(180).optional(),

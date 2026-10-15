@@ -3,6 +3,7 @@ import { claimVoiceRelayCall, VoiceRelayError } from "@book-maker/db/billing";
 import { hashToken } from "../../mobileAuth.js";
 import { sendMobileError } from "../httpErrors.js";
 import { VoiceRelayConnection, type VoiceRelayClaim } from "../voiceRelayConnection.js";
+import { recordVoiceUsage } from "../voiceRelayUsage.js";
 
 declare module "fastify" {
   interface FastifyContextConfig { voiceRelay?: boolean }
@@ -31,7 +32,9 @@ export async function registerMobileVoiceRelayRoutes(app: FastifyInstance): Prom
     const claim = request.voiceRelayClaim;
     if (!claim) { socket.close(4001, "Call ended"); return; }
     const connection = new VoiceRelayConnection(socket, claim, {
-      warn: (error) => request.log.warn({ err: error, callId: claim.lease.callId }, "Voice relay billing failed")
+      warn: (error) => request.log.warn({ err: error, callId: claim.lease.callId }, "Voice relay billing failed"),
+      recordUsage: (rows) => recordVoiceUsage(rows, (error) =>
+        request.log.warn({ err: error, callId: claim.lease.callId }, "Voice call provider usage was not recorded"))
     });
     connections.add(connection);
     socket.on("close", () => {

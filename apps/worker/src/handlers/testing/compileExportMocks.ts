@@ -230,6 +230,7 @@ export const dbModuleMock = () => ({
   prisma: mocks.prisma,
   Prisma: { DbNull: DB_NULL },
   researchCitationsForExport: async () => [],
+  bookMatterForExport: async () => ({ year: 2026, madeWithCredit: false }),
   deletePageEmbeddings: async () => undefined,
   ...dbScopeMocks()
 });
@@ -254,6 +255,7 @@ export const exportPublicationModuleMock = () => ({
 export const dispatchModuleMock = () => ({
   dispatchWorkerGenerationJob: mocks.dispatchWorkerGenerationJob,
   maybeEnqueueCompile: mocks.maybeEnqueueCompile,
+  maybeEnqueueCoverRetypeset: async () => false,
   parallelPageWaveSize: mocks.parallelPageWaveSize
 });
 

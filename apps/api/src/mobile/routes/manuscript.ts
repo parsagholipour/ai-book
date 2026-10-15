@@ -59,6 +59,7 @@ import {
 import { serializeChapter, serializeChapterSummary, serializeManuscript, serializeVersion, serializeVersionSummary } from "../manuscript/manuscriptSerializers.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import type { MobileRouteContext } from "../routeContext.js";
+import { InMemoryRateLimiter, type RateLimitConfig } from "../../rateLimit.js";
 import { authorProjectOrReply, manuscriptDto, projectSummaryDto } from "./manuscriptRouteSupport.js";
 
 /**
@@ -69,10 +70,20 @@ import { authorProjectOrReply, manuscriptDto, projectSummaryDto } from "./manusc
 
 const errorResponses = { 401: mobileAuthError, 404: mobileAuthError } as const;
 
+/**
+ * Publishes one account may start an hour. Publish is free, and each one queues
+ * a whole Chromium compile, a cover and the embedding and style passes; nothing
+ * bounded how often a client could ask (launch review, 2026-10-13). An author
+ * publishing as they write needs a handful; a dry run (the checklist) is not
+ * counted.
+ */
+export const STUDIO_PUBLISH_RATE_LIMIT: RateLimitConfig = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
+
 const CHAPTER_CONFLICT_MESSAGE = "This chapter was changed on another device. Choose which version to keep.";
 
 export async function registerMobileManuscriptRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { appConfig, draftLimiter, attachmentLimiter } = context;
+  const publishLimiter = new InMemoryRateLimiter(STUDIO_PUBLISH_RATE_LIMIT);
 
   const authorProject = authorProjectOrReply;
   const projectSummary = (userId: string, projectId: string) => projectSummaryDto(appConfig, userId, projectId);
@@ -412,7 +423,7 @@ export async function registerMobileManuscriptRoutes(fastify: FastifyInstance, c
       schema: {
         tags: ["mobile"],
         body: manuscriptPublishOpenApiBody,
-        response: { ...errorResponses, 422: manuscriptContentRestrictedError }
+        response: { ...errorResponses, 422: manuscriptContentRestrictedError, 429: mobileAuthError }
       }
     },
     async (request, reply) => {
@@ -428,6 +439,7 @@ export async function registerMobileManuscriptRoutes(fastify: FastifyInstance, c
       if (parsed.data.dryRun) {
         return { checklist: await publishChecklist(project) } satisfies ManuscriptPublishDryRunResponseDto;
       }
+      if (!hitAuthenticatedLimit(publishLimiter, reply, auth.user.id, "studio-publish")) return;
       try {
         await publishManuscript({ project, requestId: parsed.data.requestId, bookStorageDir: appConfig.BOOK_STORAGE_DIR });
       } catch (error) {

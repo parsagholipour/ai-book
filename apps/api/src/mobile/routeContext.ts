@@ -35,7 +35,7 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 import { createLiveFastJudgmentsTextModel, createLiveTieredTextModel } from "../generationTextModelRouting.js";
-import { withInlineResearchUsage } from "../inlineProviderUsage.js";
+import { withInlineProviderUsage, withInlineResearchUsage } from "../inlineProviderUsage.js";
 import type { UserTextModerationDeps } from "../userTextModeration.js";
 
 /**
@@ -80,13 +80,13 @@ export type MobileProjectRoutesOptions = {
   advisorTimeoutMs?: number;
   advisorEnrichment?:
     | false
-    | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => Promise<Partial<MobileBookAdvisorResponse>>);
+    | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse, owner: InlineSpendOwner) => Promise<Partial<MobileBookAdvisorResponse>>);
   creationTurnTimeoutMs?: number;
   creationSearchTimeoutMs?: number;
   creationResearch?: ResearchAdapter;
   creationEnrichment?:
     | false
-    | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>);
+    | ((request: MobileCreationTurnRequest, base: MobileCreationTurn, owner: InlineSpendOwner) => Promise<Partial<MobileCreationTurn>>);
   pageCountRecommendationTimeoutMs?: number;
   /** Test seam for minting Gemini Live call tokens; defaults to the core provider. */
   voiceSession?: (request: CreateGeminiLiveSessionRequest) => Promise<GeminiLiveSessionResponse>;
@@ -119,14 +119,19 @@ export type MobileRouteContext = {
   safeFastRoutingTextModel: () => TextModelAdapter | undefined;
   /** The book-tier model a quick assist writes with; undefined when none can be built. */
   studioAssistTextModel: (tier: ModelTier) => TextModelAdapter | undefined;
+  /** `owner` is whose spend the model calls are, so each cost row names its reader. */
   advisorEnrichment:
-    | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => Promise<Partial<MobileBookAdvisorResponse>>)
+    | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse, owner: InlineSpendOwner) => Promise<Partial<MobileBookAdvisorResponse>>)
     | undefined;
+  /** As `advisorEnrichment`: `owner` names the reader on every cost row the turn writes. */
   creationEnrichment:
-    | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>)
+    | ((request: MobileCreationTurnRequest, base: MobileCreationTurn, owner: InlineSpendOwner) => Promise<Partial<MobileCreationTurn>>)
     | undefined;
   voiceSession: (request: CreateGeminiLiveSessionRequest) => Promise<GeminiLiveSessionResponse>;
 };
+
+/** The signed-in reader an inline model call spends for (`InlineUsageContext.userId`). */
+export type InlineSpendOwner = { userId: string };
 
 export function createMobileRouteContext(options: MobileProjectRoutesOptions): MobileRouteContext {
   const appConfig = loadConfig();
@@ -201,18 +206,23 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
     options.advisorEnrichment === false
       ? undefined
       : options.advisorEnrichment ??
-        ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) =>
-          enrichAdvisorWithAi(createLiveFastJudgmentsTextModel(appConfig), payload, base));
+        ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse, owner: InlineSpendOwner) =>
+          enrichAdvisorWithAi(
+            // Costed like the book chat's model, under the reader it ran for.
+            withInlineProviderUsage(createLiveFastJudgmentsTextModel(appConfig), { projectId: null, userId: owner.userId }),
+            payload,
+            base
+          ));
   const creationEnrichment =
     options.creationEnrichment === false
       ? undefined
       : options.creationEnrichment ??
-        ((request: MobileCreationTurnRequest, base: MobileCreationTurn) =>
+        ((request: MobileCreationTurnRequest, base: MobileCreationTurn, owner: InlineSpendOwner) =>
           enrichCreationTurnWithSearch(
             {
-              textModel: createLiveFastJudgmentsTextModel(appConfig),
+              textModel: withInlineProviderUsage(createLiveFastJudgmentsTextModel(appConfig), { projectId: null, userId: owner.userId }),
               // Recorded like the worker's searches, grounding fee included (inlineProviderUsage.ts).
-              research: options.creationResearch ?? (() => withInlineResearchUsage(createResearchAdapter(appConfig), { projectId: null, searchGroundingAllowances: appConfig })),
+              research: options.creationResearch ?? (() => withInlineResearchUsage(createResearchAdapter(appConfig), { projectId: null, userId: owner.userId, searchGroundingAllowances: appConfig })),
               searchTimeoutMs: options.creationSearchTimeoutMs
             },
             request,

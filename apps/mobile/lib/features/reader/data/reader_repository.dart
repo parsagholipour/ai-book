@@ -29,6 +29,20 @@ abstract interface class ReaderRepository {
     MobilePdfPageNumbering? pageNumbering,
   });
 
+  /// The downloaded file for [export]'s format, whatever compile [export]
+  /// names, or null. For a reader that cannot reach the server.
+  Future<CachedExport?> storedExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  });
+
+  /// Forgets the cached file for [export], so the next [ensureExport]
+  /// downloads it afresh. For a file that arrived whole and will not open.
+  Future<void> discardExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  });
+
   Future<ReaderState> loadState(String projectId);
 
   Future<void> saveState(String projectId, ReaderState state);
@@ -120,6 +134,18 @@ class MobileReaderRepository implements ReaderRepository {
       pageNumbering: pageNumbering,
     );
   }
+
+  @override
+  Future<CachedExport?> storedExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) => _cache.stored(projectId: projectId, export: export);
+
+  @override
+  Future<void> discardExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) => _cache.discard(projectId: projectId, export: export);
 
   @override
   Future<ReaderState> loadState(String projectId) =>

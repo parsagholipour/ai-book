@@ -25,10 +25,12 @@ const mocks = vi.hoisted(() => ({
   generatePage: vi.fn(),
   generateImage: vi.fn(),
   applyBookEdit: vi.fn(),
-  writingAssist: vi.fn()
+  writingAssist: vi.fn(),
+  generateCharacterPortrait: vi.fn(),
+  findProject: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: {}, Prisma: {} }));
+vi.mock("@book-maker/db", () => ({ prisma: { project: { findUnique: mocks.findProject } }, Prisma: {} }));
 vi.mock("./runtime/jobLifecycle.js", () => ({
   cancelStaleGenerationJob: mocks.cancelStaleGenerationJob,
   hasStoppedGenerationJob: mocks.hasStoppedGenerationJob,
@@ -56,7 +58,7 @@ vi.mock("./handlers/characters.js", () => ({ buildCharacterPersona: vi.fn(), pre
 vi.mock("./handlers/compileExport.js", () => ({ compileExport: mocks.compileExport }));
 vi.mock("./handlers/continueBook.js", () => ({ continueBook: mocks.continueBook }));
 vi.mock("./handlers/generateAudiobook.js", () => ({ generateAudiobook: vi.fn() }));
-vi.mock("./handlers/characterPortrait.js", () => ({ generateCharacterPortrait: vi.fn() }));
+vi.mock("./handlers/characterPortrait.js", () => ({ generateCharacterPortrait: mocks.generateCharacterPortrait }));
 vi.mock("./handlers/generateBook.js", () => ({
   generateBook: mocks.generateBook,
   stagedReplanSuccessorOperationId: mocks.stagedReplanSuccessorOperationId
@@ -69,6 +71,7 @@ vi.mock("./handlers/replanBook.js", () => ({ replanBook: vi.fn() }));
 vi.mock("./handlers/writingAssist.js", () => ({ writingAssist: mocks.writingAssist }));
 
 import { processWorkerJob } from "./processJob.js";
+import { currentProviderSpendUserId } from "./runtime/providerSpendUser.js";
 import {
   StopRequestedError,
   StructuralRollbackRedeliveryError,
@@ -602,5 +605,37 @@ describe("processWorkerJob failure routing", () => {
       "job.structural_rollback_redelivery",
       expect.objectContaining({ error: expect.anything() })
     );
+  });
+});
+
+describe("processWorkerJob spend attribution", () => {
+  it("runs a book job's handler on its owner's spend context", async () => {
+    mocks.findProject.mockResolvedValue({ userId: "reader-book" });
+    let seen: string | null | undefined;
+    mocks.generatePage.mockImplementation(async () => {
+      seen = await currentProviderSpendUserId();
+    });
+
+    await processWorkerJob(job("generate-page"));
+
+    expect(seen).toBe("reader-book");
+    expect(mocks.findProject).toHaveBeenCalledWith({ where: { id: "project-1" }, select: { userId: true } });
+  });
+
+  it("runs the project-less portrait job on the user its payload names", async () => {
+    let seen: string | null | undefined;
+    mocks.generateCharacterPortrait.mockImplementation(async () => {
+      seen = await currentProviderSpendUserId();
+    });
+
+    await processWorkerJob(job("generate-character-portrait", {
+      projectId: undefined,
+      planId: undefined,
+      libraryCharacterId: "character-1",
+      userId: "reader-portrait"
+    }));
+
+    expect(seen).toBe("reader-portrait");
+    expect(mocks.findProject).not.toHaveBeenCalled();
   });
 });

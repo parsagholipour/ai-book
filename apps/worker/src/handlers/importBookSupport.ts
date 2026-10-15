@@ -1,5 +1,10 @@
 import {
+  assessContentRestrictions,
+  BOOK_MATTER_TEXT_FIELDS,
   jsonRecord,
+  type BookMatter,
+  type BookMatterTextField,
+  type ContentRestrictionReason,
   type ManuscriptStyleProfile,
   type ParsedManuscript,
   type SegmentedManuscript
@@ -104,4 +109,48 @@ export function importStyleProfileFromMediaSettings(mediaSettings: unknown): Rec
 export function normalizeImportedLanguage(detected: string | undefined, fallback: string): string {
   const cleaned = detected?.trim() ?? "";
   return cleaned.length >= 2 && cleaned.length <= 40 ? cleaned : fallback;
+}
+
+/** The byline, subtitle and matter a legacy import restores from the manuscript. */
+export type RestoredImportMatter = { authorName?: string; subtitle?: string; bookMatter?: BookMatter };
+
+/** A restored field the printed-text screen refused: which one and why, never its words. */
+export type RefusedImportMatterField = {
+  field: "authorName" | "subtitle" | BookMatterTextField;
+  reason: ContentRestrictionReason;
+};
+
+/**
+ * Screens a legacy import's restored matter one field at a time, as printed
+ * text, and drops only the fields refused by their own words. The upload route
+ * refuses such a file before anything exists, while the reader is there to fix
+ * it; a queued legacy job has no one to answer, and its old import never lifted
+ * this matter at all, so one objectionable line costs that line, not the book.
+ * A dropped © holder falls back to the byline, which is what absence means.
+ */
+export function screenRestoredImportMatter(
+  restored: RestoredImportMatter,
+  copyrightRestrictionsEnabled: boolean
+): { restored: RestoredImportMatter; refused: RefusedImportMatterField[] } {
+  const refused: RefusedImportMatterField[] = [];
+  const keeps = (field: RefusedImportMatterField["field"], value: string | undefined): value is string => {
+    if (!value) return false;
+    const assessment = assessContentRestrictions(value, { copyrightRestrictionsEnabled, printed: true });
+    if (!assessment.allowed) refused.push({ field, reason: assessment.reason });
+    return assessment.allowed;
+  };
+  const authorName = keeps("authorName", restored.authorName) ? restored.authorName : undefined;
+  const subtitle = keeps("subtitle", restored.subtitle) ? restored.subtitle : undefined;
+  const bookMatter: BookMatter = { ...restored.bookMatter };
+  for (const field of BOOK_MATTER_TEXT_FIELDS) {
+    if (bookMatter[field] !== undefined && !keeps(field, bookMatter[field])) delete bookMatter[field];
+  }
+  return {
+    restored: {
+      ...(authorName ? { authorName } : {}),
+      ...(subtitle ? { subtitle } : {}),
+      ...(Object.keys(bookMatter).length > 0 ? { bookMatter } : {})
+    },
+    refused
+  };
 }

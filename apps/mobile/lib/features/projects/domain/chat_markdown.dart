@@ -377,10 +377,17 @@ class _InlineParser {
 /// The message with its markup removed, for previews, quotes and the
 /// clipboard. Lists keep a marker so a copied list still reads as one;
 /// citations are the app's affordance, not text, and are dropped.
+/// The invisible marks the server's `chatMarkdownLiteral` puts around quoted
+/// reader text (U+FEFF, U+2060) are dropped too: they keep "For *Mom*" literal
+/// in the bubble and must not ride along into a copy or a preview.
 /// Twin of `chatMessagePlainText` in `apps/api/src/chatMessagePlainText.ts`; they must agree.
-String chatMessagePlainText(String text) => parseChatMarkdown(
-  text,
-).map((block) => block.plainTextLine).join('\n').trim();
+String chatMessagePlainText(String text) => parseChatMarkdown(text)
+    .map((block) => block.plainTextLine)
+    .join('\n')
+    .replaceAll(_literalMarks, '')
+    .trim();
+
+final RegExp _literalMarks = RegExp('[\uFEFF\u2060]');
 
 /// Assistant turns (anything that is not the user) render and strip light
 /// markdown. A user's own text stays as typed — people type asterisks.

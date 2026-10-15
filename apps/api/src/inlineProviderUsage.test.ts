@@ -19,6 +19,7 @@ describe("recordInlineProviderUsage", () => {
   it("prices a call only from the tokens the provider reported", async () => {
     await recordInlineProviderUsage({
       projectId: "project-1",
+      userId: "reader-1",
       provider: "deepseek",
       model: "deepseek-chat",
       purpose: "author-assist-rewrite",
@@ -30,6 +31,7 @@ describe("recordInlineProviderUsage", () => {
     });
     await recordInlineProviderUsage({
       projectId: null,
+      userId: "reader-1",
       provider: "deepseek",
       model: "deepseek-chat",
       purpose: "author-assist-ask",
@@ -44,6 +46,7 @@ describe("recordInlineProviderUsage", () => {
     expect(exact).toMatchObject({
       projectId: "project-1",
       generationJobId: null,
+      userId: "reader-1",
       promptTokens: 1000,
       outputTokens: 200,
       durationMs: 812,
@@ -66,6 +69,7 @@ describe("recordInlineProviderUsage", () => {
     await expect(
       recordInlineProviderUsage({
         projectId: null,
+        userId: null,
         provider: "deepseek",
         model: "deepseek-chat",
         purpose: "p",
@@ -103,7 +107,7 @@ describe("withInlineProviderUsage", () => {
   }
 
   it("records the call a retry wrapper makes through the bound adapter", async () => {
-    const result = await generateJsonWithRetry(withInlineProviderUsage(scripted([{ text: "fixed" }]), { projectId: "project-1" }), {
+    const result = await generateJsonWithRetry(withInlineProviderUsage(scripted([{ text: "fixed" }]), { projectId: "project-1", userId: "reader-1" }), {
       purpose: "author-assist-rewrite",
       schema: z.object({ text: z.string() }),
       messages: [{ role: "user", content: "Rewrite this." }]
@@ -111,12 +115,12 @@ describe("withInlineProviderUsage", () => {
 
     expect(result.data).toEqual({ text: "fixed" });
     expect(rows()).toEqual([
-      expect.objectContaining({ purpose: "author-assist-rewrite", projectId: "project-1", promptTokens: 100, outputTokens: 10 })
+      expect.objectContaining({ purpose: "author-assist-rewrite", projectId: "project-1", userId: "reader-1", promptTokens: 100, outputTokens: 10 })
     ]);
   });
 
   it("records nothing for a call that failed, and hands the failure back", async () => {
-    const model = withInlineProviderUsage(scripted([new Error("provider exploded")]), { projectId: null });
+    const model = withInlineProviderUsage(scripted([new Error("provider exploded")]), { projectId: null, userId: "reader-1" });
 
     await expect(
       model.generateJson({ purpose: "author-assist-ask", schema: z.object({ answer: z.string() }), messages: [] })
@@ -137,7 +141,7 @@ describe("withInlineResearchUsage", () => {
         ...(grounding ? { grounding } : {}),
         sources: []
       })
-    }, { projectId: null, ...(allowances ? { searchGroundingAllowances: allowances } : {}) });
+    }, { projectId: null, userId: "reader-1", ...(allowances ? { searchGroundingAllowances: allowances } : {}) });
   }
 
   it("claims the creation chat's grounded search an ordinal in the shared allowance, and prices it free inside it", async () => {
@@ -150,6 +154,8 @@ describe("withInlineResearchUsage", () => {
     expect(rows()).toEqual([expect.objectContaining({
       projectId: null,
       generationJobId: null,
+      // The creation chat has no book yet, so only the reader names whose spend it was.
+      userId: "reader-1",
       purpose: "mobile-creation-chat",
       costHint: 0.00206,
       metadata: expect.objectContaining({
@@ -184,7 +190,7 @@ describe("withInlineResearchUsage", () => {
   it("writes nothing for a search that reported no usage, such as the mock adapter's", async () => {
     const plain = withInlineResearchUsage({
       search: async (query) => ({ query: query.query, summary: "Placeholder.", sources: [] })
-    }, { projectId: null });
+    }, { projectId: null, userId: null });
 
     await plain.search({ query: "anything" });
 

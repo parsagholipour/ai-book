@@ -182,6 +182,56 @@ void main() {
       },
     );
   }
+
+  // The API's spend breaker answers before any stream bytes go out, with a
+  // sentence the reader is meant to see verbatim and, for the two that end at
+  // midnight UTC, the reset time.
+  for (final refusal in [
+    (
+      503,
+      'AI_PAUSED',
+      'Tomeza has paused new AI work for a little while.',
+      null,
+    ),
+    (503, 'AI_BUSY', 'Tomeza is very busy today.', '2026-10-14T00:00:00.000Z'),
+    (
+      429,
+      'AI_DAILY_LIMIT',
+      "You've reached today's AI limit.",
+      '2026-10-14T00:00:00.000Z',
+    ),
+  ]) {
+    test('shows the server sentence for ${refusal.$2}', () async {
+      final (status, code, message, resetsAt) = refusal;
+      final adapter = ChatAdapter(
+        contentType: 'application/json',
+        status: status,
+      );
+      final client = ApiClient(
+        dio: Dio()..httpClientAdapter = adapter,
+        tokenStore: MemoryAuthTokenStore(validTokens()),
+      );
+      final request = client.postChatMap('/chat', onAssistantText: (_) {});
+      final assertion = expectLater(
+        request,
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.code, 'code', code)
+              .having((e) => e.statusCode, 'status', status)
+              .having(userFacingError, 'shown', message)
+              .having((e) => e.isAuthFailure, 'auth failure', isFalse)
+              .having((e) => e.details['resetsAt'], 'resetsAt', resetsAt),
+        ),
+      );
+      adapter.add(
+        jsonEncode({
+          'error': {'code': code, 'message': message, 'resetsAt': ?resetsAt},
+        }),
+      );
+      await adapter.bytes.close();
+      await assertion;
+    });
+  }
 }
 
 class ChatAdapter implements HttpClientAdapter {

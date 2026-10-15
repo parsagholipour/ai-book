@@ -171,6 +171,23 @@ class FakeAudiobookRepository implements AudiobookRepository {
     return audiobook;
   }
 
+  /// What the narrator sheet is quoted; a failed quote shows no price.
+  AudiobookQuote quoteResult = const AudiobookQuote(
+    credits: 152,
+    pageCount: 12,
+    wordCount: 1_200,
+  );
+  Object? quoteError;
+
+  @override
+  Future<AudiobookQuote> quote(String projectId) async {
+    final error = quoteError;
+    if (error != null) {
+      throw error;
+    }
+    return quoteResult;
+  }
+
   @override
   Future<MobileAudiobook?> start({
     required String projectId,
@@ -277,6 +294,34 @@ class FakeAudiobookCache implements AudiobookCache {
     String projectId,
     String keepAudiobookId,
   ) async {}
+
+  /// The manifests kept for being offline, by project.
+  final manifests = <String, MobileAudiobook>{};
+
+  /// The chapters already on this phone, by index — what an offline listen
+  /// can play without a download.
+  final storedChapters = <int>{};
+
+  @override
+  Future<void> saveManifest(MobileAudiobook audiobook) async {
+    manifests[audiobook.projectId] = audiobook;
+  }
+
+  @override
+  Future<MobileAudiobook?> loadManifest(String projectId) async =>
+      manifests[projectId];
+
+  @override
+  Future<(File, AudiobookChapterTimeline)?> storedChapter({
+    required String projectId,
+    required String audiobookId,
+    required MobileAudiobookChapter chapter,
+  }) async {
+    if (!storedChapters.contains(chapter.index)) return null;
+    final timeline = timelinesByChapter[chapter.index];
+    if (timeline == null) return null;
+    return (File('${directory.path}/chapter-${chapter.index}.mp3'), timeline);
+  }
 }
 
 /// The listening position, in memory. Real file I/O never completes under the
@@ -469,9 +514,11 @@ AudiobookChapterTimeline longTimelineFixture({int paragraphs = 60}) {
   );
 }
 
-/// Enough credits that the picker offers to start rather than to top up.
+/// Enough credits that the picker offers to start rather than to top up, on
+/// a plan — narration is a plan perk, so a free account meets the plans.
 MobileBilling affordableBilling() {
   return const MobileBilling(
+    plan: MobileSubscriptionPlan(tier: 'creator', source: 'google_play'),
     credits: CreditBalance(
       available: 5000,
       reserved: 0,

@@ -292,16 +292,173 @@ export function storyPageDesignPreference(mediaSettings: unknown): StoryPageDesi
 // story's text, and read as a look-word it chose the sea.
 const LOOK_CUE =
   "designs?|layouts?|looks?|looking|style[sd]?|themes?|themed|backgrounds?|colou?r ?schemes?|decorations?|decorated";
-const WORD = "[\\p{L}\\p{N}'’-]+";
-const GAP = "[^\\p{L}\\p{N}]+";
 
-/** A design's name within a few words of a look-word, in either order. */
-function namedNearLook(design: StoryPageDesign): RegExp {
-  const names = design.names.source;
-  return new RegExp(
-    `\\b(?:${LOOK_CUE})\\b(?:${GAP}${WORD}){0,4}?${GAP}(?:${names})|(?:${names})(?:${GAP}${WORD}){0,2}?${GAP}(?:${LOOK_CUE})\\b`,
-    "giu"
+/*
+ * "Within a few words" was `(?:GAP WORD){0,4}? GAP`, with GAP any run of
+ * non-letters and WORD any run of letters, apostrophes and hyphens. Both took
+ * `'’-`, so a run of them could be cut between gaps and words every possible
+ * way before the match failed: "look k '" and 200 " '" took 3 s of the API's
+ * only thread, "theme" and 200 "-e" 6 s. The rewrite below finds the same
+ * matches — every start, end and length — in linear time, and
+ * `storyPageDesigns.test.ts` pins it against the old pattern.
+ *
+ * What the old pattern found, worked out from its backtracking and checked
+ * against it: a WORD is a whole run of letters joined by `'’-`, and from the cue
+ * it tries the target after 0, 1, … up to the limit of such runs (each followed
+ * by a gap holding something besides `'’-`), and only then the targets *inside*
+ * a run, just after a `'’-`, from the farthest run back and right to left within
+ * each. That order matters, because the first target it reaches is the match.
+ */
+/** A run of letters joined by apostrophes or hyphens, first letter to last. */
+const JOINED_RUN = "[\\p{L}\\p{N}]+(?:['’-]+[\\p{L}\\p{N}]+)*";
+const GAP = "[^\\p{L}\\p{N}]+";
+/** A gap that ends a run: it holds something besides apostrophes and hyphens. */
+const BREAK = "['’-]*[^\\p{L}\\p{N}'’-][^\\p{L}\\p{N}]*";
+
+/** A gap, then `target` after at most `runs` whole runs, else inside the last of them. */
+function withinRuns(runs: number, target: string): string {
+  return (
+    `${GAP}(?:(?:${JOINED_RUN}${BREAK}){0,${runs}}?${target}` +
+    `|(?:${JOINED_RUN}${BREAK}){0,${runs - 1}}${JOINED_RUN}['’-]+${target})`
   );
+}
+
+/**
+ * `cue`, then `target` within `runs` runs — except where the scan cannot find
+ * anything an earlier one did not already look for.
+ *
+ * A cue inside a hyphenated chain ("sea-sea-sea-…") rescans the chain to its end,
+ * so a chain of cues was quadratic even with the linear scan. When an earlier
+ * cue of the same kind sits in the same chain and this one also ends inside it,
+ * every target this one could reach the earlier one already tried, at a depth no
+ * greater; and the search only reaches this cue because the earlier one failed.
+ * So that ending is skipped. "Same chain" is guaranteed by asking that the
+ * next {@link longestMatch} characters hold no gap: the cue cannot reach past
+ * them. It holds only while the earlier cue was searched in this pass, which is
+ * why {@link lastMatchStart} searches from each match's end on a slice.
+ */
+function cueWithinRuns(cue: string, runs: number, target: string): string {
+  const longest = longestMatch(cue);
+  if (longest === undefined) {
+    return `(?:${cue})${withinRuns(runs, target)}`;
+  }
+  const repeated = `(?<=(?:${cue})['’-]+(?:[\\p{L}\\p{N}]+['’-]+)*?)(?=[\\p{L}\\p{N}'’-]{${longest}})`;
+  return (
+    `(?=${cue})(?:${repeated}(?:${cue})(?!['’-]+[\\p{L}\\p{N}])|(?!${repeated})(?:${cue}))` +
+    withinRuns(runs, target)
+  );
+}
+
+/**
+ * The most UTF-16 units `source` can match, or undefined when it holds anything
+ * but literals, escapes, classes, `(?:…)` groups, alternation and `?` — a repeat
+ * has no bound, and a construct this does not read is not guessed at. A class,
+ * an escape or `.` counts two, since it may match an astral character. The
+ * skip's lookahead reads this many characters at every cue in a chain, so a
+ * tight bound is most of its cost: the pattern's own length was eight times it.
+ */
+function longestMatch(source: string): number | undefined {
+  let at = 0;
+  const alternation = (): number | undefined => {
+    let longest = 0;
+    for (;;) {
+      const length = sequence();
+      if (length === undefined) {
+        return undefined;
+      }
+      longest = Math.max(longest, length);
+      if (source[at] !== "|") {
+        return longest;
+      }
+      at += 1;
+    }
+  };
+  const sequence = (): number | undefined => {
+    let total = 0;
+    while (at < source.length && source[at] !== "|" && source[at] !== ")") {
+      const width = atom();
+      if (width === undefined || /^[*+{]/.test(source.slice(at, at + 1))) {
+        return undefined;
+      }
+      at += source[at] === "?" ? 1 : 0;
+      total += width;
+    }
+    return total;
+  };
+  const atom = (): number | undefined => {
+    const character = source[at] ?? "";
+    if (character === "(") {
+      if (!source.startsWith("(?:", at)) {
+        return undefined;
+      }
+      at += 3;
+      const inner = alternation();
+      if (inner === undefined || source[at] !== ")") {
+        return undefined;
+      }
+      at += 1;
+      return inner;
+    }
+    if (character === "[") {
+      const close = /^\[(?:\\[\s\S]|[^\\\]])*\]/.exec(source.slice(at));
+      at += close?.[0].length ?? source.length;
+      return close ? 2 : undefined;
+    }
+    if (character === "\\") {
+      const escape = /^\\(?:[bB]|[pP]\{[^}]*\}|[^1-9kcxupP])/.exec(source.slice(at));
+      at += escape?.[0].length ?? source.length;
+      return escape ? (/^\\[bB]$/.test(escape[0]) ? 0 : 2) : undefined;
+    }
+    if (/^[*+?{)|^$]/.test(character)) {
+      return undefined;
+    }
+    const codePoint = source.codePointAt(at) ?? 0;
+    at += codePoint > 0xffff ? 2 : 1;
+    return character === "." ? 2 : codePoint > 0xffff ? 2 : 1;
+  };
+  const length = alternation();
+  return length !== undefined && at === source.length ? length : undefined;
+}
+
+/** Built once per design: compiling all nine costs about a tenth of a second. */
+const NEAR_LOOK_PATTERNS = new Map<StoryPageDesignId, RegExp>();
+
+/**
+ * A design's name within a few words of a look-word, in either order. Its
+ * matches are only what `matchAll` would have found when read through
+ * {@link lastMatchStart}. Neither global nor sticky, so sharing it keeps no state.
+ */
+function namedNearLook(design: StoryPageDesign): RegExp {
+  const cached = NEAR_LOOK_PATTERNS.get(design.id);
+  if (cached) {
+    return cached;
+  }
+  const names = design.names.source;
+  const pattern = new RegExp(
+    `${cueWithinRuns(`\\b(?:${LOOK_CUE})\\b`, 4, `(?:${names})`)}|${cueWithinRuns(`(?:${names})`, 2, `(?:${LOOK_CUE})\\b`)}`,
+    "iu"
+  );
+  NEAR_LOOK_PATTERNS.set(design.id, pattern);
+  return pattern;
+}
+
+/**
+ * Where the last match `matchAll` would report starts. Each search runs on the
+ * text from the previous match's end, as `matchAll` resumes there, so the skip
+ * in {@link cueWithinRuns} never leans on a cue a match already passed over. No
+ * match can start where one ends (a match ends before a non-word character and
+ * starts on a letter), so the slice loses nothing a match could read.
+ */
+function lastMatchStart(text: string, pattern: RegExp): number | undefined {
+  let last: number | undefined;
+  for (let from = 0; ; ) {
+    const match = pattern.exec(from === 0 ? text : text.slice(from));
+    if (!match) {
+      return last;
+    }
+    last = from + match.index;
+    from = last + match[0].length;
+  }
 }
 
 /**
@@ -317,9 +474,9 @@ export function requestedStoryPageDesign(text: string): StoryPageDesignId | unde
     // The design named last wins — "not the night one, the ocean design", or a
     // creation chat that settled on one design after trying another — so each
     // design is placed by its last mention, not its first.
-    const last = [...text.matchAll(namedNearLook(design))].at(-1);
-    if (last && (!best || last.index > best.at)) {
-      best = { id: design.id, at: last.index };
+    const at = lastMatchStart(text, namedNearLook(design));
+    if (at !== undefined && (!best || at > best.at)) {
+      best = { id: design.id, at };
     }
   }
   return best?.id;

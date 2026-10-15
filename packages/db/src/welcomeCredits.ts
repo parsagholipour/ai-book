@@ -13,6 +13,12 @@
  * Unknown countries use the low/middle-income cap; a zero cap disables that gift.
  * Further claims settle as RECENT_IP without telling the reader. A missing IP
  * settles as NO_IP — no grant, also silent.
+ *
+ * Nothing is GRANTED to an account whose email is unverified
+ * (`User.emailVerifiedAt`, migration 000106): its grant stays PENDING until a
+ * code is confirmed or Google vouches for the address. The outcomes that grant
+ * nothing still settle while it waits, so the app never promises credits the
+ * signup address could not receive.
  */
 import { creditPricing, welcomeCreditAmount, welcomeCreditIpLimit } from "@book-maker/core";
 import { prisma } from "./client.ts";
@@ -32,15 +38,57 @@ export function welcomeGrantIdempotencyKey(userId: string): string {
   return `welcome:${userId}`;
 }
 
+/**
+ * Whether the host process is holding pending grants back for free accounts.
+ *
+ * The API's spend breaker installs this (`apps/api/src/spendBreaker.ts`): while
+ * the day's provider spend is past the operator's soft cap, or AI work is
+ * paused, a free account's PENDING grant stays PENDING, and the next balance
+ * read or reserve after the breaker clears settles it exactly as it would have.
+ * It is a process-wide predicate rather than an argument because every balance
+ * read and every reservation in the product reaches this function through
+ * `ensureCurrentPlanPeriodTx`, and a hold threaded through each of their callers
+ * is a hold the first forgotten caller grants past. This package never reads
+ * the spend controls itself; with nothing installed (the worker, the suites)
+ * nothing is held.
+ */
+let welcomeGrantHold: (() => boolean) | null = null;
+
+export function setWelcomeGrantHold(hold: (() => boolean) | null): void {
+  welcomeGrantHold = hold;
+}
+
+function welcomeGrantsHeld(): boolean {
+  try {
+    return welcomeGrantHold?.() === true;
+  } catch {
+    // A broken predicate must not fail every balance read; grant as before.
+    return false;
+  }
+}
+
 export async function ensureWelcomeCreditsTx(
   tx: BillingTx,
   account: PlanAccountRow,
-  now: Date
+  now: Date,
+  options: {
+    /**
+     * Whether the account is on a paid plan, asked only while grants are held:
+     * the hold restricts free accounts, so a reader who subscribed on day one
+     * is welcomed regardless. Absent means free.
+     */
+    onPaidPlan?: () => Promise<boolean>;
+  } = {}
 ): Promise<PlanAccountRow> {
   const pending = await tx.welcomeCreditGrant.findUnique({
-    where: { userId: account.userId }
+    where: { userId: account.userId },
+    include: { user: { select: { emailVerifiedAt: true } } }
   });
   if (!pending || pending.outcome !== "PENDING") {
+    return account;
+  }
+  if (welcomeGrantsHeld() && !(await options.onPaidPlan?.())) {
+    // Deferred, not refused: the row stays PENDING and nothing is written.
     return account;
   }
 
@@ -57,16 +105,23 @@ export async function ensureWelcomeCreditsTx(
     return account;
   }
 
+  // The verification gate is here, inside the one function every balance read
+  // and reservation reaches, for the reason the spend-breaker hold is: a gate
+  // threaded through the callers is one the first forgotten caller grants past.
+  // An unverified account settles only what grants nothing — an address already
+  // at its cap — and otherwise waits, PENDING, for its code. Unlocked, because
+  // it writes no grant: the count only grows inside the window, so a full
+  // address read here is still full under the lock.
+  if (!pending.user.emailVerifiedAt) {
+    if ((await recentWelcomeGrants(tx, pending.ipHash, account.userId, now)) >= ipLimit) {
+      await settleWelcomeClaim(tx, account.userId, { outcome: "RECENT_IP", amountCredits: 0, now });
+    }
+    return account;
+  }
+
   await tx.$queryRaw`SELECT "userId" FROM "WelcomeCreditGrant" WHERE "ipHash" = ${pending.ipHash} FOR UPDATE`;
 
-  const recentGrants = await tx.welcomeCreditGrant.count({
-    where: {
-      ipHash: pending.ipHash,
-      outcome: "GRANTED",
-      settledAt: { gte: new Date(now.getTime() - WELCOME_CREDITS_IP_WINDOW_MS) },
-      userId: { not: account.userId }
-    }
-  });
+  const recentGrants = await recentWelcomeGrants(tx, pending.ipHash, account.userId, now);
   if (recentGrants >= ipLimit) {
     await settleWelcomeClaim(tx, account.userId, { outcome: "RECENT_IP", amountCredits: 0, now });
     return account;
@@ -126,6 +181,66 @@ export async function getWelcomeCreditsGranted(userId: string): Promise<number> 
     select: { outcome: true, amountCredits: true }
   });
   return grant?.outcome === "GRANTED" ? grant.amountCredits : 0;
+}
+
+/**
+ * Read after balance settlement: true when a grant is still owed — which, past
+ * a settlement, means the email is unverified or the spend breaker is holding
+ * it (see {@link setWelcomeGrantHold}); {@link describePendingWelcomeGrant}
+ * says which.
+ */
+export async function isWelcomeCreditGrantPending(userId: string): Promise<boolean> {
+  const grant = await prisma.welcomeCreditGrant.findUnique({
+    where: { userId },
+    select: { outcome: true }
+  });
+  return grant?.outcome === "PENDING";
+}
+
+export type PendingWelcomeGrantReason = "email_unverified" | "spend_hold";
+
+export type PendingWelcomeGrant = {
+  /**
+   * What the reader can do about it. `email_unverified` wins over the hold:
+   * verifying is the one step the reader can take, and a grant held for both
+   * still needs it once the hold clears.
+   */
+  reason: PendingWelcomeGrantReason;
+  /**
+   * What the grant would pay if it settled now: the price list's amount for the
+   * signup country. An address already at its cap has settled RECENT_IP before
+   * this is read (see {@link ensureWelcomeCreditsTx}), so this is not a promise
+   * the cap will break — only another account on the same address verifying
+   * first, or an operator price change, can still move it.
+   */
+  credits: number;
+};
+
+/** Read after balance settlement, as {@link isWelcomeCreditGrantPending} is. */
+export async function describePendingWelcomeGrant(userId: string): Promise<PendingWelcomeGrant | null> {
+  const grant = await prisma.welcomeCreditGrant.findUnique({
+    where: { userId },
+    select: { outcome: true, countryCode: true, user: { select: { emailVerifiedAt: true } } }
+  });
+  if (grant?.outcome !== "PENDING") {
+    return null;
+  }
+  return {
+    reason: grant.user.emailVerifiedAt ? "spend_hold" : "email_unverified",
+    credits: Math.max(0, Math.floor(welcomeCreditAmount(grant.countryCode, creditPricing())))
+  };
+}
+
+/** GRANTED claims on this address inside the window, this account's own excepted. */
+async function recentWelcomeGrants(tx: BillingTx, ipHash: string, userId: string, now: Date): Promise<number> {
+  return tx.welcomeCreditGrant.count({
+    where: {
+      ipHash,
+      outcome: "GRANTED",
+      settledAt: { gte: new Date(now.getTime() - WELCOME_CREDITS_IP_WINDOW_MS) },
+      userId: { not: userId }
+    }
+  });
 }
 
 async function settleWelcomeClaim(

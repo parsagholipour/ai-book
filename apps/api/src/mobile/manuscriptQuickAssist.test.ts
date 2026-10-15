@@ -99,6 +99,7 @@ describe("quick assists", () => {
     expect(row).toMatchObject({
       projectId,
       generationJobId: null,
+      userId: "user-a",
       provider: "deepseek",
       model: "deepseek-chat",
       purpose: "author-assist-rewrite",

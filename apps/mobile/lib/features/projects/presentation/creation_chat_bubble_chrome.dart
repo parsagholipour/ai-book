@@ -168,11 +168,15 @@ class _ChatBubbleShell extends StatelessWidget {
             bottomStart: speakerBottom,
           );
     final width = MediaQuery.sizeOf(context).width;
-    final bubble = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      constraints: BoxConstraints(maxWidth: width * (isUser ? 0.82 : 0.8)),
-      decoration: BoxDecoration(color: background, borderRadius: radius),
-      child: child,
+    // The padding is where a near miss on the bubble's small controls — the
+    // branch arrows — lands (see [TouchTarget]).
+    final bubble = TouchTargetRegion(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: BoxConstraints(maxWidth: width * (isUser ? 0.82 : 0.8)),
+        decoration: BoxDecoration(color: background, borderRadius: radius),
+        child: child,
+      ),
     );
     final framed = onLongPressStart == null
         ? bubble

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../projects/data/offline_library_store.dart';
 import '../../projects/domain/project_models.dart';
 import '../data/reader_repository.dart';
 import '../domain/reader_models.dart';
@@ -178,6 +179,18 @@ class ReaderDocumentLoader extends ChangeNotifier {
       _setStage(ReaderLoadStage.ready);
     } catch (error) {
       if (_disposed || cancelToken.isCancelled) return;
+      // Out of reach of the server, the book on this phone is the book: an
+      // older compile than the descriptor names is still a whole one, filed
+      // under its own revision by its own manifest. See `ExportCache.stored`.
+      final stored = _document == null && isOfflineFailure(error)
+          ? await _stored(export)
+          : null;
+      if (_disposed || cancelToken.isCancelled) return;
+      if (stored != null) {
+        _document = stored;
+        _setStage(ReaderLoadStage.ready);
+        return;
+      }
       _error = error;
       // A failed refresh must not discard a document that is already on
       // screen — the reader keeps showing the older compile and surfaces the
@@ -189,6 +202,17 @@ class ReaderDocumentLoader extends ChangeNotifier {
       if (identical(_cancelToken, cancelToken)) {
         _cancelToken = null;
       }
+    }
+  }
+
+  Future<CachedExport?> _stored(MobileExportAvailability export) async {
+    try {
+      return await repository.storedExport(
+        projectId: projectId,
+        export: export,
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -211,6 +235,33 @@ class ReaderDocumentLoader extends ChangeNotifier {
     if (!_disposed) {
       notifyListeners();
     }
+  }
+
+  /// Throws away the file on screen and fetches [export] afresh.
+  ///
+  /// For a document the viewer could not open. Unlike [load] it does not keep
+  /// the current document while it works — that document is the broken one —
+  /// and it clears the cache entry first, or the download would be a cache hit
+  /// handing the same bytes back.
+  Future<void> redownload(
+    MobileExportAvailability export, {
+    Future<MobileExportAvailability?> Function()? refresh,
+    MobilePdfPageNumbering? pageNumbering,
+  }) async {
+    if (_stage == ReaderLoadStage.downloading ||
+        _stage == ReaderLoadStage.preparing) {
+      return;
+    }
+    _document = null;
+    _setStage(ReaderLoadStage.preparing);
+    try {
+      await repository.discardExport(projectId: projectId, export: export);
+    } catch (_) {
+      // The download below replaces the file whether or not it could go.
+    }
+    if (_disposed) return;
+    _stage = ReaderLoadStage.idle;
+    await load(export, refresh: refresh, pageNumbering: pageNumbering);
   }
 
   /// Fetches the current compile of [export].

@@ -92,10 +92,21 @@ export function isStructuralRollbackRedeliveryError(error: unknown): boolean {
   return error instanceof StructuralRollbackRedeliveryError;
 }
 
+/**
+ * A row that is gone counts as stopped. Nothing deletes a `GenerationJob` but
+ * the cascade from its project, and both delete routes stop the book's jobs and
+ * then delete it in the same request — so the stop markers are on the row for
+ * a few milliseconds, and an in-flight job usually next looks after the row is
+ * gone. Read as "not stopped", that job kept drafting and drawing a deleted book
+ * until a write hit the missing project: provider spend nobody pays for, since
+ * the stop already settled what the reader owed. Settlement is unaffected —
+ * `markStopped` claims no missing row, so it refunds nothing.
+ */
 export function isStoppedGenerationJob(
   job: { status: string; message: string | null; error: string | null } | null
 ): boolean {
-  return job?.status === "FAILED" && (job.message === STOPPED_JOB_MESSAGE || job.error === STOPPED_JOB_ERROR);
+  if (job === null) return true;
+  return job.status === "FAILED" && (job.message === STOPPED_JOB_MESSAGE || job.error === STOPPED_JOB_ERROR);
 }
 
 export type ExportPageForRepair = {

@@ -461,8 +461,6 @@ MobileExportAvailability _export(String format, bool available) {
   return MobileExportAvailability(
     format: format,
     available: available,
-    unlocked: true,
-    creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/$format',
     filename: 'book.$format',
     contentType: format == 'pdf' ? 'application/pdf' : 'application/epub+zip',

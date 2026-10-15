@@ -125,21 +125,22 @@ describe("project artifact serializers", () => {
     expect(imageContentType({ path: "/tmp/no-extension", metadata: { mimeType: "image/avif" } })).toBe("image/avif");
   });
 
-  it("probes exports and checks entitlement once while preserving both DTOs", async () => {
+  it("probes exports and reports every format free, reading no entitlement", async () => {
     storageDir = await mkdtemp(join(tmpdir(), "mobile-project-artifacts-"));
     seedObject("books/project-1/book.pdf", "pdf bytes");
-    mockBilling.hasActiveProjectEntitlement.mockResolvedValue(true);
+    // No unlock row exists for this book, and none is needed: every finished
+    // book downloads free since 2026-10-15.
+    mockBilling.hasActiveProjectEntitlement.mockResolvedValue(false);
     const appConfig = { ...loadConfig(), BOOK_STORAGE_DIR: storageDir };
 
-    const exports = await serializeExportSet("project-1", "A Book: Revised", appConfig, "user-a", 7);
+    const exports = await serializeExportSet("project-1", "A Book: Revised", appConfig, 7);
 
     expect(EXPORT_FORMATS.map((format) => exports[format].format)).toEqual([...EXPORT_FORMATS]);
-    expect(mockBilling.hasActiveProjectEntitlement).toHaveBeenCalledTimes(1);
-    expect(mockBilling.hasActiveProjectEntitlement).toHaveBeenCalledWith({
-      userId: "user-a",
-      projectId: "project-1",
-      type: "EXPORT_UNLOCK"
-    });
+    expect(mockBilling.hasActiveProjectEntitlement).not.toHaveBeenCalled();
+    for (const format of EXPORT_FORMATS) {
+      // The three fields installed apps still read before a download.
+      expect(exports[format]).toMatchObject({ unlocked: true, creditsRequired: 0, planIncludesUnlock: false });
+    }
     expect(exports.pdf).toMatchObject({
       format: "pdf",
       label: "PDF",

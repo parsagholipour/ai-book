@@ -30,8 +30,11 @@ function digitValue(code: number): number | null {
   return null;
 }
 
+/** The invisible marks `chatMarkdownLiteral` keeps quoted reader text literal with. */
+const LITERAL_MARKS = /[\uFEFF\u2060]/g;
+
 export function chatMessagePlainText(text: string): string {
-  return parsePlainBlocks(text).join("\n").trim();
+  return parsePlainBlocks(text).join("\n").replace(LITERAL_MARKS, "").trim();
 }
 
 /** Twin of Dart `chatRoleUsesMarkdown` inverted: user text stays as typed. */

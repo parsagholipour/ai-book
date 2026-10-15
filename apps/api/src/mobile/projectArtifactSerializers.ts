@@ -14,11 +14,9 @@ import {
   exportFormatLabel,
   EXPORT_FORMATS,
   bookPlanSchema,
-  creditCostForOperation,
   loadConfig,
   type BookPlan
 } from "@book-maker/core";
-import { hasActiveProjectEntitlement } from "@book-maker/db/billing";
 import {
   projectExportAvailability,
   type ProjectExportFormat
@@ -139,39 +137,48 @@ export async function serializeExportSet(
   projectId: string,
   title: string,
   appConfig: ReturnType<typeof loadConfig>,
-  userId: string,
-  contentRevision: number
+  contentRevision: number,
+  // False skips the storage HEADs and reports every file unavailable: the
+  // status read of a book still planning or generating, which cannot have
+  // gained a file and was paying a HEAD per format per tick.
+  probeFiles = true
 ): Promise<MobileExportSetDto> {
-  const [unlocked, ...files] = await Promise.all([
-    hasActiveProjectEntitlement({ userId, projectId, type: "EXPORT_UNLOCK" }),
-    ...EXPORT_FORMATS.map(async (format) => ({
+  const files = await Promise.all(
+    EXPORT_FORMATS.map(async (format) => ({
       format,
-      file: await projectExportAvailability(appConfig, projectId, format)
+      file: probeFiles
+        ? await projectExportAvailability(appConfig, projectId, format)
+        : { available: false, byteSize: null, modifiedAt: null }
     }))
-  ]);
+  );
   return completeExportSet(
-    files.map(({ format, file }) => ({
-      format,
-      dto: serializeExport(projectId, title, format, file, unlocked, contentRevision)
-    }))
+    files.map(({ format, file }) => ({ format, dto: serializeExport(projectId, title, format, file, contentRevision) }))
   );
 }
 
+/**
+ * One format's entry. Every book downloads free since 2026-10-15, so the three
+ * fields an installed app still reads to decide on an unlock are constant:
+ * `unlocked: true`, `creditsRequired: 0` (the app requires the key) and
+ * `planIncludesUnlock: false`, which never offers a plan for a file that is
+ * already free. The Word file's plan gate is `requiresSubscription`, a
+ * different thing: a format, never a charge.
+ */
 export function serializeExport(
   projectId: string,
   title: string,
   format: ProjectExportFormat,
   file: { available: boolean; byteSize: number | null; modifiedAt: Date | null },
-  unlocked: boolean,
   contentRevision: number
 ): MobileExportAvailabilityDto {
   return {
     format,
     label: exportFormatLabel(format),
     available: file.available,
-    unlocked,
+    unlocked: true,
     requiresSubscription: exportRequiresSubscription(format),
-    creditsRequired: unlocked ? 0 : creditCostForOperation("EXPORT_UNLOCK"),
+    creditsRequired: 0,
+    planIncludesUnlock: false,
     downloadUrl: `/api/mobile/projects/${encodeURIComponent(projectId)}/export/${format}`,
     ...(format === "pdf" ? { readUrl: `/api/mobile/projects/${encodeURIComponent(projectId)}/read/pdf` } : {}),
     filename: `${sanitizeDownloadFilename(title)}.${format}`,

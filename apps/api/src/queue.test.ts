@@ -63,6 +63,7 @@ vi.mock("@book-maker/db", () => ({
   }
 }));
 vi.mock("@book-maker/db/billing", () => ({
+  recordUserStopSettlementTx: vi.fn(),
   refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits,
   failGenerationAttempt: mocks.failGenerationAttempt,
@@ -78,6 +79,7 @@ import {
   dispatchGenerationJob,
   enqueueGenerationJob,
   enqueueOrRequeueGenerationJob,
+  requeueGenerationJob,
   reconcileUndispatchedGenerationJobs,
   stopProjectGenerationJobs
 } from "./queue.js";
@@ -254,6 +256,37 @@ describe("durable generation outbox", () => {
     );
   });
 
+  it.each([{ knownAuthors: ["Jane Doe"] }, { knownAuthors: [] }])(
+    "preserves import parsing hints across resume and dispatch reconciliation: %j",
+    async ({ knownAuthors }) => {
+      const row = {
+        ...durableJob,
+        type: "IMPORT_BOOK" as const,
+        status: "FAILED",
+        payload: { importId: "import-1", knownAuthors }
+      };
+      mocks.findUnique.mockImplementation(async () => ({ ...row }));
+      mocks.findUniqueOrThrow.mockImplementation(async () => ({ ...row }));
+      mocks.update.mockImplementation(async ({ data }: { data: Partial<typeof row> }) => Object.assign(row, data));
+      mocks.add.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+      await requeueGenerationJob(row);
+
+      expect(row.payload).toEqual({ importId: "import-1", knownAuthors });
+      expect(row.status).toBe("QUEUED");
+      mocks.findMany.mockResolvedValue([{ id: row.id }]);
+      mocks.add.mockResolvedValue({ id: row.id });
+
+      await reconcileUndispatchedGenerationJobs();
+
+      expect(mocks.add).toHaveBeenLastCalledWith(
+        "import-book",
+        expect.objectContaining({ importId: "import-1", knownAuthors }),
+        expect.objectContaining({ jobId: row.id })
+      );
+    }
+  );
+
   it("dispatches one-shot job types without retry options", async () => {
     mocks.findUnique.mockResolvedValue({ ...durableJob, type: "COMPILE_EXPORT" });
     mocks.add.mockResolvedValue({ id: durableJob.id });
@@ -290,56 +323,6 @@ describe("stopping a run", () => {
     mocks.refundCreditLedgerEntry.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
     mocks.failGenerationAttempt.mockResolvedValue(undefined);
-  });
-
-  it("refunds the charge stamped on the stopped run's own GENERATE_BOOK payload", async () => {
-    mocks.findMany.mockResolvedValue([
-      {
-        id: "job-book",
-        bullJobId: null,
-        status: "ACTIVE",
-        type: "GENERATE_BOOK",
-        payload: { planId: "plan-1", billingLedgerEntryId: "entry-own" }
-      }
-    ]);
-
-    await stopProjectGenerationJobs("project-1");
-
-    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("entry-own", "Stopped by user");
-    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
-  });
-
-  it("resolves a fan-out job's charge through its plan's GENERATE_BOOK row, never a newer run's", async () => {
-    mocks.findMany
-      .mockResolvedValueOnce([
-        { id: "job-page", bullJobId: null, status: "QUEUED", type: "GENERATE_PAGE", payload: { planId: "plan-1" } }
-      ])
-      .mockResolvedValueOnce([
-        { payload: { planId: "plan-2", billingLedgerEntryId: "entry-2" } },
-        { payload: { planId: "plan-1", billingLedgerEntryId: "entry-1" } }
-      ]);
-
-    await stopProjectGenerationJobs("project-1");
-
-    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("entry-1", "Stopped by user");
-    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
-  });
-
-  it("falls back to the latest FULL_BOOK_GENERATION charge when no payload is stamped", async () => {
-    mocks.findMany
-      .mockResolvedValueOnce([
-        { id: "job-page", bullJobId: null, status: "QUEUED", type: "GENERATE_PAGE", payload: { planId: "plan-1" } }
-      ])
-      .mockResolvedValueOnce([{ payload: { planId: "plan-1" } }]);
-
-    await stopProjectGenerationJobs("project-1");
-
-    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
-    expect(mocks.refundLatestProjectOperationCredits).toHaveBeenCalledWith({
-      projectId: "project-1",
-      operation: "FULL_BOOK_GENERATION",
-      reason: "Stopped by user"
-    });
   });
 
   it("settles each stopped attempt through the attempt ledger instead of the legacy charge walk", async () => {

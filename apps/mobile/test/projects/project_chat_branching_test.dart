@@ -30,6 +30,27 @@ void main() {
     expect(find.text('2/2'), findsOneWidget);
   });
 
+  testWidgets('the edit button beside a message answers a full-size touch '
+      'without growing the bubble', (tester) async {
+    final handle = tester.ensureSemantics();
+    final repository = _BranchingProjectsRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    final button = find.byTooltip('Edit message');
+    expect(tester.getSize(button).height, 24, reason: 'drawn as before');
+    final node = tester.getSemantics(button);
+    expect(node.rect.width, greaterThanOrEqualTo(48));
+    expect(node.rect.height, greaterThanOrEqualTo(48));
+
+    // A near miss, in the bubble's padding, still opens the editor.
+    final rect = tester.getRect(button);
+    await tester.tapAt(rect.topCenter - const Offset(0, 7));
+    await tester.pumpAndSettle();
+    expect(find.text('Save & Submit'), findsOneWidget);
+    handle.dispose();
+  });
+
   testWidgets('branch arrows move between sibling threads', (tester) async {
     final repository = _BranchingProjectsRepository();
     await tester.pumpWidget(_app(repository));

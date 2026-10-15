@@ -1,4 +1,4 @@
-import { jsonRecord, modelTierSchema } from "@book-maker/core";
+import { isUltraTierEnabled, jsonRecord, maxGeneratedBookPages, modelTierSchema } from "@book-maker/core";
 import { inferBookType, mobileMetadataFromMediaSettings } from "../projectSummarySerializers.js";
 import { imageSettingsFromMediaSettings } from "../imageSettings.js";
 import type { MobileCreationPresetsInput } from "../../mobileCreation.js";
@@ -28,8 +28,13 @@ export function remixPresetsForProject(project: {
   const inferred = inferBookType(project.category, project.subcategory);
   const bookType = echoed && echoed.bookType !== "custom" ? echoed.bookType : inferred === "custom" ? "lead_magnet" : inferred;
   const tier = modelTierSchema.safeParse(jsonRecord(project.mediaSettings).modelTier);
-  const qualityPreset = echoed?.qualityPreset ?? (tier.success ? tier.data : "balanced");
-  const targetPages = Math.min(600, Math.max(1, Math.floor(project.targetPages || 1)));
+  const sharedQuality = echoed?.qualityPreset ?? (tier.success ? tier.data : "balanced");
+  // The format is offered as something the remixer can start today: an Ultra
+  // book is copied at Premium while the operator has Ultra off, and a book
+  // longer than every generated book may be is copied at the ceiling —
+  // otherwise the new chat's Build would refuse its own preset.
+  const qualityPreset = sharedQuality === "ultra" && !isUltraTierEnabled() ? "premium" : sharedQuality;
+  const targetPages = Math.min(maxGeneratedBookPages(), Math.max(1, Math.floor(project.targetPages || 1)));
   return {
     bookType,
     // "auto" would let the new chat re-derive the type and lose the format

@@ -60,7 +60,15 @@ mobile-build-apk-debug:
 	cd $(MOBILE_DIR) && flutter build apk --debug $(FLUTTER_DART_DEFINES)
 
 # The Play Store bundle: production API, real Google Play billing, signed with the
-# upload key in apps/mobile/android/key.properties (see docs/deployment.md).
+# upload key in apps/mobile/android/key.properties (apps/mobile/CLAUDE.md, "Release
+# signing"; Gradle refuses a release without it). GOOGLE_SIGN_IN_CLIENT_ID is the
+# Web OAuth client ID (docs/google-sign-in.md). A build without it hides the
+# Google button, so it is required here instead of being dropped in silence.
 mobile-build-release:
+	@if [ -z "$(strip $(GOOGLE_SIGN_IN_CLIENT_ID))" ]; then \
+		echo "GOOGLE_SIGN_IN_CLIENT_ID is not set; a release built without it has no Google sign-in." >&2; \
+		echo "Run: make mobile-build-release GOOGLE_SIGN_IN_CLIENT_ID=<web-client-id>.apps.googleusercontent.com" >&2; \
+		exit 1; \
+	fi
 	cd $(MOBILE_DIR) && flutter build appbundle --release \
 		--dart-define=APP_ENV=production --dart-define=API_BASE_URL=https://tomeza.ravanix.app $(GOOGLE_DART_DEFINES)

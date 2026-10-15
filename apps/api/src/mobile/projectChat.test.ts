@@ -765,8 +765,8 @@ describe("mobile project chat", () => {
         editProposal: {
           kind: "continue_book",
           affectedPageIndexes: [],
-          // 2 chapters × 5 estimated pages × 80 credits/page.
-          credits: 800
+          // 2 chapters × 5 estimated pages, priced like a book: 100 base + 10 × 8.
+          credits: 180
         }
       });
       expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
@@ -782,7 +782,7 @@ describe("mobile project chat", () => {
       expect(confirm.statusCode).toBe(200);
       expect(body.operation).toMatchObject({ kind: "continue_book" });
       expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
-        expect.objectContaining({ operation: "PAGE_REGENERATION", amountCredits: 800 })
+        expect.objectContaining({ operation: "PAGE_REGENERATION", amountCredits: 180 })
       );
       expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
         expect.objectContaining({

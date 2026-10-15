@@ -18,12 +18,18 @@ class BookLibraryCard extends StatelessWidget {
     required this.book,
     required this.onOpen,
     required this.onOptions,
+    this.offline = false,
     super.key,
   });
 
   final MobileProjectSummary book;
   final VoidCallback onOpen;
   final ValueChanged<Offset> onOptions;
+
+  /// The card is drawn from the phone's copy of the library. A book that was
+  /// running when it was saved is then a memory: it says so, and shows no
+  /// percentage or moving bar that would read as work happening now.
+  final bool offline;
 
   @override
   Widget build(BuildContext context) {
@@ -40,20 +46,26 @@ class BookLibraryCard extends StatelessWidget {
         book.isLive &&
         category == BookLibraryFilter.inProgress &&
         derived.kind == BookStatusKind.ready;
-    final status = runningOverReadyExport
-        ? BookStatusInfo(
-            BookStatusKind.writing,
-            '${book.progressPercent.clamp(0, 100)}% complete',
-            progress: book.progressPercent.clamp(0, 100) / 100,
-          )
-        : category == BookLibraryFilter.ready &&
-              derived.kind != BookStatusKind.ready
-        ? const BookStatusInfo(BookStatusKind.ready, 'Ready')
-        : derived;
+    final lastSeen = offline && book.isLive
+        ? BookStatusInfo(BookStatusKind.inProgress, _lastSeenLabel(book))
+        : null;
+    final status =
+        lastSeen ??
+        (runningOverReadyExport
+            ? BookStatusInfo(
+                BookStatusKind.writing,
+                '${book.progressPercent.clamp(0, 100)}% complete',
+                progress: book.progressPercent.clamp(0, 100) / 100,
+              )
+            : category == BookLibraryFilter.ready &&
+                  derived.kind != BookStatusKind.ready
+            ? const BookStatusInfo(BookStatusKind.ready, 'Ready')
+            : derived);
     // The library speaks in the reader's words — the server's own label for a
     // running book, "Ready to read" for a finished one — where the drawer's
     // narrower shelf uses the short forms.
     final statusText = switch (status.kind) {
+      _ when lastSeen != null => lastSeen.label,
       BookStatusKind.writing =>
         '${book.statusLabel} · ${book.progressPercent.clamp(0, 100)}%',
       BookStatusKind.ready => 'Ready to read',
@@ -208,3 +220,11 @@ class BookLibraryCard extends StatelessWidget {
     );
   }
 }
+
+/// What a running book was doing when the offline copy was saved.
+String _lastSeenLabel(MobileProjectSummary book) =>
+    switch (book.status.toLowerCase()) {
+      'planning' => 'Last seen planning',
+      'editing' => 'Last seen being edited',
+      _ => 'Last seen being written',
+    };

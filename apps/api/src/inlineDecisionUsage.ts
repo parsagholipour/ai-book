@@ -25,7 +25,8 @@ import { randomUUID } from "node:crypto";
  */
 export async function recordInlineDecisionAttempt(
   attempt: DecisionAttempt,
-  context: { projectId: string | null }
+  /** `userId` is whose spend the attempt was, as in `InlineUsageContext`. */
+  context: { projectId: string | null; userId: string | null }
 ): Promise<void> {
   try {
     const reported = attempt.result ?? usageCarriedByError(attempt.error);
@@ -66,6 +67,7 @@ export async function recordInlineDecisionAttempt(
       data: {
         projectId: context.projectId,
         generationJobId: null,
+        userId: context.userId,
         provider: identity.provider,
         model: identity.model,
         purpose: attempt.request.purpose,

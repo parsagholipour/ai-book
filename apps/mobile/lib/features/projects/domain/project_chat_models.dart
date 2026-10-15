@@ -62,6 +62,17 @@ class MobileProjectChatMessage {
       metadata['insufficientCredits'] is Map<String, dynamic> ||
       metadata['insufficientCredits'] is Map;
 
+  /// A reply that a plan, not credits, unlocks what was asked: taking the
+  /// free tier's "Made with Tomeza" line off a book (`tomeza_credit`). The
+  /// server marks it as an insufficient-credits reply so older builds still
+  /// offer the paywall; this build offers the plans instead of credit packs.
+  bool get asksForPlan {
+    final intent = metadata['intent'];
+    return hasInsufficientCredits &&
+        intent is Map &&
+        intent['kind'] == 'tomeza_credit';
+  }
+
   /// What the refused edit would have cost, from the same metadata. The paywall
   /// says how far short the balance is, and this is the only place the app is
   /// told the price of an edit that never ran.

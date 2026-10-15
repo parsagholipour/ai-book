@@ -736,7 +736,21 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     MobileProjectDetail? project, {
     int? credits,
     String? resumeProposalId,
+    bool plans = false,
   }) async {
+    if (plans) {
+      // A plan, not credits, unlocks it: open on the plans, no shortfall.
+      await showBillingPaywall(
+        context,
+        projectId: widget.projectId,
+        title: null,
+        message: 'Removing the “Made with Tomeza” line comes with any plan.',
+      );
+      if (!mounted) return;
+      ref.invalidate(billingProvider);
+      _refresh();
+      return;
+    }
     final purchase = await showBillingPaywall(
       context,
       projectId: widget.projectId,

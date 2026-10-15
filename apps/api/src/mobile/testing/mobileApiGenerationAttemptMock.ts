@@ -240,16 +240,6 @@ export function installGenerationAttemptMock(options: {
       domain.primaryJobId,
       attemptId
     );
-    if (start.grantExportEntitlement) {
-      await mockBilling.grantProjectEntitlement({
-        userId: start.userId,
-        projectId: domain.projectId,
-        type: "EXPORT_UNLOCK",
-        source: "full_generation_credits",
-        creditsCost: start.quotedCredits,
-        relatedLedgerEntryId: ledgerEntry?.id ?? null
-      });
-    }
     const attempt = {
       id: attemptId,
       userId: start.userId,

@@ -67,6 +67,49 @@ describe("current legal acceptance guard", () => {
     await app.close();
   });
 
+  it("blocks a content mutation however its path is spelled", async () => {
+    mockPrisma.legalAcceptance.findFirst.mockResolvedValue(null);
+    const app = Fastify();
+    await registerAuth(app, { WEB_PASSWORD: "operator-password" } as never);
+    app.post("/api/mobile/projects", async () => ({ ok: true }));
+    app.post("/api/mobile/account/deletion-request", async () => ({ ok: true }));
+
+    const headers = { authorization: "Bearer access-token" };
+    // Routed to `/api/mobile/projects`; the old raw-path read skipped the hook entirely.
+    for (const url of ["/%61pi/mobile/projects", "/api/mobile/%70rojects"]) {
+      const response = await app.inject({ method: "POST", url, headers });
+      expect(response.statusCode, url).toBe(428);
+      expect(response.json().error.code).toBe("LEGAL_ACCEPTANCE_REQUIRED");
+    }
+    const deleteAccount = await app.inject({ method: "POST", url: "/api/mobile/account/%64eletion-request", headers });
+    expect(deleteAccount.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("lets a product event through, by the route the router matched and no other", async () => {
+    // A reader who chose "Not now" still sees the paywall (billing is exempt),
+    // and the app reports that view; the app reads *any* 428 as "show the
+    // terms", so a gated event walked them back to the terms screen.
+    mockPrisma.legalAcceptance.findFirst.mockResolvedValue(null);
+    const app = Fastify();
+    await registerAuth(app, { WEB_PASSWORD: "operator-password" } as never);
+    app.post("/api/mobile/events", async () => ({ ok: true }));
+    app.post("/api/mobile/events/extra", async () => ({ ok: true }));
+    app.post("/api/mobile/projects", async () => ({ ok: true }));
+
+    const headers = { authorization: "Bearer access-token" };
+    for (const url of ["/api/mobile/events", "/api/mobile/%65vents", "/%61pi/mobile/events"]) {
+      const response = await app.inject({ method: "POST", url, headers, payload: { name: "paywall_viewed" } });
+      expect(response.statusCode, url).toBe(200);
+    }
+    for (const url of ["/api/mobile/events/extra", "/api/mobile/events/../projects", "/api/mobile/eventsx", "/api/mobile/projects?x=/api/mobile/events"]) {
+      const response = await app.inject({ method: "POST", url, headers });
+      expect(response.statusCode, url).toBe(428);
+      expect(response.json().error.code).toBe("LEGAL_ACCEPTANCE_REQUIRED");
+    }
+    await app.close();
+  });
+
   it("allows content mutations after current-version acceptance", async () => {
     mockPrisma.legalAcceptance.findFirst.mockResolvedValue({ id: "acceptance-1" });
     const app = Fastify();

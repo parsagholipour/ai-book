@@ -53,6 +53,13 @@ import { randomUUID } from "node:crypto";
 
 export type InlineUsageContext = {
   projectId: string | null;
+  /**
+   * The signed-in reader the call is made for, so a per-reader spend cap can
+   * sum the log by `userId` alone (`@book-maker/db/providerSpend`). Required
+   * rather than optional, so a new call site has to say whose spend it is;
+   * null only for operator-console work, which is nobody's.
+   */
+  userId: string | null;
   /** The deployment's grounding allowance settings (`AppConfig`); Google's published numbers where absent. */
   searchGroundingAllowances?: SearchGroundingAllowanceConfig | undefined;
 };
@@ -126,6 +133,7 @@ class RecordingTextModel implements TextModelAdapter {
     const result = await run();
     await recordInlineProviderUsage({
       projectId: this.context.projectId,
+      userId: this.context.userId,
       provider: result.provider,
       model: result.model,
       purpose: options.purpose ?? textOperation,
@@ -158,6 +166,7 @@ export function withInlineResearchUsage(research: ResearchAdapter, context: Inli
       if (result.provider && result.model && result.usage) {
         await recordInlineProviderUsage({
           projectId: query.projectId ?? context.projectId,
+          userId: context.userId,
           provider: result.provider,
           model: result.model,
           purpose: query.purpose ?? "research.search",
@@ -190,6 +199,7 @@ function finiteTokenCount(value: number | undefined): number | null {
 /** One settled row. Exported for its tests; callers go through {@link withInlineProviderUsage}. */
 export async function recordInlineProviderUsage(options: {
   projectId: string | null;
+  userId: string | null;
   provider: string;
   model: string;
   purpose: string;
@@ -248,6 +258,7 @@ export async function recordInlineProviderUsage(options: {
         data: {
           projectId: options.projectId,
           generationJobId: null,
+          userId: options.userId,
           provider: options.provider,
           model: options.model,
           purpose: options.purpose,

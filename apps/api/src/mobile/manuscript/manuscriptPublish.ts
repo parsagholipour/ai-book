@@ -3,18 +3,23 @@ import {
   bookPlanSchema,
   compilePolicyPayload,
   compilePublicationDedupeKey,
-  compilePublicationPolicyFromPayload,
-  EXPORT_PUBLICATION_PROJECT_STATUS,
+  COVER_RETYPESET,
+  freeEditRecompilePolicy,
   includeCoverForSource,
   jsonRecord,
   parseStoredBookPdfPageMap,
   synthesizeAuthorBookPlan,
   type AuthorPlanCharacter,
-  type BookPlan
+  type BookPlan,
+  BOOK_MATTER_LIMITS,
+  cleanMatterText,
+  parseBookMatter,
+  type BookMatter
 } from "@book-maker/core";
 import { deletePageContinuityNotes, deletePageEmbeddings, Prisma, prisma } from "@book-maker/db";
 import { copyrightRestrictionsEnabled } from "../../contentRestrictions.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
+import { coverKindFromMetadata } from "../bookTitleEdits.js";
 import { isRetryableTransactionConflict } from "../characterWriteBudget.js";
 import { hasOpenProjectWork } from "../editOperations.js";
 import { imageSettingsFromMediaSettings } from "../imageSettings.js";
@@ -63,8 +68,8 @@ import {
  * Synchronous in the API and free, modelled on `applyManualBookEdit`: one
  * transaction (a 120 s ceiling, the import's, because a long book rewrites
  * hundreds of rows in it) with set-based page writes, then the compile and —
- * on a first publish or a retitled designed cover — the cover, dispatched after
- * commit. Each step below exists because of a hazard measured in the plan
+ * on a first publish, or when the words on a designed cover or a drawn cover
+ * that kept its artwork changed — the cover, dispatched after commit. Each step below exists because of a hazard measured in the plan
  * (`.scratch/writing-studio/plan.md`, "Publish"); read it before reordering.
  */
 
@@ -317,7 +322,7 @@ async function publishInTransaction(
     return "replayed";
   }
   const openOperations = await tx.bookEditOperation.count({ where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } } });
-  if (openOperations > 0 || (await hasOpenProjectWork(projectId))) {
+  if (openOperations > 0 || (await hasOpenProjectWork(projectId, tx))) {
     throw REFUSALS.busy();
   }
 
@@ -381,10 +386,23 @@ async function publishInTransaction(
   // retitle — an upload's metadata says `source: "upload"` and carries no
   // `coverArtSource`, so it can never match.
   const coverSource = imageSettingsFromMediaSettings(project.mediaSettings).coverArtSource;
-  const cover = await tx.imageAsset.findFirst({ where: { projectId, type: "COVER" }, select: { metadata: true } });
-  const redrawDesign =
-    cover !== null && jsonRecord(cover.metadata).coverArtSource === "design" && coverMetaChanged(settings.published, meta);
+  const cover = await tx.imageAsset.findFirst({
+    where: { projectId, type: "COVER" },
+    orderBy: { createdAt: "desc" },
+    select: { metadata: true }
+  });
+  const coverWordsChanged = coverMetaChanged(settings.published, meta);
+  const redrawDesign = cover !== null && jsonRecord(cover.metadata).coverArtSource === "design" && coverWordsChanged;
   const drawCover = coverSource !== "none" && (cover === null || redrawDesign);
+  // A drawn cover that kept its artwork (`ai-kept`) is set again over that
+  // artwork when its words changed — free, no model call (`COVER_RETYPESET`),
+  // as a title or byline change of a generated book does. Without it the new
+  // title page prints the new words under a cover still wearing the old ones.
+  // A drawn cover from before artwork was kept (`ai`) holds its words in its
+  // pixels and keeps them: changing those is the paid "Generate with AI", the
+  // author's call rather than a side effect of Update.
+  const retypesetCover =
+    !drawCover && coverSource !== "none" && cover !== null && coverWordsChanged && coverKindFromMetadata(cover.metadata) === "ai-kept";
   const mediaSettings = jsonRecord(project.mediaSettings);
   const nextMediaSettings = {
     ...mediaSettings,
@@ -432,8 +450,12 @@ async function publishInTransaction(
   }
 
   // 5. The project: EDITING until the compile publishes, a new revision, and a
-  // page map that no longer names pages this publish removed.
+  // page map that no longer names pages this publish removed. The dedication
+  // is the Studio's setting and reaches the book here, on the book's matter
+  // copy the compile prints from; every other matter page stays the book's.
   const pageMap = slots.shrank ? shrunkPageMap(project.pdfPageMap) : undefined;
+  const liveMatter = await tx.project.findUnique({ where: { id: projectId }, select: { bookMatter: true } });
+  const bookMatter = withDedication(parseBookMatter(liveMatter?.bookMatter), settings.dedication);
   const bumped = await tx.project.update({
     where: { id: projectId },
     data: {
@@ -442,6 +464,7 @@ async function publishInTransaction(
       currentPlanId: planId,
       targetPages: slots.pageCount,
       mediaSettings: jsonInputValue(nextMediaSettings),
+      bookMatter: jsonInputValue(bookMatter),
       ...(pageMap !== undefined ? { pdfPageMap: pageMap } : {})
     },
     select: { contentRevision: true }
@@ -526,11 +549,10 @@ async function publishInTransaction(
   // undispatched-job sweep recovers, never a published revision with no
   // compile to finish it. The compile skips final review — nothing may rewrite
   // the author's words — and stands down while a cover is open; the cover's
-  // completion queues it again.
-  const policy = compilePublicationPolicyFromPayload({
-    skipFinalReview: true,
-    [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING"
-  });
+  // completion queues it again. A publish is free, so its compile is a free
+  // edit's: a failure or a delete puts the book back COMPLETE, the dispatch
+  // fallback below, and never reaches a charge the book was made with.
+  const policy = freeEditRecompilePolicy("COMPLETE");
   const compile = await enqueueGenerationJob({
     projectId,
     type: "COMPILE_EXPORT",
@@ -541,16 +563,24 @@ async function publishInTransaction(
     dispatch: false
   });
   const jobIds = [compile.id];
-  if (drawCover) {
+  if (drawCover || retypesetCover) {
     // Shaped like `maybeEnqueueRevisionOwnedReplanCover`: the revision and the
     // EDITING expectation ride the payload, so the worker's stale guard stands
-    // it down if the author publishes again before it runs.
+    // it down if the author publishes again before it runs. A re-set is the
+    // same revision-owned row with the flag `commitCoverChange` puts on a
+    // finished book's (`drawCover.retypeset`); it never draws and never fails.
     const coverJob = await enqueueGenerationJob({
       projectId,
       type: "GENERATE_IMAGE",
       dedupeKey: `generate-cover:${projectId}:${planId}:revision-${contentRevision}:status-EDITING`,
       contentRevision,
-      payload: { planId, assetType: "COVER", contentRevision, exportPublicationProjectStatus: "EDITING" },
+      payload: {
+        planId,
+        assetType: "COVER",
+        contentRevision,
+        exportPublicationProjectStatus: "EDITING",
+        ...(retypesetCover ? { [COVER_RETYPESET]: true } : {})
+      },
       transaction: tx,
       dispatch: false
     });
@@ -655,4 +685,10 @@ export async function publishManuscript(options: {
     console.warn(`Story state rebuild after a Writing Studio publish skipped for project ${project.id}`, error);
   }
   return "published";
+}
+
+function withDedication(matter: BookMatter, dedication: string | null | undefined): BookMatter {
+  const text = cleanMatterText(dedication, BOOK_MATTER_LIMITS.dedication);
+  const { dedication: _previous, ...rest } = matter;
+  return text ? { ...rest, dedication: text } : rest;
 }

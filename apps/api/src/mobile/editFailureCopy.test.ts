@@ -70,7 +70,7 @@ describe("classifyEditFailure", () => {
     const failure = classifyEditFailure(new GenerationQuotaExceededError(spentSlot), "start");
 
     expect(failure).toEqual({
-      message: "Free plans include 3 illustrated books a month. Upgrade for unlimited, or turn visuals off.",
+      message: "Free plans include 3 illustrated books a month. Upgrade to a plan for no monthly cap, or turn visuals off.",
       internal: false
     });
     expect(failure.message).toBe(imageLimitReachedMessage(3));
@@ -84,7 +84,7 @@ describe("classifyEditFailure", () => {
     );
 
     expect(failure.internal).toBe(false);
-    expect(failure.message).toMatch(/Upgrade for unlimited, or turn visuals off\.$/);
+    expect(failure.message).toMatch(/Upgrade to a plan for no monthly cap, or turn visuals off\.$/);
     expect(failure.message).not.toMatch(/\bnull\b|\bundefined\b|NaN/);
   });
 

@@ -94,3 +94,34 @@ holds for the open that established it; the next open asks the same map again.
   within: span)` then searches only there. A probe matching more than one page is discarded rather
   than trusted, and a null span (the cover, the contents page, anchors that disagree) falls back to
   searching the whole book. Keep null cheap and common: it is the safe answer.
+- **A file that will not open is the app's error, not pdfrx's.** `PdfViewerParams.errorBannerBuilder`
+  is always set (`_buildOpenError`): pdfrx's default is a developer screen with a stack trace.
+  The app's offers "Download again", which `ReaderDocumentLoader.redownload` turns into dropping
+  the document on screen, `ExportCache.discard` (the file and both manifest names), and an ordinary
+  load against a re-read descriptor — without the discard the "download" is a cache hit handing
+  the same bytes back. Upstream of it, `ExportCache.ensure` renames a PDF into place only when
+  `%PDF-` appears in its first kilobyte (`isPdfHeader`); a 200 that is a captive portal or a
+  proxy page fails as `EXPORT_UNREADABLE`, and a readable cached copy of the same revision is kept
+  rather than replaced. The pre-signup sample (`SampleBookScreen`) is a viewer too and keeps the
+  same two rules: it draws `ReaderOpenErrorState` (with `topInset: 0`, its app bar is not laid
+  over the page), and `downloadSampleBook` renames into place only bytes `fileHasPdfHeader`
+  accepts. Its "Download again" needs no discard — the sample is never served from a cache — but
+  it does bump the document key, because pdfrx will not reopen a file key it already failed on.
+  `test/auth/sample_book_open_error_test.dart`.
+- **A book on this phone opens without the server, under its own manifest.** `BookReaderScreen`
+  goes offline when its status read fails with `isOfflineFailure` (or at once for a session that
+  started offline) and opens against the freshest status this run read with a PDF on offer, else
+  the one `OfflineLibraryStore` kept (`offlineBookStatusProvider`); with neither it says "Not on
+  this phone yet". Online and offline build the same `ReaderView` (`_readerView`), so going back
+  online keeps the page, the markup and the open document. The descriptor may name a newer compile
+  than the one downloaded, so a download that fails offline falls back to
+  `ExportCache.stored` (via `ReaderRepository.storedExport` in `ReaderDocumentLoader.load`): the
+  file on disk as its own manifest describes it — its revision, digest and cover-skip stamp — and
+  nothing about the descriptor is filed onto it, so the provenance rules above hold unchanged. A
+  file with no manifest (a `mismatch` download) is never offered, and a size that disagrees with
+  the manifest is not either. `ReaderView(offline: true)` reads only: editing is off, the
+  selection menu greys all four actions with "Offline — these need a connection" (nothing leaves
+  the phone, so no sheet number or digest is sent), and the banner slot says "You're offline —
+  reading the copy on this phone" (`ReaderUpdateStatus.offline`) instead of offering a reload no
+  download could answer. A book never downloaded says "Not on this phone yet" rather than "Could
+  not download this book". `test/reader/reader_offline_test.dart`.

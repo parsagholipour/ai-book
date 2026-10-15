@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../projects/presentation/ai_content_report.dart';
 import '../data/studio_repository.dart';
 import '../domain/assist_models.dart';
 import '../domain/assist_text.dart';
@@ -279,9 +280,71 @@ class _StudioQuickAssistSheetState
       case _Phase.error:
         return _errorBody(context);
       case _Phase.result:
-        return _resultBody(context);
+        final reportable = _reportableText();
+        if (reportable == null) return _resultBody(context);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _resultBody(context),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                key: const ValueKey('studio-ai-report'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant,
+                ),
+                icon: const Icon(Icons.flag_outlined, size: 18),
+                label: const Text('Report'),
+                onPressed: () => unawaited(_report(reportable)),
+              ),
+            ),
+          ],
+        );
     }
   }
+
+  /// What the sheet showed, as text: the server keeps no copy of a quick
+  /// suggestion, so a report carries it. Null when nothing was suggested.
+  String? _reportableText() {
+    final result = _result;
+    if (result == null) return null;
+    final text = switch (_kind) {
+      QuickAssistKind.rewrite ||
+      QuickAssistKind.describe ||
+      QuickAssistKind.continueWriting => _suggestion ?? '',
+      QuickAssistKind.proofread => [
+        for (final fix in result.corrections)
+          '${fix.find} → ${fix.replace}'
+              '${fix.reason.trim().isEmpty ? '' : ' (${fix.reason.trim()})'}',
+      ].join('\n'),
+      QuickAssistKind.brainstorm => [
+        for (final idea in result.ideas)
+          idea.text.trim().isEmpty ? idea.title : '${idea.title}: ${idea.text}',
+      ].join('\n'),
+      QuickAssistKind.ask => result.answer ?? '',
+    };
+    return text.trim().isEmpty ? null : text;
+  }
+
+  Future<void> _report(String suggestion) => reportAiContent(
+    context: context,
+    title: 'Report this AI suggestion',
+    submit: (reason, comment) => ref
+        .read(aiContentReportsApiProvider)
+        .reportStudioQuickSuggestion(
+          projectId: widget.projectId,
+          assistKind: _kind.wire,
+          suggestion: suggestion,
+          chapterId: _request.chapterId,
+          selection: _request.window.selection,
+          instruction: _request.instruction,
+          reason: reason,
+          comment: comment,
+        ),
+  );
 
   Widget _questionBody(BuildContext context) {
     final theme = Theme.of(context);

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -235,6 +236,81 @@ class AudiobookCache {
       // A stale cover left behind is a few kilobytes; the new one is in hand.
     }
     return file;
+  }
+
+  /// The manifest beside a book's narrations, as the server last sent it.
+  ///
+  /// For a listener with no connection: the chapters on this phone are only
+  /// a timeline with the manifest that orders and times them. One file per
+  /// book, beside `progress.json` rather than inside a narration's directory,
+  /// so [pruneOtherAudiobooks] keeps it and [clearProject] takes it.
+  Future<File> _manifestFile(String projectId) async {
+    final root = await _root();
+    return File(
+      '${root.path}/$directoryName/${safeSegment(projectId)}/manifest.json',
+    );
+  }
+
+  /// Keeps [audiobook] for being offline. Never fails the caller: the copy is
+  /// a convenience, and the narration on screen came from the server.
+  Future<void> saveManifest(MobileAudiobook audiobook) async {
+    final payload = audiobook.payload;
+    if (payload == null) return;
+    try {
+      final file = await _manifestFile(audiobook.projectId);
+      await file.parent.create(recursive: true);
+      final partial = File('${file.path}.part');
+      await partial.writeAsString(jsonEncode(payload), flush: true);
+      await partial.rename(file.path);
+    } catch (_) {
+      // See above.
+    }
+  }
+
+  /// The manifest kept for [projectId], or null.
+  Future<MobileAudiobook?> loadManifest(String projectId) async {
+    try {
+      final file = await _manifestFile(projectId);
+      if (!await file.exists()) return null;
+      final json = jsonDecode(await file.readAsString());
+      return json is Map<String, dynamic>
+          ? MobileAudiobook.fromJson(json)
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A chapter's audio and timings when both are already on this phone, or
+  /// null — never a download. The same files [ensureChapterAudio] and
+  /// [ensureChapterTimeline] name, with the same size check on the audio.
+  Future<(File, AudiobookChapterTimeline)?> storedChapter({
+    required String projectId,
+    required String audiobookId,
+    required MobileAudiobookChapter chapter,
+  }) async {
+    final audioUrl = chapter.audioUrl;
+    final timelineUrl = chapter.timelineUrl;
+    if (audioUrl == null || timelineUrl == null) return null;
+    try {
+      final directory = await audiobookDirectory(projectId, audiobookId);
+      final base = '${directory.path}/chapter-${chapter.index}';
+      final audio = File(
+        '$base-v${safeSegment(_renderVersion(audioUrl))}.mp3',
+      );
+      final timings = File(
+        '$base-v${safeSegment(_renderVersion(timelineUrl))}.timeline.json',
+      );
+      if (!await audio.exists() || !await timings.exists()) return null;
+      final expected = chapter.byteSize;
+      if (expected != null && await audio.length() != expected) return null;
+      return (
+        audio,
+        AudiobookChapterTimeline.parse(await timings.readAsString()),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Drops every narration for a project except [keepAudiobookId].

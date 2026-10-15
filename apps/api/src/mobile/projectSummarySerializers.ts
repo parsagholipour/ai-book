@@ -53,8 +53,7 @@ import { z } from "zod";
 
 export async function serializeProjectSummary(
   project: MobileProjectRecord,
-  appConfig: ReturnType<typeof loadConfig>,
-  userId: string
+  appConfig: ReturnType<typeof loadConfig>
 ): Promise<MobileProjectSummaryDto> {
   const mobile = mobileMetadataFromMediaSettings(project.mediaSettings);
   const pageCount = project._count?.pages ?? project.pages?.length ?? 0;
@@ -99,7 +98,7 @@ export async function serializeProjectSummary(
       "cover",
       `Cover for ${project.title}`
     ),
-    exports: await serializeExportSet(project.id, project.title, appConfig, userId, project.contentRevision),
+    exports: await serializeExportSet(project.id, project.title, appConfig, project.contentRevision),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString()
   };
@@ -128,10 +127,9 @@ function qualityPresetForProject(
 
 export async function serializeProjectDetail(
   project: MobileProjectRecord,
-  appConfig: ReturnType<typeof loadConfig>,
-  userId: string
+  appConfig: ReturnType<typeof loadConfig>
 ): Promise<MobileProjectDetailDto> {
-  const summary = await serializeProjectSummary(project, appConfig, userId);
+  const summary = await serializeProjectSummary(project, appConfig);
   // One row, asked for by ownership rather than sifted out of the newest few
   // compiles: a book that keeps losing its exports queues a repair every five
   // minutes, and eight of those buried the compile that actually reviewed the

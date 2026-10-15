@@ -14,7 +14,7 @@ import {
 } from "./publicationTailCompletion.js";
 import {
   CONTINUATION_FOLLOW_UP_CLASSIFIER_KEY,
-  compilePublicationPolicyFromPayload,
+  editRecompilePolicy,
   jsonPayloadToRecord,
   type SettledProjectStatus
 } from "@book-maker/core";
@@ -162,10 +162,13 @@ async function runContinuationFollowUp(
     await assertLease();
     let compileOutcome: CompileDispatchOutcome;
     try {
+      // Pinned to EDITING with a full review, as it always was; the chapters'
+      // charge settled when they published, so a failed render puts the
+      // pre-continuation status back rather than failing the book.
       compileOutcome = await maybeEnqueueCompile(
         identity.projectId,
         identity.planVersionId,
-        compilePublicationPolicyFromPayload({ exportPublicationProjectStatus: "EDITING" }),
+        editRecompilePolicy(identity.fallbackStatus, { skipFinalReview: false, withoutQualityVerdict: false }),
         { contentRevision: identity.publicationRevision, requireContentRevisionMatch: true }
       );
     } catch (error) {

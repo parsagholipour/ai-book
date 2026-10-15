@@ -17,6 +17,9 @@ import { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE } from "../generation/manuscriptSt
 import { dryRunDetail, dryRunPageBeat, rotate } from "./fakeDryRunBeats.js";
 import { fakeChapterForms, fakeComposedChapter, fakeDescribedPages, fakeBookArc, fakeCutChapter, fakeSeams, fakeDetemplatedChapter } from "./fakeComposedChapters.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
+import { fakeBookMatterChatEdit } from "./fakeBookMatterChatEdit.js";
+import { BOOK_MATTER_CHAT_PURPOSE } from "../authoring/bookMatterChatEdit.js";
+import { BOOK_MATTER_GROUNDING_PURPOSE } from "../authoring/bookMatterProseGrounding.js";
 import { fakePagePatch } from "./fakePagePatch.js";
 import { fakeAuthorAssist } from "./fakeAuthorAssist.js";
 import { isAuthorAssistPurpose } from "../authoring/authorAssistTypes.js";
@@ -250,6 +253,17 @@ export class FakeTextModelAdapter implements TextModelAdapter {
           };
         })
       };
+    }
+
+    if (options.purpose === BOOK_MATTER_CHAT_PURPOSE) {
+      return fakeBookMatterChatEdit(options);
+    }
+
+    if (options.purpose === BOOK_MATTER_GROUNDING_PURPOSE) {
+      // Exact source text and the fake's short dedications need no review.
+      // A mock cannot verify novel multilingual prose; missing verdicts
+      // deliberately leave it unapproved in the same normalizer as production.
+      return { verdicts: [] };
     }
 
     if (options.purpose === "detect-language") {

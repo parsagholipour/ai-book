@@ -126,6 +126,55 @@ describe("resolvePendingEditTurn", () => {
     expect(turn.clarifyExhausted).toBe(false);
   });
 
+  it("merges every answer to the matter composer's question as its follow-up, never as a scope", () => {
+    // The composer asked what to print, so the reply is words to print:
+    // "throughout", "everywhere", "the whole book" and "every page" in a
+    // dedication are not scopes, and "ok" confirms nothing it could resume.
+    const matterQuestion = scopeClarification({ request: "Add a dedication", clarification: "matter" });
+    for (const answer of [
+      "For my mom, who stood by me throughout",
+      "For everyone who believed in me, everywhere",
+      "To the whole book club",
+      "For Dad, on every page",
+      "everywhere in the whole book",
+      "ok"
+    ]) {
+      const turn = resolvePendingEditTurn(matterQuestion, answer);
+
+      expect(turn.resolvesPendingScope, answer).toBe(false);
+      expect(turn.resolvedPendingEdit, answer).toBeNull();
+      expect(turn.confirmedPendingEdit, answer).toBe(false);
+      expect(turn.clarifyExhausted, answer).toBe(true);
+      expect(turn.resolvedMessage, answer).toBe(`Add a dedication\n\nFollow-up from the user: ${answer}`);
+      // The scope recovery reply asks where an edit goes, which is not what was asked.
+      expect(turn.pendingScopeIsRecoverable, answer).toBe(false);
+    }
+    // Even with a scope already recovered onto the stored state.
+    expect(resolvePendingEditTurn({ ...matterQuestion, scope: "all_pages" }, "ok")).toMatchObject({
+      resolvesPendingScope: false,
+      clarifyExhausted: true,
+      pendingScopeIsRecoverable: false
+    });
+    expect(resolvePendingEditTurn(matterQuestion, "just add", { currentScope: "all_pages" }).resolvesPendingScope).toBe(false);
+  });
+
+  it("lets a cancel word drop the matter composer's question", () => {
+    const turn = resolvePendingEditTurn(scopeClarification({ request: "Add a dedication", clarification: "matter" }), "never mind");
+
+    expect(turn.clarifyExhausted).toBe(false);
+    expect(turn.resolvedPendingEdit).toBeNull();
+    expect(turn.resolvedMessage).toBe("never mind");
+  });
+
+  it("still resumes a matter question an older build stored as a scope question, as a scope question", () => {
+    const stored = scopeClarification({ request: "add an ISBN" });
+
+    expect(resolvePendingEditTurn(stored, "978-0-306-40615-7")).toMatchObject({
+      clarifyExhausted: true,
+      resolvedMessage: "add an ISBN\n\nFollow-up from the user: 978-0-306-40615-7"
+    });
+  });
+
   it("honors a caller-precomputed scope so it is derived exactly once per turn", () => {
     const turn = resolvePendingEditTurn(scopeClarification(), "just add", { currentScope: "all_pages" });
 

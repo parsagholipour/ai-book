@@ -25,8 +25,27 @@ import { type CreditPricing, creditPricing } from "./creditPricing.js";
 export const VOICE_CALL_POLICY = {
   /** Minutes of headroom the held reservation keeps ahead of elapsed time. */
   reserveBlockMinutes: 3,
-  /** Hard stop. A forgotten call in a pocket is the expensive failure mode. */
-  maxCallMinutes: 30,
+  /**
+   * Hard stop, and the one number every bound on a call's length derives from:
+   * the relay funds no minute past it (`packages/db/src/voiceRelayBilling.ts`),
+   * the provider token expires soon after it (`voiceProviders.ts`), and the app
+   * is sent it as `maxCallSeconds`.
+   *
+   * Fifteen, not thirty: Gemini Live bills every turn for the whole context
+   * window, so a minute costs more the longer a call runs. At thirty a busy call
+   * was modelled at $0.34 a minute against $0.25 of revenue at the cheapest
+   * credit (launch review, 2026-10-15). A forgotten call in a pocket is the
+   * other expensive failure mode.
+   */
+  maxCallMinutes: 15,
+  /**
+   * How far ahead of the relay's own deadline a relayed call's
+   * `secondsRemaining` reaches zero. The app counts that number down and hangs
+   * up itself at zero, which is the ending it can explain ("Calls stop at …").
+   * Told the exact deadline it races the relay closing the socket, and when the
+   * close lands first the app reads it as a dropped line.
+   */
+  endingLeadSeconds: 5,
   /** How often the app reports elapsed time while a call is up. */
   heartbeatSeconds: 20,
   /**
@@ -173,4 +192,50 @@ export function voiceCallEndingReason(options: {
     return "limit";
   }
   return null;
+}
+
+export type VoiceRelayCallRunway = {
+  secondsRemaining: number;
+  endingReason: VoiceCallEndingReason | null;
+};
+
+/**
+ * How long a relayed call can still run, as the app is told it, and why it
+ * will stop.
+ *
+ * The relay holds credits only a minute ahead of the call, so its reservation
+ * alone fell to 10–20 seconds every minute, and the meter read that as "out of
+ * credits, ending in 0:15" with a full balance: a heartbeat landing in that
+ * window had the app count down and hang up on the reader, three minutes into
+ * about half of all calls (found 2026-10-15). A call runs on while the balance
+ * can still pay for the next minute, so the runway is the reservation *plus*
+ * the whole minutes the spendable balance could still hold at the call's
+ * price, capped at {@link VOICE_CALL_POLICY.maxCallMinutes} — and less
+ * `endingLeadSeconds`, so the app's own hang-up arrives before the relay
+ * closes the socket.
+ *
+ * The reason is named for the last block of the runway, as
+ * {@link voiceCallEndingReason} names it for a held call: `limit` when the
+ * length cap is what ends it, `credits` when the balance runs out first. A free
+ * rate has no balance limit; pass `Infinity`.
+ */
+export function voiceRelayCallRunway(options: {
+  elapsedSeconds: number;
+  /** Minutes the relay has already reserved or spent for this call. */
+  reservedMinutes: number;
+  /** Further whole minutes the reader's spendable balance could still hold. */
+  affordableMinutes: number;
+}): VoiceRelayCallRunway {
+  const horizonMinutes = Math.min(
+    VOICE_CALL_POLICY.maxCallMinutes,
+    Math.max(0, options.reservedMinutes) + Math.max(0, options.affordableMinutes)
+  );
+  const secondsRemaining = Math.max(
+    0,
+    horizonMinutes * 60 - Math.max(0, options.elapsedSeconds) - VOICE_CALL_POLICY.endingLeadSeconds
+  );
+  if (secondsRemaining > VOICE_CALL_POLICY.reserveBlockMinutes * 60) {
+    return { secondsRemaining, endingReason: null };
+  }
+  return { secondsRemaining, endingReason: horizonMinutes >= VOICE_CALL_POLICY.maxCallMinutes ? "limit" : "credits" };
 }

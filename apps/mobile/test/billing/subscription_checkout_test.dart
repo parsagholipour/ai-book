@@ -8,6 +8,7 @@ import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
+import 'package:tomeza/features/billing/data/play_purchase_processor.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/presentation/billing_controller.dart';
 
@@ -44,14 +45,16 @@ const pack = MobileBillingProduct(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late FakePlay play;
+  late PlayPurchaseProcessor purchases;
   late BillingController controller;
+  late FakeBillingRepository repository;
 
   Future<void> openCheckout({
     String? tier = 'creator',
     String? accountToken = 'old',
     String? purchaseAccountId = 'test-purchase-account',
   }) async {
-    final repository = FakeBillingRepository(planTier: tier);
+    repository = FakeBillingRepository(planTier: tier);
     final billing = repository.billing;
     repository.billing = MobileBilling(
       purchaseAccountId: purchaseAccountId,
@@ -70,9 +73,16 @@ void main() {
       products: const [creator, max, pack],
       creditCosts: billing.creditCosts,
     );
+    final store = InAppPurchaseStoreBillingClient(inAppPurchase: play);
+    purchases = PlayPurchaseProcessor(
+      billingRepository: repository,
+      storeClient: store,
+      onBillingChanged: () {},
+    );
     controller = BillingController(
       billingRepository: repository,
-      storeClient: InAppPurchaseStoreBillingClient(inAppPurchase: play),
+      storeClient: store,
+      purchases: purchases,
       onBillingChanged: () {},
       keepAlive: () => () {},
     );
@@ -85,6 +95,7 @@ void main() {
   });
   tearDown(() {
     controller.dispose();
+    purchases.dispose();
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -129,7 +140,7 @@ void main() {
   );
 
   test(
-    'a cancelled but unexpired Max plan is replaced on a downgrade',
+    'a downgrade waits for the renewal date instead of forfeiting the paid month',
     () async {
       final owned = purchase(max.sku, 'max-token', renewing: false);
       play.addition.response = QueryPurchaseDetailsResponse(
@@ -140,7 +151,72 @@ void main() {
       final change = (play.launched.single as GooglePlayPurchaseParam)
           .changeSubscriptionParam!;
       expect(change.oldPurchaseDetails, same(owned));
-      expect(change.replacementMode, ReplacementMode.chargeFullPrice);
+      // Charged in full, Max's remaining allowance was thrown away on day 3.
+      expect(change.replacementMode, ReplacementMode.deferred);
+    },
+  );
+
+  test(
+    'Play\'s productless answer to a deferred downgrade settles the checkout and records the new token',
+    () async {
+      final updates = StreamController<List<PurchaseDetails>>.broadcast();
+      addTearDown(updates.close);
+      play.updates = updates.stream;
+      play.addition.response = QueryPurchaseDetailsResponse(
+        pastPurchases: [purchase(max.sku, 'max-token')],
+      );
+      await openCheckout(tier: 'max', accountToken: 'max-token');
+      await controller.buy(creator);
+      expect(controller.state.pendingProductIds, {creator.sku});
+
+      // Play says the change went through and returns no purchase; the token
+      // it issued is held, unacknowledged, under the plan it replaces.
+      play.addition.response = QueryPurchaseDetailsResponse(
+        pastPurchases: [purchase(max.sku, 'switch-token', acknowledged: false)],
+      );
+      updates.add([
+        PurchaseDetails(
+          purchaseID: '',
+          productID: '',
+          status: PurchaseStatus.purchased,
+          transactionDate: null,
+          verificationData: PurchaseVerificationData(
+            localVerificationData: '',
+            serverVerificationData: '',
+            source: 'google_play',
+          ),
+        ),
+      ]);
+      await pumpEventQueue();
+
+      // Recorded (and so acknowledged) now, or Play refunds it in three days.
+      expect(repository.verifications.single.purchaseToken, 'switch-token');
+      expect(controller.state.pendingProductIds, isEmpty);
+      // Nothing failed: no "did not return a purchase token" error.
+      expect(controller.state.error, isNull);
+      // Nothing was bought today either: the reader is told when it starts.
+      expect(
+        controller.state.message,
+        startsWith('Your plan switches to Creator'),
+      );
+      expect(controller.state.message, isNot(contains('verified')));
+    },
+  );
+
+  test(
+    'a pack bought here is verified with the price Play quoted the buyer',
+    () async {
+      final updates = StreamController<List<PurchaseDetails>>.broadcast();
+      addTearDown(updates.close);
+      play.updates = updates.stream;
+      await openCheckout();
+      await controller.buy(pack);
+      updates.add([purchase(pack.sku, 'pack-token', acknowledged: false)]);
+      await pumpEventQueue();
+
+      final sent = repository.verifications.single;
+      expect(sent.localPriceMicros, 749000000);
+      expect(sent.localCurrency, 'INR');
     },
   );
 
@@ -232,6 +308,23 @@ void main() {
       await controller.buy(max);
       expect(play.launched, isEmpty);
       expect(controller.state.error, contains('Restore purchases'));
+      // Nothing is being switched: this account has no plan on record, most
+      // often because the purchase it just made was never verified.
+      expect(controller.state.error, isNot(contains('before switching')));
+      expect(controller.state.error, contains('isn’t on your account yet'));
+    },
+  );
+
+  test(
+    'a plan on record that Play holds under another product still says sync before switching',
+    () async {
+      play.addition.response = QueryPurchaseDetailsResponse(
+        pastPurchases: [purchase(max.sku, 'old')],
+      );
+      await openCheckout(tier: 'creator');
+      await controller.buy(max);
+      expect(play.launched, isEmpty);
+      expect(controller.state.error, contains('before switching'));
     },
   );
 
@@ -302,6 +395,7 @@ GooglePlayPurchaseDetails purchase(
   String sku,
   String token, {
   bool renewing = true,
+  bool acknowledged = true,
   String? accountId,
 }) {
   return GooglePlayPurchaseDetails.fromPurchase(
@@ -315,7 +409,7 @@ GooglePlayPurchaseDetails purchase(
       products: [sku],
       isAutoRenewing: renewing,
       originalJson: '{}',
-      isAcknowledged: true,
+      isAcknowledged: acknowledged,
       purchaseState: PurchaseStateWrapper.purchased,
     ),
   ).single;
@@ -338,14 +432,32 @@ class FakePlay implements InAppPurchase {
   ) async => ProductDetailsResponse(
     productDetails: [
       for (final id in identifiers)
-        ProductDetails(
-          id: id,
-          title: id,
-          description: '',
-          price: '\$10',
-          rawPrice: 10,
-          currencyCode: 'USD',
-        ),
+        // A pack as Play lists it, in the buyer's currency.
+        if (id == 'tomeza.credit_pack_1')
+          ...GooglePlayProductDetails.fromProductDetails(
+            ProductDetailsWrapper(
+              description: id,
+              name: id,
+              productId: id,
+              productType: ProductType.inapp,
+              title: id,
+              oneTimePurchaseOfferDetails:
+                  const OneTimePurchaseOfferDetailsWrapper(
+                    formattedPrice: '₹749',
+                    priceAmountMicros: 749000000,
+                    priceCurrencyCode: 'INR',
+                  ),
+            ),
+          )
+        else
+          ProductDetails(
+            id: id,
+            title: id,
+            description: '',
+            price: '\$10',
+            rawPrice: 10,
+            currencyCode: 'USD',
+          ),
     ],
     notFoundIDs: [],
   );

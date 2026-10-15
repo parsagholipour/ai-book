@@ -133,8 +133,8 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
     setState(() => _busyAction = null);
   }
 
-  Future<void> _openPaywall(MobileExportAvailability export) async {
-    await openProjectExportPaywall(
+  Future<void> _openPlanOffer(MobileExportAvailability export) async {
+    await openProjectExportPlanOffer(
       context: context,
       ref: ref,
       projectId: _projectId,
@@ -259,15 +259,9 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
     final action = projectExportDownloadAction(export);
     final isDownloading = _busyAction == action;
     final locked = projectExportLockedBySubscription(export, billing);
-    final needsCredits = projectExportNeedsCredits(
-      export,
-      billing?.credits.available,
-    );
     return AppButton.tonal(
       onPressed: export.available && !isDownloading
-          ? () => locked || needsCredits
-                ? _openPaywall(export)
-                : _download(export)
+          ? () => locked ? _openPlanOffer(export) : _download(export)
           : null,
       loading: isDownloading,
       loadingLabel: 'Downloading export',
@@ -275,11 +269,7 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard>
         locked ? Icons.lock_outline : projectExportIcon(export),
         size: 18,
       ),
-      label: projectExportDownloadLabel(
-        export,
-        needsCredits,
-        lockedBySubscription: locked,
-      ),
+      label: projectExportDownloadLabel(export, lockedBySubscription: locked),
     );
   }
 }

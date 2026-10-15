@@ -11,8 +11,8 @@ import {
   GeminiImageAdapter,
   isPremiumProject,
   modelTierForInput,
-  PREMIUM_COVER_IMAGE_MODEL,
-  PREMIUM_FALLBACK_IMAGE_MODEL,
+  premiumCoverImageSelection,
+  resolveImageFallbackSelection,
   RoutingTextModelAdapter,
   bindTextModelCall,
   createLiveGenerationTextModel,
@@ -67,13 +67,15 @@ import type { WorkerRuntimeJob } from "../runtime/jobPayloads.js";
 import { CopyrightSafeRetryImageAdapter } from "./copyrightSafeImageRetry.js";
 import { loadLiveGenerationTextRouting } from "./generationTextRouting.js";
 import { TextFallbackCallAccounting } from "./textFallbackAccounting.js";
+import { withContentSafetyRule } from "./contentSafetyRule.js";
 
 /**
  * Logging decorators around the provider adapters from `@book-maker/core`.
  *
  * `createLoggedProviders` is the single entry point: it wraps a job's provider
  * set so every call is written to the run log, costed, and checked for a user
- * stop request. Image calls additionally get a cross-provider fallback.
+ * stop request; every text call carries the operator's content rule
+ * (`contentSafetyRule.ts`). Image calls additionally get a cross-provider fallback.
  */
 
 type LoggedTextModel = {
@@ -127,7 +129,7 @@ export function coverImageSelectionForInput(input: CreateProjectInput): ImageMod
   if (config.MOCK_AI || input.mediaSettings.imageModel || !isPremiumProject(input)) {
     return undefined;
   }
-  return { provider: "gemini", model: PREMIUM_COVER_IMAGE_MODEL };
+  return premiumCoverImageSelection();
 }
 
 function loggedTextModel(input?: CreateProjectInput | undefined): LoggedTextModel {
@@ -195,15 +197,9 @@ function createLoggedImageAdapter(
   });
 }
 
+/** The rule lives in core so the production check can read which providers it names. */
 export function imageFallbackSelection(primary: ImageModelSelection, input?: CreateProjectInput | undefined): ImageModelSelection {
-  if (primary.provider === "alibaba") {
-    return { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
-  }
-  // Premium-tier books fall back to Alibaba's higher-quality image model so
-  // a Gemini outage doesn't silently downgrade a premium book.
-  const alibabaModel =
-    input && isPremiumProject(input) ? PREMIUM_FALLBACK_IMAGE_MODEL : config.ALIBABA_IMAGE_MODEL;
-  return { provider: "alibaba", model: alibabaModel };
+  return resolveImageFallbackSelection(config, primary, Boolean(input && isPremiumProject(input)));
 }
 
 export function createImageAdapterForSelection(selection: ImageModelSelection): ImageAdapter {
@@ -396,7 +392,8 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     throw error;
   }
 
-  async generateText(options: GenerateTextOptions) {
+  async generateText(requested: GenerateTextOptions) {
+    const options = await withContentSafetyRule(requested);
     const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
     const textModel = bound.textModel;
@@ -461,7 +458,8 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     });
   }
 
-  async generateJson<T>(options: GenerateJsonOptions<T>) {
+  async generateJson<T>(requested: GenerateJsonOptions<T>) {
+    const options = await withContentSafetyRule(requested);
     const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
     const textModel = bound.textModel;
@@ -526,7 +524,8 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     });
   }
 
-  async generateWithTools(options: GenerateWithToolsOptions) {
+  async generateWithTools(requested: GenerateWithToolsOptions) {
+    const options = await withContentSafetyRule(requested);
     const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
     const textModel = bound.textModel;
@@ -580,7 +579,8 @@ export class LoggingTextModelAdapter implements TextModelAdapter {
     });
   }
 
-  async *streamText(options: GenerateTextOptions) {
+  async *streamText(requested: GenerateTextOptions) {
+    const options = await withContentSafetyRule(requested);
     const bound = await this.boundDelegate(options.purpose);
     const callId = randomUUID();
     const textModel = bound.textModel;

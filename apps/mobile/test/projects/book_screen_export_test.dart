@@ -108,7 +108,9 @@ void main() {
     expect(resumed, isFalse);
   });
 
-  testWidgets('export panel shows locked and unlocked states', (tester) async {
+  testWidgets('a written book\'s PDF and EPUB open and share with no lock', (
+    tester,
+  ) async {
     final openedFormats = <String>[];
     final downloadedFormats = <String>[];
     final paywalledFormats = <String>[];
@@ -117,13 +119,9 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ProjectExportPanel(
-            exports: fakeExports(
-              pdfUnlocked: false,
-              pdfAvailable: true,
-              epubUnlocked: true,
-              epubAvailable: true,
-            ),
-            billing: fakeBilling(availableCredits: 200),
+            exports: fakeExports(),
+            // A free reader with fewer credits than the old unlock cost.
+            billing: fakeBilling(availableCredits: 25),
             onOpen: (export) async {
               openedFormats.add(export.format);
             },
@@ -138,20 +136,19 @@ void main() {
       ),
     );
 
-    expect(find.text('Unlock'), findsOneWidget);
-    expect(find.text('Open'), findsOneWidget);
-    expect(find.byTooltip('Share EPUB'), findsOneWidget);
-    expect(find.text('Unlock for 150 credits'), findsOneWidget);
-    expect(find.text('Ready'), findsOneWidget);
+    expect(find.text('Open'), findsNWidgets(2));
+    expect(find.text('Ready'), findsNWidgets(2));
+    expect(find.text('Unlock'), findsNothing);
+    expect(find.text('Get credits'), findsNothing);
+    expect(find.textContaining('credits'), findsNothing);
+    expect(find.byIcon(Icons.lock_outline), findsNothing);
 
-    await tester.tap(find.text('Unlock'));
-    await tester.pump();
-    await tester.tap(find.text('Open'));
+    await tester.tap(find.text('Open').first);
     await tester.pump();
     await tester.tap(find.byTooltip('Share EPUB'));
     await tester.pump();
 
-    expect(openedFormats, ['pdf', 'epub']);
+    expect(openedFormats, ['pdf']);
     expect(downloadedFormats, ['epub']);
     expect(paywalledFormats, isEmpty);
   });
@@ -296,41 +293,6 @@ void main() {
     expect(find.text('PDF'), findsOneWidget);
     expect(find.text('EPUB'), findsOneWidget);
   });
-
-  testWidgets('export panel opens paywall when credits are short', (
-    tester,
-  ) async {
-    final paywalledFormats = <String>[];
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ProjectExportPanel(
-            exports: fakeExports(
-              pdfUnlocked: false,
-              pdfAvailable: true,
-              epubUnlocked: false,
-              epubAvailable: true,
-            ),
-            billing: fakeBilling(availableCredits: 25),
-            onOpen: (_) async {},
-            onDownload: (_) async {},
-            onOpenPaywall: (export) async {
-              paywalledFormats.add(export.format);
-            },
-          ),
-        ),
-      ),
-    );
-
-    expect(find.text('Get credits'), findsNWidgets(2));
-    expect(find.text('Unlock for 150 credits · you have 25'), findsNWidgets(2));
-
-    await tester.tap(find.text('Get credits').first);
-    await tester.pump();
-
-    expect(paywalledFormats, ['pdf']);
-  });
 }
 
 MobileBilling fakeBilling({int availableCredits = 1000, bool creator = false}) {
@@ -446,12 +408,9 @@ MobileProjectDetail fakeProjectWithPreview() {
 }
 
 MobileExportSet fakeExports({
-  bool pdfUnlocked = true,
   bool pdfAvailable = true,
-  bool epubUnlocked = true,
   bool epubAvailable = true,
   bool includeDocx = false,
-  bool docxUnlocked = true,
   bool docxAvailable = true,
 }) {
   return MobileExportSet(
@@ -459,9 +418,7 @@ MobileExportSet fakeExports({
         ? MobileExportAvailability(
             format: 'docx',
             available: docxAvailable,
-            unlocked: docxUnlocked,
             requiresSubscription: true,
-            creditsRequired: docxUnlocked ? 0 : 150,
             downloadUrl: '/api/mobile/projects/project-1/export/docx',
             filename: 'Launch-Course-Workbook.docx',
             contentType:
@@ -471,8 +428,6 @@ MobileExportSet fakeExports({
     pdf: MobileExportAvailability(
       format: 'pdf',
       available: pdfAvailable,
-      unlocked: pdfUnlocked,
-      creditsRequired: pdfUnlocked ? 0 : 150,
       downloadUrl: '/api/mobile/projects/project-1/export/pdf',
       filename: 'Launch-Course-Workbook.pdf',
       contentType: 'application/pdf',
@@ -480,8 +435,6 @@ MobileExportSet fakeExports({
     epub: MobileExportAvailability(
       format: 'epub',
       available: epubAvailable,
-      unlocked: epubUnlocked,
-      creditsRequired: epubUnlocked ? 0 : 150,
       downloadUrl: '/api/mobile/projects/project-1/export/epub',
       filename: 'Launch-Course-Workbook.epub',
       contentType: 'application/epub+zip',

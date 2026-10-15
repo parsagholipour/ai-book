@@ -436,8 +436,8 @@ export async function imageLimitChatMessage(
     projectId,
     parentId,
     content: resume
-      ? `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that ${action}. Upgrade for unlimited illustrated books — or wait for next month — then tap Apply and I’ll run it.`
-      : `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that ${action}. Upgrade for unlimited illustrated books, or try again next month.`,
+      ? `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that ${action}. Upgrade to a plan for no monthly cap on illustrated books — or wait for next month — then tap Apply and I’ll run it.`
+      : `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that ${action}. Upgrade to a plan for no monthly cap on illustrated books, or try again next month.`,
     metadata: {
       intent,
       charged: false,

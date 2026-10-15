@@ -31,6 +31,7 @@ import { countBookPages, pageRewriteScope, readProjectPageRows } from "./project
 import { loadProjectCostSummary } from "./projectCosts.js";
 import { loadProjectFinalizationProgress } from "./projectFinalizationProgress.js";
 import { loadGenerationTimings } from "./mobile/generationTimings.js";
+import { longLaneQueuePosition } from "./longLaneQueuePosition.js";
 import type { GenerationJobType } from "./queue.js";
 
 export type PipelineStepKey = "plan" | "pages" | "images" | "export";
@@ -203,7 +204,7 @@ export async function buildProjectStatus(projectId: string) {
       })
     : [];
 
-  const [openImageJobs, compileJobs, rewriteScope, finalization, generationTimings] = await Promise.all([
+  const [openImageJobs, compileJobs, rewriteScope, finalization, generationTimings, waitingInLine] = await Promise.all([
     prisma.generationJob.count({
       where: { projectId, type: "GENERATE_IMAGE", status: { in: ["QUEUED", "ACTIVE"] } }
     }),
@@ -219,7 +220,9 @@ export async function buildProjectStatus(projectId: string) {
     // seconds through a generation sends no read for it.
     pageRewriteScope(projectId, project.status),
     loadProjectFinalizationProgress(project),
-    loadGenerationTimings(projectId, project.currentPlan)
+    loadGenerationTimings(projectId, project.currentPlan),
+    // Only read when this book's long-lane work is waiting behind other books'.
+    longLaneQueuePosition(projectId, project.jobs)
   ]);
   const completePages = countBookPages(pages, rewriteScope);
   const visibleImageCount = await prisma.imageAsset.count({
@@ -287,6 +290,7 @@ export async function buildProjectStatus(projectId: string) {
   return {
     project: { ...project, jobs: jobsWithSteps, generationAttempts },
     generationTimings,
+    waitingInLine,
     quality: latestQuality,
     progress: {
       pages: pageProgress,

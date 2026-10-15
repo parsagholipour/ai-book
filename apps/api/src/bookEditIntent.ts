@@ -9,9 +9,11 @@ import {
   type ToolLoopTool
 } from "@book-maker/core";
 import { z } from "zod";
-import type { StructuralPageEdit } from "@book-maker/core";
+import type { ConversationLanguage, StructuralPageEdit } from "@book-maker/core";
 import { backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
 import { bookTitleIntentFromMessage } from "./bookEditBookTitle.js";
+import { isWholeBookTitleRename, mentionsBookMatter, type BookMatterRouterView } from "./bookEditMatter.js";
+import { tomezaCreditIntentFromMessage } from "./bookEditTomezaCredit.js";
 import { chapterHeadingIntentFromMessage, type ChapterHeadingEdit } from "./bookEditChapterHeading.js";
 import { pageDesignIntentFromMessage, type PageDesignEdit } from "./bookEditPageDesign.js";
 import { narrowCodeLanguageIntent } from "./bookEditCodeScope.js";
@@ -19,6 +21,7 @@ import { intentFromDecideAction } from "./bookEditDecision.js";
 import { classifyWithDegradedHeuristics, classifyWithHeuristics } from "./bookEditHeuristics.js";
 import { type ImageInsertionEdit, type ImageLayoutEdit } from "./bookEditImage.js";
 import { decideActionSchema, decideActionsFor, routerSystemPrompt } from "./bookEditRouterPrompt.js";
+import { withoutChatMarkdownLiteral } from "./chatMarkdownLiteral.js";
 import { chatReplyQuoteForPrompt, type ChatReplyQuote } from "./chatReplyQuote.js";
 import {
   pageIndexesFromMessage,
@@ -26,8 +29,11 @@ import {
   type ReaderPageNumberContext
 } from "./bookEditMessage.js";
 import {
+  backMatterName,
+  frontMatterForPrompt,
   furniturePageIntentFromMessage,
   MODEL_PAGE_NUMBERING,
+  withoutFurniturePageEdit,
   type ReaderPageNumbering
 } from "./bookPageNumbering.js";
 import { pdfSpanForModelPages, printedPageForPdfPage, printedPageOffset, totalPrintedPages } from "@book-maker/core";
@@ -76,6 +82,8 @@ export type BookEditIntentKind =
   | "chapter_heading"
   | "page_design"
   | "book_title"
+  | "book_matter"
+  | "tomeza_credit"
   | "add_image"
   | "move_image"
   | "remove_image"
@@ -138,6 +146,8 @@ export type BookEditIntent = {
   reasoning: string;
   affectedPageIndexes: number[];
   assistantMessage: string;
+  /** The router's conversation language, carried into server-composed replies and history. */
+  responseLanguage?: ConversationLanguage | undefined;
   scope: BookEditScope;
   impact: BookEditImpact;
   clarification: BookEditClarification;
@@ -295,6 +305,7 @@ export async function classifyProjectChatMessage(options: {
   chapters?: BookEditChapterContext[] | undefined;
   planSummary?: string | undefined;
   recentMessages?: Array<{ role: "user" | "assistant"; content: string }> | undefined;
+  conversationLanguage?: ConversationLanguage | undefined;
   textModel?: TextModelAdapter | undefined;
   /** Fetches one page's full prose for the router's read_page tool. */
   loadPageBody?: ((index: number) => Promise<string | null>) | undefined;
@@ -328,6 +339,8 @@ export async function classifyProjectChatMessage(options: {
    * "Chapter 2" while a Persian reader sees فصل 2.
    */
   language?: string | undefined;
+  /** What the book's matter pages print now, so the router can tell a matter edit (`bookMatterForRouter`). */
+  bookMatter?: BookMatterRouterView | undefined;
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
   const chapters = options.chapters ?? [];
@@ -342,10 +355,23 @@ export async function classifyProjectChatMessage(options: {
     ? bookRegenerationIntent(message, Boolean(readerSelection || options.replyTo || options.recentMessages?.length))
     : null;
   if (regeneration) return regeneration;
+  // A request about the book's matter pages (the dedication, the byline, the
+  // ISBN…) is the router's to read and the matter composer's to write: none of
+  // the fast paths below may take it, and the Sources recogniser would read
+  // "add a dedication: For my sources of strength" as a Sources request. The
+  // exceptions, below, are a whole-message rename and a marked-word swap.
+  const fastPaths = options.stage === "complete" && !mentionsBookMatter(message);
+  // A precise "remove the Made with Tomeza line" skips the router, whose only say
+  // was the reply language. Its shapes are English alone, so the reply keeps the
+  // established conversation language, as a failed router call would, else English.
+  const tomezaCredit = options.stage === "complete" ? tomezaCreditIntentFromMessage(message) : null;
+  if (tomezaCredit) {
+    return { ...tomezaCredit, responseLanguage: options.conversationLanguage ?? "en" };
+  }
   // The sources list is compiled back matter, so no page edit can touch it.
   // Catching that here keeps it from being priced as a page rewrite that would
   // then leave the section in place.
-  const backMatter = options.stage === "complete" ? backMatterIntentFromMessage(message) : null;
+  const backMatter = fastPaths ? backMatterIntentFromMessage(message) : null;
   if (backMatter) {
     return backMatter;
   }
@@ -354,19 +380,21 @@ export async function classifyProjectChatMessage(options: {
   // forcedDecision below, which would otherwise answer a spent clarification
   // with a whole-book page_rewrite — the other route to charging for every page
   // in the book and changing nothing.
-  const chapterHeading = options.stage === "complete" ? chapterHeadingIntentFromMessage(message) : null;
+  const chapterHeading = fastPaths ? chapterHeadingIntentFromMessage(message) : null;
   if (chapterHeading) {
     return chapterHeading;
   }
   // A page design is a compile preference too, for the same reason and with
   // the same escape from forcedDecision's whole-book widening.
-  const pageDesign = options.stage === "complete" ? pageDesignIntentFromMessage(message) : null;
+  const pageDesign = fastPaths ? pageDesignIntentFromMessage(message) : null;
   if (pageDesign) {
     return pageDesign;
   }
   // The book's title is printed from the project and its plan, never a page,
-  // and read as the book's identity it was quoted as a whole-book rebuild.
-  const bookTitle = options.stage === "complete" ? bookTitleIntentFromMessage(message) : null;
+  // and read as the book's identity it was quoted as a whole-book rebuild. The
+  // publisher in "Rename the book to Letters to My Publisher" is the title's.
+  const bookTitle =
+    fastPaths || (options.stage === "complete" && isWholeBookTitleRename(message)) ? bookTitleIntentFromMessage(message) : null;
   if (bookTitle) {
     return bookTitle;
   }
@@ -378,8 +406,16 @@ export async function classifyProjectChatMessage(options: {
   // of all twelve pages, and the adherence review refused it three times. A
   // selection or a reply narrows the request to a place, which is the
   // router's to read, so neither takes this path.
+  //
+  // A swap that marks its term as words — quoted, or "the word / term / name
+  // X" — is page text even when the word is "publisher" or "title page", so it
+  // passes the matter guard: behind it, "replace the word publisher with editor
+  // everywhere" went to the router, and with the router down it came back as a
+  // matter edit that changed nothing. An unmarked "change publisher to Sun"
+  // names the book's publisher, and stays the matter edit's.
+  const markedSwap = options.stage === "complete" && MARKED_REPLACEMENT_TERM.test(message);
   const exactReplacement =
-    options.stage === "complete" && !readerSelection && !options.replyTo ? exactReplacementIntentFromMessage(message) : null;
+    (fastPaths || markedSwap) && !readerSelection && !options.replyTo ? exactReplacementIntentFromMessage(message) : null;
   if (exactReplacement) {
     return exactReplacement;
   }
@@ -405,7 +441,9 @@ export async function classifyProjectChatMessage(options: {
   // spent, is widened into a whole-book rewrite card.
   const degraded = () => {
     const furniture =
-      options.stage === "complete" ? furniturePageIntentFromMessage(message, options.pages, numbering) : null;
+      options.stage === "complete"
+        ? furniturePageIntentFromMessage(message, options.pages, numbering, options.conversationLanguage)
+        : null;
     return (
       furniture ??
       classifyWithDegradedHeuristics(message, options.stage, options.pages, options.planSummary, chapters, reader)
@@ -438,6 +476,7 @@ export async function classifyProjectChatMessage(options: {
       chapters,
       planSummary: options.planSummary,
       recentMessages: options.recentMessages ?? [],
+      conversationLanguage: options.conversationLanguage,
       heuristic,
       textModel,
       loadPageBody: options.loadPageBody,
@@ -446,15 +485,30 @@ export async function classifyProjectChatMessage(options: {
       numbering,
       ...(readerSelection ? { readerSelection } : {}),
       ...(options.replyTo ? { replyTo: options.replyTo } : {}),
-      ...(options.language ? { language: options.language } : {})
+      ...(options.language ? { language: options.language } : {}),
+      ...(options.bookMatter ? { bookMatter: options.bookMatter } : {})
     });
+    // A selection names its page outright; only a typed number can land on furniture.
+    const offFurniture = stage === "complete" && !readerSelection
+      ? withoutFurniturePageEdit(routed, message, options.pages, numbering, options.conversationLanguage)
+      : routed;
     return narrowCode(
-      normalizeIntentForStage(withDeterministicContentTarget(routed, message, numbering), stage, clarifyExhausted)
+      normalizeIntentForStage(withDeterministicContentTarget(offFurniture, message, numbering), stage, clarifyExhausted)
     );
   } catch {
     return narrowCode(normalizeIntentForStage(degraded(), options.stage, clarifyExhausted));
   }
 }
+
+/**
+ * A replacement whose first term is marked as words: opened by a quote, or
+ * introduced as "the word", "the term" or "the name". It mirrors the prefixes
+ * `exactReplacementFromInstruction` strips before it reads that term (polite
+ * opener, verb, "all occurrences of", "every"), and decides nothing alone —
+ * only a message that parser also proves is a swap takes the free path.
+ */
+const MARKED_REPLACEMENT_TERM =
+  /^(?:(?:please|(?:can|could|would|will)\s+you|i(?:'d|\s+would)\s+like\s+you\s+to|i\s+want\s+you\s+to)\s+)*(?:replace|change|rename|swap|switch|turn)\b\s*(?:(?:the\s+)?(?:(?:all|every|each)\s+)?(?:occurrences?|instances?|mentions?)\s+of\s+)?(?:(?:all|every|each)\s+)?(?:(?:the\s+)?(?:word|term|name)\s+|["“‘'])/i;
 
 /**
  * The whole message as one exact replacement, scoped to the book. The pages
@@ -494,6 +548,7 @@ type RouteAgentOptions = {
   chapters: BookEditChapterContext[];
   planSummary?: string | undefined;
   recentMessages: Array<{ role: "user" | "assistant"; content: string }>;
+  conversationLanguage?: ConversationLanguage | undefined;
   heuristic: BookEditIntent;
   textModel: TextModelAdapter;
   loadPageBody?: ((index: number) => Promise<string | null>) | undefined;
@@ -502,6 +557,7 @@ type RouteAgentOptions = {
   readerSelection?: { pageIndex?: number | undefined } | undefined;
   replyTo?: ChatReplyQuote | undefined;
   language?: string | undefined;
+  bookMatter?: BookMatterRouterView | undefined;
 };
 
 /**
@@ -517,8 +573,11 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
   const map = options.numbering.pdfPageMap;
   const contentsStartPage =
     map?.contentsStartPdfPage !== undefined ? printedPageForPdfPage(map, map.contentsStartPdfPage) : undefined;
-  const sourcesStartPage =
+  // One start for all the back matter, which is the Sources list only when the
+  // book prints one: since the matter pages it may be About the Author.
+  const backMatterStartPage =
     map?.backMatterStartPdfPage !== undefined ? printedPageForPdfPage(map, map.backMatterStartPdfPage) : undefined;
+  const frontMatter = frontMatterForPrompt(options.numbering);
   const pageSample = classifierPageSample(options.pages, options.message, CLASSIFIER_PAGE_SAMPLE_CAP, {
     pdfPageMap: map
   });
@@ -571,6 +630,7 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
         content: JSON.stringify({
           projectStage: options.stage,
           userMessage: options.message,
+          ...(options.conversationLanguage ? { conversationLanguage: options.conversationLanguage } : {}),
           ...(options.readerSelection?.pageIndex !== undefined
             ? {
                 readerSelection: {
@@ -589,7 +649,7 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
             : {}),
           recentConversation: options.recentMessages.slice(-12).map((turn) => ({
             role: turn.role,
-            content: turn.content.slice(0, 800)
+            content: (turn.role === "assistant" ? withoutChatMarkdownLiteral(turn.content) : turn.content).slice(0, 800)
           })),
           planSummary: options.planSummary ?? null,
           heuristicIntent: options.heuristic,
@@ -629,13 +689,20 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
             includedPageCount: pageSample.pages.length,
             truncated: pageSample.truncated
           },
+          ...(options.bookMatter ? { bookMatter: options.bookMatter } : {}),
           ...(map
             ? {
                 readerPageContext: {
                   totalPrintedPages: totalPrintedPages(map),
                   ...(printedPageOffset(map) > 0 ? { cover: true } : {}),
+                  ...(frontMatter ? { frontMatter } : {}),
                   ...(contentsStartPage !== undefined ? { contentsStartPage } : {}),
-                  ...(sourcesStartPage !== undefined ? { sourcesStartPage } : {})
+                  ...(backMatterStartPage !== undefined
+                    ? {
+                        backMatterStartPage,
+                        ...(options.numbering.backMatter ? { backMatter: backMatterName(options.numbering.backMatter) } : {})
+                      }
+                    : {})
                 }
               }
             : {})
@@ -736,6 +803,9 @@ function normalizeIntentForStage(
     bounded.confidence < BOOK_EDIT_CONFIDENCE_THRESHOLD &&
     bounded.kind !== "answer" &&
     bounded.kind !== "show_content" &&
+    // A matter edit asks its own question when it needs one: its composer
+    // sees the book's matter, and the router's confirmation would be a dead end.
+    bounded.kind !== "book_matter" &&
     !(stage === "complete" && PROPOSAL_GATED_EDIT_KINDS.has(bounded.kind))
   ) {
     return {

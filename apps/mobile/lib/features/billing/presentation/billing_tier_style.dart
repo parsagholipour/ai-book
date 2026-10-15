@@ -84,25 +84,26 @@ const _tierStyles = <String, BillingTierStyle>{
   'free': _freeStyle,
   'creator': BillingTierStyle(
     tier: 'creator',
-    tagline: 'For the occasional book',
+    tagline: 'For a book every week or so',
     emblem: Icons.edit_note_outlined,
   ),
   'pro': BillingTierStyle(
     tier: 'pro',
-    tagline: 'For a book a week',
+    tagline: 'For several books a week',
     emblem: Icons.workspace_premium_outlined,
   ),
   'max': BillingTierStyle(
     tier: 'max',
-    tagline: 'For a book a day',
+    tagline: 'For a few books a day',
     emblem: Icons.diamond_outlined,
   ),
 };
 
 /// The tier a subscription SKU grants. Mirrors `PLAN_TIER_BY_SKU` on the server;
-/// anything else — a credit pack, an export unlock — is not a tier at all.
+/// anything else — a credit pack — is not a tier at all.
 String billingTierForSku(String sku) => switch (sku) {
   'tomeza.creator_monthly' => 'creator',
+  'tomeza.creator_yearly' => 'creator',
   'tomeza.pro_monthly' => 'pro',
   'tomeza.max_monthly' => 'max',
   _ => 'free',
@@ -198,10 +199,13 @@ BillingPlanValue billingPlanValue(
     final price = useStorePrices
         ? storeProducts[plan.sku]!.rawPrice
         : plan.priceMicros / 1000000;
-    if (price <= 0 || plan.creditAmount <= 0) {
+    // What one payment buys in all against its price: twelve monthly grants
+    // for a yearly plan.
+    final credits = plan.creditAmount;
+    if (price <= 0 || credits <= 0) {
       return BillingPlanValue.empty;
     }
-    final rate = plan.creditAmount / price;
+    final rate = credits / price;
     rates[plan.sku] = rate;
     if (price < baselinePrice) {
       baselinePrice = price;
@@ -230,4 +234,14 @@ BillingPlanValue billingPlanValue(
     bestValueSku: savings.containsKey(bestSku) ? bestSku : null,
     savingsPercentBySku: savings,
   );
+}
+
+/// Whether [product] is the plan the reader holds now. By SKU whenever the
+/// server names the held one, so a monthly Creator can still choose Creator
+/// yearly; by tier only for a plan whose SKU is unknown.
+bool isHeldPlan(MobileBillingProduct product, MobileBilling? billing) {
+  if (!product.isSubscription) return false;
+  final heldSku = billing?.plan?.productSku;
+  if (heldSku != null) return product.sku == heldSku;
+  return billingTierForSku(product.sku) == billing?.planTier;
 }

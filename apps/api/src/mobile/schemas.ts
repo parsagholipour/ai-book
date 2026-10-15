@@ -158,7 +158,8 @@ const MOBILE_TYPED_PROMPT_MAX = 5000;
 const mobileProjectCreateFields = {
   bookType: mobileBookTypeSchema,
   bookTypeChoice: mobileBookTypeChoiceSchema.optional(),
-  title: z.string().trim().min(2).max(160).optional(),
+  // One character is a whole title in CJK; the floor matches createProjectSchema's.
+  title: z.string().trim().min(1).max(160).optional(),
   authorName: z.string().trim().min(1).max(120).optional(),
   lengthPreset: mobileLengthPresetSchema.default("standard"),
   qualityPreset: mobileQualityPresetSchema.default("balanced"),
@@ -404,15 +405,40 @@ export const mobilePageCountRecommendationAiSchema = z
 
 export const emptyMobilePlanBodySchema = z.object({}).strict().default({});
 
+/**
+ * A blank order id is no order id. `in_app_purchase_android` maps a purchase
+ * Google has not given an order id yet — a slow card still pending, a promo
+ * code — to `''`, and installed builds send it as-is. Refusing it with a 400
+ * failed the "record the pending purchase" step quietly, so nothing ever
+ * acknowledged the payment and Play refunded it three days later.
+ */
+const blankAsAbsent = (value: unknown) =>
+  value === null || (typeof value === "string" && value.trim() === "") ? undefined : value;
+
+/** The most a store price can be in micros: far above any real price, in any currency. */
+export const LOCAL_PRICE_MICROS_MAX = 100_000_000_000_000;
+
 export const mobileGooglePlayVerificationBodySchema = z
   .object({
     productId: z.string().trim().min(3).max(160),
     purchaseToken: z.string().trim().min(8).max(8000),
-    transactionId: z.string().trim().min(1).max(240).optional(),
+    transactionId: z.preprocess(blankAsAbsent, z.string().trim().min(1).max(240).optional()),
     purchaseStatus: z.enum(["purchased", "restored"]).optional(),
-    projectId: z.string().trim().min(1).max(160).optional()
+    projectId: z.string().trim().min(1).max(160).optional(),
+    /**
+     * What the buyer was shown and charged, from Play's own product details,
+     * in their currency: for a subscription the price of the pricing phase
+     * bought, for a pack its price times quantity. Analytics only — it never
+     * decides a grant — and absent from builds that predate it.
+     */
+    localPriceMicros: z.number().int().min(0).max(LOCAL_PRICE_MICROS_MAX).optional(),
+    localCurrency: z.string().regex(/^[A-Z]{3}$/).optional()
   })
-  .strict();
+  .strict()
+  .refine((body) => (body.localPriceMicros === undefined) === (body.localCurrency === undefined), {
+    message: "Send the local price and its currency together.",
+    path: ["localCurrency"]
+  });
 
 export const MOBILE_BOOK_TYPE_SETTINGS: Record<
   MobileBookType,

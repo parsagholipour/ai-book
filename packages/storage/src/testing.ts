@@ -1,4 +1,4 @@
-import { validateObjectKey, type ObjectStore, type ObjectMetadata, type StoredObject, type PutOptions } from "./store.js";
+import { validateObjectKey, type LeadingBytes, type ObjectStore, type ObjectMetadata, type StoredObject, type PutOptions } from "./store.js";
 /** Explicit in-memory test double; never selected by environment or production code. */
 export class MemoryObjectStore implements ObjectStore {
   readonly objects = new Map<string, Buffer>();
@@ -14,6 +14,11 @@ export class MemoryObjectStore implements ObjectStore {
     await this.put(key,data,options); return true;
   }
   async get(key: string): Promise<Buffer | null> { const bytes = this.objects.get(validateObjectKey(key)); return bytes ? Buffer.from(bytes) : null; }
+  async getLeadingBytes(key: string, maxBytes: number): Promise<LeadingBytes | null> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error(`Invalid byte count: ${maxBytes}`);
+    const bytes = this.objects.get(validateObjectKey(key));
+    return bytes ? { bytes: Buffer.from(bytes.subarray(0, maxBytes)), size: bytes.length } : null;
+  }
   async head(key: string): Promise<ObjectMetadata | null> { return this.metadata.get(validateObjectKey(key)) ?? null; }
   async list(prefix: string): Promise<StoredObject[]> {
     return [...this.objects.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, bytes]) => ({ key, size: bytes.length, ...this.metadata.get(key) })).sort((a,b)=>a.key.localeCompare(b.key));

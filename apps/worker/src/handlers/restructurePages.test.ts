@@ -66,7 +66,7 @@ describe("restructurePages", () => {
     expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
     expect(mocks.revertStructuralPageChange).not.toHaveBeenCalled();
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", undefined, {
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
       contentRevision: 7,
       requireContentRevisionMatch: true
     });
@@ -94,7 +94,7 @@ describe("restructurePages", () => {
     expect(mocks.applyStructuralPageChange).not.toHaveBeenCalled();
     expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", undefined, {
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
       contentRevision: 7,
       requireContentRevisionMatch: true
     });
@@ -150,7 +150,7 @@ describe("restructurePages", () => {
 
     expect(mocks.applyStructuralPageChange).not.toHaveBeenCalled();
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", undefined, {
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
       contentRevision: 7,
       requireContentRevisionMatch: true
     });
@@ -287,7 +287,7 @@ describe("restructurePages", () => {
     expect(mocks.refundSkippedEditOperation).not.toHaveBeenCalled();
     expect(mocks.applyStructuralPageChange).not.toHaveBeenCalled();
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(2);
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-2", undefined, {
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-2", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
       contentRevision: 8,
       requireContentRevisionMatch: true
     });

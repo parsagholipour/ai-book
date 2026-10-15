@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
+import '../../auth/presentation/verify_email_banner.dart';
 import '../domain/billing_models.dart';
 import '../domain/credit_purchase_quote.dart';
 import 'billing_controller.dart';
@@ -11,6 +12,7 @@ import 'billing_offer_checkout.dart';
 import 'billing_offer_content.dart';
 import 'billing_plan_tiles.dart';
 import 'billing_product_option.dart';
+import 'billing_shared_parts.dart';
 import 'billing_tier_style.dart';
 
 /// Browsing leads with plans; a blocked action leads with the pack that covers
@@ -56,9 +58,7 @@ class _BillingOffersState extends State<BillingOffers> {
   ScrollController? _scrollController;
 
   bool _isCurrent(MobileBillingProduct product) =>
-      product.isSubscription &&
-      (product.sku == widget.state.billing?.plan?.productSku ||
-          billingTierForSku(product.sku) == widget.state.billing?.planTier);
+      isHeldPlan(product, widget.state.billing);
 
   void _chooseMode(bool monthly) {
     AppHaptics.selection();
@@ -79,7 +79,10 @@ class _BillingOffersState extends State<BillingOffers> {
     final state = widget.state;
     final billing = state.billing;
     final plans =
-        billing?.products.where((p) => p.isSubscription).toList() ?? [];
+        billing?.products
+            .where((p) => p.isSubscription && (p.offered || _isCurrent(p)))
+            .toList() ??
+        [];
     plans.sort(
       (a, b) => planTierOrder
           .indexOf(billingTierForSku(a.sku))
@@ -130,6 +133,9 @@ class _BillingOffersState extends State<BillingOffers> {
         : BillingPlanValue.empty;
 
     final storeDown = !state.loading && !state.storeAvailable;
+    final forSale = options.where((p) => !_isCurrent(p)).toList();
+    final unpriced = state.unpricedAmong(forSale);
+    final planChange = monthly ? billingPlanChangeLine(context, billing) : null;
     final loadFailed = !state.loading && billing == null && state.error != null;
     // A failed load already says why in the list; saying it again in the
     // checkout bar would be the same sentence twice.
@@ -159,6 +165,15 @@ class _BillingOffersState extends State<BillingOffers> {
                     message: widget.message,
                     onClose: widget.onClose,
                   ),
+                  // Where credits are what is being asked for — a shortfall,
+                  // or the one-time packs — free ones waiting on the reader's
+                  // email come first. Buying stays below for anyone who
+                  // would rather pay.
+                  if (widget.creditsNeeded != null || !monthly)
+                    VerifyEmailCreditsLead(
+                      billing: billing,
+                      padding: const EdgeInsets.only(top: AppSpacing.md),
+                    ),
                   const SizedBox(height: AppSpacing.md),
                   SizedBox(
                     width: double.infinity,
@@ -189,16 +204,26 @@ class _BillingOffersState extends State<BillingOffers> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  if (storeDown) ...[
-                    // The reason every price below is greyed out, said before
-                    // the prices rather than under them. The checkout bar's
-                    // button is the retry.
-                    const AppInlineNotice(
-                      tone: AppTone.warning,
-                      icon: Icons.cloud_off_outlined,
-                      title: 'Google Play is unavailable',
+                  if (storeDown || unpriced.isNotEmpty) ...[
+                    // The reason the prices below are greyed out, said before
+                    // the prices rather than under them, with the retry.
+                    BillingStorePricesNotice(
+                      storeDown: storeDown,
+                      allUnpriced: unpriced.length == forSale.length,
+                      onRetry: busy ? null : widget.onRetry,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                  if (planChange != null) ...[
+                    // A downgrade Play deferred: the plan below still says
+                    // "Your plan", and the one chosen has not started yet.
+                    AppInlineNotice(
+                      key: const ValueKey('paywall-plan-change'),
+                      tone: AppTone.info,
+                      icon: Icons.event_repeat_outlined,
+                      title: 'Plan change scheduled',
                       message:
-                          'Purchases are temporarily unavailable. Your current credits and books are still here.',
+                          '$planChange. You keep ${billing!.plan!.label} until then.',
                     ),
                     const SizedBox(height: AppSpacing.sm),
                   ],
@@ -232,6 +257,7 @@ class _BillingOffersState extends State<BillingOffers> {
                         selected: selected?.sku == product.sku,
                         isCurrent: _isCurrent(product),
                         detailed: monthly,
+                        creditCosts: billing?.creditCosts,
                         bestValue: monthly && product.sku == value.bestValueSku,
                         savingsPercent: monthly
                             ? value.savingsFor(product.sku)
@@ -283,7 +309,7 @@ class _BillingOffersState extends State<BillingOffers> {
                             ? 'More credits for less upfront'
                             : 'Writing more than one book?',
                         message: quote.betterPlan != null
-                            ? '${billingPlanName(quote.betterPlan!)} includes ${formatCredits(quote.betterPlan!.creditAmount)} credits for ${quote.betterPlanPriceLabel} per month. Renews monthly.'
+                            ? '${billingPlanName(quote.betterPlan!)} includes ${formatCredits(quote.betterPlan!.creditsPerGrant)} credits every month for ${quote.betterPlanPriceLabel} per ${quote.betterPlan!.periodNoun}. ${quote.betterPlan!.renewsLabel}.'
                             : 'Get credits every month, Word exports, and manuscript import with a plan.',
                         actionLabel: 'Compare monthly plans',
                         onAction: busy ? null : _showPlans,

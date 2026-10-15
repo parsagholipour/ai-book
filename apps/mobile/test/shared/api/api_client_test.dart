@@ -464,7 +464,15 @@ void main() {
         'Bearer access-token-1',
       );
 
-      await tester.pump(const Duration(seconds: 3));
+      // Due in two seconds, but never re-read sooner than `minHeaderRenewal`
+      // (a refresh loop otherwise, on a clock the client cannot correct) —
+      // which is still well inside the token's 47.
+      await tester.pump(minHeaderRenewal - const Duration(seconds: 2));
+      expect(
+        container.read(apiAuthHeadersProvider).value?['Authorization'],
+        'Bearer access-token-1',
+      );
+      await tester.pump(const Duration(seconds: 2));
       await tester.pump();
       expect(container.read(apiAuthHeadersProvider).value, {
         'Authorization': 'Bearer access-token',

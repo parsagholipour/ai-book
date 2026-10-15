@@ -16,6 +16,7 @@ export * from "./pageOrdering.ts";
 export * from "./pageRestructureRevert.ts";
 export * from "./pageRestructureCompensation.ts";
 export * from "./researchLinks.ts";
+export * from "./bookMatter.ts";
 export * from "./storyState.ts";
 /**
  * Semantic retrieval, split by arm. Re-exported **by name** rather than with

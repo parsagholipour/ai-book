@@ -2,8 +2,10 @@ import {
   compilePolicyPayload,
   compilePublicationDedupeKey,
   COVER_PURCHASE,
+  COVER_RETYPESET,
   includeCoverForSource,
   jsonRecord,
+  type BookMatter,
   type CompilePublicationPolicy
 } from "@book-maker/core";
 import { prisma, type Prisma } from "@book-maker/db";
@@ -12,8 +14,8 @@ import { hasOpenProjectWork } from "./editOperations.js";
 import { jsonInputValue } from "./support.js";
 
 /**
- * One change to how a finished book is presented — its cover, its title or
- * both — in one transaction: a revision bump to EDITING, an undispatched
+ * One change to how a finished book is presented — its cover, its title, its
+ * byline and matter pages, or several — in one transaction: a revision bump to EDITING, an undispatched
  * presentation-only compile (the book's quality verdict stays) and, for a drawn
  * cover, a revision-owned cover row. The compile stands down while the cover is
  * open, and the cover's completion — or its failure, which never fails the book
@@ -52,8 +54,11 @@ export type CoverChange = {
   coverArtSource?: "ai" | "design";
   /** The COVER row to install in the same commit (an upload). */
   asset?: { path: string; metadata: Record<string, unknown> };
-  /** Queue a revision-owned cover job (a drawn cover). */
-  drawCover?: { attemptId?: string; ledgerEntryId?: string | null; purchase: boolean };
+  /**
+   * Queue a revision-owned cover job (a drawn cover). `retypeset` sets the
+   * cover's words again over the picture it wears and never draws (`COVER_RETYPESET`).
+   */
+  drawCover?: { attemptId?: string; ledgerEntryId?: string | null; purchase: boolean; retypeset?: boolean };
   /**
    * A new title, written to every copy a reader can see it in the same commit:
    * the project row (the app, the cover typesetting, file names, shares) and
@@ -63,6 +68,10 @@ export type CoverChange = {
   title?: string;
   /** Merged onto the project's `mediaSettings` in the same commit. */
   mediaSettingsPatch?: Record<string, unknown>;
+  /** The byline, on the project row the compile and the cover both read. `null` clears it. */
+  authorName?: string | null;
+  /** The book's whole matter, replacing its copy (`Project.bookMatter`). */
+  bookMatter?: BookMatter;
 };
 
 export type CommittedCoverChange = {
@@ -90,7 +99,7 @@ export async function commitCoverChange(
   });
   if (!project?.currentPlanId) throw COVER_CHANGE_REFUSALS.publishFirst();
   const openOperations = await tx.bookEditOperation.count({ where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } } });
-  if (openOperations > 0 || (await hasOpenProjectWork(projectId))) throw COVER_CHANGE_REFUSALS.busy();
+  if (openOperations > 0 || (await hasOpenProjectWork(projectId, tx))) throw COVER_CHANGE_REFUSALS.busy();
   if (!COVER_CHANGE_SETTLED_STATUSES.has(project.status)) throw COVER_CHANGE_REFUSALS.notSettled();
   const fallbackStatus = project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE";
   const planId = project.currentPlanId;
@@ -118,6 +127,8 @@ export async function commitCoverChange(
       status: "EDITING",
       contentRevision: { increment: 1 },
       ...(change.title !== undefined ? { title: change.title } : {}),
+      ...(change.authorName !== undefined ? { authorName: change.authorName } : {}),
+      ...(change.bookMatter !== undefined ? { bookMatter: jsonInputValue(change.bookMatter) } : {}),
       ...(settingsPatch ? { mediaSettings: jsonInputValue({ ...jsonRecord(project.mediaSettings), ...settingsPatch }) } : {})
     },
     select: { contentRevision: true }
@@ -182,6 +193,7 @@ export async function commitCoverChange(
       // A cover the reader bought on its own: this job's attempt is the
       // purchase, and the worker settles it off this flag (`COVER_PURCHASE`).
       ...(change.drawCover.purchase ? { [COVER_PURCHASE]: true } : {}),
+      ...(change.drawCover.retypeset ? { [COVER_RETYPESET]: true } : {}),
       ...(ledgerEntryId ? { billingLedgerEntryId: ledgerEntryId } : {})
     },
     transaction: tx,

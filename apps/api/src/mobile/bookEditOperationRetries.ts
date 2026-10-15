@@ -7,6 +7,8 @@ import { settledStatusBeforeEdit } from "./editProjectStatus.js";
 import { isValidGenerationRetryToken } from "./generationRetryQuote.js";
 import { hasCompetingOpenBookEditOperation, retryPlanRevisionOperation } from "./planRevisionRetries.js";
 import { fingerprintGenerationRequest, isPrismaUniqueConflict, jsonRecord } from "./support.js";
+import { aiWorkKindForMediaSettings, assertAiCapacity } from "./aiCapacity.js";
+import { booksInProgressRefusal, startsLongLaneWork, type BooksInProgressRefusal } from "./booksInProgress.js";
 
 type RetryOptions = {
   userId: string;
@@ -21,7 +23,9 @@ type RetryOptions = {
 type RetryResult =
   | { kind: "queued"; operation: MobileBookEditOperationRecord }
   | { kind: "not_found" }
-  | { kind: "conflict"; reason: string; terminal: boolean };
+  | { kind: "conflict"; reason: string; terminal: boolean }
+  /** The retry would take the long lane past this account's share of it; nothing was charged. */
+  | { kind: "books_in_progress"; refusal: BooksInProgressRefusal };
 
 /** Routes a confirmed operation retry to the implementation for its kind. */
 export async function retryBookEditOperation(options: RetryOptions): Promise<RetryResult> {
@@ -130,7 +134,7 @@ async function retryPageRewriteOperation(options: RetryOptions): Promise<RetryRe
 
   const project = await prisma.project.findFirst({
     where: { id: operation.projectId, userId: options.userId },
-    select: { currentPlanId: true, status: true }
+    select: { currentPlanId: true, status: true, mediaSettings: true }
   });
   if (!project || project.currentPlanId !== planId) {
     return {
@@ -154,6 +158,10 @@ async function retryPageRewriteOperation(options: RetryOptions): Promise<RetryRe
     };
   }
 
+  // A reader's paid retry is a new start: the spend breaker answers it before
+  // anything is charged, and the route maps its refusal.
+  await assertAiCapacity(options.userId, aiWorkKindForMediaSettings(project.mediaSettings));
+
   const { billingLedgerEntryId: _previousLedgerEntryId, ...originalRequest } = payload;
   const retryPayload = {
     ...originalRequest,
@@ -161,6 +169,13 @@ async function retryPageRewriteOperation(options: RetryOptions): Promise<RetryRe
     retryOfGenerationJobId: operation.generationJobId,
     [PRE_EDIT_PROJECT_STATUS]: settledStatusBeforeEdit(project.status)
   };
+  // A rewrite of a book's worth of pages takes the long lane, so its retry is a
+  // books-in-progress door (`booksInProgress.ts`): after the breaker, before the
+  // charge, and classified from the very payload it is about to enqueue.
+  if (startsLongLaneWork([{ type: "APPLY_BOOK_EDIT", payload: retryPayload }])) {
+    const refusal = await booksInProgressRefusal(options.userId, { exceptProjectIds: [operation.projectId] });
+    if (refusal) return { kind: "books_in_progress", refusal };
+  }
 
   const started = await startGenerationAttempt({
     userId: options.userId,

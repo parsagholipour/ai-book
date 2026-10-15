@@ -161,6 +161,9 @@ simply never see the row, and you must arrange its own failure settlement — se
 - `JOB_PAGE_REWRITE_SCOPE` in `packages/core/src/jobScope.ts` — `Record<GenerationJobType,
   PageRewriteScope>`, so a new type must say whether an open row of it can still rewrite a page
   before anything compiles.
+- `JOB_LANES` in `packages/core/src/jobLanes.ts` — `Record<GenerationJobType, …>`, so a new type
+  must say which worker lane it waits in (long or interactive, and whether it starts or continues
+  long work) before anything compiles. Both enqueue sides route by it; see `apps/worker/CLAUDE.md`.
 
 **Nothing catches (all of these are `Record<string, …>`, a `Set<string>`, or SQL):**
 - A missing `case` in `processJob.ts` — runtime `Unknown worker job: <name>`, the job fails and

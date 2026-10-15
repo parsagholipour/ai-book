@@ -151,7 +151,7 @@ describe("GeneratedPlansView", () => {
     const markup = view({ expandedPlanId: "plan-1", detail });
 
     expect(markup).toContain('id="generated-plan-detail-plan-1"');
-    expect(markup).toContain("Charged");
+    expect(markup).toContain("Earned, net of Google");
     expect(markup).toContain("Refunded");
     expect(markup).toContain("Provider cost");
     expect(markup).toContain("Margin");

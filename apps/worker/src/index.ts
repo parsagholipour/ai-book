@@ -1,7 +1,14 @@
 import { startSourceProcessing } from "./runtime/sourceProcessing.js";
-import { Worker } from "bullmq";
 import { tmpdir } from "node:os";
-import { browserPoolStatus, closeSharedBrowser } from "@book-maker/core";
+import {
+  browserPoolStatus,
+  closeSharedBrowser,
+  enforceProductionConfig,
+  laneJobForSweep,
+  ProductionConfigError,
+  unkeyedRoutedProviderMessage,
+  workerLaneConcurrency
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { reconcileGenerationAttemptRefunds } from "@book-maker/db/billing";
 import { objectStore } from "@book-maker/storage";
@@ -12,8 +19,25 @@ import {
 import { config } from "./runtime/config.js";
 import { startExportTempCleanup } from "./runtime/exportTempCleanup.js";
 import { reconcileLostQueueDeliveries } from "./runtime/lostDeliveries.js";
-import { BOOK_QUEUE_NAME, connection, queue } from "./runtime/queue.js";
+import { allLaneQueues, closeLaneQueues, connection } from "./runtime/queue.js";
+import { startLaneWorkers } from "./runtime/laneWorkers.js";
+import { startWorkerHeartbeat } from "./runtime/workerHeartbeat.js";
 import { processWorkerJob } from "./processJob.js";
+import { savedRoutingProvidersWithoutCredentials } from "./providers/generationTextRouting.js";
+
+// Production refuses to start without its public origin (stored asset URLs are
+// built from it) and every provider key the default model routing can select
+// (packages/core/src/productionConfig.ts). Every missing setting at once.
+try {
+  enforceProductionConfig(config, "worker", {
+    warn: (issue) => console.warn(issue.message),
+    mockAi: (message) => console.error(message)
+  });
+} catch (error) {
+  if (!(error instanceof ProductionConfigError)) throw error;
+  console.error(error.message);
+  process.exit(1);
+}
 
 // Every job here ends in a put to the private bucket, so a worker that cannot
 // reach it would claim jobs only to fail them. Refuse before the first claim —
@@ -26,11 +50,38 @@ try {
   process.exit(1);
 }
 
+// A saved Quality-tab route outlives a removed key, and its calls fail here.
+void savedRoutingProvidersWithoutCredentials()
+  .then((gaps) => {
+    for (const gap of gaps) console.warn(unkeyedRoutedProviderMessage(gap));
+  })
+  .catch((error) => {
+    console.warn("Could not check the saved model routing for providers without a key", error);
+  });
+
 const sourceProcessing = startSourceProcessing();
-const worker = new Worker(BOOK_QUEUE_NAME, processWorkerJob, {
+
+const laneConcurrency = workerLaneConcurrency(config);
+const laneWorkers = startLaneWorkers({
   connection,
-  concurrency: Math.max(config.MAX_PARALLEL_PAGE_JOBS, config.MAX_PARALLEL_IMAGE_JOBS)
+  processor: processWorkerJob,
+  concurrency: laneConcurrency
 });
+// Each lane's proof of life for the API's readiness probe and alert sweep
+// (`runtime/workerHeartbeat.ts`): a timer on this event loop, so a wedged
+// process stops vouching for itself as surely as a dead one.
+const heartbeat = startWorkerHeartbeat({
+  store: connection,
+  lanes: laneWorkers.workers.map(({ lane, queueName, worker, running }) => ({
+    lane,
+    queueName,
+    concurrency: laneConcurrency[lane],
+    isRunning: () => worker.isRunning(),
+    running
+  }))
+});
+// A lost-delivery sweep must find a row's job in whichever lane holds it.
+const bullLookupAcrossLanes = { getJob: (id: string) => laneJobForSweep(allLaneQueues, id) };
 
 // The stranded sweep runs on a slower cadence than the dispatch sweep: it is a
 // safety net for a worker that died between finishing the last page and
@@ -49,7 +100,7 @@ const queueReconcileTimer = setInterval(() => {
     void reconcileStrandedGeneration().catch((error) => {
       console.error("Stranded generation reconciliation failed", error);
     });
-    void reconcileLostQueueDeliveries(queue).catch((error) => {
+    void reconcileLostQueueDeliveries(bullLookupAcrossLanes).catch((error) => {
       console.error("Lost queue delivery reconciliation failed", error);
     });
   }
@@ -64,7 +115,7 @@ void reconcileGenerationAttemptRefunds().catch((error) => {
 void reconcileStrandedGeneration().catch((error) => {
   console.error("Initial stranded generation reconciliation failed", error);
 });
-void reconcileLostQueueDeliveries(queue).catch((error) => {
+void reconcileLostQueueDeliveries(bullLookupAcrossLanes).catch((error) => {
   console.error("Initial lost queue delivery reconciliation failed", error);
 });
 
@@ -77,13 +128,19 @@ const exportTempCleanup = startExportTempCleanup({
 });
 void exportTempCleanup.runNow();
 
-worker.on("ready", () => {
-  console.log(`Book worker ready on queue "${BOOK_QUEUE_NAME}"`);
-});
-
-worker.on("failed", (job, error) => {
-  console.error(`Job ${job?.id ?? "unknown"} failed`, error);
-});
+for (const { lane, worker } of laneWorkers.workers) {
+  worker.on("ready", () => {
+    console.log(`Book worker ready on queue "${worker.name}" (${lane} lane)`);
+  });
+  worker.on("failed", (job, error) => {
+    console.error(`Job ${job?.id ?? "unknown"} failed`, error);
+  });
+  // Where a delivery that lost its lock says so ("Missing lock for job …" when
+  // it tries to finish) — the case `deliveryGuard.ts` defers its copy for.
+  worker.on("error", (error) => {
+    console.error(`Book worker error on queue "${worker.name}"`, error);
+  });
+}
 
 /**
  * SIGHUP belongs here with the other two. Puppeteer's own signal handlers are
@@ -115,7 +172,11 @@ async function shutdown() {
   // rather than running on into the disconnects below.
   await exportTempCleanup.stop();
   await sourceProcessing.stop();
-  await worker.close();
+  await laneWorkers.close();
+  // After the drain: a worker finishing its last job is alive and still says
+  // so. The keys then expire on their own rather than being deleted, so a
+  // restart that is back within ninety seconds never reads as an outage.
+  heartbeat.stop();
   // After the worker, so no render is mid-flight; before the database, because
   // a pooled Chromium outlives the job that opened it and would otherwise keep
   // the process alive.
@@ -127,7 +188,7 @@ async function shutdown() {
   if (stranded.length > 0) {
     console.error("Chromium processes survived shutdown", stranded);
   }
-  await queue.close();
+  await closeLaneQueues();
   connection.disconnect();
   await prisma.$disconnect();
 }

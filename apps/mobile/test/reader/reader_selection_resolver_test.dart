@@ -39,6 +39,18 @@ class LocatorOnlyRepository implements ReaderRepository {
   }) => throw UnimplementedError();
 
   @override
+  Future<void> discardExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {}
+
+  @override
+  Future<CachedExport?> storedExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async => null;
+
+  @override
   Future<ReaderState> loadState(String projectId) async => const ReaderState();
 
   @override

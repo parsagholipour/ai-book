@@ -1,18 +1,42 @@
 import { z } from "zod";
+import { xml2js, type Element } from "xml-js";
+import { withoutDocxCompilerCredit } from "../docxBookMatter.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { generateJsonWithRetry } from "../generation/generateJsonWithRetry.js";
 import { bookPlanSchema, type BookPlan } from "../schemas/book.js";
 import {
   decodeUtf8,
+  DOCUMENT_METADATA_MAX_BYTES,
+  DocumentArchive,
   DocumentTextError,
   docxXmlToText,
-  loadZip,
   normalizeExtractedText,
-  orderedEpubChapterPaths,
-  readDocxDocumentXml,
   stripHtml,
   stripRtf
 } from "./documentText.js";
+import {
+  firstMarkupElement,
+  markupElements,
+  replaceMarkupElements,
+  replaceTags,
+  type MarkupElementKind
+} from "./markupScan.js";
+import {
+  MANUSCRIPT_PAGE_BREAK,
+  separateManuscriptMatter,
+  type ManuscriptMatter,
+  type ManuscriptMatterKind,
+  type MatterSourceSection
+} from "./manuscriptMatter.js";
+import { matterHeadingKind } from "./manuscriptMatterWords.js";
+import { isManuscriptHeadingLine } from "./manuscriptHeadingLines.js";
+import { elementBody, extractEpubSections, HEADING_ELEMENTS } from "./manuscriptEpub.js";
+
+export {
+  bookMatterForImportedManuscript,
+  type ManuscriptMatter,
+  type ManuscriptMatterKind
+} from "./manuscriptMatter.js";
 
 /**
  * Full-length manuscript import ("bring your own book"). Unlike creation-chat
@@ -28,6 +52,19 @@ export const MANUSCRIPT_MAX_BYTES = 20 * 1024 * 1024;
 export const MANUSCRIPT_MAX_CHARS = 1_500_000;
 /** Hard page ceiling; page size grows to fit longer texts under it. */
 export const MANUSCRIPT_MAX_PAGES = 600;
+/**
+ * How much text extraction reads before answering that a manuscript is too
+ * long: twice the ceiling, because headings and matter pages leave the text
+ * only after it, and no book is half headings. Answered at the end instead, a
+ * 19 MB text file of short lines held the API's one thread for 7.4 s first.
+ */
+const MANUSCRIPT_EXTRACT_MAX_CHARS = 2 * MANUSCRIPT_MAX_CHARS;
+/**
+ * Paragraphs a Word manuscript may hold. Six hundred pages run to tens of
+ * thousands even with an empty paragraph between every line; millions of
+ * empty ones are all per-paragraph work and no book.
+ */
+const DOCX_MAX_PARAGRAPHS = 250_000;
 
 /** Preferred page length; pages split at paragraph boundaries near this size. */
 const PAGE_TARGET_CHARS = 1900;
@@ -57,6 +94,13 @@ export class ManuscriptImportError extends Error {
   }
 }
 
+function manuscriptTooLong(): ManuscriptImportError {
+  return new ManuscriptImportError(
+    "IMPORT_TOO_LARGE",
+    "That manuscript is longer than what can be imported right now (about 250,000 words). Try splitting it into volumes."
+  );
+}
+
 /** One structural unit of the source document (EPUB spine item, heading-run, …). */
 export type ImportSection = {
   title: string | null;
@@ -65,8 +109,20 @@ export type ImportSection = {
 
 export type ParsedManuscript = {
   sections: ImportSection[];
-  /** A heading the document opens with and writes nothing under, ahead of its chapters. */
+  /**
+   * The book's title as the manuscript names it: its own title page, a heading
+   * it opens with and writes nothing under, or an EPUB's package title.
+   */
   bookTitle?: string | undefined;
+  /**
+   * What the manuscript's own title page, © page, dedication and About the
+   * Author said — taken out of `sections`, so the compiler's matter pages print
+   * each of them once (`manuscriptMatter.ts`). The import route lays it over
+   * the author profile (`bookMatterForImportedManuscript`).
+   */
+  matter?: ManuscriptMatter | undefined;
+  /** The matter pages taken out of the text, in book order. */
+  matterRemoved?: ManuscriptMatterKind[] | undefined;
   /** Concatenated normalized text of every section. */
   text: string;
   charCount: number;
@@ -86,10 +142,17 @@ export type SegmentedManuscript = {
 /**
  * Extracts the manuscript's full text as ordered sections. Never truncates;
  * rejects texts beyond MANUSCRIPT_MAX_CHARS instead.
+ *
+ * The manuscript's own front and back matter comes out of the sections into
+ * `matter` (`separateManuscriptMatter`). `knownAuthors` are names an
+ * unlabelled line of its title page may be — the byline the book will print —
+ * and the import route and the worker pass the same one, so both read the
+ * same pages out of the same bytes.
  */
 export async function parseManuscript(input: {
   data: Buffer;
   format: ManuscriptImportFormat;
+  knownAuthors?: readonly string[] | undefined;
 }): Promise<ParsedManuscript> {
   if (input.data.length === 0) {
     throw new ManuscriptImportError("EMPTY_FILE", "That file is empty, so there is nothing to import.");
@@ -101,9 +164,9 @@ export async function parseManuscript(input: {
     );
   }
 
-  let sections: ImportSection[];
+  let extracted: ExtractedManuscript;
   try {
-    sections = await extractManuscriptSections(input.data, input.format);
+    extracted = await extractManuscriptSections(input.data, input.format);
   } catch (error) {
     if (error instanceof DocumentTextError) {
       throw new ManuscriptImportError(error.code, error.message);
@@ -111,60 +174,73 @@ export async function parseManuscript(input: {
     throw error;
   }
 
-  sections = sections.map((section) => ({ title: section.title, text: normalizeExtractedText(section.text) }));
+  const normalized = extracted.sections.map((section) => ({ ...section, text: normalizeExtractedText(section.text) }));
+  if (normalized.reduce((length, section) => length + section.text.length, 0) > MANUSCRIPT_EXTRACT_MAX_CHARS) {
+    throw manuscriptTooLong();
+  }
   // "# The Rooftop Orchard" over "## Chapter One" is the book's own name, and a
   // section with no text is dropped below — so the title went with it and the
   // book was named after its file ("garden"), 2026-10-02.
-  const leading = sections[0];
-  const bookTitle = sections.length > 1 && leading && !leading.text ? leading.title?.trim() || undefined : undefined;
-  sections = sections.filter((section) => section.text.length > 0);
+  const leading = normalized[0];
+  const leadingTitle =
+    normalized.length > 1 && leading && !leading.text.replaceAll(MANUSCRIPT_PAGE_BREAK, "").trim()
+      ? leading.title?.trim() || undefined
+      : undefined;
+  const separated = separateManuscriptMatter(normalized, {
+    markdown: input.format === "text",
+    knownAuthors: [...(input.knownAuthors ?? []), ...extracted.creators]
+  });
+  const bookTitle = separated.bookTitle ?? leadingTitle ?? extracted.title;
+  const sections = separated.sections
+    .map((section) => ({ title: section.title, text: normalizeExtractedText(section.text) }))
+    .filter((section) => section.text.length > 0);
   const text = sections.map((section) => section.text).join("\n\n");
   if (!text) {
     throw new ManuscriptImportError("UNREADABLE_FILE", "No readable text was found in that file.");
   }
   if (text.length > MANUSCRIPT_MAX_CHARS) {
-    throw new ManuscriptImportError(
-      "IMPORT_TOO_LARGE",
-      "That manuscript is longer than what can be imported right now (about 250,000 words). Try splitting it into volumes."
-    );
+    throw manuscriptTooLong();
   }
 
   return {
     sections,
     ...(bookTitle ? { bookTitle } : {}),
+    ...(Object.keys(separated.matter).length > 0 ? { matter: separated.matter } : {}),
+    ...(separated.removed.length > 0 ? { matterRemoved: separated.removed } : {}),
     text,
     charCount: text.length,
     wordCount: countWords(text)
   };
 }
 
-async function extractManuscriptSections(
-  data: Buffer,
-  format: ManuscriptImportFormat
-): Promise<ImportSection[]> {
+/** The sections, and what the document's metadata says about the book. */
+type ExtractedManuscript = { sections: MatterSourceSection[]; title?: string | undefined; creators: string[] };
+
+async function extractManuscriptSections(data: Buffer, format: ManuscriptImportFormat): Promise<ExtractedManuscript> {
   if (format === "docx") {
     return extractDocxSections(data);
   }
   if (format === "epub") {
-    return extractEpubSections(data);
+    return extractEpubSections(data, MANUSCRIPT_EXTRACT_MAX_CHARS);
   }
   const raw = decodeUtf8(data);
   if (format === "html") {
-    return sectionsFromHtml(raw);
+    return { sections: sectionsFromHtml(raw), creators: [] };
   }
   if (format === "rtf") {
-    return sectionsFromHeadingLines(stripRtf(raw));
+    // A page or section break is where the author ended a page (`manuscriptMatter.ts`).
+    return { sections: sectionsFromHeadingLines(stripRtf(raw.replace(/\\(?:page|sect)\b ?/g, `\\par ${MANUSCRIPT_PAGE_BREAK}\\par `))), creators: [] };
   }
-  return sectionsFromText(raw);
+  return { sections: sectionsFromText(raw.replace(/\f/g, MANUSCRIPT_PAGE_BREAK)), creators: [] };
 }
 
 /** DOCX: Heading1/Heading2/Title paragraph styles start a new section. */
-async function extractDocxSections(data: Buffer): Promise<ImportSection[]> {
-  const documentXml = await readDocxDocumentXml(data);
-  // Match whole paragraphs: self-closing <w:p/> or <w:p>…</w:p>. The closing
-  // tag must be matched explicitly — inner self-closing tags like <w:pStyle/>
-  // would otherwise end the match early.
-  const paragraphs = documentXml.match(/<w:p(?:\s[^>]*)?\/>|<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g) ?? [];
+async function extractDocxSections(data: Buffer): Promise<ExtractedManuscript> {
+  const archive = await DocumentArchive.open(data, "Word document");
+  const documentXml = await archive.text("word/document.xml");
+  if (!documentXml) {
+    throw new DocumentTextError("UNREADABLE_FILE", "That Word document could not be read.");
+  }
   const sections: ImportSection[] = [];
   let current: { title: string | null; parts: string[] } = { title: null, parts: [] };
 
@@ -175,62 +251,129 @@ async function extractDocxSections(data: Buffer): Promise<ImportSection[]> {
     }
   };
 
-  for (const paragraph of paragraphs) {
-    const style = paragraph.match(/<w:pStyle\b[^>]*w:val="([^"]+)"/)?.[1] ?? "";
-    const text = docxXmlToText(paragraph).trim();
-    if (/^(heading[12]|title)$/i.test(style) && text) {
+  let paragraphs = 0;
+  let extracted = 0;
+  // Match whole paragraphs: self-closing <w:p/> or <w:p>…</w:p>. The closing
+  // tag must be matched explicitly — inner self-closing tags like <w:pStyle/>
+  // would otherwise end the match early.
+  for (const element of markupElements(documentXml, DOCX_PARAGRAPH)) {
+    paragraphs += 1;
+    if (paragraphs > DOCX_MAX_PARAGRAPHS) throw manuscriptTooLong();
+    const paragraph = documentXml.slice(element.start, element.end);
+    // A paragraph that closes itself and holds no other tag has no text and no style.
+    if (element.kind === 0 && !paragraph.includes("<", 1)) continue;
+    const style = paragraph.match(/<w:pStyle\b[^<>]*w:val="([^"]+)"/)?.[1] ?? "";
+    const text = docxXmlToText(markDocxPageBreaks(paragraph)).trim();
+    extracted += text.length;
+    if (extracted > MANUSCRIPT_EXTRACT_MAX_CHARS) throw manuscriptTooLong();
+    const heading = text.replaceAll(MANUSCRIPT_PAGE_BREAK, " ").trim();
+    if (/^(heading[12]|title)$/i.test(style) && heading) {
+      // A break before this heading closes the preceding page, even when the
+      // break lives in the heading's paragraph properties or its first run.
+      if (text.startsWith(MANUSCRIPT_PAGE_BREAK) && (current.title || current.parts.length > 0)) {
+        current.parts.push(MANUSCRIPT_PAGE_BREAK);
+      }
       flush();
-      current = { title: text, parts: [] };
+      // A title page that is only the title still ends where the author broke the page.
+      current = { title: heading, parts: text.endsWith(MANUSCRIPT_PAGE_BREAK) ? [MANUSCRIPT_PAGE_BREAK] : [] };
     } else if (text) {
       current.parts.push(text);
     }
   }
   flush();
 
-  if (sections.length === 0) {
+  return {
     // No styled headings at all — fall back to plain text heading detection.
-    return sectionsFromHeadingLines(docxXmlToText(documentXml));
-  }
-  return sections;
+    sections: sections.length > 0
+      ? sections
+      : sectionsFromHeadingLines(docxXmlToText(replaceMarkupElements(documentXml, DOCX_PARAGRAPH, (_, paragraph) => markDocxPageBreaks(paragraph)))),
+    creators: await docxCreatorNames(archive)
+  };
 }
 
-/** Boilerplate EPUB sections (cover, TOC, copyright…) that are not chapters. */
-const EPUB_BOILERPLATE_TITLE =
-  /^(cover|title ?page|copyright|contents|table of contents|toc|nav|landmarks|dedication|acknowledg|about the (author|publisher)|colophon|imprint)/i;
+/** Creator metadata corroborates a printed byline; it never supplies one by itself. */
+async function docxCreatorNames(archive: DocumentArchive): Promise<string[]> {
+  try {
+    const xml = await archive.text("docProps/core.xml", DOCUMENT_METADATA_MAX_BYTES);
+    if (!xml) return [];
+    const document = xml2js(xml, { compact: false }) as Element;
+    const root = document.elements?.find((element) => element.type === "element");
+    if (!root || !xmlElementInNamespace(root, "coreProperties", "http://schemas.openxmlformats.org/package/2006/metadata/core-properties")) {
+      return [];
+    }
+    return (root.elements ?? [])
+      .filter((element) => xmlElementInNamespace(element, "creator", "http://purl.org/dc/elements/1.1/", root))
+      .filter((element) => !element.elements?.some((child) => child.type === "element"))
+      .map((element) => (element.elements ?? [])
+        .map((child) => child.type === "text" ? String(child.text ?? "") : child.cdata ?? "")
+        .join("").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+  } catch (error) {
+    // Optional metadata must not prevent importing a readable manuscript,
+    // but metadata past the inflate limit refuses the upload like any other file.
+    if (error instanceof DocumentTextError) throw error;
+    return [];
+  }
+}
 
-/** EPUB: one section per spine item, in reading order. */
-async function extractEpubSections(data: Buffer): Promise<ImportSection[]> {
-  const zip = await loadZip(data, "EPUB");
-  const paths = await orderedEpubChapterPaths(zip);
-  const sections: ImportSection[] = [];
-  for (const path of paths) {
-    const html = await zip.file(path)?.async("string");
-    if (!html) {
-      continue;
-    }
-    const title =
-      html.match(/<h[12]\b[^>]*>([\s\S]*?)<\/h[12]>/i)?.[1]?.replace(/<[^>]+>/g, "").trim() ||
-      html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ||
-      null;
-    const text = normalizeExtractedText(stripHtml(html));
-    if (!text) {
-      continue;
-    }
-    if (title && EPUB_BOILERPLATE_TITLE.test(title) && text.length < 1500) {
-      continue;
-    }
-    sections.push({ title, text });
-  }
-  if (sections.length === 0) {
-    throw new DocumentTextError("UNREADABLE_FILE", "No readable chapters were found in that EPUB.");
-  }
-  return sections;
+function xmlElementInNamespace(element: Element, localName: string, namespace: string, parent?: Element): boolean {
+  if (element.type !== "element" || !element.name) return false;
+  const parts = element.name.split(":");
+  const attribute = parts.length === 1 ? "xmlns" : `xmlns:${parts[0]}`;
+  return parts.at(-1) === localName && (element.attributes?.[attribute] ?? parent?.attributes?.[attribute]) === namespace;
+}
+
+/**
+ * `<w:p(?:\s[^>]*)?\/>|<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>`: a paragraph that
+ * closes itself, or one read to its `</w:p>`. As a regex, an unclosed `<w:p>`
+ * read to the end of the document from every paragraph after it.
+ */
+const DOCX_PARAGRAPH: readonly MarkupElementKind[] = [
+  { open: /<w:p(?:\/|\s[^>]*)?>/g, accepts: (tag) => tag[0].endsWith("/>") },
+  { open: /<w:p(?:\s[^>]*)?>/g, close: "</w:p>" }
+];
+const DOCX_PAGE_BREAK_TEXT = `<w:t>${MANUSCRIPT_PAGE_BREAK}</w:t>`;
+
+/** `<w:pPr\b[\s\S]*?<\/w:pPr>` and `<w:sectPr\b[\s\S]*?<\/w:sectPr>`. */
+const PARAGRAPH_PROPERTIES: readonly MarkupElementKind[] = [{ open: /<w:pPr\b/g, close: "</w:pPr>" }];
+const SECTION_PROPERTIES: readonly MarkupElementKind[] = [{ open: /<w:sectPr\b/g, close: "</w:sectPr>" }];
+
+/** The first such element in the text, whole. */
+function firstWordElement(xml: string, kinds: readonly MarkupElementKind[]): string | undefined {
+  const element = firstMarkupElement(xml, kinds);
+  return element && xml.slice(element.start, element.end);
+}
+
+/**
+ * One paragraph without compiler credit and with hard page breaks written into
+ * its text: a page break inside it (Ctrl+Enter), "page break before" and a section
+ * break that starts a new page. Word's `lastRenderedPageBreak` is where the text happened to wrap,
+ * never the author's, and is not one.
+ *
+ * An attribute test reads a tag up to the next `<` as well as the next `>`.
+ * Well-formed XML has no `<` inside a tag, so the answer is the same, and a
+ * tag that lacks the attribute no longer reads on to the paragraph's end.
+ */
+function markDocxPageBreaks(paragraph: string): string {
+  const credited = withoutDocxCompilerCredit(paragraph);
+  const marked = credited.includes("<w:br")
+    ? replaceTags(credited, /<w:br\b[^>]*>/g, (tag) => (tag.endsWith("/>") && /\bw:type="page"/.test(tag) ? DOCX_PAGE_BREAK_TEXT : tag))
+    : credited;
+  const properties = (marked.includes("<w:pPr") && firstWordElement(marked, PARAGRAPH_PROPERTIES)) || "";
+  const before = /<w:pageBreakBefore\b(?![^<>]*w:val="(?:0|false|off)")[^<>]*>/.test(properties);
+  const section = firstWordElement(properties, SECTION_PROPERTIES);
+  const after = section !== undefined && !/<w:type\b[^<>]*w:val="continuous"/.test(section);
+  if ((!before && !after) || !marked.endsWith("</w:p>")) return marked;
+  const open = marked.match(/^<w:p(?:\s[^>]*)?>/)?.[0] ?? "";
+  const inner = marked.slice(open.length, -"</w:p>".length);
+  return `${open}${before ? DOCX_PAGE_BREAK_TEXT : ""}${inner}${after ? DOCX_PAGE_BREAK_TEXT : ""}</w:p>`;
 }
 
 function sectionsFromHtml(html: string): ImportSection[] {
-  const marked = html.replace(
-    /<h([12])\b[^>]*>([\s\S]*?)<\/h\1>/gi,
-    (_, _level: string, inner: string) => `\n\u0001${inner.replace(/<[^>]+>/g, " ").trim()}\u0001\n`
+  const marked = replaceMarkupElements(
+    html,
+    HEADING_ELEMENTS,
+    (element) => `\n\u0001${replaceTags(elementBody(html, element), /<[^>]+>/g, " ").trim()}\u0001\n`
   );
   return sectionsFromMarkedText(stripHtml(marked));
 }
@@ -245,17 +388,28 @@ function sectionsFromText(raw: string): ImportSection[] {
   return sectionsFromHeadingLines(normalized);
 }
 
-const HEADING_LINE =
-  /^(?:(?:chapter|part|book|prologue|epilogue|interlude|act)\b[^\n]{0,80}|[IVXLC]+\.\s[^\n]{0,80}|\d{1,3}\.\s[^\n]{0,80})$/i;
-
-/** Splits plain text into sections at lines that read like chapter headings. */
+/**
+ * Splits plain text into sections at lines that read like chapter headings,
+ * or that are exactly a front- or back-matter heading ("About the Author",
+ * "Dedication", "Acknowledgments") — so that matter is a section of its own,
+ * as it is in every other format, rather than the end of the last chapter.
+ */
 function sectionsFromHeadingLines(text: string): ImportSection[] {
   const normalized = normalizeExtractedText(text);
+  // Every line is read as a possible heading, so the length check comes first.
+  if (normalized.length > MANUSCRIPT_EXTRACT_MAX_CHARS) throw manuscriptTooLong();
   const lines = normalized.split("\n");
   const marked = lines
     .map((line) => {
-      const trimmed = line.trim();
-      return HEADING_LINE.test(trimmed) && trimmed.length <= 90 ? `\u0001${trimmed}\u0001` : line;
+      const trimmed = line.replaceAll(MANUSCRIPT_PAGE_BREAK, " ").trim();
+      const matter = trimmed.length <= 60 ? matterHeadingKind(trimmed) : null;
+      const heading = isManuscriptHeadingLine(trimmed) || (matter !== null && matter !== "title");
+      if (!heading) return line;
+      // Form feeds can share the heading's line; keep their page boundaries
+      // outside the heading marker so its preceding/following section owns them.
+      const before = line.trimStart().startsWith(MANUSCRIPT_PAGE_BREAK) ? `${MANUSCRIPT_PAGE_BREAK}\n` : "";
+      const after = line.trimEnd().endsWith(MANUSCRIPT_PAGE_BREAK) ? `\n${MANUSCRIPT_PAGE_BREAK}` : "";
+      return `${before}\u0001${trimmed}\u0001${after}`;
     })
     .join("\n");
   return sectionsFromMarkedText(marked);
@@ -268,7 +422,7 @@ function sectionsFromMarkedText(marked: string): ImportSection[] {
   let parts: string[] = [];
   const flush = () => {
     const text = parts.join("\n").trim();
-    if (text || title) {
+    if (text.replaceAll(MANUSCRIPT_PAGE_BREAK, "").trim() || title) {
       sections.push({ title, text });
     }
   };

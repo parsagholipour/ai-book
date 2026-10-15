@@ -166,6 +166,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                     value,
                     widget.presets.bookType,
                     billing?.imageQuota,
+                    bookTypeChoice: widget.presets.bookTypeChoice,
                   ),
                 ),
               ),

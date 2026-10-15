@@ -23,6 +23,8 @@ class FakePushMessaging implements PushMessaging {
   bool offered = false;
   int permissionRequests = 0;
   int settingsOpened = 0;
+  int tokensDeleted = 0;
+  int notificationsCleared = 0;
   final _opened = StreamController<String>.broadcast();
   final _refreshes = StreamController<String>.broadcast();
 
@@ -51,6 +53,16 @@ class FakePushMessaging implements PushMessaging {
 
   @override
   Future<String?> token() async => currentToken;
+
+  /// Like Firebase: the next [token] is a new one (`fcm-token-2`, then 3...).
+  @override
+  Future<void> deleteToken() async {
+    tokensDeleted += 1;
+    currentToken = 'fcm-token-${tokensDeleted + 1}';
+  }
+
+  @override
+  Future<void> clearBookNotifications() async => notificationsCleared += 1;
 
   @override
   String get platform => 'android';

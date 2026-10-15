@@ -9,6 +9,10 @@ x-logging: &logging
 x-app: &app
   image: ${APP_IMAGE:?Set APP_IMAGE to the app image digest}
   restart: unless-stopped
+  # The whole PRODUCTION_ENV reaches the api and worker through this file,
+  # including every setting productionConfig.ts requires (Play, RTDN, SMTP,
+  # provider keys). The list below only overrides or guards; a required setting
+  # does not need a line here to be forwarded.
   env_file:
     - .env
   environment:
@@ -18,8 +22,8 @@ x-app: &app
     API_HOST: 0.0.0.0
     API_PORT: "4001"
     TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
-    PUBLIC_API_URL: ${PUBLIC_API_URL:?Set the externally reachable API origin}
-    WEB_PASSWORD: ${WEB_PASSWORD:?Set an operator password}
+    PUBLIC_API_URL: ${PUBLIC_API_URL:?Set PUBLIC_API_URL to the public https origin}
+    WEB_PASSWORD: ${WEB_PASSWORD:?Set WEB_PASSWORD to 16+ random characters}
     BOOK_STORAGE_DIR: /app/storage/books
     IMAGE_STORAGE_DIR: /app/storage/images
     VOICE_STORAGE_DIR: /app/storage/voice
@@ -29,13 +33,27 @@ x-app: &app
     S3_REGION: ${S3_REGION:-eu-central-1}
     MAX_PARALLEL_PAGE_JOBS: ${MAX_PARALLEL_PAGE_JOBS:-1}
     MAX_PARALLEL_IMAGE_JOBS: ${MAX_PARALLEL_IMAGE_JOBS:-1}
+    # The worker's two lanes (packages/core/src/jobLanes.ts): one long job (a
+    # book run, its pages and pictures, a generation's compile, narration, an
+    # import) beside two interactive ones (plans, edits, assists, portraits,
+    # short compiles). Sized for the worker's 2 GiB: docs/deployment.md, "Job lanes".
+    WORKER_LONG_CONCURRENCY: ${WORKER_LONG_CONCURRENCY:-1}
+    WORKER_INTERACTIVE_CONCURRENCY: ${WORKER_INTERACTIVE_CONCURRENCY:-2}
   # Containers only keep disposable render scratch; durable files are in S3.
   logging: *logging
 
 services:
+  # Memory: docs/deployment.md, "Memory budget and swap". PostgreSQL and Redis
+  # are the last things the kernel may kill, and neither has a memory limit:
+  # a killed backend makes the postmaster reset every connection (in-flight
+  # billing transactions roll back, running jobs fail), and a cgroup limit
+  # would only move that kill inside the container. They are bounded by their
+  # own settings instead: Postgres runs the image defaults (shared_buffers
+  # 128 MB) and the api and worker pools open at most ten connections each.
   postgres:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    oom_score_adj: -900
     environment:
       POSTGRES_DB: bookmaker
       POSTGRES_USER: bookmaker
@@ -49,10 +67,16 @@ services:
       retries: 20
     logging: *logging
 
+  # BullMQ requires noeviction: an evicted key is a lost or corrupted job. The
+  # ceiling turns unbounded growth into refused writes (an OOM error in the api
+  # and worker logs) rather than memory taken from the host by a process the
+  # kernel will not kill. BullMQ keeps every completed and failed job, so the
+  # deploy prints used_memory against it.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: [redis-server, --appendonly, "yes", --maxmemory-policy, noeviction]
+    command: [redis-server, --appendonly, "yes", --maxmemory, 256mb, --maxmemory-policy, noeviction]
+    oom_score_adj: -900
     volumes:
       - redis-data:/data
     healthcheck:
@@ -70,11 +94,25 @@ services:
       postgres:
         condition: service_healthy
 
+  # A hard ceiling with no swap (memswap_limit = mem_limit): an overrun is
+  # killed inside this container, never paged onto the disk PostgreSQL writes
+  # to. The heap flag keeps V8 collecting (or failing with "heap out of
+  # memory") well under it; the rest is Buffers and an operator's inline PDF
+  # render, whose Chromium is a child process in this same cgroup. On the
+  # command line, not NODE_OPTIONS, because each service needs its own value
+  # and a per-service `environment:` would replace x-app's whole map.
   api:
     <<: *app
     working_dir: /app/apps/api
-    command: [node, --import, tsx, src/server.ts]
+    command: [node, --max-old-space-size=512, --import, tsx, src/server.ts]
+    mem_limit: 1g
+    memswap_limit: 1g
     stop_grace_period: 60s
+    # Liveness, never readiness: /api/health touches nothing. This health gates
+    # the deploy's `up --wait` and web's start, so a deep check here would fail
+    # a release over a long queue or a worker that has not beaten yet. The deep
+    # /api/ready is for the uptime monitor and the API's alert sweep
+    # (docs/deployment.md, "Monitoring and alerts").
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:4001/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -89,19 +127,30 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # The biggest consumer: its pooled Chromium (a browser plus up to two
+  # renderers, browserPool.ts) lives in this cgroup beside a 768 MiB heap, so
+  # about 1.2 GiB of the ceiling is off-heap. Same no-swap rule as the api.
+  # oom_score_adj makes it the kernel's first choice if the whole host still
+  # runs out: a killed job is redelivered, a killed Postgres backend is not.
+  # Both job lanes run inside this container and share the 2 GiB; a second
+  # worker container is a new row in the budget, not a copy of this one.
   worker:
     <<: *app
     working_dir: /app/apps/worker
-    command: [node, --import, tsx, src/index.ts]
+    command: [node, --max-old-space-size=768, --import, tsx, src/index.ts]
+    mem_limit: 2g
+    memswap_limit: 2g
+    oom_score_adj: 500
     stop_grace_period: 5m
     shm_size: 256mb
+    # Healthy only while both lanes' heartbeat keys were last written by this
+    # container: a worker whose interactive Worker failed to start would leave
+    # plans and edits queued, and a key the drained worker left behind lives
+    # 90 s, long enough to pass a new one's `up --wait` without the host check.
+    # Bash over /dev/tcp, ~10 ms of CPU a run; the Node + bullmq check before it
+    # cost ~0.55 s every 15 s. See scripts/worker-healthcheck.sh.
     healthcheck:
-      test:
-        - CMD
-        - node
-        - --input-type=module
-        - -e
-        - "import { Queue } from 'bullmq'; const q = new Queue('book-maker', { connection: { host: 'redis', port: 6379 } }); try { process.exitCode = (await q.getWorkers()).length > 0 ? 0 : 1; } finally { await q.close(); }"
+      test: [CMD, bash, /app/scripts/worker-healthcheck.sh]
       interval: 15s
       timeout: 10s
       start_period: 60s

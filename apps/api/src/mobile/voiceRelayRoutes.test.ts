@@ -23,7 +23,8 @@ const path = "/api/mobile/voice/calls/call-1/socket";
 const claim = {
   lease: { callId: "call-1", userId: "user-a", leaseId: "lease-1" },
   session: { token: "provider-secret", model: "model", expiresAt: "2026-10-04T12:30:00Z" },
-  deadline: new Date()
+  deadline: new Date(),
+  projectId: null
 };
 beforeEach(async () => {
   vi.clearAllMocks();

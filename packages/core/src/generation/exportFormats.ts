@@ -29,9 +29,9 @@ type ExportFormatSpec = {
   /** The reader-facing name of the format, for filenames and labels. */
   readonly label: string;
   /**
-   * True when the download is gated on an active plan. The subscription gates
-   * the *format*; the per-book export unlock gates the *book*, and applies to
-   * every format alike.
+   * True when the download is gated on an active plan. A gate on the *format*,
+   * never a charge: every format of a finished book downloads free, and the
+   * Word file is simply one only a plan's reader may take.
    */
   readonly requiresSubscription: boolean;
 };

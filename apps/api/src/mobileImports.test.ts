@@ -10,6 +10,7 @@ import {
   hasActiveSubscriptionEntitlement
 } from "@book-maker/db/billing";
 import { saveCreationAttachmentFile } from "./attachmentStorage.js";
+import { wordBomb } from "./testing/zipBomb.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "./queue.js";
 import { mobileImportRoutes } from "./mobileImports.js";
 
@@ -17,7 +18,9 @@ const mockPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
   bookImport: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   project: { create: vi.fn(), findFirst: vi.fn() },
-  generationJob: { findUnique: vi.fn() }
+  generationJob: { findUnique: vi.fn(), findMany: vi.fn(async (): Promise<unknown[]> => []) },
+  authorProfile: { findUnique: vi.fn(async () => null) },
+  safetySettingsRevision: { findFirst: vi.fn() }
 }));
 
 vi.mock("@book-maker/db", () => ({
@@ -124,6 +127,7 @@ function inject(app: Awaited<ReturnType<typeof buildApp>>, options: {
 describe("mobile import routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPrisma.safetySettingsRevision.findFirst.mockResolvedValue({ copyrightRestrictionsEnabled: false });
     tempAttachmentDir = mkdtempSync(join(tmpdir(), "book-maker-import-"));
     process.env = { ...originalEnv, ATTACHMENT_STORAGE_DIR: tempAttachmentDir };
     vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);
@@ -249,6 +253,148 @@ describe("mobile import routes", () => {
       })
     );
     expect(vi.mocked(dispatchGenerationJob)).toHaveBeenCalledWith("job-import");
+    expect(vi.mocked(enqueueGenerationJob).mock.calls[0]![0].payload.knownAuthors).toEqual([]);
+    await app.close();
+  });
+
+  it("freezes the profile names used by the upload parse in the durable import job", async () => {
+    mockPrisma.authorProfile.findUnique.mockResolvedValueOnce({
+      penName: "Jane Doe",
+      includeAboutAuthor: false
+    } as never);
+    const app = await buildApp();
+    const response = await inject(app, {
+      payload: Buffer.from("# The Long Winter\n\nJane Doe\n\n# Chapter One\n\nBody text.")
+    });
+
+    expect(response.statusCode).toBe(201);
+    const project = mockPrisma.project.create.mock.calls[0]![0].data;
+    expect(project.authorName).toBe("Jane Doe");
+    expect(mockPrisma.bookImport.create.mock.calls[0]![0].data.stats.sectionCount).toBe(1);
+    const enqueue = vi.mocked(enqueueGenerationJob).mock.calls[0]![0];
+    expect(enqueue.transaction).toBe(mockPrisma);
+    expect(enqueue.payload.knownAuthors).toEqual(["Jane Doe"]);
+    await app.close();
+  });
+
+  it("prints the manuscript's own matter once: its words over the profile's, its pages without them", async () => {
+    mockPrisma.authorProfile.findUnique.mockResolvedValueOnce({
+      userId: "user-a",
+      penName: "Jane Doe",
+      bio: "PROFILE BIO: Jane writes thrillers.",
+      website: "janedoe.com",
+      copyrightHolder: null,
+      imprint: "Self Press",
+      allRightsReserved: false,
+      includeAboutAuthor: true
+    } as never);
+    const manuscript = [
+      "# The Long Winter",
+      "Jane Doe",
+      "## Copyright",
+      "Copyright © 2019 Jane Doe. All rights reserved.",
+      "No part of this book may be reproduced without written permission.",
+      "## Dedication",
+      "For my mother.",
+      "## Chapter 1: The Storm",
+      "The rain hammered the windows of the old house all night long.",
+      "## Chapter 2: The Calm",
+      "Morning arrived quietly, as if apologizing for the night before.",
+      "## About the Author",
+      "Jane Doe lives in Maine with two dogs."
+    ].join("\n\n");
+    const app = await buildApp();
+
+    const response = await inject(app, { url: importUrl({ filename: "winter.md" }), payload: Buffer.from(manuscript, "utf8") });
+
+    expect(response.statusCode).toBe(201);
+    const data = mockPrisma.project.create.mock.calls[0]![0].data;
+    // The title page's unlabelled name is the profile's pen name, so the page is the compiler's to print.
+    expect(data.title).toBe("The Long Winter");
+    expect(data.authorName).toBe("Jane Doe");
+    expect(data.bookMatter).toEqual({
+      dedication: "For my mother.",
+      aboutAuthor: "Jane Doe lives in Maine with two dogs.",
+      authorWebsite: "janedoe.com",
+      imprint: "Self Press",
+      allRightsReserved: true,
+      copyrightYear: "2019"
+    });
+    // Only the two chapters are left to import.
+    const stats = mockPrisma.bookImport.create.mock.calls[0]![0].data.stats as { sectionCount: number };
+    expect(stats.sectionCount).toBe(2);
+    await app.close();
+  });
+
+  it("copies the profile as before when the manuscript brings no matter of its own", async () => {
+    mockPrisma.authorProfile.findUnique.mockResolvedValueOnce({
+      userId: "user-a",
+      penName: "Jane Doe",
+      bio: "Jane writes thrillers.",
+      website: null,
+      copyrightHolder: null,
+      imprint: null,
+      allRightsReserved: false,
+      includeAboutAuthor: true
+    } as never);
+    const app = await buildApp();
+
+    const response = await inject(app);
+
+    expect(response.statusCode).toBe(201);
+    const data = mockPrisma.project.create.mock.calls[0]![0].data;
+    expect(data.authorName).toBe("Jane Doe");
+    expect(data.bookMatter).toEqual({ aboutAuthor: "Jane writes thrillers." });
+    expect(data.subtitle).toBeUndefined();
+    await app.close();
+  });
+
+  it.each([
+    ["aboutAuthor", "# Chapter One\n\nBody text.\n\n# About the Author\n\nThis author writes about CSAM."],
+    ["dedication", "# Dedication\n\nFor CSAM.\n\n# Chapter One\n\nBody text."],
+    ["authorName", "# A Memoir\n\nBy CSAM\n\n# Chapter One\n\nBody text."]
+  ])("refuses extracted %s before storing bytes, claiming quota or creating rows", async (field, manuscript) => {
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+    vi.mocked(consumeManuscriptImportUseTx).mockResolvedValue({ allowed: true, used: 1, limit: 1, periodKey: "2026-08", resetsAt: new Date("2026-09-01") });
+    const app = await buildApp();
+
+    const response = await inject(app, { payload: Buffer.from(manuscript) });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toMatchObject({ code: "CONTENT_RESTRICTED", reason: "critical_illegal_harm", fields: [field] });
+    expect(saveCreationAttachmentFile).not.toHaveBeenCalled();
+    expect(consumeManuscriptImportUseTx).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("screens copied profile matter with the current operator copyright rule", async () => {
+    mockPrisma.authorProfile.findUnique.mockResolvedValueOnce({
+      bio: "Copy the entire copyrighted book without permission.", includeAboutAuthor: true
+    } as never);
+    mockPrisma.safetySettingsRevision.findFirst.mockResolvedValue({ copyrightRestrictionsEnabled: true });
+    const app = await buildApp();
+
+    const response = await inject(app);
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toMatchObject({ code: "COPYRIGHT_RESTRICTED", reason: "copyright", fields: ["aboutAuthor"] });
+    expect(saveCreationAttachmentFile).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("allows printed memorials and history biographies, screening fields independently", async () => {
+    const app = await buildApp();
+    const response = await inject(app, { payload: Buffer.from(
+      "# Dedication\n\nTo the victims of the terrorist attack, who taught us how to grieve.\n\n# Chapter One\n\nBody text.\n\n# About the Author\n\nOma escaped on a fake passport in 1939."
+    ) });
+
+    expect(response.statusCode).toBe(201);
+    expect(mockPrisma.project.create.mock.calls[0]![0].data.bookMatter).toMatchObject({
+      aboutAuthor: "Oma escaped on a fake passport in 1939."
+    });
     await app.close();
   });
 
@@ -296,6 +442,38 @@ describe("mobile import routes", () => {
     expect(response.statusCode).toBe(422);
     expect(mockPrisma.project.create).not.toHaveBeenCalled();
     expect(vi.mocked(saveCreationAttachmentFile)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses a free account's import while another of its books holds the long lane, before storing or claiming", async () => {
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([
+      { projectId: "project-other", type: "GENERATE_BOOK", payload: { planId: "plan-x" } }
+    ]);
+    const app = await buildApp();
+    const response = await inject(app);
+    expect(response.statusCode).toBe(429);
+    expect(response.json().error.code).toBe("BOOKS_IN_PROGRESS_LIMIT");
+    expect(vi.mocked(saveCreationAttachmentFile)).not.toHaveBeenCalled();
+    expect(vi.mocked(getImportQuota)).not.toHaveBeenCalled();
+    expect(vi.mocked(consumeManuscriptImportUseTx)).not.toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("answers a Word file that inflates past the limit with the too-large refusal, before any claim", async () => {
+    // 1 GiB of document.xml behind a header claiming 1,000 bytes. A 306 KB file
+    // like it crashed the API with "heap limit" before inflating was counted.
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+    const app = await buildApp();
+    const response = await inject(app, { url: importUrl({ filename: "book.docx" }), payload: wordBomb(1024) });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toEqual({
+      error: { code: "FILE_TOO_LARGE", message: "That Word document is too large to read. Split it into smaller files and try again." }
+    });
+    expect(vi.mocked(saveCreationAttachmentFile)).not.toHaveBeenCalled();
+    expect(vi.mocked(consumeManuscriptImportUseTx)).not.toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
     await app.close();
   });
 

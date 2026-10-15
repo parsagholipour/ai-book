@@ -41,8 +41,6 @@ class _DownloadApi implements ApiClient {
 const export = MobileExportAvailability(
   format: 'pdf',
   available: true,
-  unlocked: true,
-  creditsRequired: 0,
   downloadUrl: '/api/mobile/projects/project-1/export/pdf',
   filename: 'book.pdf',
   contentType: 'application/pdf',
@@ -150,8 +148,6 @@ void main() {
         export: const MobileExportAvailability(
           format: 'pdf',
           available: true,
-          unlocked: true,
-          creditsRequired: 0,
           downloadUrl: '/export/pdf',
           filename: 'book.pdf',
           contentType: 'application/pdf',

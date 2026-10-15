@@ -1,4 +1,4 @@
-import { InMemoryRateLimiter } from "./rateLimit.js";
+import { clientNetworkRateLimitKey, InMemoryRateLimiter } from "./rateLimit.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AppConfig } from "@book-maker/core";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -6,15 +6,21 @@ import { z } from "zod";
 import {
   allowsMobileBearer,
   authenticateMobileBearer,
-  markOperatorRequest,
-  pathFromRequestUrl,
+  ensureDefaultLocalAdminUser,
+  routedRequestPath,
   sendMobileAuthFailure
 } from "./requestAuth.js";
 import { readBearerToken } from "./mobileAuth.js";
 import { hasCurrentLegalAcceptance } from "./legalAcceptance.js";
+import { advanceOperatorEpoch, currentOperatorEpoch } from "./operatorSessions.js";
 
 const AUTH_COOKIE_NAME = "ai_book_maker_session";
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+/**
+ * A console cookie lives a week. It was 30 days, and it could not be revoked:
+ * the shortest life that does not have the owner signing in daily, now that
+ * "sign out everywhere" (`operatorSessions.ts`) can end it sooner.
+ */
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 const loginBodySchema = z.object({
   password: z.string().min(1).max(1000)
@@ -33,7 +39,7 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
     const enabled = isAuthEnabled(config);
     return {
       enabled,
-      authenticated: !enabled || isAuthenticatedRequest(request, config)
+      authenticated: !enabled || (await isAuthenticatedRequest(request, config))
     };
   });
 
@@ -43,8 +49,9 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
     }
 
     // One shared password guards pricing, moderation and every admin read on
-    // the public hostname, so guesses are counted per address.
-    const limit = operatorLoginLimiter.hit(`operator-login:${request.ip}`);
+    // the public hostname, so guesses are counted per address — per /64 for
+    // IPv6, which a client rotates inside for free.
+    const limit = operatorLoginLimiter.hit(clientNetworkRateLimitKey(request, "operator-login"));
     if (!limit.allowed) {
       return reply
         .code(429)
@@ -60,7 +67,13 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
       return reply.code(401).send({ error: "Invalid password" });
     }
 
-    setAuthCookie(reply, createSessionToken(config.WEB_PASSWORD), config.NODE_ENV === "production");
+    // A cookie names the generation it was issued under; with none readable
+    // it could not be verified anyway, so none is issued.
+    const epoch = await currentOperatorEpoch();
+    if (epoch === null) {
+      return reply.code(503).send({ error: "Sign-in is unavailable right now. Try again shortly." });
+    }
+    setAuthCookie(reply, createSessionToken(config.WEB_PASSWORD, epoch), config.NODE_ENV === "production");
     return { enabled: true, authenticated: true };
   });
 
@@ -70,17 +83,53 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
     return { enabled, authenticated: !enabled };
   });
 
+  // Signs every browser out, this one included, by moving the generation every
+  // cookie is checked against. `/api/auth/*` is outside the protected set, so
+  // the cookie is checked here; SameSite=Lax keeps a cross-site POST from
+  // carrying it.
+  app.post("/api/auth/logout-everywhere", async (request, reply): Promise<AuthStatus | FastifyReply> => {
+    if (!isAuthEnabled(config)) {
+      return { enabled: false, authenticated: true };
+    }
+    if (!(await isAuthenticatedRequest(request, config))) {
+      return reply.code(401).send({ error: "Password required" });
+    }
+    await advanceOperatorEpoch();
+    clearAuthCookie(reply);
+    return { enabled: true, authenticated: false };
+  });
+
+  // Console and /docs responses may not be framed by another site, sniffed
+  // into another type, or leak their URL as a referrer. Not the mobile
+  // surface (JSON and image bytes the app fetches) and not `/s/`, whose share
+  // pages set their own headers. SAMEORIGIN rather than DENY: the console's
+  // PDF preview frames an export URL of this same origin. In production nginx
+  // serves the console's own HTML and needs the same headers there.
+  app.addHook("onSend", async (request, reply, payload) => {
+    const path = routedRequestPath(request);
+    if (path !== null && (allowsMobileBearer(path) || path === "/s" || path.startsWith("/s/"))) {
+      return payload;
+    }
+    for (const [name, value] of CONSOLE_SECURITY_HEADERS) {
+      if (!reply.hasHeader(name)) reply.header(name, value);
+    }
+    return payload;
+  });
+
   app.addHook("onRequest", async (request, reply) => {
     // This one socket route authenticates a call-scoped ticket in its own
     // preValidation hook. The flag is server-owned route metadata, not input.
     if (request.routeOptions.config.voiceRelay === true && request.method === "GET" && request.headers.upgrade?.toLowerCase() === "websocket") return;
-    const path = pathFromRequestUrl(request.url);
-    if (!shouldProtectPath(path)) {
+    // The route the router matched, never `request.url`: an encoded
+    // `/%61pi/admin/users` routes to the admin handler (`routedRequestPath`).
+    // A path that would not decode is protected as operator-only.
+    const path = routedRequestPath(request);
+    if (path !== null && !shouldProtectPath(path)) {
       return;
     }
 
-    const operatorAuthenticated = isAuthenticatedRequest(request, config);
-    if (isOperatorOnlyPath(path)) {
+    const operatorAuthenticated = await isAuthenticatedRequest(request, config);
+    if (path === null || isOperatorOnlyPath(path)) {
       if (operatorAuthenticated) {
         // With password auth disabled, a mobile bearer must still reach the
         // handler as a bearer so `requireOperatorActor` can reject it. With
@@ -130,6 +179,15 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
   });
 }
 
+/**
+ * The only place an operator is made. Handlers read `request.operatorAuth` and
+ * never set it — `resolveProjectActor` refuses a request this hook did not
+ * mark — so a request that gets past the hook by any route still is no one.
+ */
+async function markOperatorRequest(request: FastifyRequest): Promise<void> {
+  request.operatorAuth = { userId: await ensureDefaultLocalAdminUser() };
+}
+
 function isAuthEnabled(config: AppConfig): config is AppConfig & { WEB_PASSWORD: string } {
   return Boolean(config.WEB_PASSWORD);
 }
@@ -137,6 +195,8 @@ function isAuthEnabled(config: AppConfig): config is AppConfig & { WEB_PASSWORD:
 function shouldProtectPath(path: string): boolean {
   if (
     path === "/api/health" ||
+    // Readiness for an uptime monitor: terse, cached, no secrets (src/monitoring/readiness.ts).
+    path === "/api/ready" ||
     // Authenticated independently with Google's Pub/Sub OIDC token.
     path === "/api/billing/google-play/rtdn" ||
     path === "/api/mobile/legal" ||
@@ -152,9 +212,13 @@ function shouldProtectPath(path: string): boolean {
 
 /**
  * Existing data stays readable while acceptance is outstanding. Destructive
- * deletion, reporting, subscription management, logout, and call settlement
- * also remain available so the acceptance screen can never trap a user in an
+ * deletion, reporting, subscription management, logout, call settlement and
+ * product analytics also remain available so the acceptance screen can never trap a user in an
  * account or paid/active operation.
+ *
+ * `path` is the matched route pattern (`routedRequestPath`), so the suffix
+ * tests read the route as written — `/api/mobile/voice/calls/:callId/end` —
+ * and no id a client chooses can make a path end in `/end`.
  */
 export function requiresCurrentLegalAcceptance(method: string, path: string): boolean {
   if (!["POST", "PUT", "PATCH"].includes(method.toUpperCase())) {
@@ -166,6 +230,10 @@ export function requiresCurrentLegalAcceptance(method: string, path: string): bo
   if (
     path === "/api/mobile/legal/acceptance" ||
     path === "/api/mobile/account/deletion-request" ||
+    // Product analytics (a paywall view): recording one is not the reader
+    // agreeing to anything, and a 428 here sent a reader who chose "Not now"
+    // straight back to the terms screen from the paywall.
+    path === "/api/mobile/events" ||
     path.startsWith("/api/mobile/billing/") ||
     path.endsWith("/reports") ||
     path.endsWith("/heartbeat") ||
@@ -191,44 +259,67 @@ function isOperatorOnlyPath(path: string): boolean {
   return !allowsMobileBearer(path);
 }
 
-function isAuthenticatedRequest(request: FastifyRequest, config: AppConfig): boolean {
+const CONSOLE_SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
+  ["X-Frame-Options", "SAMEORIGIN"],
+  ["X-Content-Type-Options", "nosniff"],
+  ["Referrer-Policy", "same-origin"]
+];
+
+async function isAuthenticatedRequest(request: FastifyRequest, config: AppConfig): Promise<boolean> {
   if (!isAuthEnabled(config)) {
     return true;
   }
   const token = readCookie(request, AUTH_COOKIE_NAME);
-  return Boolean(token && verifySessionToken(token, config.WEB_PASSWORD));
+  const issuedUnder = token ? verifiedSessionEpoch(token, config.WEB_PASSWORD) : null;
+  if (issuedUnder === null) {
+    return false;
+  }
+  // Only a cookie that already verifies pays for the generation read, and an
+  // unreadable generation refuses it.
+  const current = await currentOperatorEpoch();
+  return current !== null && issuedUnder === current;
 }
 
 function passwordMatches(input: string, expected: string): boolean {
   return timingSafeEqual(hash(input), hash(expected));
 }
 
-function createSessionToken(password: string): string {
+function createSessionToken(password: string, epoch: number): string {
   const payload = Buffer.from(
     JSON.stringify({
-      exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000
+      exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
+      epoch
     })
   ).toString("base64url");
   const signature = signPayload(payload, password);
   return `${payload}.${signature}`;
 }
 
-function verifySessionToken(token: string, password: string): boolean {
+/**
+ * The generation a cookie was issued under, when its signature and expiry
+ * check out; otherwise `null`. A cookie with no generation predates sign-out
+ * everywhere (and the 7-day life) and is refused: the operator signs in once.
+ */
+function verifiedSessionEpoch(token: string, password: string): number | null {
   const [payload, signature, extra] = token.split(".");
   if (!payload || !signature || extra !== undefined) {
-    return false;
+    return null;
   }
 
   const expectedSignature = signPayload(payload, password);
   if (!safeEqual(signature, expectedSignature)) {
-    return false;
+    return null;
   }
 
   try {
-    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { exp?: unknown };
-    return typeof decoded.exp === "number" && decoded.exp > Date.now();
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { exp?: unknown; epoch?: unknown };
+    const now = Date.now();
+    if (typeof decoded.exp !== "number" || decoded.exp <= now || decoded.exp > now + SESSION_MAX_AGE_SECONDS * 1000) {
+      return null;
+    }
+    return typeof decoded.epoch === "number" && Number.isSafeInteger(decoded.epoch) ? decoded.epoch : null;
   } catch {
-    return false;
+    return null;
   }
 }
 

@@ -42,12 +42,37 @@ class FakeReaderRepository implements ReaderRepository {
   final savedAnnotations = <List<ReaderAnnotation>>[];
   final downloadedRevisions = <int>[];
   final clearedProjects = <String>[];
+
+  /// Formats whose cached file was thrown away to be fetched again.
+  final discardedFormats = <String>[];
   Completer<void>? gate;
 
   /// Holds the stored reading position back, so a test can put it after the
   /// document rather than before it. On a warm cache the two are close enough
   /// that either can win.
   Completer<void>? stateGate;
+
+  /// The copy already on this phone, offered when a download cannot reach
+  /// the server. Null is a book never downloaded here.
+  CachedExport? stored;
+  var storedLookups = 0;
+
+  @override
+  Future<CachedExport?> storedExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {
+    storedLookups++;
+    return stored;
+  }
+
+  @override
+  Future<void> discardExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {
+    discardedFormats.add(export.format);
+  }
 
   @override
   Future<CachedExport> ensureExport({
@@ -142,8 +167,6 @@ class FakeReaderRepository implements ReaderRepository {
 
 MobileExportAvailability pdfExport({
   bool available = true,
-  bool unlocked = true,
-  int creditsRequired = 0,
   int revision = 1,
   int byteSize = 100,
   String? readUrl,
@@ -151,8 +174,6 @@ MobileExportAvailability pdfExport({
   return MobileExportAvailability(
     format: 'pdf',
     available: available,
-    unlocked: unlocked,
-    creditsRequired: creditsRequired,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     readUrl: readUrl,
     filename: 'the-race.pdf',
@@ -307,7 +328,6 @@ Future<void> _pump(
           export: export,
           loader: documentLoader,
           status: statusWith(export),
-          onOpenPaywall: () {},
         ),
       ),
     ),

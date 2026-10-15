@@ -3,7 +3,14 @@ import { hitTieredLimit, requireMobileAuth, sendMobileError, sendProjectNotFound
 import { buildMobileCreateProjectInput, createMobileProjectRecord, mobileProjectSummaryInclude } from "../projectRecords.js";
 import { manuscriptSummarySelect } from "../manuscript/manuscriptSerializers.js";
 import { serializeProjectDetail, serializeProjectSummary } from "../projectSummarySerializers.js";
-import { idParamsSchema, mobileAuthError, mobileProjectCreateBodySchema, mobileProjectCreateOpenApiBody } from "../schemas.js";
+import {
+  MOBILE_PRODUCT_PRESETS,
+  idParamsSchema,
+  mobileAuthError,
+  mobileProjectCreateBodySchema,
+  mobileProjectCreateOpenApiBody
+} from "../schemas.js";
+import { sendUltraTierUnavailable, ultraTierRefused } from "../ultraTier.js";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
@@ -35,7 +42,7 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       })) as MobileProjectRecord[];
 
       return {
-        projects: await Promise.all(projects.map((project) => serializeProjectSummary(project, appConfig, auth.user.id)))
+        projects: await Promise.all(projects.map((project) => serializeProjectSummary(project, appConfig)))
       };
     }
   );
@@ -65,6 +72,11 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       if (!(await enforceContentRestrictions(reply, parsed.data.prompt))) {
         return;
       }
+      // A draft at Ultra could never be planned while the operator has it off
+      // (`ultraTier.ts`), so it is not created either.
+      if (ultraTierRefused(MOBILE_PRODUCT_PRESETS[parsed.data.qualityPreset].modelTier)) {
+        return sendUltraTierUnavailable(reply);
+      }
 
       // Character snapshots are only ever minted by the session build, which
       // re-reads the user's own library rows. A client-supplied snapshot here
@@ -84,7 +96,7 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       }
       const project = await createMobileProjectRecord(auth.user.id, buildMobileCreateProjectInput(createInput));
 
-      return reply.code(201).send({ project: await serializeProjectDetail(project, appConfig, auth.user.id) } satisfies MobileProjectCreateResponseDto);
+      return reply.code(201).send({ project: await serializeProjectDetail(project, appConfig) } satisfies MobileProjectCreateResponseDto);
     }
   );
 
@@ -124,7 +136,7 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       if (!project) {
         return sendProjectNotFound(reply);
       }
-      return { project: await serializeProjectDetail(project, appConfig, auth.user.id) };
+      return { project: await serializeProjectDetail(project, appConfig) };
     }
   );
 }

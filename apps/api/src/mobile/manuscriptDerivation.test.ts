@@ -16,6 +16,7 @@ import {
   getChapter,
   getManuscript,
   longProse,
+  patchSettings,
   publish,
   saveChapter,
   seedImportedBook
@@ -59,6 +60,34 @@ async function publishedBook(app: FastifyInstance) {
 }
 
 describe("opening an imported book in the Studio", () => {
+  it.each(["For my mother", "برای مادرم", "Für meine Mutter"])("preserves the imported dedication %s when publishing an unrelated chapter edit", async (dedication) => {
+    const app = await buildMobileApp();
+    const projectId = seedImportedBook(db);
+    const matter = { dedication, aboutAuthor: "Ada writes stories.", copyrightHolder: "Ada" };
+    db.projects[0]!.bookMatter = matter;
+
+    const opened = await getManuscript(app, projectId);
+    expect(opened.statusCode).toBe(200);
+    const { manuscript } = opened.json();
+    expect.soft(manuscript.dedication).toBe(dedication);
+    expect(manuscript.hasUnpublishedChanges).toBe(false);
+    expect((await saveChapter(app, projectId, manuscript.chapters[0], "Updated harbour text.")).statusCode).toBe(200);
+
+    expect((await publish(app, projectId, "request-import-dedication")).statusCode).toBe(200);
+    expect(db.projects[0]!.bookMatter).toEqual(matter);
+  });
+
+  it("allows an author to clear the imported dedication in Studio settings", async () => {
+    const app = await buildMobileApp();
+    const projectId = seedImportedBook(db);
+    db.projects[0]!.bookMatter = { dedication: "For my mother", aboutAuthor: "Ada writes stories." };
+    await getManuscript(app, projectId);
+
+    expect((await patchSettings(app, projectId, { dedication: "" })).statusCode).toBe(200);
+    expect((await publish(app, projectId, "request-clear-import-dedication")).statusCode).toBe(200);
+    expect(db.projects[0]!.bookMatter).toEqual({ aboutAuthor: "Ada writes stories." });
+  });
+
   it("derives a clean working copy from its chapters and pages, carrying a hero illustration as an image line", async () => {
     const app = await buildMobileApp();
     const projectId = seedImportedBook(db);

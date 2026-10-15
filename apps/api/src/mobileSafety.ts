@@ -2,20 +2,20 @@ import { ACCOUNT_DELETION_GRACE_MS, executeAccountDeletion } from "./accountDele
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { objectKey, objectStore } from "@book-maker/storage";
 import { loadConfig } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import { CURRENT_LEGAL_VERSIONS, legalAcceptanceData, legalMetadata } from "./legalAcceptance.js";
 import type { AuthFailure } from "./mobileAuth.js";
 import { stopProjectGenerationJobs } from "./queue.js";
 import {
   authenticateMobileBearer,
-  markOperatorRequest,
+  requireOperatorActor,
   sendMobileAuthFailure,
   type MobileAuthContext,
   type OperatorAuthContext
 } from "./requestAuth.js";
 import { deleteProjectStorage } from "./projectStorage.js";
-import { bookShareSelect, type BookShareRecord } from "./mobile/shares/shareRecords.js";
+import { bookShareSelect } from "./mobile/shares/shareRecords.js";
 import { serializeAdminShare } from "./routes/adminShares.js";
 import { sendProjectNotFound } from "./mobile/httpErrors.js";
 import {
@@ -24,26 +24,21 @@ import {
   sendRateLimitError,
   type RateLimitConfig
 } from "./rateLimit.js";
+import {
+  cleanText,
+  jsonInput,
+  moderationReportBodySchema,
+  moderationReportSelect,
+  serializeModerationReport,
+  stringFromRecord,
+  toReportReason,
+  type ModerationReportRecord
+} from "./moderationReports.js";
+import { registerAiOutputReportRoutes } from "./aiOutputReports.js";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
 const assetReportParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().min(1) });
 const reviewParamsSchema = z.object({ id: z.string().min(1) });
-const reportReasonSchema = z.enum([
-  "offensive",
-  "hate_or_harassment",
-  "sexual_content",
-  "violence_or_self_harm",
-  "child_safety",
-  "deceptive_or_misleading",
-  "privacy_or_copyright",
-  "other"
-]);
-const moderationReportBodySchema = z
-  .object({
-    reason: reportReasonSchema,
-    comment: z.string().trim().max(2000).optional()
-  })
-  .strict();
 const accountDeletionRequestBodySchema = z
   .object({
     reason: z.string().trim().max(2000).optional()
@@ -78,28 +73,6 @@ type SafetyRouteOptions = {
   reportRateLimit?: Partial<RateLimitConfig>;
   accountPrivacyRateLimit?: Partial<RateLimitConfig>;
   projectDeletionRateLimit?: Partial<RateLimitConfig>;
-};
-
-type ModerationReportRecord = {
-  id: string;
-  reporterUserId: string | null;
-  projectId: string | null;
-  imageAssetId: string | null;
-  bookShareId: string | null;
-  targetType: string;
-  reason: string;
-  comment: string | null;
-  status: string;
-  targetSnapshot: unknown;
-  reviewerUserId: string | null;
-  reviewedAt: Date | null;
-  reviewNotes: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  reporter?: { email: string; displayName: string | null } | null;
-  project?: { title: string } | null;
-  imageAsset?: { type: string } | null;
-  bookShare?: BookShareRecord | null;
 };
 
 type AccountDeletionRequestRecord = {
@@ -392,6 +365,10 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     return reply.code(201).send({ report: serializeModerationReport(report) });
   });
 
+  // The creation chat, the plan card, saved-character pictures and Studio
+  // suggestions, on the same limiter and allowance as the reports above.
+  registerAiOutputReportRoutes(fastify, { reportLimiter });
+
   fastify.delete("/api/mobile/projects/:id", async (request, reply) => {
     const auth = await requireMobileAuth(request, reply);
     if (!auth) {
@@ -480,14 +457,17 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
       select: {
         ...moderationReportSelect,
         reporter: { select: { email: true, displayName: true } },
-        project: { select: { title: true } },
+        // The account behind the book, so the operator can suspend it or turn
+        // its sharing off (`accountModeration.ts`); a public report has no reporter.
+        project: { select: { title: true, user: { select: { id: true, email: true } } } },
         imageAsset: { select: { type: true } },
         bookShare: { select: bookShareSelect }
       }
-    })) as ModerationReportRecord[];
+    })) as Array<ModerationReportRecord & { project?: { title: string; user?: { id: string; email: string } | null } | null }>;
     return {
       reports: reports.map((report) => ({
         ...serializeModerationReport(report),
+        owner: report.project?.user ?? null,
         share: report.bookShare ? serializeAdminShare(report.bookShare, appConfig.PUBLIC_API_URL) : null
       }))
     };
@@ -557,24 +537,6 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
   });
 };
 
-const moderationReportSelect = {
-  id: true,
-  reporterUserId: true,
-  projectId: true,
-  imageAssetId: true,
-  bookShareId: true,
-  targetType: true,
-  reason: true,
-  comment: true,
-  status: true,
-  targetSnapshot: true,
-  reviewerUserId: true,
-  reviewedAt: true,
-  reviewNotes: true,
-  createdAt: true,
-  updatedAt: true
-} as const;
-
 const accountDeletionRequestSelect = {
   id: true,
   userId: true,
@@ -601,11 +563,9 @@ async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): 
   return auth;
 }
 
-async function requireOperatorAuth(request: FastifyRequest, _reply: FastifyReply): Promise<OperatorAuthContext | null> {
-  if (request.operatorAuth) {
-    return request.operatorAuth;
-  }
-  return markOperatorRequest(request);
+/** The operator the auth hook established, or a 401/403 already sent (`requireOperatorActor`). */
+async function requireOperatorAuth(request: FastifyRequest, reply: FastifyReply): Promise<OperatorAuthContext | null> {
+  return requireOperatorActor(request, reply);
 }
 
 function hitAuthenticatedLimit(
@@ -624,28 +584,6 @@ function hitAuthenticatedLimit(
   return false;
 }
 
-function serializeModerationReport(report: ModerationReportRecord) {
-  return {
-    id: report.id,
-    reporterUserId: report.reporterUserId,
-    reporterEmail: report.reporter?.email ?? null,
-    projectId: report.projectId,
-    projectTitle: report.project?.title ?? stringFromRecord(report.targetSnapshot, "title") ?? stringFromRecord(report.targetSnapshot, "projectTitle"),
-    imageAssetId: report.imageAssetId,
-    bookShareId: report.bookShareId,
-    targetType: report.targetType.toLowerCase(),
-    reason: report.reason.toLowerCase(),
-    comment: report.comment,
-    status: report.status.toLowerCase(),
-    targetSnapshot: report.targetSnapshot,
-    reviewerUserId: report.reviewerUserId,
-    reviewedAt: report.reviewedAt?.toISOString() ?? null,
-    reviewNotes: report.reviewNotes,
-    createdAt: report.createdAt.toISOString(),
-    updatedAt: report.updatedAt.toISOString()
-  };
-}
-
 function serializeAccountDeletionRequest(request: AccountDeletionRequestRecord) {
   return {
     id: request.id,
@@ -655,10 +593,6 @@ function serializeAccountDeletionRequest(request: AccountDeletionRequestRecord) 
     requestedAt: request.requestedAt.toISOString(),
     completedAt: request.completedAt?.toISOString() ?? null
   };
-}
-
-function toReportReason(reason: z.infer<typeof reportReasonSchema>) {
-  return reason.toUpperCase() as Uppercase<typeof reason>;
 }
 
 function toReportStatus(status: z.infer<typeof reviewBodySchema>["status"]) {
@@ -676,22 +610,4 @@ function sendMobileError(reply: FastifyReply, statusCode: number, code: string, 
       message
     }
   });
-}
-
-function cleanText(value: string | undefined): string | undefined {
-  const trimmed = value?.replace(/\s+/g, " ").trim();
-  return trimmed || undefined;
-}
-
-function jsonInput(value: Record<string, unknown>): Prisma.InputJsonValue {
-  return value as Prisma.InputJsonValue;
-}
-
-function stringFromRecord(value: unknown, key: string): string | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const raw = record[key];
-  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
 }

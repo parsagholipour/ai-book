@@ -35,6 +35,7 @@ mixin _ProjectChatTranscriptView
     MobileProjectDetail? project, {
     int? credits,
     String? resumeProposalId,
+    bool plans,
   });
   Future<void> _retryPendingEcho();
   void _dismissPendingEcho();
@@ -131,6 +132,7 @@ mixin _ProjectChatTranscriptView
                   project,
                   credits: message.insufficientCreditsRequired,
                   resumeProposalId: message.editProposal?.id,
+                  plans: message.asksForPlan,
                 )
               : null,
           onOpenReplanCopy: _replanCopyTargetProjectId(message) == null

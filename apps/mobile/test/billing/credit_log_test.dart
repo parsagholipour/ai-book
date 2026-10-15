@@ -170,6 +170,29 @@ void main() {
       contains('430 credits refunded'),
     );
   });
+
+  testWidgets('a line that moved nothing in total shows no amount', (
+    tester,
+  ) async {
+    const title = 'Refunded purchase settled with 800 monthly credits';
+    final settled = _entry(
+      id: 'settled',
+      addsCredits: true,
+      credits: 0,
+      kind: CreditLogKind.monthly,
+      title: title,
+    );
+    final repository = FakeCreditLogRepository([
+      CreditLogPage(entries: [settled]),
+    ]);
+
+    await tester.pumpWidget(_screen(repository));
+    await tester.pumpAndSettle();
+
+    expect(find.text(title), findsOneWidget);
+    expect(find.text('+0'), findsNothing);
+    expect(creditLogSemanticLabel(settled), isNot(contains('0 credits')));
+  });
 }
 
 Widget _screen(FakeCreditLogRepository repository) {

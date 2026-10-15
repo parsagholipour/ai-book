@@ -1145,6 +1145,92 @@ holds the event loop open and vitest will never exit.
   space is negative, which pins the stack to the top and clips only what runs off the bottom —
   verified pixel-identical to the centred layout for every title that fits. The corpus renders one
   (`title-page-en`), and `pdf.test.ts` renders the absurd one and reads the opening clause back out.
+- **Every book has a title page, and only the book's first sheet resets the page counter.**
+  Until 2026-10-06 a cover *replaced* the title page, so a covered book never named its own title
+  and author inside the file. `formatBookMatter` (`bookMatterPages.ts`) now prints one in every
+  book, then the matter sheet (dedication in the upper third, publication details at the foot —
+  one sheet so a twelve-page picture book grows by two at most), and About the Author as back
+  matter. Behind a cover the title page and the matter sheet are `@page pdf-front`: counted, footer
+  hidden, **no `counter-reset`**, so `printedPageOffset` stays the `1 : 0` the whole page map rests
+  on and needed no version bump; `pdfPageZone` already calls those sheets `front_matter`. A
+  coverless book's title page is still `pdf-title` and still the one reset. The first body page
+  therefore prints "Page 3" on a covered book with a dedication, the convention the Contents always
+  followed. **The two HTML sections end on a blank line** (`furniture` in
+  `compileBookMarkdownWithPageAnchors`): an HTML block runs until one, and the first page joined on
+  a single newline was swallowed into the section as raw text, markdown unrendered and `bp-1`
+  homeless — latent on every coverless book with an author before this, on every book after it.
+  Everything the reader typed is escaped — HTML in the front matter, markdown punctuation in the back
+  (`escapeMarkdownText`), so a bio cannot open a heading, a link or a setext rule. **Not `(` or `[`**:
+  escaped, they become `\(` and `\[`, which are the math pass's own openers, and "Ada (born 1815)"
+  printed "born1815" in math italic in all three formats; escaping `)` and `]` is enough to stop a
+  link. **And the math pass skips the compiler's title page and matter sheet**
+  (`bookMatterSectionEnd`, read by `markdownMath.ts`), so `$x$` in a pen name prints as typed —
+  entities could not do it, because the Word export does not decode them. Image-shaped text in
+  matter stays literal too: PDF, EPUB and stored-image preparation share `bookIllustrationAt`
+  (`bookIllustrationMarkdown.ts`), which skips matter and escaped bangs before resolving assets.
+  About the Author is a markdown `##` so the EPUB gives it a file and the Word export a heading; the
+  empty `<div class="book-about-author">` after it is what `h2:has(+ .book-about-author)` starts a
+  fresh sheet on, because the heading's own id is marked's slug of a translated label.
+  `sourcesOffset` now marks the first back-matter heading, Sources or About the Author, and the
+  story split passes that back-matter slice through the chapter splitter, giving Sources and
+  About the Author separate EPUB files and navigation entries. Combining them hid the biography
+  behind the Sources heading on re-import and let the profile's biography print beside it.
+  **The new matter pages come on top of the paid sheets.** `fitBookPdfPageCount` sizes the type so
+  the whole file has `targetPages` sheets — cover, a coverless title sheet *with a byline*, Contents
+  and Sources included, as they always were; a title page behind a cover, a coverless title page
+  with no byline (that book printed an inline `# Title` before), the matter sheet and About the
+  Author are not. Counted inside it,
+  a ten-page book with a cover, a dedication and a bio set its text near ten points to make room
+  for three pages nobody paid for. `generateBookPdfWithPageMap` adds `bookMatterSheetCount` (read
+  off the markdown, so a plan-less repair fits the same way) to the target, so a book fits its text
+  identically with and without them. **A long dedication is sized, never clipped**: one tier table
+  (`matterSheetLayout.ts`: 13pt house, 11, 9.5, 8) drives both the stylesheet class and the estimate,
+  with per-character widths measured in Chrome, so realistic dedications stay on one sheet; one too
+  long even at 8pt runs on, and the same layout counts the sheets it takes (668 renders matched,
+  2,000-character prose to 1,000 one-word lines, CJK and Persian included). `@page pdf-front` keeps
+  the house margins whatever the fitter does to the body's. **About the Author is held to the same
+  rule**: it was counted as one sheet while it printed at whatever body size the fitter chose, so a
+  bio of short paragraphs ran onto sheets nobody paid for and the fitter shrank the whole book.
+  It now sits on `@page pdf-back` in fixed point sizes the fitter's `body` rules cannot reach
+  (`ABOUT_TIERS`: 11pt house, 10, 9, 8), takes the largest that fits one sheet, runs on past 8pt,
+  and `bookMatterSheetCount` reads the bio back and counts the sheets `aboutAuthorLayout` says it
+  prints (about 2,500 renders matched; a Chinese bio over twice the limit is the known miss).
+  Widths are measured, emoji as whole drawn glyphs (a flag, a skin tone, a ZWJ family is one),
+  symbols no book font has at 1em, and the fixed-width spaces at their Unicode widths (an
+  ideographic space is a full em: read as an ordinary space, Chinese dedications spaced with it
+  printed a sheet more than counted, 5 of 56 renders before and 94 of 94 matched after). The ©
+  year is printed in the book's own digits
+  (`yearInBookDigits`, the footer's numerals), and the chat quotes it the same way. The generation-leak checks skip them too
+  (`withoutBookMatter` in `findBookLikeMarkdownIssues`): a reader's own `generatedat.com` failed
+  every compile of the book. The structural checks (a leading frontmatter block, raw page breaks)
+  still read the compiled text as written — a coverless book's first page opening `---` is the
+  reader's, and the compiler's own output always opens on the title page. An EPUB with no chapter heading keeps its opening file — the whole
+  text — first in the navigation, or a short book with a bio listed only "About the Author".
+  The © year is `bookMatterYear`: an imported manuscript's own © year (`copyrightYear`) when it
+  stated one, else the book's creation year — never the compile's, so a recompile stays
+  byte-identical across New Year; the free tier's credit
+  is decided per compile (`bookMatterForExport`, `packages/db`) and sits on the matter sheet, or at
+  the title page's foot when there is no sheet. The Word export reads both sections back out of the
+  HTML (`docxAssets.ts`), as it did the title page. Its generated credit carries the
+  `TomezaMadeWithCredit` bookmark (`docxBookMatter.ts`); DOCX import removes only text inside that
+  range, preserving page breaks and text added beside it. This lets the next compile decide the
+  credit from the current plan without duplicating it or retaining it in a paid book's prose.
+  Identical author-written text and older unmarked exports retain their words: wording alone
+  does not identify compiler credit. **Text pasted from Word carries control
+  characters**, and one U+000B made the EPUB and the Word file unparseable XML on every recompile:
+  `cleanMatterText` (and `parseBookMatter`, on read) turns `\v`, `\f`, NEL, U+2028 and U+2029 into
+  line breaks (a space in a one-line field) and drops everything else XML 1.0 forbids, and because
+  page text has no cleaning of its own both XML writers strip again at one seam each —
+  `addXmlDocument` in the EPUB, `withoutXmlIllegalPartCharacters` over the packed Word file (the docx
+  library writes text unchanged through too many paths to catch earlier) — removing only what would
+  make the file unparseable, so a clean book's parts are byte-identical. The EPUB seam also drops a
+  numeric reference to a forbidden code point (`&#11;`, `&#xFFFE;`; `withoutXmlIllegalCharactersOrReferences`),
+  because marked and `toXhtml` pass references through; dropped rather than U+FFFD, the way the raw
+  character is. The Word file needs no such step: it decodes no entities and the library escapes
+  every `&`. The EPUB keeps pictures out
+  of About the Author at every bio size, by class prefix and the last marker, as
+  `bookMatterPages.ts` does. Corpus: the `matter-pages` fixture; the nine existing fixtures rendered
+  pixel-identical across the stylesheet change.
 - **Chrome reads the book off disk; nothing crosses CDP.** The assembled HTML is written to
   `.book-render-<uuid>.html` inside the renderer’s scoped temporary image directory and opened with `page.goto('file://…')`, so
   the book's relative asset paths (`projectId/filename`) resolve to the real illustrations exactly as
@@ -1196,8 +1282,8 @@ holds the event loop open and vitest will never exit.
   `withRenderPage`). It holds a `Promise<Browser>`, not a `Browser`, and clears it on `disconnected`
   *and* on launch rejection under a **generation counter**, so a stale event cannot evict a newer
   browser. The semaphore is **2**, deliberately below worker concurrency
-  (`max(MAX_PARALLEL_PAGE_JOBS, MAX_PARALLEL_IMAGE_JOBS)`, 4 by default, env-tunable to 32, with no
-  separate compile lane) — four large books in one Chromium is an OOM that takes all four down.
+  (the two job lanes summed, `workerLaneConcurrency` in `jobLanes.ts`; compiles run in both) —
+  four large books in one Chromium is an OOM that takes all four down.
   Recycling after 50 renders **retires** the browser rather than closing it: it stops handing out
   pages and closes once its own last page comes back. Closing inline is only possible when no other
   render is in flight, and with the semaphore at 2 a busy worker always has one — so a close-now rule
@@ -1271,6 +1357,24 @@ holds the event loop open and vitest will never exit.
   by a TERM from the same supervisor. `scripts/tsx-dev.mjs` forwards a hangup as **SIGTERM**,
   because nodemon handles that and not `SIGHUP` — sent verbatim it dies and orphans the app holding
   the browser.
+
+- **A book's render waits as long as its length needs, and the one CDP bound is the longest wait
+  any render may have.** Puppeteer's `page.goto()` and `page.pdf()` defaulted to 30 s and the pool's
+  watchdog and `protocolTimeout` were 90 s for every book; an 820-page book measured ~15 s a render
+  on an i7, a t3 is about twice as slow, illustrations are heavier, the fit renders a book at least
+  twice, and a timeout is never retried — so a long book could fail and be refunded after all its
+  AI spend (pre-launch review, 2026-10-13). `bookPdfRenderBudgetFor` (`pdfDocument.ts`) counts a
+  book's sheets generously — the paid target, the model pages, or 1,500 characters a sheet, whichever
+  is most — and its illustrations; `bookPdfRenderBudget` gives each phase 30 s + 100 ms a sheet +
+  500 ms an illustration (about five times the i7's rate), capped, and the attempt both phases plus
+  30 s, so a book of no length gets exactly the old 30/30/90. `printDocument` (`pdf.ts`) hands them
+  to `goto`, to `page.pdf` through `bookPdfPrintOptions` — `BOOK_PDF_OPTIONS` plus `timeout`, which
+  is not a `Page.printToPDF` parameter and so cannot move a break — and to `withRenderPage`. A cover
+  keeps `DEFAULT_RENDER_TIMEOUT_MS`. `protocolTimeout` is one setting per browser and the print is
+  one CDP request, so it is `MAX_RENDER_TIMEOUT_MS` (11 min), which `withRenderPage` also clamps
+  every watchdog to: at 90 s it killed a long print whatever `page.pdf()` was told. The reset paths
+  are untouched — a wedged render still dies at its own budget and retires its lease — and what the
+  scaling costs is that a wedged *long* book holds one of the two permits for longer.
 
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.**
   The numbers a reader can see — the printed footer, the Contents column, the pdfrx chrome — skip

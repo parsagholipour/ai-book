@@ -32,7 +32,7 @@ abstract final class AppHaptics {
   /// approving a plan, starting generation, buying credits.
   static void commit() => _run(HapticFeedback.mediumImpact);
 
-  /// The payoff moment: a book finished, an export unlocked, a purchase
+  /// The payoff moment: a book finished, a file downloaded, a purchase
   /// completed. Two beats so it reads as celebratory rather than as an alert.
   static void success() {
     if (!enabled) {

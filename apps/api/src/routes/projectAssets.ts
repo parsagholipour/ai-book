@@ -87,11 +87,22 @@ async function sendOwnedProjectAsset(
   const key = objectKey(options.category, options.projectId, options.filename);
   const file = await objectStore().get(key);
   if (!file) return sendProjectNotFound(reply, options.missingLabel);
-  reply.type(mimeTypeForPath(options.filename));
+  const type = mimeTypeForPath(options.filename);
+  reply.type(type);
   reply.header("Cache-Control", "private, max-age=300");
+  reply.header("X-Content-Type-Options", "nosniff");
+  if (type === "image/svg+xml") {
+    // An SVG opened as a document runs its own script on this origin. As an
+    // `<img>` (the console, the app) the policy changes nothing.
+    reply.header("Content-Security-Policy", SVG_DOCUMENT_CSP);
+  }
   return file;
 }
 
+/** What an SVG opened directly may do: draw itself, and nothing else. */
+const SVG_DOCUMENT_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
 function mimeTypeForPath(filePath: string): string {
-  return MIME_BY_EXT[extname(filePath).toLowerCase()] ?? "application/octet-stream";
+  const extension = extname(filePath).toLowerCase();
+  return Object.hasOwn(MIME_BY_EXT, extension) ? MIME_BY_EXT[extension]! : "application/octet-stream";
 }

@@ -92,9 +92,10 @@ describe("creating a Studio book", () => {
     expect(body.chapter.title).toBe("Your story");
   });
 
-  it("refuses a one-character title and an unknown kind", async () => {
+  it("takes a one-character title, which is a whole title in Chinese or Japanese, and refuses an unknown kind", async () => {
     const app = await buildMobileApp();
-    expect((await createStudioBook(app, { title: "A" })).response.statusCode).toBe(400);
+    expect((await createStudioBook(app, { title: "雪" })).response.statusCode).toBe(201);
+    expect(db.projects.at(-1)).toMatchObject({ title: "雪" });
     expect((await createStudioBook(app, { kind: "epic" })).response.statusCode).toBe(400);
   });
 });

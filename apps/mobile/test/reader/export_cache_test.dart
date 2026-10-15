@@ -79,8 +79,6 @@ MobileExportAvailability exportOf({
   return MobileExportAvailability(
     format: format,
     available: available,
-    unlocked: true,
-    creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/$format',
     readUrl: readUrl,
     filename: 'the-book.$format',

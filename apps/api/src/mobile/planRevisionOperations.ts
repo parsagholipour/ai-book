@@ -10,6 +10,8 @@ import {
   startGenerationAttempt,
   type CreditLedgerEntryRecord
 } from "@book-maker/db/billing";
+import { assertAiCapacity } from "./aiCapacity.js";
+import type { AiWorkKind } from "../spendBreaker.js";
 
 /**
  * The direct (non-chat) plan revision path: `POST /api/mobile/plans/:id/revise`
@@ -25,6 +27,8 @@ export async function queueDirectPlanRevision(options: {
   message: string;
   requestId: string;
   respondedQuestionPrompts?: string[] | undefined;
+  /** The book's own tier, which the revision runs at. */
+  aiWorkKind: AiWorkKind;
 }): Promise<{
   operation: MobileBookEditOperationRecord;
   job: Awaited<ReturnType<typeof enqueueGenerationJob>>;
@@ -38,6 +42,9 @@ export async function queueDirectPlanRevision(options: {
     const job = await prisma.generationJob.findUniqueOrThrow({ where: { id: existing.generationJob.id } });
     return { operation: existing as MobileBookEditOperationRecord, job };
   }
+  // After the replay and before the operation row, so a refusal leaves no
+  // failed edit behind and charges nothing.
+  await assertAiCapacity(options.userId, options.aiWorkKind);
   const operation = await createOpenBookEditOperation({
     projectId: options.projectId,
     requestId: options.requestId,

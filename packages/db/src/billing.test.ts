@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_CREDIT_COSTS, creditCostForOperation, setCreditPricing } from "@book-maker/core";
+import { DEFAULT_CREDIT_COSTS, setCreditPricing } from "@book-maker/core";
 
 const fakeDb = await vi.hoisted(async () => (await import("./testing/billingTestDb.js")).createBillingTestDb());
 
@@ -11,7 +11,6 @@ vi.mock("./client.ts", () => ({
 const {
   InsufficientCreditsError,
   commitReservedCredits,
-  ensureProjectExportEntitlementOrSpend,
   getCreditBalance,
   getImageQuota,
   getPlanSummary,
@@ -330,27 +329,6 @@ describe("credit ledger operations", () => {
     ).rejects.toBeInstanceOf(InsufficientCreditsError);
   });
 
-  it("spends export unlock credits once and then allows the entitlement", async () => {
-    await grantCredits({ userId: "user-a", amountCredits: 200, idempotencyKey: "grant:user-a" });
-
-    expect(await hasActiveProjectEntitlement({ userId: "user-a", projectId: "project-1", type: "EXPORT_UNLOCK" })).toBe(false);
-    const unlocked = await ensureProjectExportEntitlementOrSpend({
-      userId: "user-a",
-      projectId: "project-1",
-      idempotencyKey: "export:project-1"
-    });
-    const second = await ensureProjectExportEntitlementOrSpend({
-      userId: "user-a",
-      projectId: "project-1",
-      idempotencyKey: "export:project-1"
-    });
-
-    expect(unlocked.chargedLedgerEntry?.amountCredits).toBe(-creditCostForOperation("EXPORT_UNLOCK"));
-    expect(second.chargedLedgerEntry).toBeNull();
-    expect(await hasActiveProjectEntitlement({ userId: "user-a", projectId: "project-1", type: "EXPORT_UNLOCK" })).toBe(true);
-    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 50, reservedCredits: 0 });
-  });
-
   it("stamps the price list every entry was written under", async () => {
     // Prices are operator-editable and live, so an amount alone cannot say which
     // price list produced it. Stamped once at the point every entry is built, so
@@ -358,7 +336,7 @@ describe("credit ledger operations", () => {
     await grantCredits({ userId: "user-a", amountCredits: 500, idempotencyKey: "grant:stamp" });
     await spendCredits({
       userId: "user-a",
-      operation: "EXPORT_UNLOCK",
+      operation: "COVER_REGENERATION",
       amountCredits: 150,
       idempotencyKey: "spend:stamp",
       metadata: { reason: "manual" }
@@ -372,7 +350,10 @@ describe("credit ledger operations", () => {
     expect(spendCall?.[0].data.metadata).toMatchObject({ reason: "manual" });
   });
 
-  it.each(["FULL_BOOK_GENERATION", "BOOK_REPLAN"] as const)("includes downloads in %s and revokes the unlock on refund", async (operation) => {
+  // No charge grants an export unlock since 2026-10-15 (every finished book
+  // downloads free), but rows granted beside a charge before then still exist,
+  // and a refund of that charge still revokes them.
+  it.each(["FULL_BOOK_GENERATION", "BOOK_REPLAN"] as const)("revokes an older %s charge's export unlock on refund", async (operation) => {
     await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
     const spend = await spendCredits({
       userId: "user-a",
@@ -389,11 +370,6 @@ describe("credit ledger operations", () => {
       creditsCost: 800,
       relatedLedgerEntryId: spend?.id
     });
-
-    const download = await ensureProjectExportEntitlementOrSpend({
-      userId: "user-a", projectId: "project-1", idempotencyKey: "mobile:project:project-1:export-unlock"
-    });
-    expect(download.chargedLedgerEntry).toBeNull();
     expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 200, lifetimeCreditsSpent: 800 });
 
     const refund = await refundLatestProjectOperationCredits({

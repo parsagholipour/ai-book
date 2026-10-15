@@ -10,7 +10,7 @@
  * ## Attributing a provider call to a charge
  *
  * There is no column joining the two, because the charge is reserved before the
- * work fans out. Three paths are tried in order, and none of them invents an
+ * work fans out. Four paths are tried in order, and none of them invents an
  * operation the project was not actually billed for:
  *
  * 1. **The job's own charge.** A charged job carries `billingLedgerEntryId` in
@@ -32,6 +32,11 @@
  *    unbilled. `APPLY_BOOK_EDIT` is the one type that serves more than one
  *    operation, so its arm reads the intent kind off the payload — see
  *    `APPLY_BOOK_EDIT_OPERATION_SQL`.
+ * 4. **The voice call's own minutes.** A relayed call's rows have no job, but
+ *    each names its call (`metadata.voiceCallId`, `mobile/voiceRelayUsage.ts`)
+ *    and each minute hold the call settled names it too (`metadata.callId`), so
+ *    a call that was charged lands on `VOICE_CALL_MINUTE` and one that never
+ *    was stays `UNBILLED_INLINE`.
  *
  * Everything left over is reported, never dropped, split by why it could not be
  * attributed — see `UNBILLED_REASONS`. On real data most of it is the operator
@@ -58,21 +63,24 @@
  * its halves in different windows. Over any window wider than a job this is
  * noise; over a one-day window it is not.
  *
- * And a margin here is only as complete as the spend we can see: `VOICE_CALL_MINUTE`
- * has no provider calls at all, because the app holds its own socket to Gemini
- * (see `OPERATION_NOTES`).
+ * And a margin here is only as complete as the spend we can see: a voice call
+ * is costed only from the relay's own usage reports, so calls made before the
+ * relay recorded them, and any operator-console call on a direct token, are
+ * missing from `VOICE_CALL_MINUTE` (see `OPERATION_NOTES`).
  */
 
-import { CREDIT_USD_VALUE } from "@book-maker/core";
+import { VOICE_CALL_PURPOSE } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { type BookEditIntentKind } from "../bookEditIntent.js";
 import { billingOperationForIntent } from "../mobile/bookEditPricing.js";
 import {
   costBreakdownFromRows,
+  providerCostKindSql,
   type CostUsage,
   type ModelCost,
   type ProviderCostRow
 } from "./costBreakdown.js";
+import { creditValuationSummary, loadValuedSpends, sumValued, type CreditValuationSummary } from "./creditValuation.js";
 import { SETTLED_CHARGE, SETTLED_REFUND, netSettledCredits, round2, type AdminWindow } from "./metrics.js";
 
 export type OperationEconomics = CostUsage & {
@@ -84,7 +92,10 @@ export type OperationEconomics = CostUsage & {
   /** Charge attempts touched by a refund. Their provider spend remains real. */
   refundedRuns: number;
   refundedCredits: number;
+  /** The kept credits valued by where they came from (`creditValuation.ts`); free credits earn $0. */
   revenueUsd: number;
+  /** The kept credits someone paid for. */
+  paidCredits: number;
   providerUsd: number;
   marginUsd: number;
   marginPercent: number | null;
@@ -104,13 +115,15 @@ export type UnbilledSpend = CostUsage & {
 
 export type AdminOperationEconomics = {
   window: { days: number; since: string; until: string };
-  creditUsdValue: number;
+  /** How `revenueUsd` was valued. */
+  valuation: CreditValuationSummary;
   totals: {
     runs: number;
     credits: number;
     refundedRuns: number;
     refundedCredits: number;
     revenueUsd: number;
+    paidCredits: number;
     providerUsd: number;
     marginUsd: number;
     marginPercent: number | null;
@@ -131,8 +144,9 @@ const OPERATION_NOTES: Record<string, string> = {
   CHAT_MESSAGE: "Inline chat provider costs are included in total spend but are not linked to individual message charges. This operation margin excludes those costs.",
   MESSAGE_LIMIT_RESET: "Restores the daily message allowance without calling a provider.",
   VOICE_CALL_MINUTE:
-    "The app holds its own socket to Gemini, so realtime audio never reaches our server and none of its cost is in these logs. Real margin is lower.",
-  EXPORT_UNLOCK: "Compiled from text that was already generated and paid for, so it makes no provider calls of its own.",
+    "Costed from the usage Gemini Live reports to the server relay, per turn and by modality. Calls from before the relay recorded usage, and any made on a direct provider token, have no cost here, so a window that includes them overstates the margin.",
+  EXPORT_UNLOCK:
+    "Retired on 2026-10-15: every finished book now downloads free, so only older charges appear here. Compiled from text that was already generated and paid for, so it makes no provider calls of its own.",
   PREMIUM_REVIEW: "Charged as part of a book generation; its calls are attributed to that generation rather than counted here.",
   IMAGE_GENERATION:
     "Chat-added images charge here in their own right — the job payload names the ledger entry, so their calls land under this row. Images bundled into a book generation, and every charge from before standalone image edits existed, are still attributed to that generation instead."
@@ -147,7 +161,12 @@ const UNBILLED_REASONS: Record<string, { label: string; description: string }> =
   UNBILLED_INLINE: {
     label: "Inline API calls",
     description:
-      "Calls the API makes outside the queue — creation chat, the book advisor, page-count preflight. They belong to no job and so to no charge."
+      "Calls the API makes outside the queue — creation chat, the book advisor, page-count preflight, and any voice call no settled minute paid for. They belong to no job and so to no charge."
+  },
+  UNBILLED_SOURCE_READING: {
+    label: "Source reading",
+    description:
+      "The worker reading a reader's uploaded files — chunk summaries and cloud OCR. Each file is admitted for one message-priced charge (Chat messages), which no call is linked to, so the reading itself is reported here."
   },
   UNBILLED_UNLINKED: {
     label: "Unlinked jobs",
@@ -177,7 +196,7 @@ const LABELS: Record<string, string> = {
 
 export async function loadOperationEconomics(window: AdminWindow): Promise<AdminOperationEconomics> {
   const inWindow = { gte: window.since, lte: window.until };
-  const [costRows, charges, refunds] = await Promise.all([
+  const [costRows, charges, refunds, valued] = await Promise.all([
     loadAttributedCostRows(window),
     prisma.creditLedgerEntry.groupBy({
       by: ["operation"],
@@ -193,10 +212,13 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
         ...SETTLED_REFUND,
         reversesEntry: { is: { ...SETTLED_CHARGE, createdAt: inWindow } }
       }
-    })
+    }),
+    loadValuedSpends({ kind: "window", since: window.since, until: window.until })
   ]);
 
   const breakdown = costBreakdownFromRows(costRows);
+  // The same charges as `charges`, valued; an operation only free readers paid for is absent and earned $0.
+  const valueByOperation = sumValued(valued, (spend) => spend.operation);
   const spendByOperation = new Map(breakdown.operations.map((operation) => [operation.key, operation]));
 
   const operationKeys = new Set<string>([
@@ -214,7 +236,8 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
       const refundedCredits = Math.max(refund?._sum.amountCredits ?? 0, 0);
       const credits = netSettledCredits(charge?._sum.amountCredits ?? 0, refund?._sum.amountCredits ?? 0);
       const refundedRuns = refund?._count._all ?? 0;
-      const revenueUsd = round2(credits * CREDIT_USD_VALUE);
+      const value = valueByOperation.get(key);
+      const revenueUsd = round2(value?.usd ?? 0);
       const providerUsd = spend?.usd ?? 0;
       return {
         ...(spend ?? emptyUsage()),
@@ -225,6 +248,7 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
         refundedRuns,
         refundedCredits,
         revenueUsd,
+        paidCredits: Math.round(value?.paidCredits ?? 0),
         providerUsd,
         marginUsd: round2(revenueUsd - providerUsd),
         marginPercent: revenueUsd > 0 ? Math.round(((revenueUsd - providerUsd) / revenueUsd) * 1000) / 10 : null,
@@ -253,22 +277,24 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
       refundedRuns: accumulator.refundedRuns + operation.refundedRuns,
       refundedCredits: accumulator.refundedCredits + operation.refundedCredits,
       revenueUsd: accumulator.revenueUsd + operation.revenueUsd,
+      paidCredits: accumulator.paidCredits + operation.paidCredits,
       providerUsd: accumulator.providerUsd + operation.providerUsd
     }),
-    { runs: 0, credits: 0, refundedRuns: 0, refundedCredits: 0, revenueUsd: 0, providerUsd: 0 }
+    { runs: 0, credits: 0, refundedRuns: 0, refundedCredits: 0, revenueUsd: 0, paidCredits: 0, providerUsd: 0 }
   );
   const revenueUsd = round2(totals.revenueUsd);
   const providerUsd = round2(totals.providerUsd);
 
   return {
     window: { days: window.days, since: window.since.toISOString(), until: window.until.toISOString() },
-    creditUsdValue: CREDIT_USD_VALUE,
+    valuation: creditValuationSummary(),
     totals: {
       runs: totals.runs,
       credits: totals.credits,
       refundedRuns: totals.refundedRuns,
       refundedCredits: totals.refundedCredits,
       revenueUsd,
+      paidCredits: totals.paidCredits,
       providerUsd,
       marginUsd: round2(revenueUsd - providerUsd),
       marginPercent: revenueUsd > 0 ? Math.round(((revenueUsd - providerUsd) / revenueUsd) * 1000) / 10 : null,
@@ -338,6 +364,18 @@ export const APPLY_BOOK_EDIT_OPERATION_SQL = [
  * The kind lives on the row rather than the payload, hence the scalar subquery;
  * it runs only for this job type's calls.
  */
+/**
+ * The purposes a source read writes its cost rows under: `summarizeSource`
+ * (`packages/core/src/sources/summarization.ts`) and the worker's cloud OCR
+ * (`apps/worker/src/runtime/sourceProcessing.ts`). Those rows carry a reader
+ * but no job and no book, so without their own bucket they would read as the
+ * API's inline calls. The admission charge is a `CHAT_MESSAGE`
+ * (`consumeAiProcessingUsageTx`), which no call is linked to.
+ */
+export const SOURCE_READING_PURPOSES = ["source-summary", "source-ocr"] as const;
+
+const SOURCE_READING_PURPOSES_SQL = SOURCE_READING_PURPOSES.map((purpose) => `'${purpose}'`).join(", ");
+
 export const WRITING_ASSIST_OPERATION_SQL = [
   `CASE (SELECT a.kind FROM "ManuscriptAssist" a WHERE a.id = j.payload ->> 'assistId')`,
   "            WHEN 'ILLUSTRATE' THEN 'IMAGE_GENERATION'",
@@ -375,6 +413,13 @@ async function loadAttributedCostRows(window: AdminWindow): Promise<ProviderCost
       FROM "CreditLedgerEntry"
       WHERE "entryType" = 'SPEND' AND status = 'SETTLED' AND "projectId" IS NOT NULL
       GROUP BY 1, 2
+    ),
+    -- A relayed voice call's spend belongs to the minutes it was charged for;
+    -- every minute hold names its call (packages/db/src/voiceRelayBilling.ts).
+    voice_charged AS (
+      SELECT DISTINCT metadata ->> 'callId' AS call_id
+      FROM "CreditLedgerEntry"
+      WHERE operation = 'VOICE_CALL_MINUTE' AND "entryType" = 'SPEND' AND status = 'SETTLED'
     ),
     call AS (
       SELECT
@@ -424,7 +469,10 @@ async function loadAttributedCostRows(window: AdminWindow): Promise<ProviderCost
           billed.operation,
           plan_operation.operation,
           project_operation.operation,
+          CASE WHEN voice_charged.call_id IS NOT NULL THEN 'VOICE_CALL_MINUTE' END,
           CASE
+            WHEN c."generationJobId" IS NULL AND c.purpose IN (${Prisma.raw(SOURCE_READING_PURPOSES_SQL)})
+              THEN 'UNBILLED_SOURCE_READING'
             WHEN c."generationJobId" IS NULL THEN 'UNBILLED_INLINE'
             WHEN NOT EXISTS (
               SELECT 1 FROM project_operation any_charge WHERE any_charge.project_id = c.project_id
@@ -438,13 +486,12 @@ async function loadAttributedCostRows(window: AdminWindow): Promise<ProviderCost
       LEFT JOIN project_operation
         ON project_operation.project_id = c.project_id
        AND project_operation.operation = c.job_operation
+      LEFT JOIN voice_charged
+        ON c.purpose = ${VOICE_CALL_PURPOSE}
+       AND voice_charged.call_id = c.metadata ->> 'voiceCallId'
     )
     SELECT
-      CASE
-        WHEN a.purpose LIKE 'tts.%' OR COALESCE(a.metadata ->> 'operation', '') LIKE 'tts.%' THEN 'audio'
-        WHEN a.purpose = 'image.generate' OR a.metadata ->> 'operation' = 'image.generate' THEN 'image'
-        ELSE 'text'
-      END AS kind,
+      ${Prisma.raw(providerCostKindSql("a"))} AS kind,
       a.operation AS purpose,
       a.provider AS provider,
       a.model AS model,

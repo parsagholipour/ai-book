@@ -242,7 +242,7 @@ describe("restructurePages after an undo", () => {
     });
 
     expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", undefined, {
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
       contentRevision: 7,
       requireContentRevisionMatch: true
     });

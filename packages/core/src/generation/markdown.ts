@@ -5,12 +5,14 @@ import { DEFAULT_MARKDOWN_LABELS, markdownLabels, type MarkdownLabels } from "./
 import { joinMarkdownPageBlocks } from "./markdownPageBoundaries.js";
 import { assertBookLikeMarkdown } from "./bookLikeMarkdown.js";
 import { storyPageDesignField, type StoryPageDesignId } from "./storyPageDesigns.js";
+import { escapeHtml, formatBookMatter, type BookMatterForCompile } from "./bookMatterPages.js";
 
 // Re-exported because `markdownLabels` was always part of this module's surface
 // — `epub.ts` and the exporters import it from here. The leak checks moved out
 // of this file and stay on its surface for the same reason.
 export { markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
 export { assertBookLikeMarkdown, findBookLikeMarkdownIssues, type BookLikeMarkdownOptions } from "./bookLikeMarkdown.js";
+export { type BookMatterForCompile } from "./bookMatterPages.js";
 
 export type MarkdownPage = {
   index: number;
@@ -55,15 +57,15 @@ export type CompileMarkdownInput = {
   /** Replaces the word "Chapter" — "Part", "Episode". `undefined` keeps the localized default. */
   chapterHeadingLabel?: string | undefined;
   /**
-   * The byline. When the export has no cover, this gives it a fallback title
-   * page carrying the title, subtitle and author. A cover already typesets the
-   * same metadata, so covered books must not repeat it on a second page.
+   * The byline on the title page every book carries (`bookMatterPages.ts`).
    *
    * Read it from the project row rather than a plan's frozen `inputSnapshot`:
    * that is the same source `coverMetadataFromProject` typesets the cover from,
    * and the two must never disagree.
    */
   authorName?: string | undefined;
+  /** The dedication, publication details and biography; absent prints the title page alone. */
+  matter?: BookMatterForCompile | undefined;
   /**
    * The author owns this text — an imported or Studio-written book
    * (`isAuthorManuscript`), never one this pipeline drafted. Three things change,
@@ -199,9 +201,12 @@ export type CompiledBookMarkdown = {
   storyPageLayout?: "separate" | undefined;
   storyPageDesign?: StoryPageDesignId | undefined; // Text-only story sheets' design (`storyPageDesigns.ts`).
   pageAnchors: PageAnchorPlan[];
-  /** Offset of the Sources heading, when the back matter is printed. */
+  /**
+   * Offset of the first back-matter heading — Sources, or About the Author
+   * when no Sources print. The name is older than the second section.
+   */
   sourcesOffset?: number;
-  /** True when the PDF opens on a furniture page — a cover or the fallback title page. */
+  /** True when the PDF opens on a furniture page — a cover, or the title page of a coverless book. */
   hasCoverPage: boolean;
   hasContents: boolean;
 };
@@ -228,17 +233,27 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
     presentation === "chapters" && chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels, heading) : "";
   const research = formatReaderFacingSources(input);
   const coverImagePath = input.cover?.imagePath;
-  // The cover already carries the title, subtitle and byline. A title page is
-  // only the no-cover fallback; rendering both repeats the same front matter
-  // on the first two pages.
-  const titlePage = coverImagePath ? "" : formatTitlePage(input, labels);
+  const { titlePage, matterSheet, aboutAuthor } = formatBookMatter({
+    title: input.plan.title,
+    subtitle: input.plan.subtitle,
+    authorName: input.authorName,
+    matter: input.matter,
+    afterCover: Boolean(coverImagePath),
+    labels,
+    language: input.language
+  });
 
-  type Element = { text: string; page?: { index: number; chapterDest?: string } | undefined; sources?: boolean };
+  type Element = { text: string; page?: { index: number; chapterDest?: string } | undefined; backMatter?: boolean };
+  // The title page and the matter sheet end on a blank line. An HTML block runs
+  // until one, so a first page joined on a single newline was swallowed into the
+  // section as raw text: its markdown unrendered and its `bp-1` anchor homeless.
+  const furniture = (html: string) => (html ? `${html}\n` : "");
   const elements: Element[] = [
     { text: coverImagePath ? `![${sanitizeCoverAlt(input.cover?.imageAlt, labels)}](${coverImagePath})` : "" },
-    { text: titlePage },
+    { text: furniture(titlePage) },
+    // A plan with a blank title has no title page to print; the heading keeps the book book-like.
     { text: titlePage || coverImagePath ? "" : `# ${input.plan.title}` },
-    { text: !titlePage && !coverImagePath && input.plan.subtitle ? `\n_${input.plan.subtitle}_\n` : "" },
+    { text: furniture(matterSheet) },
     { text: contents },
     { text: "" },
     ...pages.map((page): Element => {
@@ -257,7 +272,8 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
         page: { index: page.index, ...(chapter ? { chapterDest: chapterAnchorId(chapter) } : {}) }
       };
     }),
-    { text: research ? `## ${labels.sources}\n` + research : "", sources: true }
+    { text: research ? `## ${labels.sources}\n` + research : "", backMatter: true },
+    { text: aboutAuthor, backMatter: true }
   ];
 
   const kept = elements.filter((element) => element.text);
@@ -288,7 +304,7 @@ export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput):
           markdownOffset: offset + lead
         });
       }
-    } else if (element.sources) {
+    } else if (element.backMatter && sourcesOffset === undefined) {
       sourcesOffset = offset;
     }
   }
@@ -526,36 +542,13 @@ export function chapterDisplayHeading(
 
 /**
  * What every text-generating prompt has to be told about the byline, because
- * `formatTitlePage` below and `renderCoverPng` already print it. Without this
+ * the title page (`bookMatterPages.ts`) and `renderCoverPng` already print it. Without this
  * a stated author reads as a writing instruction: one book's plan answered
  * "make it under my name" by ending its premise with «به قلم پارسا ق.», and a
  * premise reaches every single page call.
  */
 export const BYLINE_IS_TYPESET_RULE =
   "The cover (or the fallback title page when there is no cover) is typeset by the app from the project's title and author name. Never write the author's name, a byline, an attribution such as \"by <name>\", a dedication-style credit, or any other front matter into the premise, chapter titles, or page text; naming the author there prints it a second time inside the book.";
-
-/**
- * The no-cover fallback title page, or `""` for a book with no byline.
- *
- * The caller suppresses this whenever a cover exists because the cover already
- * typesets the same title, subtitle and author. Keeping the fallback here makes
- * the byline visible for an exceptional coverless export without duplicating
- * normal books' front matter.
- */
-function formatTitlePage(input: CompileMarkdownInput, labels: MarkdownLabels): string {
-  const authorName = input.authorName?.trim();
-  if (!authorName) {
-    return "";
-  }
-  const subtitle = input.plan.subtitle?.trim();
-  return [
-    '<section class="book-title-page">',
-    `  <h1 class="book-title-page__title">${escapeHtml(input.plan.title)}</h1>`,
-    ...(subtitle ? [`  <p class="book-title-page__subtitle">${escapeHtml(subtitle)}</p>`] : []),
-    `  <p class="book-title-page__byline">${escapeHtml(`${labels.by} ${authorName}`)}</p>`,
-    "</section>"
-  ].join("\n");
-}
 
 function formatContentsSection(
   chapterStarts: Array<{ pageIndex: number; chapter: DisplayChapter }>,
@@ -658,15 +651,6 @@ function chapterAnchorId(chapter: DisplayChapter): string {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return `chapter-${suffix || "1"}`;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 export function sanitizePageMarkdown(

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   STRUCTURAL_ACTION_PREFIX_PATTERN,
+  STRUCTURAL_PAGE_SELECTION_PATTERN,
   classifyStructuralEditInstruction,
+  isBareStructuralInstruction,
   structuralEditRequiresWholeBookGeneration,
   type StructuralInstructionEdit
 } from "./structuralInstruction.js";
@@ -393,5 +395,159 @@ describe("structural edit instruction classification", () => {
   it("fails malformed or unfamiliar legacy syntax closed", () => {
     expect(structuralEditRequiresWholeBookGeneration(remove(2), "make the whole thing shorter")).toBe(true);
     expect(structuralEditRequiresWholeBookGeneration(carry(4, 2), "move it over there")).toBe(true);
+  });
+});
+
+describe("structural classification keeps every answer across the linear rewrite", () => {
+  // Captured from the classifier as it stood before its courtesy tail, its
+  // reason tail and its clause trim were made linear. The rewrite changes the
+  // backtracking and nothing else, so no entry may move — null is a bare edit,
+  // a string the content requirement it was read as.
+  const CORPUS: ReadonlyArray<readonly [StructuralInstructionEdit, string, string | null]> = [
+    [remove(3), "delete page 3", null],
+    [remove(3), "delete page 3 please", null],
+    [remove(3), "delete page 3, please and thanks", null],
+    [remove(3), "delete page 3 , please , thanks", null],
+    [remove(3), "delete page 3,please", null],
+    [remove(3), "delete page 3 please thank you so much", null],
+    [remove(3), "delete page 3 ty ty", null],
+    [remove(3), "delete page 3 cheers, ty", null],
+    [remove(3), "delete page 3 and thanks", null],
+    [remove(3), "delete page 3 please and also make it funny", "delete page 3 please and also make it funny"],
+    [remove(3), "delete page 3, it repeats page 7", null],
+    [remove(3), "delete page 3 because it's redundant", null],
+    [remove(3), "delete page 3 — it is just a duplicate of page 4", null],
+    [remove(3), "delete page 3 as it's empty", null],
+    [remove(3), "delete page 3 - it's not needed, thanks", null],
+    [remove(3), "delete page 3,it's blank", null],
+    [remove(3), "delete page 3 since this is basically the same as page 2", null],
+    [remove(3), "delete page 3, it is boring", "delete page 3, it is boring"],
+    [remove(3), "delete page 3,,,", null],
+    [remove(3), "delete page 3!!!", null],
+    [remove(3), "delete page 3?!", null],
+    [remove(3), "...delete page 3", null],
+    [remove(3), "delete page 3, , ,", null],
+    [remove(3), "delete page 3 —", null],
+    [remove(3), "can you delete page 3", null],
+    [remove(3), "delete the page about the storm", null],
+    [remove(3), "delete the page about the storm please", null],
+    [remove(3), "delete every other page", null],
+    [remove(3), "صفحه ۳ را حذف کن", null],
+    [remove(3), "صفحه ۳ را حذف کن لطفا", null],
+    [remove(3), "删除第3页", null],
+    [remove(3), "3ページを削除してください", null],
+    [remove(3), "Elimina la página 3", null],
+    [remove(3), "supprime la page 3", null],
+    [remove(3), "delete page 3 and make it funny!!!", "delete page 3 and make it funny"],
+    [remove(3), ",, delete page 3 and make it funny ,,", "delete page 3 and make it funny"],
+    [remove(3), "delete page 3 and make it funny ?!", "delete page 3 and make it funny"],
+    [remove(3), "delete page 3 and make it funny —!", "delete page 3 and make it funny"],
+    [remove(3), "—! delete page 3 and make it funny", "! delete page 3 and make it funny"],
+    [remove(3), "delete page 3 and make it funny, , ;: x", "delete page 3 and make it funny, , ;: x"],
+    [carry(5, 2), "swap pages 1 and 2", null],
+    [carry(5, 2), "swap pages 1 and 2 please", null],
+    [carry(5, 2), "swap pages 1 and 2, thanks a lot", null],
+    [carry(5, 2), "swap pages 1 and 2 ty ty ty", null],
+    [carry(5, 2), "swap pages 1 and 2 ty ty x", "swap pages 1 and 2 ty ty x"],
+    [carry(5, 2), "swap pages 1,2", null],
+    [carry(5, 2), "swap the order of pages 1 & 2 around", null],
+    [carry(5, 2), "move page 2 after page 5", null],
+    [carry(5, 2), "move page 2 after page 5 please", null],
+    [carry(5, 2), "move page 2 to the end of the book, thanks", null],
+    [carry(5, 2), "move page 2 after page 5 and rewrite it", "move page 2 after page 5 and rewrite it"],
+    [write(), "add a page", null],
+    [write(), "add a page after page 2", null],
+    [write(), "add a page after page 2 please", null],
+    [write(), "add 2 new pages at the end, thanks!", null],
+    [write(), "add a page about the storm", "add a page about the storm"],
+    [write(), "add a page after page 2 , please", null],
+    // The leading trim stops short of "!" and "?", and the trailing one
+    // still starts where it stopped, as it did when the two were one pattern.
+    [remove(3), ",!", ",!"],
+    [remove(3), ", ?", ", ?"],
+    [remove(3), "—?!", "—?!"],
+    [remove(3), "?", "?"],
+    [remove(3), "make it funny,!", "make it funny"],
+    [remove(3), ",make it funny!?, ", "make it funny"]
+  ];
+
+  it("reads every request the way it did before", () => {
+    const moved = CORPUS.flatMap(([edit, instruction, before]) => {
+      const classified = classifyStructuralEditInstruction(edit, instruction);
+      const after = classified.hasContentRequirements ? classified.contentRequirements : null;
+      return after === before ? [] : [{ instruction, before, after }];
+    });
+    expect(moved).toEqual([]);
+  });
+});
+
+describe("structural classification on adversarial input", () => {
+  // Every structural edit a reader proposes is classified on the API's only
+  // thread. `\s*,?\s*` inside the repeated courtesy tail let each space go to
+  // either quantifier, so a tail that failed at its last word was retried 2ⁿ
+  // ways: "swap pages 1 and 2" and 26 "ty"s took 2.7 s. Timed at 1k before 10k,
+  // so a regression fails in a fraction of a second instead of hanging.
+  const fill =
+    (head: string, filler: string, tail = " x") =>
+    (length: number): string => {
+      const room = length - head.length - tail.length;
+      return head + filler.repeat(Math.ceil(room / filler.length)).slice(0, room) + tail;
+    };
+  const ADVERSARIAL: ReadonlyArray<readonly [StructuralInstructionEdit, string, (length: number) => string]> = [
+    [carry(5, 2), "a swap + repeated courtesies", fill("swap pages 1 and 2", " ty")],
+    [carry(5, 2), "a swap + spaced comma courtesies", fill("swap pages 1 and 2", " , ty")],
+    [carry(5, 2), "a move + repeated thanks", fill("move page 2 after page 5", " and thanks")],
+    [remove(3), "a delete + repeated pleases", fill("delete page 3", ", please")],
+    [remove(3), "a delete + a reason + spaces", fill("delete page 3 because it", " ")],
+    [remove(3), "a delete + a run of commas", fill("delete page 3", ",", "y")],
+    [remove(3), "a delete + a run of dashes and spaces", fill("delete page 3", " -")],
+    [remove(3), "a located delete + a joined word", fill("delete the page about ", "ty")],
+    [remove(3), "a located delete + hyphens", fill("delete the page about x", "-x")],
+    [write(), "an insert + repeated courtesies", fill("add a page", " please")],
+    [write(), "a canonical insert + punctuation", fill("Add 1 new page after page 2. Content requirements: x", ",")]
+  ];
+  const readMs = (run: () => unknown): number => {
+    // Best of two, so one slow read under load is not a failure.
+    let best = Number.POSITIVE_INFINITY;
+    for (let read = 0; read < 2; read += 1) {
+      const start = performance.now();
+      run();
+      best = Math.min(best, performance.now() - start);
+    }
+    return best;
+  };
+
+  it("stays linear on long courtesy, reason and punctuation tails", () => {
+    for (const [length, budgetMs] of [
+      [1_000, 200],
+      [10_000, 1_000]
+    ] as const) {
+      for (const [edit, label, build] of ADVERSARIAL) {
+        const text = build(length);
+        expect(text).toHaveLength(length);
+        const ms = readMs(() => [isBareStructuralInstruction(edit, text), classifyStructuralEditInstruction(edit, text)]);
+        expect(ms, `${label} at ${length} chars: ${ms.toFixed(1)} ms`).toBeLessThan(budgetMs);
+      }
+    }
+  });
+
+  it("reads a page selection out of a long number from its first digit only", () => {
+    // The API searches the selection unanchored to find placement-only prose,
+    // and from every digit of a run no boundary ended `\d+` rescanned the rest.
+    const selection = new RegExp(STRUCTURAL_PAGE_SELECTION_PATTERN, "gi");
+    for (const [length, budgetMs] of [
+      [1_000, 200],
+      [10_000, 1_000]
+    ] as const) {
+      for (const [label, build] of [
+        ["digits then a letter", fill("", "1", "x")],
+        ["digits then an ordinal suffix", fill("page ", "21", "thx")],
+        ["digits then spaces", fill("the ", "1", "    x")]
+      ] as const) {
+        const text = build(length);
+        const ms = readMs(() => text.replace(selection, " "));
+        expect(ms, `${label} at ${length} chars: ${ms.toFixed(1)} ms`).toBeLessThan(budgetMs);
+      }
+    }
   });
 });

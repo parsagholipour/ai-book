@@ -10,12 +10,20 @@ before any handler runs (`isOperatorOnlyPath` in `src/auth.ts` is the exact comp
 `allowsMobileBearer` in `src/requestAuth.ts`), and that is load-bearing: these handlers scope to
 `actor.userId`, so the app's own user would otherwise reach exactly its own books — through routes
 that charge nothing. `POST /api/plans/:id/approve` starts a whole book with no credit reservation
-and no free-tier image slot, and `GET /api/projects/:id/export/*` sends the file without the
-entitlement its `/api/mobile/*` twin takes. The actor's *kind* is the authorization.
+and no free-tier image slot, and `GET /api/projects/:id/export/*` renders inline and sends any
+format, the Word file included, without the plan its `/api/mobile/*` twin asks for. The actor's
+*kind* is the authorization.
+
+That includes every `admin*.ts` here: a handler never trusts that its path was protected, and never
+marks an operator itself. `requireOperatorActor` answers 401 unless the auth hook already set
+`request.operatorAuth`. An encoded `/%61pi/admin/users` once got past the hook, and these handlers
+then served it (see "Every auth decision reads the route the router matched" in `../../CLAUDE.md`).
 
 `projectAssets.ts` is the one exception and the only file here still calling `resolveProjectActor`:
 the mobile serializers hand the app URLs under `/assets/images/` and `/assets/voice/`, so those two
-prefixes are a genuinely shared surface.
+prefixes are a genuinely shared surface. Every asset there is sent `nosniff`, and an SVG (a designed
+cover is one) also under a `sandbox` CSP: opened as a document rather than drawn as an `<img>`, it
+would run its own script on the API's origin.
 
 ## Exports
 

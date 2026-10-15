@@ -36,6 +36,7 @@ class StudioConflict {
     required this.deviceTitle,
     required this.deviceMarkdown,
     required this.deviceNotes,
+    required this.deviceStatus,
     required this.fromBuffer,
   });
 
@@ -44,6 +45,7 @@ class StudioConflict {
   final String deviceTitle;
   final String deviceMarkdown;
   final String deviceNotes;
+  final ManuscriptChapterStatus deviceStatus;
 
   /// True when this device's version is a crash buffer found on opening,
   /// rather than the text in the editor right now.
@@ -348,17 +350,20 @@ class StudioSession extends ChangeNotifier {
     ManuscriptChapter server,
     StudioLocalDraft buffer,
   ) async {
+    // Legacy buffers have no status edit to recover.
+    final status = buffer.status ?? server.status;
     final same =
         buffer.title == server.title &&
         buffer.markdown == server.markdown &&
-        buffer.notes == server.notes;
+        buffer.notes == server.notes &&
+        status == server.status;
     if (same) {
       await _deleteBuffer(server.id);
       return;
     }
     if (buffer.baseRevision == server.revision) {
       _notes = buffer.notes;
-      if (buffer.status != null) _status = buffer.status!;
+      _status = status;
       _document!.replaceContent(title: buffer.title, markdown: buffer.markdown);
       await saveNow();
       return;
@@ -368,6 +373,7 @@ class StudioSession extends ChangeNotifier {
       deviceTitle: buffer.title,
       deviceMarkdown: buffer.markdown,
       deviceNotes: buffer.notes,
+      deviceStatus: status,
       fromBuffer: true,
     );
     _notify();
@@ -438,9 +444,10 @@ class StudioSession extends ChangeNotifier {
     }
     if (_disposed || _document == null || _chapter == null) return true;
     if (_conflict != null) {
-      // Nothing goes to the server until the author has chosen; the buffer
-      // still keeps every word.
-      await _writeBuffer(_snapshot());
+      // A recovered conflict still displays the server copy in the editor.
+      // Keep its original buffer intact until the author chooses; a live
+      // conflict instead needs to preserve the editor's latest words.
+      if (!_conflict!.fromBuffer) await _writeBuffer(_snapshot());
       return false;
     }
     final needed =
@@ -511,6 +518,7 @@ class StudioSession extends ChangeNotifier {
         deviceTitle: document.title.text,
         deviceMarkdown: document.markdown,
         deviceNotes: _notes,
+        deviceStatus: _status,
         fromBuffer: false,
       );
       _notify();
@@ -623,6 +631,7 @@ class StudioSession extends ChangeNotifier {
         );
         if (conflict.fromBuffer) {
           _notes = conflict.deviceNotes;
+          _status = conflict.deviceStatus;
           document.replaceContent(
             title: conflict.deviceTitle,
             markdown: conflict.deviceMarkdown,
@@ -640,6 +649,7 @@ class StudioSession extends ChangeNotifier {
             ? conflict.deviceMarkdown
             : document.markdown;
         final notes = conflict.fromBuffer ? conflict.deviceNotes : _notes;
+        final status = conflict.fromBuffer ? conflict.deviceStatus : _status;
         final copyTitle =
             '${title.trim().isEmpty ? 'Untitled chapter' : title.trim()} (copy)';
         try {
@@ -655,6 +665,7 @@ class StudioSession extends ChangeNotifier {
             title: copyTitle,
             markdown: markdown,
             notes: notes,
+            status: status,
             baseRevision: added.chapter.revision,
           );
           _manuscript = added.manuscript;

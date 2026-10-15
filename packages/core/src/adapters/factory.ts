@@ -28,8 +28,10 @@ import type {
 import {
   MECHANICAL_TEXT_PURPOSES,
   modelTierImageSelection,
-  modelTierForInput
+  modelTierForInput,
+  PREMIUM_FALLBACK_IMAGE_MODEL
 } from "./modelTiers.js";
+import { providerConfigured } from "./providerCredentials.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
 import { FallbackTextModelAdapter, type TextFallbackEvent } from "./textFallback.js";
 import { optionalMaxRetries } from "./optionalMaxRetries.js";
@@ -231,26 +233,9 @@ function generationCatalogOption(option: TextModelOption): GenerationTextModelOp
   return priced;
 }
 
+/** One table (`providerCredentials.ts`) says what each provider needs, for this catalog and the production check alike. */
 export function textProviderConfigured(config: AppConfig, provider: TextModelSelection["provider"]): boolean {
-  if (provider === "deepseek") {
-    return Boolean(config.DEEPSEEK_API_KEY?.trim());
-  }
-  if (provider === "deepinfra") {
-    return Boolean(config.DEEPINFRA_API_KEY?.trim());
-  }
-  if (provider === "openrouter") {
-    return Boolean(config.OPENROUTER_API_KEY?.trim());
-  }
-  if (provider === "gemini") {
-    return Boolean(config.GEMINI_API_KEY?.trim());
-  }
-  if (provider === "alibaba") {
-    return Boolean(config.ALIBABA_API_KEY?.trim());
-  }
-  if (provider === "openai") {
-    return Boolean(config.OPENAI_API_KEY?.trim());
-  }
-  return Boolean(config.LOCAL_TEXT_BASE_URL && config.LOCAL_TEXT_MODEL);
+  return providerConfigured(config, provider);
 }
 
 function deepSeekModelOptions(config: AppConfig): TextModelOption[] {
@@ -331,13 +316,30 @@ export function resolveTextModelSelection(config: AppConfig, input?: CreateProje
 }
 
 export function resolveImageModelSelection(config: AppConfig, input?: CreateProjectInput): ImageModelSelection {
-  const explicit = input?.mediaSettings.imageModel;
-  if (explicit) {
-    return explicit;
-  }
-  const tier = input?.mediaSettings.modelTier;
+  return input?.mediaSettings.imageModel ?? defaultImageModelSelection(config, input?.mediaSettings.modelTier);
+}
+
+/** The image model a book draws with when it names none of its own. */
+export function defaultImageModelSelection(config: AppConfig, tier?: ModelTier): ImageModelSelection {
   const tierSelection = tier ? modelTierImageSelection(tier) : undefined;
   return tierSelection ?? { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
+}
+
+/**
+ * The other provider a failed render falls back to (the worker's
+ * `FallbackImageAdapter`). Premium-tier books fall back to Alibaba's
+ * higher-quality image model so a Gemini outage doesn't silently downgrade a
+ * premium book.
+ */
+export function resolveImageFallbackSelection(
+  config: AppConfig,
+  primary: ImageModelSelection,
+  premium: boolean
+): ImageModelSelection {
+  if (primary.provider === "alibaba") {
+    return { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
+  }
+  return { provider: "alibaba", model: premium ? PREMIUM_FALLBACK_IMAGE_MODEL : config.ALIBABA_IMAGE_MODEL };
 }
 
 export function createResearchAdapter(config: AppConfig): ResearchAdapter {
@@ -377,9 +379,29 @@ export function createProviders(
   };
 }
 
+/** Narration's first choice; `AUDIOBOOK_OPENAI_FALLBACK_ENABLED` adds `openai_tts` behind it. */
+export function defaultSpeechSelection(config: AppConfig): SpeechModelSelection {
+  return { provider: "gemini_tts", model: config.GEMINI_TTS_MODEL };
+}
+
+/**
+ * Every speech provider an audiobook can be narrated on: the default, then the
+ * backup the worker's audiobook policy (`audiobookProviderPolicy.ts`) switches
+ * to when Gemini's daily speech budget would run out — or after a Gemini
+ * failure — while the fallback is enabled.
+ */
+export function audiobookSpeechSelections(config: AppConfig): SpeechModelSelection[] {
+  return [
+    defaultSpeechSelection(config),
+    ...(config.AUDIOBOOK_OPENAI_FALLBACK_ENABLED
+      ? [{ provider: "openai_tts" as const, model: config.OPENAI_TTS_MODEL }]
+      : [])
+  ];
+}
+
 export function createSpeechAdapter(
   config: AppConfig,
-  selection: SpeechModelSelection = { provider: "gemini_tts", model: config.GEMINI_TTS_MODEL }
+  selection: SpeechModelSelection = defaultSpeechSelection(config)
 ): SpeechAdapter {
   if (config.MOCK_AI) {
     return new FakeSpeechAdapter();

@@ -10,11 +10,37 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
     _buildInProgress = true;
     try {
       final controller = ref.read(creationChatControllerProvider.notifier);
+      // Awaited rather than peeked: nothing on this screen has to be watching
+      // billing when Build is tapped, and both limits below are read off it.
+      // A failed read leaves the server to rule, as an older server would.
+      MobileBilling? billing;
+      try {
+        billing = await ref.read(billingProvider.future);
+      } catch (_) {
+        billing = null;
+      }
+      if (!mounted) return;
+      // Ultra chosen while it was on, or carried in by a remix: the server
+      // refuses a new Ultra book while the operator has it off, so the book is
+      // started at Extra polish — the price every dialog below quotes.
+      if (billing != null &&
+          !billing.ultraTierEnabled &&
+          ref.read(creationChatControllerProvider).presets.qualityPreset ==
+              'ultra') {
+        controller.setQualityPreset(
+          startableQualityPreset('ultra', ultraEnabled: false),
+        );
+      }
+      final ceiling = billing?.paidMaxBookPages ?? maxPlanBookPages;
       final preflight = await controller.preflightBuildPlan();
       if (!mounted) return;
       _PageCountSelection? selection;
       if (preflight.requiresPageCount) {
-        selection = await _showPageCountSheet(preflight);
+        selection = await _showPageCountSheet(
+          preflight,
+          ceiling: ceiling,
+          billing: billing,
+        );
         if (selection == null) {
           return;
         }
@@ -26,6 +52,26 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
           selection?.targetPages ??
           preflight.detectedPageCount?.targetPages ??
           ref.read(creationChatControllerProvider).presets.targetPages;
+      // The chat settled on a length no plan writes yet. Nothing unlocks it,
+      // so the only way on is the longest book there is — asked before
+      // planning is charged, never a plan the approval would refuse.
+      if (!mounted) return;
+      if (selection == null && targetPages != null && targetPages > ceiling) {
+        final shorten = await showAppConfirmationDialog(
+          context,
+          title: 'Books go up to $ceiling pages',
+          message:
+              'Books longer than $ceiling pages aren’t available yet. '
+              'Write this one at $ceiling pages?',
+          confirmLabel: 'Use $ceiling pages',
+        );
+        if (!shorten || !mounted) return;
+        selection = _PageCountSelection(
+          targetPages: ceiling,
+          source: 'settings',
+        );
+        targetPages = ceiling;
+      }
       // The chat settled on a length this reader's plan does not write. Asked
       // here, before Build charges for planning it: unlock it, or write it at
       // the free length — never a plan for a book that cannot be approved.
@@ -38,7 +84,11 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
         final resolved = await _resolveLongBook(
           context,
           ref,
-          BookPageLimit(limit: maxPages, requestedPages: targetPages),
+          BookPageLimit(
+            limit: maxPages,
+            requestedPages: targetPages,
+            maxPages: ceiling,
+          ),
         );
         if (resolved == null || !mounted) return;
         if (resolved != targetPages) {
@@ -136,15 +186,15 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
   }
 
   Future<_PageCountSelection?> _showPageCountSheet(
-    MobileCreationBuildPreflight preflight,
-  ) {
+    MobileCreationBuildPreflight preflight, {
+    required int ceiling,
+    required MobileBilling? billing,
+  }) {
     // Mirrors the plan-approval estimate (estimateApprovalCredits) so the
     // number a user picks a page count by is the number they are later asked
     // to approve. An unloaded billing map falls back to the canonical costs.
     final presets = ref.read(creationChatControllerProvider).presets;
-    final creditCosts =
-        ref.read(billingProvider).asData?.value.creditCosts ??
-        const <String, dynamic>{};
+    final creditCosts = billing?.creditCosts ?? const <String, dynamic>{};
     int estimateCredits(int pages) => estimateProjectCredits(
       bookType: presets.bookType,
       bookTypeChoice: presets.bookTypeChoice,
@@ -160,12 +210,17 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
       builder: (sheetContext) => _PageCountPromptSheet(
         preflight: preflight,
         estimateCredits: estimateCredits,
+        ceilingPages: ceiling,
         resolveLocked: maxPages == null
             ? null
             : (pages) => _resolveLongBook(
                 sheetContext,
                 ref,
-                BookPageLimit(limit: maxPages, requestedPages: pages),
+                BookPageLimit(
+                  limit: maxPages,
+                  requestedPages: pages,
+                  maxPages: ceiling,
+                ),
               ),
       ),
     );

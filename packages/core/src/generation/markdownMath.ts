@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { renderToString } from "katex";
+import { bookMatterSectionEnd } from "./bookMatterPages.js";
 import { mathAt } from "./markdownMathSyntax.js";
 
 /**
@@ -64,9 +65,15 @@ export function replaceMarkdownMath(markdown: string, replace: (expression: Mark
   return output;
 }
 
-/** Fences, code spans, HTML markup and link destinations are not prose math. */
+/**
+ * Fences, code spans, HTML markup and link destinations are not prose math, and
+ * neither is the title page or matter sheet the compiler wrote: every word in
+ * them is the reader's, typed into a form, and a pen name of `$x$` is a name.
+ */
 function literalEnd(text: string, at: number): number {
   if (at === 0 || text[at - 1] === "\n") {
+    const matter = bookMatterSectionEnd(text, at);
+    if (matter !== undefined) return matter;
     const lineEnd = text.indexOf("\n", at);
     const line = text.slice(at, lineEnd < 0 ? text.length : lineEnd);
     const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line);

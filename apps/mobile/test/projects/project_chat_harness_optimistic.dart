@@ -88,8 +88,6 @@ class ScriptedProjectsRepository implements ProjectsRepository {
           pdf: MobileExportAvailability(
             format: 'pdf',
             available: false,
-            unlocked: true,
-            creditsRequired: 0,
             downloadUrl: '',
             filename: 'book.pdf',
             contentType: 'application/pdf',
@@ -97,8 +95,6 @@ class ScriptedProjectsRepository implements ProjectsRepository {
           epub: MobileExportAvailability(
             format: 'epub',
             available: false,
-            unlocked: true,
-            creditsRequired: 0,
             downloadUrl: '',
             filename: 'book.epub',
             contentType: 'application/epub+zip',

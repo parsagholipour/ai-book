@@ -7,10 +7,11 @@ import {
   GenerationAttemptJobClaimError,
   GenerationQuotaExceededError,
   InsufficientCreditsError,
-  ensureProjectExportEntitlementOrSpend,
   hasActiveSubscriptionEntitlement
 } from "@book-maker/db/billing";
 import { imageLimitReachedMessage } from "@book-maker/core/editFailure";
+import { AiCapacityRefusedError, sendAiCapacityRefusal } from "./aiCapacity.js";
+import { UltraTierUnavailableError, sendUltraTierUnavailable } from "./ultraTier.js";
 import { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
 
 /**
@@ -387,6 +388,16 @@ const GENERATION_START_NOT_CLAIMED = "That couldn’t be started, so nothing was
  * Fastify's logging and 500 handling.
  */
 export function sendGenerationAttemptError(reply: FastifyReply, error: unknown): boolean {
+  // Raised by a shared start path before it reserves anything (`aiCapacity.ts`).
+  if (error instanceof AiCapacityRefusedError) {
+    sendAiCapacityRefusal(reply, error.decision);
+    return true;
+  }
+  // Raised the same way while the operator has Ultra switched off (`ultraTier.ts`).
+  if (error instanceof UltraTierUnavailableError) {
+    sendUltraTierUnavailable(reply);
+    return true;
+  }
   if (error instanceof GenerationQuotaExceededError) {
     sendImageLimitReached(reply, error.claim);
     return true;
@@ -417,25 +428,4 @@ export function sendGenerationAttemptError(reply: FastifyReply, error: unknown):
  */
 export function sendSubscriptionRequired(reply: FastifyReply, message: string) {
   return sendMobileError(reply, 403, "SUBSCRIPTION_REQUIRED", message);
-}
-
-export async function ensureExportEntitlementForDownload(
-  reply: FastifyReply,
-  userId: string,
-  projectId: string
-): Promise<true | null> {
-  try {
-    await ensureProjectExportEntitlementOrSpend({
-      userId,
-      projectId,
-      idempotencyKey: `mobile:project:${projectId}:export-unlock`
-    });
-    return true;
-  } catch (error) {
-    if (error instanceof InsufficientCreditsError) {
-      sendInsufficientCredits(reply, error);
-      return null;
-    }
-    throw error;
-  }
 }

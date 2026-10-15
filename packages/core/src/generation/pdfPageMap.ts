@@ -436,10 +436,12 @@ function firstContentPdfPage(map: BookPdfPageMap): number {
  * cover (or title-page fallback); version-1 maps were measured against PDFs
  * that counted that sheet, so the offset is 0.
  *
- * The one is a guarantee held in two places, not an assumption: a manuscript
- * carries a cover *or* the fallback title page, never both (`compileBookMarkdown`),
- * and both sheets are height-capped and clipped in `pdfCss.ts` so neither can
- * fragment into a second sheet that resets the page counter again.
+ * The one is a guarantee held in two places, not an assumption: only a book's
+ * first sheet resets the counter — the cover, or a coverless book's title page —
+ * while a title page behind a cover and the matter sheet are `@page pdf-front`,
+ * counted but unnumbered (`bookMatterPages.ts`); and both resetting sheets are
+ * height-capped and clipped in `pdfCss.ts` so neither can fragment into a
+ * second sheet that resets the page counter again.
  */
 export function printedPageOffset(map: Pick<BookPdfPageMap, "version" | "hasCoverPage">): number {
   return map.version >= BOOK_PDF_PAGE_MAP_VERSION && map.hasCoverPage ? 1 : 0;

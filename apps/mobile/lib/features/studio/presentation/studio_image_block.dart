@@ -2,19 +2,43 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../../../shared/ui/authed_network_image.dart';
+import '../../projects/presentation/ai_content_report.dart';
 import '../../projects/presentation/plan_build_progress.dart';
 import 'studio_document.dart';
 
 /// What the picture menu can do.
 enum StudioImageAction { replace, moveUp, moveDown, remove }
 
+/// The menu's one choice the block answers itself: reporting a picture the
+/// writing assistant drew. Its owner never sees it, so the owners' switches
+/// over [StudioImageAction] stay about the document.
+final class _ReportPicture {
+  const _ReportPicture();
+}
+
+/// The book and assist a Studio AI picture came from, read off its URL —
+/// `/assets/images/<projectId>/studio-image-<assistId>.<ext>`, the name the
+/// worker's Illustrate writes. Null for anything else: an upload is the
+/// author's own picture, and reporting exists for what a model drew.
+({String projectId, String assistId})? studioAiPictureSource(String url) {
+  final match = RegExp(
+    r'/assets/images/([^/?#]+)/studio-image-([^/.?#]+)\.[A-Za-z0-9]+(?:[?#]|$)',
+  ).firstMatch(url);
+  if (match == null) return null;
+  return (
+    projectId: Uri.decodeComponent(match.group(1)!),
+    assistId: Uri.decodeComponent(match.group(2)!),
+  );
+}
+
 /// A picture in the chapter: the image itself, a menu over its corner, and
 /// the caption beneath it (markdown's alt text), edited in place.
-class StudioImageBlock extends StatelessWidget {
+class StudioImageBlock extends ConsumerWidget {
   const StudioImageBlock({
     required this.entry,
     required this.onAction,
@@ -32,14 +56,14 @@ class StudioImageBlock extends StatelessWidget {
   /// The picture book's picture slot does not move within its page.
   final bool showMoves;
 
-  Future<void> _openMenu(BuildContext context) async {
-    final action = await showAppActionSheet<StudioImageAction>(
+  Future<void> _openMenu(BuildContext context, WidgetRef ref) async {
+    final aiSource = studioAiPictureSource(entry.url);
+    final action = await showAppActionSheet<Object>(
       context,
       title: 'Picture',
       builder: (sheetContext) {
         final colors = Theme.of(sheetContext).colorScheme;
-        void pick(StudioImageAction action) =>
-            Navigator.of(sheetContext).pop(action);
+        void pick(Object action) => Navigator.of(sheetContext).pop(action);
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -62,6 +86,13 @@ class StudioImageBlock extends StatelessWidget {
                 onTap: () => pick(StudioImageAction.moveDown),
               ),
             ],
+            if (aiSource != null)
+              ListTile(
+                key: const ValueKey('studio-image-report'),
+                leading: const Icon(Icons.flag_outlined),
+                title: const Text('Report picture'),
+                onTap: () => pick(const _ReportPicture()),
+              ),
             ListTile(
               leading: Icon(Icons.delete_outline, color: colors.error),
               title: Text(
@@ -74,11 +105,28 @@ class StudioImageBlock extends StatelessWidget {
         );
       },
     );
-    if (action != null) onAction(action);
+    if (action is StudioImageAction) onAction(action);
+    if (action is _ReportPicture && aiSource != null && context.mounted) {
+      // An assist row is kept for 30 days after it is applied; past that the
+      // server answers 404 and the dialog's own snackbar says so. The book's
+      // own picture report still reaches it once the chapter is published.
+      await reportAiContent(
+        context: context,
+        title: 'Report this AI-drawn picture',
+        submit: (reason, comment) => ref
+            .read(aiContentReportsApiProvider)
+            .reportStudioAssist(
+              projectId: aiSource.projectId,
+              assistId: aiSource.assistId,
+              reason: reason,
+              comment: comment,
+            ),
+      );
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Semantics(
@@ -135,7 +183,7 @@ class StudioImageBlock extends StatelessWidget {
                     child: _CornerButton(
                       tooltip: 'Picture options',
                       icon: Icons.more_horiz,
-                      onPressed: () => _openMenu(context),
+                      onPressed: () => _openMenu(context, ref),
                     ),
                   ),
                 ],

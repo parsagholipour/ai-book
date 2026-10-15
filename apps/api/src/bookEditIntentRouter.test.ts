@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ToolCallsResult } from "@book-maker/core";
 import { CLASSIFIER_PAGE_SAMPLE_CAP, classifyProjectChatMessage } from "./bookEditIntent.js";
-import { bookPageMapForProject, readerPageNumbering } from "./bookPageNumbering.js";
+import { bookPageMapForProject, numberingForProject, readerPageNumbering } from "./bookPageNumbering.js";
+import { chatMarkdownLiteral } from "./chatMarkdownLiteral.js";
 import {
   chapters,
   decideDecision,
@@ -51,6 +52,108 @@ describe("book edit intent AI router", () => {
       readerSelection: { pageIndex: pages[0]!.index }
     });
     expect(model.generateWithTools).toHaveBeenCalled();
+  });
+
+  it("takes a swap that marks its term as words the free way, even when the word names a matter page", async () => {
+    // The matter guard sent these to the router, and with the router down the
+    // first came back as a matter edit: "I didn't find a change…".
+    for (const [message, from, to] of [
+      ["replace the word publisher with editor everywhere", "publisher", "editor"],
+      ['replace "title page" with "cover page"', "title page", "cover page"],
+      ["Please change the term ISBN to identifier", "ISBN", "identifier"]
+    ] as const) {
+      const model = fakeFailingTextModel();
+      const intent = await classifyProjectChatMessage({ message, stage: "complete", pages, chapters, textModel: model });
+      expect(model.generateWithTools, message).not.toHaveBeenCalled();
+      expect(intent, message).toMatchObject({
+        kind: "local_patch",
+        scope: "all_pages",
+        editInstruction: message,
+        exactReplacement: { from, to }
+      });
+    }
+  });
+
+  it("leaves a matter request that reads like a swap to the matter edit", async () => {
+    // An unmarked term names the book's publisher, not a word in its pages —
+    // "change publisher to Sun" parses as a swap, and is still not one.
+    for (const message of [
+      "change the publisher to Sun Press",
+      "replace the dedication with a poem",
+      "change publisher to Sun",
+      "add an ISBN"
+    ]) {
+      const routerDown = await classifyProjectChatMessage({
+        message,
+        stage: "complete",
+        pages,
+        chapters,
+        textModel: fakeFailingTextModel()
+      });
+      expect(routerDown.kind, message).toBe("book_matter");
+
+      const model = fakeDecideModel({
+        action: "propose_edit",
+        confidence: 0.92,
+        reasoning: "The reader wants the book's matter changed.",
+        assistantMessage: "I’ll change that on the title and credits pages.",
+        clarification: "none",
+        pageIndexes: [],
+        chapterIndex: null,
+        targetLanguage: null,
+        editTarget: "book_matter"
+      });
+      const routed = await classifyProjectChatMessage({ message, stage: "complete", pages, chapters, textModel: model });
+      expect(model.generateWithTools, message).toHaveBeenCalledTimes(1);
+      expect(routed.kind, message).toBe("book_matter");
+    }
+  });
+
+  it("reads a matter word in a sentence that names a page by number as that page's content", async () => {
+    // Review finding 7: with the router down these were matter edits that
+    // failed, and with it up the model-free hint told the router "book_matter".
+    const book = manyPages(6);
+    for (const message of ["Rewrite page 4 so the publisher sounds meaner", "Rewrite page 4 to mention the dedication scene"]) {
+      const model = fakeDecideModel({
+        action: "propose_edit",
+        confidence: 0.9,
+        reasoning: "A page of prose.",
+        assistantMessage: "I’ll rewrite page 4.",
+        clarification: "none",
+        pageIndexes: [4],
+        chapterIndex: null,
+        targetLanguage: null,
+        editTarget: "pages",
+        editStyle: "rewrite"
+      });
+      const routed = await classifyProjectChatMessage({ message, stage: "complete", pages: book, chapters, textModel: model });
+      expect(model.generateWithTools, message).toHaveBeenCalledTimes(1);
+      const hint = JSON.parse(vi.mocked(model.generateWithTools).mock.calls[0]![0].messages.at(-1)!.content).heuristicIntent;
+      expect(hint.kind, message).not.toBe("book_matter");
+      expect(routed, message).toMatchObject({ kind: "page_rewrite", affectedPageIndexes: [4] });
+
+      for (const textModel of [fakeFailingTextModel(), undefined]) {
+        const degraded = await classifyProjectChatMessage({ message, stage: "complete", pages: book, chapters, textModel });
+        expect(degraded, message).toMatchObject({ kind: "page_rewrite", affectedPageIndexes: [4] });
+      }
+    }
+
+    // The matter itself, named with no page, is still the matter edit when the router is down.
+    for (const message of [
+      "add a dedication: For my mom",
+      "change the publisher to Lantern",
+      "remove all rights reserved",
+      "set the ISBN to 978-0-306-40615-7"
+    ]) {
+      const intent = await classifyProjectChatMessage({
+        message,
+        stage: "complete",
+        pages: book,
+        chapters,
+        textModel: fakeFailingTextModel()
+      });
+      expect(intent, message).toMatchObject({ kind: "book_matter", affectedPageIndexes: [] });
+    }
   });
 
   it("short-circuits read/undo intents without calling the AI router", async () => {
@@ -440,6 +543,39 @@ describe("book edit intent AI router", () => {
     expect(intent.affectedPageIndexes).toEqual([4, 5]);
   });
 
+  it("shows the router a saved reply without the bubble's literal marks, and the reader's text as typed", async () => {
+    // An editInstruction copied from "the dedication now reads “For *Mom*”"
+    // would otherwise carry the invisible marks into the pages it rewrites.
+    const model = fakeDecideModel({
+      action: "answer",
+      confidence: 0.9,
+      reasoning: "Question.",
+      assistantMessage: "It reads “For *Mom*”.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+    // The reply's ZWNJ is Persian spelling, not one of the marks.
+    const userTurn = "Make it For *Mom*";
+    const dedication = "تقدیم به *مادرم*\u200cها\n1. Sam";
+    await classifyProjectChatMessage({
+      message: "What does the dedication say?",
+      stage: "complete",
+      pages,
+      recentMessages: [
+        { role: "user", content: userTurn },
+        { role: "assistant", content: `Done — the dedication now reads “${chatMarkdownLiteral(dedication)}”.` }
+      ],
+      textModel: model
+    });
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
+    expect(JSON.parse(call.messages.at(-1)!.content).recentConversation).toEqual([
+      { role: "user", content: userTurn },
+      { role: "assistant", content: `Done — the dedication now reads “${dedication}”.` }
+    ]);
+  });
+
   it("does not tell the router a version-1 cover is unnumbered", async () => {
     const map = {
       version: 2 as 1 | 2,
@@ -489,6 +625,57 @@ describe("book edit intent AI router", () => {
       totalPrintedPages: 10,
       contentsStartPage: 2
     });
+  });
+
+  it("tells the router what the back matter holds, never that it is the Sources list by default", async () => {
+    const map = {
+      version: 2 as const,
+      totalPdfPages: 8,
+      hasCoverPage: true,
+      contentsStartPdfPage: 2,
+      backMatterStartPdfPage: 6,
+      pages: [
+        { index: 1, startPdfPage: 3, endPdfPage: 4 },
+        { index: 2, startPdfPage: 4, endPdfPage: 5 }
+      ],
+      contentRevision: 7
+    };
+    const contextFor = async (pageNumbering: ReturnType<typeof readerPageNumbering>) => {
+      const model = fakeDecideModel({
+        action: "answer",
+        confidence: 0.9,
+        reasoning: "Question.",
+        assistantMessage: "That page is the author's biography.",
+        clarification: "none",
+        pageIndexes: [],
+        chapterIndex: null,
+        targetLanguage: null
+      });
+      await classifyProjectChatMessage({ message: "Where does the story end?", stage: "complete", pages, textModel: model, pageNumbering });
+      const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
+      return JSON.parse(call.messages.at(-1)!.content).readerPageContext as Record<string, unknown>;
+    };
+
+    // Since the matter pages, the one back-matter start is About the Author on
+    // a book that prints no Sources — and the router was told "sourcesStartPage".
+    const bio = await contextFor(
+      numberingForProject({
+        pdfPageMap: map,
+        contentRevision: 7,
+        research: [],
+        bookMatter: { aboutAuthor: "Ana writes about sleep." },
+        category: "STORY",
+        mediaSettings: {}
+      })
+    );
+    expect(bio).toMatchObject({ backMatterStartPage: 5, backMatter: "the About the Author page" });
+    expect(bio).not.toHaveProperty("sourcesStartPage");
+
+    // Without the row the start is still given, and nothing claims what it is.
+    const unknown = await contextFor(readerPageNumbering(bookPageMapForProject({ pdfPageMap: map, contentRevision: 7 })));
+    expect(unknown).toMatchObject({ backMatterStartPage: 5 });
+    expect(unknown).not.toHaveProperty("backMatter");
+    expect(unknown).not.toHaveProperty("sourcesStartPage");
   });
 
   it("lets the router read page prose before deciding", async () => {

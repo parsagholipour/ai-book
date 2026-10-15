@@ -19,11 +19,17 @@ class MobileAudiobook {
     required this.failureMessage,
     required this.progress,
     required this.chapters,
+    this.payload,
   });
 
   final String id;
   final String projectId;
   final AudiobookStatus status;
+
+  /// The server's JSON this manifest was read from, so it can be kept on the
+  /// phone as sent (`AudiobookCache.saveManifest`) and read back by this same
+  /// parser. Null for a manifest built in code.
+  final Map<String, dynamic>? payload;
   final String voice;
   final String narratorName;
   final bool backupNarrationUsed;
@@ -68,6 +74,7 @@ class MobileAudiobook {
           .whereType<Map<String, dynamic>>()
           .map(MobileAudiobookChapter.fromJson)
           .toList(growable: false),
+      payload: json,
     );
   }
 
@@ -145,6 +152,30 @@ class AudiobookProgress {
       currentAction: json['currentAction'] as String? ?? '',
       chaptersReady: (json['chaptersReady'] as num?)?.round() ?? 0,
       chapterCount: (json['chapterCount'] as num?)?.round() ?? 0,
+    );
+  }
+}
+
+/// What narrating a book costs right now, as the server will charge it.
+///
+/// Priced by the words read aloud, which the app cannot count the way the
+/// server does — so it asks rather than mirroring the formula.
+class AudiobookQuote {
+  const AudiobookQuote({
+    required this.credits,
+    required this.pageCount,
+    required this.wordCount,
+  });
+
+  final int credits;
+  final int pageCount;
+  final int wordCount;
+
+  factory AudiobookQuote.fromJson(Map<String, dynamic> json) {
+    return AudiobookQuote(
+      credits: (json['credits'] as num).round(),
+      pageCount: (json['pageCount'] as num?)?.round() ?? 0,
+      wordCount: (json['wordCount'] as num?)?.round() ?? 0,
     );
   }
 }

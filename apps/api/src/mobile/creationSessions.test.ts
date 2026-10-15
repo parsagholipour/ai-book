@@ -317,12 +317,11 @@ describe("mobile creation sessions", () => {
     mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
       creationDraftRecord({ id: "session-draft", payload: data.payload, lastTurn: data.lastTurn })
     );
-    const app = await buildMobileApp({
-      creationEnrichment: async () => ({
-        assistantMessage: "I found a current, grounded topic.",
-        question: null
-      })
-    });
+    const creationEnrichment = vi.fn(async (_request: unknown, _base: unknown, _owner: { userId: string }) => ({
+      assistantMessage: "I found a current, grounded topic.",
+      question: null
+    }));
+    const app = await buildMobileApp({ creationEnrichment });
     const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
 
     try {
@@ -336,6 +335,8 @@ describe("mobile creation sessions", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json().turn.assistantMessage).toContain("grounded topic");
       expect(timeoutSpy.mock.calls.some((call) => call[1] === 85_000)).toBe(true);
+      // Every model call the turn makes is costed under the reader who sent it.
+      expect(creationEnrichment.mock.calls[0]?.[2]).toEqual({ userId: "user-a" });
     } finally {
       timeoutSpy.mockRestore();
       await app.close();

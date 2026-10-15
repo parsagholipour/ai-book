@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  backMatterContentsForProject,
   bookPageMapForProject,
   bookPdfNumberingForProject,
+  frontMatterForPrompt,
   furniturePageIntentFromMessage,
   modelPageForReaderContext,
   numberingForProject,
@@ -22,6 +24,63 @@ const map = {
   ],
   contentRevision: 7
 };
+
+describe("front-matter page identity", () => {
+  // Rendered from a coverless book: an unnumbered title, a dedication that
+  // spans physical sheets 2–3, then prose. The same ranges could describe an
+  // illustrated cover followed by a title and a one-sheet dedication.
+  const dedicationMap = {
+    version: 2 as const,
+    totalPdfPages: 4,
+    hasCoverPage: true,
+    pages: [{ index: 1, startPdfPage: 4, endPdfPage: 4 }],
+    contentRevision: 1
+  };
+  const row = {
+    pdfPageMap: dedicationMap,
+    contentRevision: 1,
+    authorName: null,
+    bookMatter: { dedication: Array.from({ length: 100 }, (_, index) => `To ${index}`).join("\n") }
+  };
+  const pages = [{ id: "page-1", index: 1, title: "One", summary: "", previewText: "A clockmaker walked into the village." }];
+
+  it("keeps the first page ambiguous when a dedication spans several sheets", () => {
+    const numbering = numberingForProject(row);
+    expect(numbering.frontMatter).toEqual([
+      { page: 1, holds: "title_or_matter" },
+      { page: 2, holds: "matter_sheet" }
+    ]);
+    expect(frontMatterForPrompt(numbering)?.[0]).toEqual({
+      page: 1,
+      holds: "front matter — the title page, or the dedication and publication page"
+    });
+    const answer = furniturePageIntentFromMessage("delete page 1", pages, numbering)?.assistantMessage;
+    expect(answer).toContain("is the book’s front matter");
+    expect(answer).toContain("the dedication");
+    expect(answer).not.toContain("is the book’s title page");
+  });
+
+  it("does not name an old PDF's pages using matter removed during editing", () => {
+    const numbering = numberingForProject({
+      ...row,
+      contentRevision: 2,
+      status: "EDITING",
+      bookMatter: null
+    });
+    expect(numbering.frontMatter).toEqual([
+      { page: 1, holds: "title_or_matter" },
+      { page: 2, holds: "title_or_matter" }
+    ]);
+  });
+
+  it("keeps unstamped maps neutral because current matter may describe a later edit", () => {
+    const { contentRevision: _revision, ...unstamped } = dedicationMap;
+    expect(numberingForProject({ ...row, pdfPageMap: unstamped, bookMatter: null }).frontMatter).toEqual([
+      { page: 1, holds: "title_or_matter" },
+      { page: 2, holds: "title_or_matter" }
+    ]);
+  });
+});
 
 describe("bookPageMapForProject", () => {
   it("uses the stored map only while its revision is the project's", () => {
@@ -197,6 +256,97 @@ describe("furniturePageIntentFromMessage", () => {
     expect(furniturePageIntentFromMessage("make the ending warmer", pages, numbering)).toBeNull();
     // Without a map the numbers are model indexes and route as before.
     expect(furniturePageIntentFromMessage("fix page 2", pages, readerPageNumbering(undefined))).toBeNull();
+  });
+
+  it("only exempts quoted words that locate body text from the furniture guard", () => {
+    const withProse = pages.map((page) => ({ ...page, previewText: "The storm gathered over the hills." }));
+    expect(furniturePageIntentFromMessage('on page 1, make "storm" more dramatic', withProse, numbering)).toBeNull();
+    const replacement = furniturePageIntentFromMessage('change page 1 to "A new list"', withProse, numbering);
+    expect(replacement?.kind).toBe("answer");
+    expect(replacement?.assistantMessage).toContain("table of contents");
+  });
+});
+
+describe("naming the back matter", () => {
+  // Printed 9–10 are the back matter: the map records where it starts, and
+  // nothing about what it holds.
+  const withBackMatter = { ...map, totalPdfPages: 11, backMatterStartPdfPage: 10 };
+  const pages = [1, 2, 3].map((index) => ({
+    id: `page-${index}`,
+    index,
+    title: `The ${index} Winds`,
+    summary: "",
+    previewText: ""
+  }));
+  const linked = [{ title: "Sleep research", url: "https://example.com/sleep", summary: "Background." }];
+  const book = (fields: { research?: typeof linked; bookMatter?: unknown; category?: string; mediaSettings?: unknown }) =>
+    numberingForProject({
+      pdfPageMap: withBackMatter,
+      contentRevision: 7,
+      research: [],
+      bookMatter: null,
+      category: "HISTORY",
+      mediaSettings: {},
+      ...fields
+    });
+  const answer = (numbering: ReturnType<typeof numberingForProject>) =>
+    furniturePageIntentFromMessage("fix page 9", pages, numbering)?.assistantMessage ?? "";
+
+  it("calls it the Sources list only when the book prints one", () => {
+    const sources = answer(book({ research: linked }));
+    expect(sources).toContain("Printed page 9 is the Sources list at the back of the book.");
+    expect(sources).toContain("remove the sources list");
+    expect(sources).not.toContain("About the Author");
+  });
+
+  it("calls it the About the Author page when the bio is all that prints there", () => {
+    // 2026-10-06: the bio's page answered "that's the Sources list — say
+    // remove the sources list", about a book with no sources at all.
+    const bio = answer(book({ bookMatter: { aboutAuthor: "Ana writes about sleep." } }));
+    expect(bio).toContain("Printed page 9 is the About the Author page at the back of the book.");
+    expect(bio).toContain("Title & credits");
+    expect(bio).not.toMatch(/sources/i);
+    // Linked sources the book does not print are not printed.
+    const unprinted = answer(
+      book({ research: linked, mediaSettings: { includeSources: false }, bookMatter: { aboutAuthor: "Ana." } })
+    );
+    expect(unprinted).toContain("is the About the Author page");
+    expect(unprinted).not.toMatch(/sources/i);
+  });
+
+  it("names both when both print, since one start cannot say which page is which", () => {
+    const both = answer(book({ research: linked, bookMatter: { aboutAuthor: "Ana writes about sleep." } }));
+    expect(both).toContain("the Sources list and the About the Author page");
+    expect(both).toContain("remove the sources list");
+    expect(both).toContain("Title & credits");
+  });
+
+  it("names the pages neutrally when it cannot tell what they hold", () => {
+    const unknown = answer(readerPageNumbering(bookPageMapForProject({ pdfPageMap: withBackMatter, contentRevision: 7 })));
+    expect(unknown).toContain("Printed page 9 is one of the pages at the end of the book");
+    expect(unknown).not.toMatch(/sources|about the author/i);
+    // The row says neither prints (a stale map mid-edit): still neutral, never Sources.
+    expect(answer(book({}))).toContain("one of the pages at the end of the book");
+  });
+
+  it("reads what prints the way the compile decides it, and only from a row that was loaded", () => {
+    const row = { contentRevision: 7, research: linked, bookMatter: null, mediaSettings: {} };
+    expect(backMatterContentsForProject({ ...row, category: "HISTORY" })).toEqual({ sources: true, aboutAuthor: false });
+    // A guide prints Sources only when the reader asked for them.
+    expect(backMatterContentsForProject({ ...row, category: "BUSINESS" })).toEqual({ sources: false, aboutAuthor: false });
+    expect(
+      backMatterContentsForProject({ ...row, category: "BUSINESS", mediaSettings: { includeSources: true } })
+    ).toEqual({ sources: true, aboutAuthor: false });
+    // A source without a link is never printed.
+    expect(
+      backMatterContentsForProject({ ...row, category: "HISTORY", research: [{ title: "Notes", url: null, summary: "" }] })
+    ).toEqual({ sources: false, aboutAuthor: false });
+    expect(
+      backMatterContentsForProject({ ...row, category: "STORY", research: [], bookMatter: { aboutAuthor: "Ana." } })
+    ).toEqual({ sources: false, aboutAuthor: true });
+    // A caller that did not load the fields gets no answer, not a wrong one.
+    expect(backMatterContentsForProject({ contentRevision: 7 })).toBeUndefined();
+    expect(backMatterContentsForProject({ contentRevision: 7, research: linked })).toBeUndefined();
   });
 });
 

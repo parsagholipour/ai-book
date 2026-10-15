@@ -98,6 +98,8 @@ void main() {
           container.read(projectSnapshotCacheProvider),
           isNot(same(previousProjectCache)),
         );
+        // Sent, though logout did not wait for it.
+        await tester.runAsync(() => _until(() => logoutRequest != null));
         expect(logoutRequest?.path, '/api/mobile/auth/logout');
         expect(logoutRequest?.data, {
           'refreshToken': session.tokens.refreshToken,
@@ -105,8 +107,71 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Welcome back'), findsOneWidget);
         expect(find.text('Sign in'), findsOneWidget);
+        // The reader chose this; only a session that ended by itself is
+        // explained on the sign-in screen.
+        expect(find.text('You were signed out'), findsNothing);
         expect(await repository.restoreSession(), isNull);
       },
     );
+  }
+
+  testWidgets('logout returns at once while the server revoke hangs', (
+    tester,
+  ) async {
+    final session = fakeSession();
+    final tokens = MemoryAuthTokenStore(session.tokens);
+    final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
+    addTearDown(() => dio.close(force: true));
+    var revokes = 0;
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.path == '/api/mobile/auth/me') {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {'user': session.user.toJson()},
+              ),
+            );
+            return;
+          }
+          // A network that swallows the request: no answer, ever.
+          revokes += 1;
+        },
+      ),
+    );
+    final repository = MobileAuthRepository(
+      apiClient: ApiClient(dio: dio, tokenStore: tokens),
+      tokenStore: tokens,
+    );
+    await tester.pumpWidget(testApp(authRepository: repository));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(TomezaApp)),
+    );
+
+    await tester.runAsync(
+      () => container
+          .read(authControllerProvider.notifier)
+          .logout()
+          .timeout(const Duration(seconds: 2)),
+    );
+    await tester.runAsync(() => _until(() => revokes > 0));
+
+    expect(revokes, 1);
+    expect(await tokens.read(), isNull);
+    expect(container.read(authControllerProvider).isLoading, isFalse);
+    expect(container.read(authControllerProvider).value, isNull);
+    await tester.pumpAndSettle();
+    expect(find.text('Welcome back'), findsOneWidget);
+  });
+}
+
+/// Real time, in `runAsync`: the revoke runs in the zone logout was called
+/// from, and nothing there completes a fake-async future.
+Future<void> _until(bool Function() done) async {
+  for (var i = 0; i < 200 && !done(); i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
   }
 }

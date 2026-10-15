@@ -8,6 +8,7 @@ import '../../app/config/app_config.dart';
 import '../../features/auth/domain/auth_models.dart';
 import '../../features/app_update/domain/app_update.dart';
 import '../../features/auth/domain/legal_gate.dart';
+import '../../features/auth/presentation/auth_controller.dart';
 import 'api_error.dart';
 import 'auth_token_store.dart';
 
@@ -36,6 +37,8 @@ final apiClientProvider = Provider<ApiClient>((ref) {
         ref.read(legalGateDismissedProvider.notifier).reset(),
     onAppUpdateRequired: (details) =>
         ref.read(appUpdateStatusProvider.notifier).reportRequired(details),
+    onSessionLost: () =>
+        ref.read(authControllerProvider.notifier).sessionLost(),
   );
 });
 
@@ -52,16 +55,32 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 /// where the re-read is what mints the next token.
 final apiAuthHeadersProvider = FutureProvider.autoDispose((ref) async {
   final tokens = await ref.watch(apiClientProvider).validTokens();
-  final renewIn = tokens.accessTokenRefreshAt
-      .add(const Duration(seconds: 1))
-      .difference(DateTime.now().toUtc());
+  final renewIn = tokens.refreshDueIn + const Duration(seconds: 1);
   final timer = Timer(
-    renewIn < const Duration(seconds: 1) ? const Duration(seconds: 1) : renewIn,
+    renewIn < minHeaderRenewal ? minHeaderRenewal : renewIn,
     ref.invalidateSelf,
   );
   ref.onDispose(timer.cancel);
   return {'Authorization': 'Bearer ${tokens.accessToken}'};
 });
+
+/// The soonest [apiAuthHeadersProvider] re-reads itself, whatever the token
+/// says. A re-read of a token that looks due is a refresh, so with no floor a
+/// clock the client could not correct for (a server that does not send the
+/// token's lifetime) refreshed once a second. It stays under the 45 seconds
+/// the client refreshes ahead of expiry, so a header is replaced before its
+/// token stops working.
+const minHeaderRenewal = Duration(seconds: 30);
+
+/// Codes that end the session whichever request they answer: a revoked
+/// session stays revoked, and a disabled account stays disabled.
+///
+/// `INVALID_SESSION` and `SESSION_EXPIRED` are not here. On an ordinary
+/// request they say only that *this access token* is done — rotated by a
+/// refresh that raced the request, or past its fifteen minutes — and the
+/// refresh that follows decides. From the refresh route every auth refusal is
+/// final (`_refreshTokens`).
+const _sessionEndingCodes = {'SESSION_REVOKED', 'ACCOUNT_DISABLED'};
 
 /// Receive timeout for endpoints whose response waits on a full LLM turn
 /// (creation chat, project chat, build preflight). The global 20s default
@@ -103,10 +122,22 @@ class ApiClient {
     required this.tokenStore,
     this.onLegalAcceptanceRequired,
     this.onAppUpdateRequired,
+    this.onSessionLost,
   });
 
   final Dio dio;
   final AuthTokenStore tokenStore;
+
+  /// Called once the server has stopped honouring this install's session, with
+  /// the stored tokens already cleared: the refresh was refused, the refresh
+  /// token ran out, the store came back empty, or a request was answered by a
+  /// revoked session or a disabled account. The app signs the reader out.
+  ///
+  /// Before this, nothing told the app: the router still saw a session, every
+  /// screen failed with "Sign in again to continue.", and the only way out was
+  /// Account → Log out. Never called for a network failure, nor for a session
+  /// the store has already moved past (see [_loseSession]).
+  final void Function()? onSessionLost;
 
   /// Called when the server refuses a request with 428: the account has not
   /// accepted the current legal documents. Re-arms the updated-terms gate a
@@ -142,29 +173,107 @@ class ApiClient {
   /// provider is rebuilt every few seconds while a book works, each rebuild
   /// opened a new stream, and the server kept every abandoned one alive —
   /// polling the database each second for it — until the book settled (three
-  /// concurrent streams for one book, 2026-10-01). The generator's `finally`
-  /// runs on cancellation, and the token is what closes the connection.
+  /// concurrent streams for one book, 2026-10-01). The cancel aborts the
+  /// request through its token, at once.
+  ///
+  /// Built on a controller rather than an `async*` generator on purpose. A
+  /// generator waiting inside `await for` does not see a cancel until its next
+  /// `yield`, so a stream cancelled between events kept its socket until the
+  /// server next sent one — and a server that sends only changes and `: ping`
+  /// comments (which yield nothing) might not send one for minutes.
+  ///
+  /// [idleTimeout] bounds the silence between any two bytes — a `: ping`
+  /// comment counts — and fails the stream with a `NETWORK_ERROR` when it
+  /// passes. Without it a socket a network switch had silently killed was
+  /// waited on forever: nothing errors on a dead TCP connection that is only
+  /// ever read.
   Stream<ServerSentEvent> getServerSentEvents(
     String path, {
     bool requiresAuth = true,
-  }) async* {
+    Duration? idleTimeout,
+  }) {
     final cancelToken = CancelToken();
-    try {
-      final response = await _streamRequest(
-        path,
-        requiresAuth: requiresAuth,
-        cancelToken: cancelToken,
-      );
-      final body = response.data;
-      if (body == null) {
-        return;
-      }
-      yield* _decodeServerSentEvents(body.stream);
-    } finally {
+    StreamSubscription<ServerSentEvent>? events;
+    var listening = true;
+    late final StreamController<ServerSentEvent> controller;
+
+    void abort() {
       if (!cancelToken.isCancelled) {
         cancelToken.cancel('Event stream closed by its listener.');
       }
     }
+
+    void fail(Object error, StackTrace stackTrace) {
+      abort();
+      if (!listening) return;
+      controller.addError(_eventStreamFailure(error), stackTrace);
+      unawaited(controller.close());
+    }
+
+    Future<void> open() async {
+      final Response<ResponseBody> response;
+      try {
+        response = await _streamRequest(
+          path,
+          requiresAuth: requiresAuth,
+          cancelToken: cancelToken,
+          receiveTimeout: idleTimeout,
+        );
+      } catch (error, stackTrace) {
+        fail(error, stackTrace);
+        return;
+      }
+      final body = response.data;
+      if (!listening) {
+        // Cancelled while the request was in flight: `abort` has run.
+        return;
+      }
+      if (body == null) {
+        abort();
+        unawaited(controller.close());
+        return;
+      }
+      final bytes = idleTimeout == null
+          ? body.stream
+          : body.stream.timeout(idleTimeout);
+      events = _decodeServerSentEvents(bytes).listen(
+        controller.add,
+        onError: fail,
+        onDone: () {
+          abort();
+          unawaited(controller.close());
+        },
+        cancelOnError: true,
+      );
+      if (controller.isPaused) events?.pause();
+    }
+
+    controller = StreamController<ServerSentEvent>(
+      onListen: () => unawaited(open()),
+      onPause: () => events?.pause(),
+      onResume: () => events?.resume(),
+      onCancel: () {
+        listening = false;
+        abort();
+        final subscription = events;
+        events = null;
+        return subscription?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// What a failed event stream reports: an [ApiException], like every other
+  /// request, so a caller deciding whether to reconnect reads one type.
+  Object _eventStreamFailure(Object error) {
+    if (error is DioException) return _mapDioException(error);
+    if (error is TimeoutException) {
+      return const ApiException(
+        code: 'NETWORK_ERROR',
+        message: 'Check your connection and try again.',
+      );
+    }
+    return error;
   }
 
   Future<Map<String, String>> authHeaders() async {
@@ -294,7 +403,7 @@ class ApiClient {
           generation: generation,
         );
       }
-      throw _mapDioException(error);
+      throw _mapDioException(error, generation: generation);
     }
   }
 
@@ -355,7 +464,7 @@ class ApiClient {
           ),
         );
       }
-      throw _mapDioException(error);
+      throw _mapDioException(error, generation: generation);
     }
   }
 
@@ -386,7 +495,7 @@ class ApiClient {
     final current = await tokenStore.read();
     _assertCurrentSession(generation);
     if (current == null || current.isRefreshExpired) {
-      await tokenStore.clearIfCurrent(generation);
+      await _loseSession(generation);
       throw const ApiException(
         code: 'SESSION_EXPIRED',
         message: 'Sign in again to continue.',
@@ -395,6 +504,7 @@ class ApiClient {
     }
 
     try {
+      final requestedAt = DateTime.now();
       final response = await dio.post<dynamic>(
         '/api/mobile/auth/refresh',
         data: {'refreshToken': current.refreshToken},
@@ -404,6 +514,7 @@ class ApiClient {
       final data = response.data as Map<String, dynamic>;
       final tokens = MobileSessionTokens.fromJson(
         data['session'] as Map<String, dynamic>,
+        requestedAt: requestedAt,
       );
       await tokenStore.writeIfCurrent(generation, tokens);
       _assertCurrentSession(generation);
@@ -411,11 +522,28 @@ class ApiClient {
     } on DioException catch (error) {
       _assertCurrentSession(generation);
       final mapped = _mapDioException(error);
-      if (mapped.isAuthFailure) {
-        await tokenStore.clearIfCurrent(generation);
-      }
+      // The refresh token is the session: once the server refuses it —
+      // revoked by a password reset elsewhere, deleted with the account, or
+      // reused after a lost response and the whole session revoked for it —
+      // no request this install makes can succeed again. A network failure
+      // is not an answer and changes nothing.
+      if (mapped.isAuthFailure) await _loseSession(generation);
       throw mapped;
     }
+  }
+
+  /// Ends the stored session that [generation] still owns, and tells the app.
+  ///
+  /// Synchronous up to the callback: the generation check, the clear's
+  /// generation bump and the call happen in one turn, so no sign-in or logout
+  /// can land between deciding the session is this one and signing it out. A
+  /// failure from an older session finds the generation moved on and does
+  /// nothing — it cannot sign out the account that replaced it.
+  Future<void> _loseSession(int generation) {
+    if (tokenStore.generation != generation) return Future.value();
+    final cleared = tokenStore.clearIfCurrent(generation);
+    onSessionLost?.call();
+    return cleared;
   }
 
   Future<Response<dynamic>> _request(
@@ -461,7 +589,7 @@ class ApiClient {
           generation: generation,
         );
       }
-      throw _mapDioException(error);
+      throw _mapDioException(error, generation: generation);
     }
   }
 
@@ -524,7 +652,7 @@ class ApiClient {
         );
       }
       await _decodeStreamError(error);
-      throw _mapDioException(error);
+      throw _mapDioException(error, generation: generation);
     }
   }
 
@@ -544,6 +672,10 @@ class ApiClient {
     final tokens = await tokenStore.read();
     _assertCurrentSession(generation);
     if (tokens == null) {
+      // Nothing stored under a live generation: a store that could not be
+      // read clears itself without moving the generation. Signed out, this
+      // is a no-op for the app; signed in, it is a session to give up.
+      await _loseSession(generation);
       throw const ApiException(
         code: 'AUTH_REQUIRED',
         message: 'Sign in to continue.',
@@ -551,7 +683,7 @@ class ApiClient {
       );
     }
     if (tokens.isRefreshExpired) {
-      await tokenStore.clearIfCurrent(generation);
+      await _loseSession(generation);
       throw const ApiException(
         code: 'SESSION_EXPIRED',
         message: 'Sign in again to continue.',
@@ -589,7 +721,7 @@ class ApiClient {
       return await _withSession(generation, send);
     } on DioException catch (error) {
       await _decodeStreamError(error);
-      throw _mapDioException(error);
+      throw _mapDioException(error, generation: generation);
     }
   }
 
@@ -607,7 +739,18 @@ class ApiClient {
     }
   }
 
-  ApiException _mapDioException(DioException error) {
+  /// The failure a caller sees. [generation] is the session an authenticated
+  /// request was sent under; when the answer ends that session, the session
+  /// is given up here, on the one path every final failure takes.
+  ApiException _mapDioException(DioException error, {int? generation}) {
+    final mapped = _toApiException(error);
+    if (generation != null && _sessionEndingCodes.contains(mapped.code)) {
+      unawaited(_loseSession(generation));
+    }
+    return mapped;
+  }
+
+  ApiException _toApiException(DioException error) {
     final response = error.response;
     if (response?.statusCode == 428) {
       onLegalAcceptanceRequired?.call();
@@ -627,6 +770,9 @@ class ApiClient {
           message: errorBody['message'] as String? ?? 'Something went wrong.',
           statusCode: response?.statusCode,
           details: errorBody,
+          retryAfter: retryAfterFromHeader(
+            response?.headers.value('retry-after'),
+          ),
         );
       }
     }
@@ -651,12 +797,34 @@ class ApiClient {
       );
     }
 
+    // No API error body: a proxy's page ("502 Bad Gateway"), a body the
+    // server never finished, or no response at all. The HTTP reason phrase is
+    // for people reading logs, so the reader gets a sentence instead.
     return ApiException(
       code: 'API_ERROR',
-      message: response?.statusMessage ?? 'Something went wrong.',
+      message: _unexplainedFailureMessage(response?.statusCode),
       statusCode: response?.statusCode,
     );
   }
+}
+
+/// A `Retry-After` header in delta-seconds, the only form the API writes.
+/// An HTTP date, a negative number or anything unreadable is no wait at all,
+/// so a caller falls back to its own default rather than to a guess.
+Duration? retryAfterFromHeader(String? value) {
+  final seconds = int.tryParse(value?.trim() ?? '');
+  if (seconds == null || seconds < 0) return null;
+  return Duration(seconds: seconds);
+}
+
+/// What a failure with no API error body says to the reader. A gateway or an
+/// overloaded server is temporary, so it says to try again shortly rather than
+/// that something is broken.
+String _unexplainedFailureMessage(int? statusCode) {
+  if (statusCode != null && statusCode >= 500) {
+    return 'Tomeza is having trouble right now. Try again in a moment.';
+  }
+  return 'Something went wrong. Try again.';
 }
 
 class ServerSentEvent {
@@ -666,9 +834,11 @@ class ServerSentEvent {
   final String data;
 }
 
-Stream<ServerSentEvent> _decodeServerSentEvents(
-  Stream<List<int>> stream,
-) async* {
+/// Splits an event stream's bytes into events.
+///
+/// A transformer chain, not an `async*` generator, so a cancel reaches the
+/// socket at once (see [ApiClient.getServerSentEvents]).
+Stream<ServerSentEvent> _decodeServerSentEvents(Stream<List<int>> stream) {
   var event = 'message';
   final dataLines = <String>[];
 
@@ -683,35 +853,47 @@ Stream<ServerSentEvent> _decodeServerSentEvents(
   // `StreamTransformer<Uint8List, String>` — so every event stream threw on its
   // first byte, the status watch fell back to polling, and the abandoned socket
   // stayed open on the server.
-  await for (final line
-      in utf8.decoder.bind(stream).transform(const LineSplitter())) {
-    if (line.isEmpty) {
-      if (dataLines.isNotEmpty) {
-        yield ServerSentEvent(event: event, data: dataLines.join('\n'));
-      }
-      reset();
-      continue;
-    }
-    if (line.startsWith(':')) {
-      continue;
-    }
+  return utf8.decoder
+      .bind(stream)
+      .transform(const LineSplitter())
+      .transform(
+        StreamTransformer<String, ServerSentEvent>.fromHandlers(
+          handleData: (line, sink) {
+            if (line.isEmpty) {
+              if (dataLines.isNotEmpty) {
+                sink.add(
+                  ServerSentEvent(event: event, data: dataLines.join('\n')),
+                );
+              }
+              reset();
+              return;
+            }
+            // A comment: the server's `: ping` heartbeat. It has already
+            // counted as activity against the idle timeout; it is not an event.
+            if (line.startsWith(':')) return;
 
-    final separator = line.indexOf(':');
-    final field = separator == -1 ? line : line.substring(0, separator);
-    var value = separator == -1 ? '' : line.substring(separator + 1);
-    if (value.startsWith(' ')) {
-      value = value.substring(1);
-    }
+            final separator = line.indexOf(':');
+            final field = separator == -1 ? line : line.substring(0, separator);
+            var value = separator == -1 ? '' : line.substring(separator + 1);
+            if (value.startsWith(' ')) {
+              value = value.substring(1);
+            }
 
-    switch (field) {
-      case 'event':
-        event = value;
-      case 'data':
-        dataLines.add(value);
-    }
-  }
-
-  if (dataLines.isNotEmpty) {
-    yield ServerSentEvent(event: event, data: dataLines.join('\n'));
-  }
+            switch (field) {
+              case 'event':
+                event = value;
+              case 'data':
+                dataLines.add(value);
+            }
+          },
+          handleDone: (sink) {
+            if (dataLines.isNotEmpty) {
+              sink.add(
+                ServerSentEvent(event: event, data: dataLines.join('\n')),
+              );
+            }
+            sink.close();
+          },
+        ),
+      );
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,12 +15,15 @@ import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../../reader/data/reader_repository.dart';
 import '../../studio/data/studio_repository.dart';
+import '../data/offline_library_store.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'ai_content_report.dart';
 import 'book_preview_section.dart';
 import 'book_screen_body.dart';
 import 'book_screen_skeleton.dart';
 import 'book_stage.dart';
+import 'first_book_offer.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'project_export_actions.dart';
@@ -108,8 +113,52 @@ class _BookScreenState extends ConsumerState<BookScreen>
       }
     }
 
+    // A book page reached with `go` — after an import, on leaving the Writing
+    // Studio after a takeover, from a deep link — has nothing beneath it to pop
+    // to. Without this its bar had no way out and Android back offered to
+    // close the app; home is where both now lead instead.
+    // `isFirst` rather than `Navigator.canPop()`: a dialog over this page can
+    // be popped too, and must not take the Home button away under it.
+    final hasPageBelow = !(ModalRoute.of(context)?.isFirst ?? true);
+
+    return PopScope<Object?>(
+      canPop: hasPageBelow,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goHome();
+      },
+      child: _scaffold(
+        hasPageBelow: hasPageBelow,
+        project: project,
+        projectValue: projectValue,
+        status: status,
+        billing: billingValue.value,
+        failedRevision: failedRevision,
+        unpublishedManuscript: unpublishedManuscript,
+      ),
+    );
+  }
+
+  void _goHome() => GoRouter.maybeOf(context)?.go('/home');
+
+  Widget _scaffold({
+    required bool hasPageBelow,
+    required MobileProjectDetail? project,
+    required AsyncValue<MobileProjectDetail> projectValue,
+    required MobileProjectStatus? status,
+    required MobileBilling? billing,
+    required MobileBookEditOperation? failedRevision,
+    required bool unpublishedManuscript,
+  }) {
     return Scaffold(
       appBar: AppBar(
+        leading: hasPageBelow
+            ? null
+            : IconButton(
+                key: const Key('book-home'),
+                tooltip: 'Home',
+                icon: const Icon(Icons.home_outlined),
+                onPressed: _goHome,
+              ),
         title: ValueListenableBuilder<bool>(
           valueListenable: _pastHero,
           builder: (context, pastHero, _) => AnimatedOpacity(
@@ -147,7 +196,7 @@ class _BookScreenState extends ConsumerState<BookScreen>
           projectValue: projectValue,
           project: project,
           status: status,
-          billing: billingValue.value,
+          billing: billing,
           failedRevision: failedRevision,
         ),
       ),
@@ -204,6 +253,7 @@ class _BookScreenState extends ConsumerState<BookScreen>
       onOpenPaywall: _openExportPaywall,
       onReportProject: _reportProject,
       onReportImage: _reportImage,
+      onReportPlan: _reportPlan,
     );
   }
 
@@ -217,6 +267,13 @@ class _BookScreenState extends ConsumerState<BookScreen>
     if (status.isComplete && status.hasReadyExport) {
       _celebrated = true;
       AppHaptics.success();
+      // A free reader's first finished book: the one moment a plan is offered
+      // unasked, once. After the frame, because this also runs from initState.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          offerPlanForFirstBook(context, ref, projectId: widget.projectId);
+        }
+      });
     } else if (status.status == 'failed' && !_notifiedFailure) {
       _notifiedFailure = true;
       AppHaptics.error();
@@ -228,6 +285,11 @@ class _BookScreenState extends ConsumerState<BookScreen>
     final live = statusValue.value?.isLive ?? false;
     if (live) {
       startPolling(const Duration(seconds: 4), () {
+        // A read slower than the poll is still the freshest one coming;
+        // invalidating it would only start another behind it.
+        if (ref.read(projectDetailProvider(widget.projectId)).isLoading) {
+          return;
+        }
         _refreshDetails();
       });
     } else if (isPolling) {
@@ -430,11 +492,25 @@ class _BookScreenState extends ConsumerState<BookScreen>
   }
 
   Future<void> _resumeGeneration() async {
-    final status =
-        ref.read(projectStatusProvider(widget.projectId)).value ??
-        await ref.read(projectStatusProvider(widget.projectId).future);
-    if (status == null || !mounted) return;
-    final quote = await confirmGenerationRetry(context, ref, status);
+    final MobileGenerationRecoveryQuote? quote;
+    try {
+      final status =
+          ref.read(projectStatusProvider(widget.projectId)).value ??
+          await ref
+              .read(projectStatusProvider(widget.projectId).future)
+              .timeout(const Duration(seconds: 20));
+      if (!mounted) return;
+      quote = await confirmGenerationRetry(context, ref, status);
+    } catch (error) {
+      if (!mounted) return;
+      await reportGenerationRetryFailure(
+        context,
+        ref,
+        error,
+        projectId: widget.projectId,
+      );
+      return;
+    }
     if (quote == null || !mounted) return;
     setState(() => _busyAction = 'resume');
     try {
@@ -472,8 +548,10 @@ class _BookScreenState extends ConsumerState<BookScreen>
     final confirmed = await showAppConfirmationDialog(
       context,
       title: 'Delete this project?',
-      message:
-          'This removes "${project.title}" and its generated files from your account. Some safety, billing, and support records may be retained.',
+      message: deleteProjectConfirmationMessage(
+        title: project.title,
+        status: project.status,
+      ),
       confirmLabel: 'Delete project',
       destructive: true,
     );
@@ -489,6 +567,9 @@ class _BookScreenState extends ConsumerState<BookScreen>
       // leaving all of that behind would be the one part of "removes its
       // generated files" that was not true — and markup is the part they wrote.
       await ref.read(readerRepositoryProvider).clearProject(project.id);
+      unawaited(
+        ref.read(offlineLibraryStoreProvider).forgetProject(project.id),
+      );
       ref.invalidate(projectsProvider);
       ref.invalidate(projectDetailProvider(project.id));
       if (!mounted) {
@@ -542,7 +623,7 @@ class _BookScreenState extends ConsumerState<BookScreen>
   }
 
   Future<void> _openExportPaywall(MobileExportAvailability export) async {
-    await openProjectExportPaywall(
+    await openProjectExportPlanOffer(
       context: context,
       ref: ref,
       projectId: widget.projectId,
@@ -578,6 +659,19 @@ class _BookScreenState extends ConsumerState<BookScreen>
           ),
     );
   }
+
+  Future<void> _reportPlan(MobilePlan plan) => reportAiContent(
+    context: context,
+    title: 'Report this AI book plan',
+    submit: (reason, comment) => ref
+        .read(aiContentReportsApiProvider)
+        .reportPlan(
+          projectId: plan.projectId,
+          planId: plan.id,
+          reason: reason,
+          comment: comment,
+        ),
+  );
 
   Future<void> _showReportDialog({
     required String title,
@@ -615,4 +709,29 @@ class _BookScreenState extends ConsumerState<BookScreen>
       ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
+}
+
+/// What the delete dialog tells the reader, which is what the server does.
+///
+/// Deleting a book that is still being written stops it, and a stop charges
+/// for what was already made: the pages and pictures that exist keep their
+/// credits and the rest come back — except monthly credits from a month that
+/// has already ended, which expire with it (`userStopSettlement.ts` in
+/// `packages/db`). Saying "your credits come back" here would promise a whole
+/// refund the server no longer gives.
+String deleteProjectConfirmationMessage({
+  required String title,
+  required String status,
+}) {
+  const removal = 'Some safety, billing, and support records may be retained.';
+  if (status.toLowerCase() == 'generating') {
+    return '"$title" is still being written. Deleting it stops the writing: '
+        'you pay only for the pages and pictures already made, and the '
+        'rest of the credits come back. Monthly credits from a month that has '
+        'already ended don\'t come back.\n\n'
+        'This removes the book and its generated files from your account. '
+        '$removal';
+  }
+  return 'This removes "$title" and its generated files from your account. '
+      '$removal';
 }

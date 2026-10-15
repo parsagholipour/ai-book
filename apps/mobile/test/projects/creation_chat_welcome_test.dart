@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/projects/presentation/creation_chat_helpers.dart';
 
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
@@ -96,5 +97,18 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Photo library'), findsOneWidget);
+  });
+
+  test('the built-in examples are said by the person making the book', () {
+    // "Bedtime story for 5 year olds" read, to a store reviewer, as an app
+    // aimed at children. The maker of a bedtime story is a parent.
+    final ideas = creationChatLocalGreetingTurn.quickReplies;
+    expect(ideas, contains('A bedtime story for my 5-year-old'));
+    for (final idea in ideas) {
+      expect(
+        idea,
+        isNot(matches(RegExp(r'for \d+ ?year olds', caseSensitive: false))),
+      );
+    }
   });
 }

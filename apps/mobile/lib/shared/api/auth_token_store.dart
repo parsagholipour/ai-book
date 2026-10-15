@@ -41,6 +41,21 @@ abstract class AuthTokenStore {
     return clear().then((_) => true);
   }
 
+  /// The account these tokens belong to, as the server last described it —
+  /// what lets a cold start with no network still open the app
+  /// (`MobileAuthRepository.restoreSession`). Cleared with the tokens.
+  Future<AuthUser?> readUser() => _serialize(_readUser);
+
+  /// Kept only while [generation] is still the session on this install, so a
+  /// late answer about the previous account never lands under the next one.
+  Future<bool> writeUserIfCurrent(int generation, AuthUser user) {
+    return _serialize(() async {
+      if (_generation != generation) return false;
+      await _writeUser(user);
+      return _generation == generation;
+    });
+  }
+
   Future<T> _serialize<T>(Future<T> Function() operation) {
     final previous = _pending;
     final result = previous == null
@@ -62,7 +77,11 @@ abstract class AuthTokenStore {
 
   Future<MobileSessionTokens?> _read();
   Future<void> _write(MobileSessionTokens tokens);
+
+  /// Removes the tokens and the account copy together.
   Future<void> _clear();
+  Future<AuthUser?> _readUser();
+  Future<void> _writeUser(AuthUser user);
 }
 
 class SecureAuthTokenStore extends AuthTokenStore {
@@ -70,6 +89,9 @@ class SecureAuthTokenStore extends AuthTokenStore {
     : _storage = storage ?? const FlutterSecureStorage();
 
   static const _sessionKey = 'tomeza.mobile.session.v1';
+
+  /// Separate from the tokens, which a refresh rewrites without the account.
+  static const _userKey = 'tomeza.mobile.user.v1';
 
   final FlutterSecureStorage _storage;
 
@@ -96,15 +118,35 @@ class SecureAuthTokenStore extends AuthTokenStore {
   }
 
   @override
-  Future<void> _clear() {
-    return _storage.delete(key: _sessionKey);
+  Future<void> _clear() async {
+    await _storage.delete(key: _sessionKey);
+    await _storage.delete(key: _userKey);
+  }
+
+  @override
+  Future<AuthUser?> _readUser() async {
+    final rawValue = await _storage.read(key: _userKey);
+    if (rawValue == null || rawValue.trim().isEmpty) return null;
+    try {
+      return AuthUser.fromJson(jsonDecode(rawValue) as Map<String, dynamic>);
+    } catch (_) {
+      // A copy this build cannot read is no copy; the next online restore
+      // writes a fresh one.
+      return null;
+    }
+  }
+
+  @override
+  Future<void> _writeUser(AuthUser user) {
+    return _storage.write(key: _userKey, value: jsonEncode(user.toJson()));
   }
 }
 
 class MemoryAuthTokenStore extends AuthTokenStore {
-  MemoryAuthTokenStore([this._tokens]);
+  MemoryAuthTokenStore([this._tokens, this._user]);
 
   MobileSessionTokens? _tokens;
+  AuthUser? _user;
 
   @override
   Future<MobileSessionTokens?> _read() async => _tokens;
@@ -117,6 +159,15 @@ class MemoryAuthTokenStore extends AuthTokenStore {
   @override
   Future<void> _clear() async {
     _tokens = null;
+    _user = null;
+  }
+
+  @override
+  Future<AuthUser?> _readUser() async => _user;
+
+  @override
+  Future<void> _writeUser(AuthUser user) async {
+    _user = user;
   }
 }
 

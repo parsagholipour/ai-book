@@ -28,6 +28,8 @@ void main() {
           harness.finishRefresh('a', succeeds: succeeds);
           await rejected;
           expect(harness.authorizations, isEmpty);
+          // The old account's refusal is not the new one's lost session.
+          expect(harness.sessionsLost, 0);
           if (switchAccount) {
             await harness.api.getMap('/api/mobile/projects');
             expect(harness.authorizations, ['Bearer b-access']);
@@ -79,6 +81,7 @@ void main() {
     expect(await restoring, isNull);
     await harness.api.getMap('/api/mobile/projects');
     expect(harness.authorizations, ['Bearer b-access']);
+    expect(harness.sessionsLost, 0);
   });
 
   test(
@@ -98,8 +101,52 @@ void main() {
       harness.finishRefresh('a-renewed', succeeds: false);
       await rejected;
       expect(await harness.store.read(), isNull);
+      expect(harness.sessionsLost, 1);
     },
   );
+
+  test('a refresh lost to the network neither clears the session nor '
+      'reports it lost', () async {
+    final harness = SessionRaceHarness();
+    addTearDown(harness.dispose);
+    final refresh = harness.api.refreshTokens();
+    final rejected = expectLater(
+      refresh,
+      throwsA(
+        isA<ApiException>().having((e) => e.code, 'code', 'NETWORK_ERROR'),
+      ),
+    );
+    await harness.refreshStarted.future;
+    harness.loseRefresh('a');
+    await rejected;
+    expect((await harness.store.read())?.accessToken, 'a-access');
+    expect(harness.sessionsLost, 0);
+  });
+
+  test('a refresh token that ran out is a lost session without asking the '
+      'server', () async {
+    final harness = SessionRaceHarness();
+    addTearDown(harness.dispose);
+    final now = DateTime.now().toUtc();
+    await harness.store.writeIfCurrent(
+      harness.store.generation,
+      MobileSessionTokens(
+        accessToken: 'a-access',
+        refreshToken: 'a-refresh',
+        accessTokenExpiresAt: now.add(const Duration(minutes: 15)),
+        refreshTokenExpiresAt: now.subtract(const Duration(seconds: 1)),
+      ),
+    );
+    await expectLater(
+      harness.api.getMap('/api/mobile/projects'),
+      throwsA(
+        isA<ApiException>().having((e) => e.code, 'code', 'SESSION_EXPIRED'),
+      ),
+    );
+    expect(harness.refreshCounts, isEmpty);
+    expect(await harness.store.read(), isNull);
+    expect(harness.sessionsLost, 1);
+  });
 }
 
 MobileSessionTokens sessionTokens(String owner, {bool stale = false}) {
@@ -114,7 +161,11 @@ MobileSessionTokens sessionTokens(String owner, {bool stale = false}) {
 
 class SessionRaceHarness {
   SessionRaceHarness({this.staleB = false}) {
-    api = ApiClient(dio: dio, tokenStore: store);
+    api = ApiClient(
+      dio: dio,
+      tokenStore: store,
+      onSessionLost: () => sessionsLost++,
+    );
     auth = MobileAuthRepository(apiClient: api, tokenStore: store);
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -182,6 +233,7 @@ class SessionRaceHarness {
       .future
       .timeout(const Duration(seconds: 2));
   final authorizations = <String>[];
+  int sessionsLost = 0;
   late final ApiClient api;
   late final MobileAuthRepository auth;
 
@@ -218,6 +270,16 @@ class SessionRaceHarness {
         ),
       );
     }
+  }
+
+  void loseRefresh(String owner) {
+    final (options, handler) = refreshes.remove(owner)!;
+    handler.reject(
+      DioException(
+        requestOptions: options,
+        type: DioExceptionType.connectionError,
+      ),
+    );
   }
 
   void dispose() => dio.close(force: true);

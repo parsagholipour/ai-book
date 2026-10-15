@@ -1,7 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { creditPricing, VOICE_CALL_POLICY } from "@book-maker/core";
+import { creditPricing, VOICE_CALL_POLICY, voiceRelayCallRunway } from "@book-maker/core";
 import { prisma, Prisma } from "./client.ts";
-import { InsufficientCreditsError, runSerializable, type BillingTx } from "./billingInternals.ts";
+import { effectivePlanCredits, InsufficientCreditsError, runSerializable, type BillingTx } from "./billingInternals.ts";
 import { commitReservedCreditsTx, refundCreditLedgerEntryTx, reserveCreditsTx } from "./billingLedger.ts";
 
 /** A relay must close both sockets before this lease expires, even if the DB is down. */
@@ -69,9 +69,13 @@ export async function saveVoiceRelaySession(callId: string, userId: string, sess
   });
 }
 
-/** Claims are never stolen: an expired owner is stopped and settled by recovery. */
+/**
+ * Claims are never stolen: an expired owner is stopped and settled by recovery.
+ * `projectId` is the book a book call is about (null for a library character),
+ * which the relay's provider cost rows are filed under.
+ */
 export async function claimVoiceRelayCall(callId: string, tokenHash: string, now = new Date()): Promise<{
-  lease: VoiceRelayLease; session: VoiceRelaySession; deadline: Date;
+  lease: VoiceRelayLease; session: VoiceRelaySession; deadline: Date; projectId: string | null;
 }> {
   const found = await prisma.voiceCall.findFirst({ where: { id: callId } });
   if (!found?.relayTokenHash || !sameHash(found.relayTokenHash, tokenHash)) throw new VoiceRelayError("VOICE_CALL_NOT_FOUND");
@@ -86,7 +90,7 @@ export async function claimVoiceRelayCall(callId: string, tokenHash: string, now
     await tx.voiceCall.update({ where: { id: call.id }, data: {
       relayLeaseId: leaseId, relayLeaseExpiresAt: deadline, lastHeartbeatAt: now
     } });
-    return { lease: { callId, userId: call.userId, leaseId }, session, deadline };
+    return { lease: { callId, userId: call.userId, leaseId }, session, deadline, projectId: call.projectId };
   });
 }
 
@@ -138,13 +142,31 @@ export async function authorizeVoiceRelay(lease: VoiceRelayLease, now = new Date
       reservationEntryIds: ids, chargedCredits: fundedSeconds / 60 * rate,
       heldCredits: (reservedMinutes - fundedSeconds / 60) * rate
     } });
-    return { deadline, meter: meterFor(updated, now) };
+    return { deadline, meter: meterFor(updated, now, await affordableMinutes(tx, updated, now)) };
   });
 }
 
+/** What the app's heartbeat is answered with: a read, never a top-up. */
 export async function readVoiceRelayMeter(callId: string, userId: string, now = new Date()): Promise<VoiceRelayMeter | null> {
   const call = await prisma.voiceCall.findFirst({ where: { id: callId, userId } });
-  return call?.relayTokenHash ? meterFor(call, now) : null;
+  if (!call?.relayTokenHash) return null;
+  return meterFor(call, now, call.status === "ACTIVE" ? await affordableMinutes(prisma, call, now) : 0);
+}
+
+/**
+ * Further whole minutes the reader's spendable balance could still hold at the
+ * call's own price — the minutes the relay will go on to reserve if nothing
+ * else spends them first. Read without settling the plan period, so a lapsed
+ * allowance already counts as gone and a pending grant not yet; both err short.
+ */
+async function affordableMinutes(client: Pick<BillingTx, "userCreditAccount">, call: Call, now: Date): Promise<number> {
+  const rate = call.voiceCreditsPerMinute ?? 0;
+  if (rate <= 0) return Number.POSITIVE_INFINITY;
+  const account = await client.userCreditAccount.findUnique({
+    where: { userId: call.userId }, select: { availableCredits: true, planCredits: true, planPeriodEnd: true }
+  });
+  if (!account) return 0;
+  return Math.floor(Math.max(0, account.availableCredits + effectivePlanCredits(account, now)) / rate);
 }
 
 /** Request a stop; the owner closes upstream BEFORE releasing any credit. */
@@ -222,14 +244,28 @@ function reserveMinute(tx: BillingTx, call: Call, minute: number, rate: number, 
   });
 }
 
-function meterFor(call: Call, now = new Date()): VoiceRelayMeter {
+/**
+ * `affordableMinutes` extends the runway past what is already reserved; the
+ * transitions that end a call pass nothing, since a call that is not ACTIVE
+ * has no runway at all.
+ */
+function meterFor(call: Call, now = new Date(), affordable = 0): VoiceRelayMeter {
   const elapsed = call.status === "ENDED" ? call.elapsedSeconds
     : call.relayConnectedAt ? Math.min(call.relayFundedSeconds, elapsedSeconds(call.relayConnectedAt, now)) : 0;
-  const remaining = call.status === "ACTIVE" ? Math.max(0, call.relayReservedMinutes * 60 - elapsed) : 0;
+  const chargedCredits = call.status === "ENDED" ? call.chargedCredits
+    : (call.relayConnectedAt ? Math.max(1, Math.ceil(elapsed / 60)) : 0) * call.voiceCreditsPerMinute!;
+  if (call.status !== "ACTIVE") {
+    return {
+      callId: call.id, elapsedSeconds: elapsed, secondsRemaining: 0, chargedCredits,
+      endingSoon: true, endingReason: elapsed >= MAX_SECONDS - 20 ? "limit" : "credits"
+    };
+  }
+  const runway = voiceRelayCallRunway({
+    elapsedSeconds: elapsed, reservedMinutes: call.relayReservedMinutes, affordableMinutes: affordable
+  });
   return {
-    callId: call.id, elapsedSeconds: elapsed, secondsRemaining: remaining,
-    chargedCredits: call.status === "ENDED" ? call.chargedCredits : (call.relayConnectedAt ? Math.max(1, Math.ceil(elapsed / 60)) : 0) * call.voiceCreditsPerMinute!,
-    endingSoon: remaining <= 20, endingReason: remaining <= 20 ? (elapsed >= MAX_SECONDS - 20 ? "limit" : "credits") : null
+    callId: call.id, elapsedSeconds: elapsed, secondsRemaining: runway.secondsRemaining, chargedCredits,
+    endingSoon: runway.secondsRemaining <= 20, endingReason: runway.endingReason
   };
 }
 

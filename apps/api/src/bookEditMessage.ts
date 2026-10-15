@@ -314,10 +314,12 @@ export function hasEditVerbBeyondShow(message: string): boolean {
 }
 
 export function isUndoRequestMessage(message: string): boolean {
-  const normalized = message.toLowerCase().replace(/[.!?]+$/g, "").trim();
+  const normalized = message.toLowerCase().replace(/(?<![.!?])[.!?]+$/g, "").trim();
   return (
     /^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?(?:undo|revert|roll\s*back)\b/.test(normalized) ||
-    /\b(?:undo|revert|roll\s*back)\s+(?:the\s+|that\s+|my\s+)?(?:last|latest|previous|recent)?\s*(?:edit|change|revision|rewrite)?$/.test(
+    // "last" carries its own `\s*`: beside the `\s+` before it, an absent one
+    // let a run of spaces split two ways, which is quadratic on "undo the" + spaces.
+    /\b(?:undo|revert|roll\s*back)\s+(?:the\s+|that\s+|my\s+)?(?:(?:last|latest|previous|recent)\s*)?(?:edit|change|revision|rewrite)?$/.test(
       normalized
     )
   );
@@ -334,13 +336,13 @@ export function isUndoRequestMessage(message: string): boolean {
  * stealing them.
  */
 export function isRedoRequestMessage(message: string): boolean {
-  const normalized = message.toLowerCase().replace(/[.!?]+$/g, "").trim();
+  const normalized = message.toLowerCase().replace(/(?<![.!?])[.!?]+$/g, "").trim();
   if (/\b(?:chapter(?:s|\s+list)?|book|pages?|plan|outline|toc|table of contents|structure)\b/.test(normalized)) {
     return false;
   }
   return (
     /^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?(?:redo|reapply)$/.test(normalized) ||
-    /\b(?:redo|reapply)\s+(?:the\s+|that\s+|my\s+)?(?:last|latest|previous|recent)?\s*(?:edit|change|revision|rewrite)?$/.test(
+    /\b(?:redo|reapply)\s+(?:the\s+|that\s+|my\s+)?(?:(?:last|latest|previous|recent)\s*)?(?:edit|change|revision|rewrite)?$/.test(
       normalized
     )
   );

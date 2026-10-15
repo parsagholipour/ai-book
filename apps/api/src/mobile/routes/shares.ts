@@ -1,25 +1,19 @@
-import { creditCostForOperation, type GenerationTextModelRouting } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
-import { hasActiveProjectEntitlement } from "@book-maker/db/billing";
+import type { GenerationTextModelRouting } from "@book-maker/core";
+import { prisma, type Prisma } from "@book-maker/db";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { sendContentRestricted } from "../../contentRestrictions.js";
 import { liveRoutingLoader } from "../../generationTextModelRouting.js";
 import { recordInlineDecisionAttempt } from "../../inlineDecisionUsage.js";
 import { InMemoryRateLimiter } from "../../rateLimit.js";
 import { containsLink, moderateUserText, type UserTextModerationDeps } from "../../userTextModeration.js";
-import {
-  ensureExportEntitlementForDownload,
-  hitAuthenticatedLimit,
-  requireMobileAuth,
-  sendMobileError,
-  sendProjectNotFound
-} from "../httpErrors.js";
+import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import {
   bookShowsRealLikeness,
   loadSharedPdfLayout,
-  screenSharedBookText,
+  readSharedBookText,
+  screenSharedBook,
   shareAvailability,
   shareBookKind,
   shareProjectSelect,
@@ -35,6 +29,10 @@ import {
   noCaptionDecision,
   normalizeCaption,
   serializeBookShare,
+  shareServesCurrentText,
+  ShareTakenDownError,
+  SharingDisabledError,
+  accountMayShare,
   writeShare,
   type BookShareRecord,
   type CaptionDecision,
@@ -58,17 +56,22 @@ import { objectStore } from "@book-maker/storage";
  * reader fetches after tapping "Make a book like this"
  * (`/api/mobile/shares/:slug/remix`). The public page is `publicShareRoutes.ts`.
  *
- * **Every check runs before anything is charged or written, and the unlock
- * settles last.** The order in `PUT` is: the body, the book, a published PDF,
- * the rights and likeness confirmations, the preview cap, the unlock the author
- * agreed to (read-only), the book text screen, the note's link check, the
- * note's moderation — and only then `ensureExportEntitlementForDownload`, the
- * same helper and idempotency key the PDF download uses (`sendUnlocked` in
- * `exports.ts`). A refused note or a refused book therefore costs nothing,
- * and a FULL share of a book already unlocked costs nothing either. The unlock
- * is the book's, not the share's: a later downgrade to a preview refunds
- * nothing, and a write that fails after the charge leaves the book unlocked, so
- * the retry is free.
+ * A share costs nothing, preview or full: no book carries an export unlock any
+ * more (2026-10-15), so `acceptExportUnlock` is accepted and ignored, the state
+ * reports every book unlocked at 0 credits and a save never charges, for the
+ * installed builds that still ask.
+ *
+ * The order in `PUT` is: the body, the account (an operator may have turned
+ * its sharing off — `SHARING_DISABLED`, which also refuses a remix), the book,
+ * a published PDF, the rights and likeness confirmations, the preview cap, the
+ * book text screen (the deterministic rules, then the sexual-content filter's
+ * model screen, which may hold the share for review), the note's link check,
+ * the note's moderation, and the write. The text screen runs at create, at
+ * every mode change, and whenever the book's revision has moved past the
+ * share's stamp, over one snapshot of the text and its revision; the write
+ * stamps that revision (`shareRescreen.ts` has the rest of that rule). The
+ * share transaction independently rejects takedowns and a disabled account
+ * under row locks.
  */
 
 const DEFAULT_CAPTION_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
@@ -80,10 +83,10 @@ export async function registerMobileShareRoutes(fastify: FastifyInstance, contex
   let liveLoader: (() => Promise<GenerationTextModelRouting>) | undefined;
   const loadRouting = options.userTextModeration?.loadRouting ?? (() => (liveLoader ??= liveRoutingLoader(appConfig))());
 
-  const moderationDeps = (projectId: string): UserTextModerationDeps => ({
+  const moderationDeps = (projectId: string, userId: string): UserTextModerationDeps => ({
     config: appConfig,
     loadRouting,
-    recordAttempt: (attempt) => recordInlineDecisionAttempt(attempt, { projectId }),
+    recordAttempt: (attempt) => recordInlineDecisionAttempt(attempt, { projectId, userId }),
     ...options.userTextModeration
   });
 
@@ -125,6 +128,9 @@ export async function registerMobileShareRoutes(fastify: FastifyInstance, contex
       const caption = normalizeCaption(body.caption);
       if (caption && [...caption].length > SHARE_CAPTION_MAX_CHARS) {
         return sendShareError(reply, "CAPTION_TOO_LONG");
+      }
+      if (!(await accountMayShare(prisma, auth.user.id))) {
+        return sendShareError(reply, "SHARING_DISABLED");
       }
 
       const project = await loadOwnedProject(id, auth.user.id);
@@ -169,20 +175,24 @@ export async function registerMobileShareRoutes(fastify: FastifyInstance, contex
         previewPages = body.previewPages;
       }
 
-      const unlocked =
-        mode === "FULL" ? await hasActiveProjectEntitlement({ userId: auth.user.id, projectId: project.id, type: "EXPORT_UNLOCK" }) : true;
-      if (!unlocked && body.acceptExportUnlock !== true) {
-        return sendShareError(reply, "EXPORT_UNLOCK_REQUIRED", {
-          creditsRequired: creditCostForOperation("EXPORT_UNLOCK")
-        });
-      }
-
-      // The book text screen, at create and at every mode change.
-      if (!live || live.mode !== mode) {
-        const screened = await screenSharedBookText(project);
-        if (!screened.allowed) {
-          return sendContentRestricted(reply, screened);
+      // The book text screen, at create, at every mode change, and whenever
+      // the book has moved past the live share's stamp: the deterministic
+      // rules, then the sexual-content filter's model screen, whose windows
+      // without a verdict hold the share for review. One snapshot of the text
+      // and its revision, so the write stamps exactly what was read.
+      let screenedContentRevision: number | null = null;
+      let textReview: Prisma.InputJsonValue | null = null;
+      if (!live || live.mode !== mode || !shareServesCurrentText(live, project)) {
+        const text = await readSharedBookText(project.id);
+        if (!text) {
+          return sendProjectNotFound(reply);
         }
+        const screened = await screenSharedBook(text, moderationDeps(project.id, auth.user.id), request.log);
+        if (screened.verdict === "refused") {
+          return sendContentRestricted(reply, screened.refusal);
+        }
+        screenedContentRevision = screened.contentRevision;
+        textReview = screened.verdict === "held" ? screened.review : null;
       }
 
       const captionWrite = await decideCaption({
@@ -192,37 +202,40 @@ export async function registerMobileShareRoutes(fastify: FastifyInstance, contex
         existing,
         userId: auth.user.id,
         limiter: captionLimiter,
-        deps: moderationDeps(project.id)
+        deps: moderationDeps(project.id, auth.user.id)
       });
       if (captionWrite === null) {
         return;
       }
 
-      let exportUnlockCharged = false;
-      if (!unlocked) {
-        // Every other check has passed; the unlock settles now or not at all.
-        const entitlement = await ensureExportEntitlementForDownload(reply, auth.user.id, project.id);
-        if (!entitlement) {
-          return;
+      let share: BookShareRecord;
+      try {
+        share = await writeShare({
+          userId: auth.user.id,
+          projectId: project.id,
+          projectTitle: project.title,
+          mode,
+          previewPages,
+          showAuthorName: body.showAuthorName,
+          caption: captionWrite,
+          textReview,
+          screenedContentRevision,
+          confirmRights: body.rightsConfirmed === true,
+          confirmLikeness: likenessRequired && body.likenessConfirmed === true
+        });
+      } catch (error) {
+        if (error instanceof ShareTakenDownError) {
+          return sendShareError(reply, "SHARE_TAKEN_DOWN");
         }
-        exportUnlockCharged = true;
+        if (error instanceof SharingDisabledError) {
+          return sendShareError(reply, "SHARING_DISABLED");
+        }
+        throw error;
       }
-
-      const share = await writeShare({
-        userId: auth.user.id,
-        projectId: project.id,
-        projectTitle: project.title,
-        mode,
-        previewPages,
-        showAuthorName: body.showAuthorName,
-        caption: captionWrite,
-        confirmRights: body.rightsConfirmed === true,
-        confirmLikeness: likenessRequired && body.likenessConfirmed === true
-      });
       return {
         share: serializeBookShare(share, appConfig.PUBLIC_API_URL),
         book: await shareBookState(project, auth.user.id),
-        exportUnlockCharged
+        exportUnlockCharged: false
       } satisfies MobileShareWriteDto;
     }
   );
@@ -261,11 +274,14 @@ export async function registerMobileShareRoutes(fastify: FastifyInstance, contex
 
   fastify.get(
     "/api/mobile/shares/:slug/remix",
-    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 410: mobileAuthError } } },
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 403: mobileAuthError, 404: mobileAuthError, 410: mobileAuthError } } },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
         return;
+      }
+      if (!(await accountMayShare(prisma, auth.user.id))) {
+        return sendShareError(reply, "SHARING_DISABLED");
       }
       const { slug } = shareSlugParamsSchema.parse(request.params);
       const share = await loadShareBySlug(slug);
@@ -278,12 +294,18 @@ export async function registerMobileShareRoutes(fastify: FastifyInstance, contex
       // Format only. Nothing below reads the brief, plan, chat, cast or text.
       const project = await prisma.project.findUnique({
         where: { id: share.projectId },
-        select: { title: true, mediaSettings: true, category: true, subcategory: true, targetPages: true }
+        select: { title: true, contentRevision: true, mediaSettings: true, category: true, subcategory: true, targetPages: true }
       });
       if (!project) {
         return sendShareError(reply, "SHARE_NOT_FOUND");
       }
-      return { title: project.title, presets: remixPresetsForProject(project) } satisfies MobileShareRemixDto;
+      // The title is the one piece of the book this answer carries, so a share
+      // whose book changed since its last screen sends none: the app then
+      // writes its opening line without one.
+      return {
+        title: shareServesCurrentText(share, project) ? project.title : "",
+        presets: remixPresetsForProject(project)
+      } satisfies MobileShareRemixDto;
     }
   );
 }
@@ -296,10 +318,9 @@ async function loadOwnedProject(id: string, userId: string): Promise<ShareProjec
 }
 
 async function shareBookState(project: ShareProject, userId: string): Promise<MobileShareBookDto> {
-  const [availability, likenessRequired, exportUnlocked] = await Promise.all([
+  const [availability, likenessRequired] = await Promise.all([
     shareAvailability(project),
-    bookShowsRealLikeness(userId, project.mediaSettings),
-    hasActiveProjectEntitlement({ userId, projectId: project.id, type: "EXPORT_UNLOCK" })
+    bookShowsRealLikeness(userId, project.mediaSettings)
   ]);
   const loaded = availability === "available" ? await loadSharedPdfLayout(project) : null;
   const readingPages = loaded ? readingPageCount(loaded.layout) : null;
@@ -308,10 +329,11 @@ async function shareBookState(project: ShareProject, userId: string): Promise<Mo
     unavailableReason: availability === "available" ? (loaded ? null : "being_updated") : availability,
     kind: shareBookKind(project.mediaSettings),
     readingPages,
-    maxPreviewPages: readingPages === null ? null : maxPreviewPages(readingPages),
+    maxPreviewPages: loaded ? maxPreviewPages(readingPages) : null,
     likenessRequired,
-    exportUnlocked,
-    exportUnlockCredits: exportUnlocked ? 0 : creditCostForOperation("EXPORT_UNLOCK")
+    // A full share is free; installed builds ask for an unlock when these say otherwise.
+    exportUnlocked: true,
+    exportUnlockCredits: 0
   };
 }
 

@@ -7,8 +7,10 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import {
   InsufficientCreditsError,
-  ensureProjectExportEntitlementOrSpend,
-  hasActiveSubscriptionEntitlement
+  grantProjectEntitlement,
+  hasActiveSubscriptionEntitlement,
+  reserveCredits,
+  spendCredits
 } from "@book-maker/db/billing";
 import { exportContentDigest } from "@book-maker/core";
 
@@ -28,6 +30,13 @@ import {
   teardownMobileHarness,
   writeProjectFile
 } from "./testing/mobileApiHarness.js";
+
+/** Nothing a download may write: no charge, no hold, no entitlement row. */
+function expectNothingSpent(): void {
+  expect(vi.mocked(spendCredits)).not.toHaveBeenCalled();
+  expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+  expect(vi.mocked(grantProjectEntitlement)).not.toHaveBeenCalled();
+}
 
 describe("mobile rate limits, exports and operator routes", () => {
   beforeEach(resetMobileHarness);
@@ -141,11 +150,8 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(ownEpub.body).toBe("epub-mobile-owned");
     expect(otherEpub.statusCode).toBe(404);
     expect(otherEpub.json().error.code).toBe("PROJECT_NOT_FOUND");
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).toHaveBeenCalledWith({
-      userId: "user-a",
-      projectId: "project-a",
-      idempotencyKey: "mobile:project:project-a:export-unlock"
-    });
+    // Every finished book downloads free (2026-10-15): nothing settles.
+    expectNothingSpent();
     await app.close();
   });
 
@@ -170,7 +176,7 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(own.headers["content-disposition"]).toMatch(/^inline;/);
     expect(own.headers["x-export-content-digest"]).toBeTruthy();
     expect(other.statusCode).toBe(404);
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    expectNothingSpent();
     await app.close();
   });
 
@@ -185,7 +191,7 @@ describe("mobile rate limits, exports and operator routes", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe("EXPORT_NOT_READY");
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    expectNothingSpent();
     await app.close();
   });
 
@@ -211,6 +217,11 @@ describe("mobile rate limits, exports and operator routes", () => {
       byteSize: "%PDF-cacheable".length,
       readUrl: "/api/mobile/projects/project-a/read/pdf"
     });
+    // The wire installed apps read before a download: every file is free.
+    for (const format of ["pdf", "epub", "docx"]) {
+      expect(exports[format], format).toMatchObject({ unlocked: true, creditsRequired: 0, planIncludesUnlock: false });
+    }
+    expect(exports.docx.requiresSubscription).toBe(true);
     // Only the PDF is read in the app; every other format is only ever taken out.
     expect(exports.epub.readUrl).toBeUndefined();
     expect(Date.parse(exports.pdf.updatedAt)).not.toBeNaN();
@@ -219,38 +230,7 @@ describe("mobile rate limits, exports and operator routes", () => {
     await app.close();
   });
 
-  it("delivers the bytes even when an edit deletes the file while the unlock settles", async () => {
-    // The unlock must never settle against nothing. An edit deletes the
-    // compiled exports before queueing its recompile, so it can land in exactly
-    // this window — and the old order (stat, charge, read) answered 404 with
-    // the reader's credits already spent.
-    mockAccessTokens({ "token-a": "user-a" });
-    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-about-to-vanish");
-    mockPrisma.project.findFirst.mockResolvedValue({
-      id: "project-a",
-      title: "Owned Mobile Book",
-      status: "COMPLETE",
-      currentPlanId: "plan-1",
-      contentRevision: 7
-    });
-    vi.mocked(ensureProjectExportEntitlementOrSpend).mockImplementationOnce(async () => {
-      await testObjectStore.delete("books/project-a/book.pdf");
-      return undefined as never;
-    });
-    const app = await buildMobileApp();
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/mobile/projects/project-a/export/pdf",
-      headers: bearer("token-a")
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toBe("%PDF-about-to-vanish");
-    await app.close();
-  });
-
-  it("does not spend the export unlock when there is no file to hand back", async () => {
+  it("answers every format with the repair, never a charge, when there is no file to hand back", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue({
       id: "project-a",
@@ -272,7 +252,7 @@ describe("mobile rate limits, exports and operator routes", () => {
       expect(response.statusCode, format).toBe(404);
       expect(response.json().error.code, format).toBe("EXPORT_NOT_READY");
     }
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    expectNothingSpent();
     await app.close();
   });
 
@@ -399,34 +379,44 @@ describe("mobile rate limits, exports and operator routes", () => {
     await app.close();
   });
 
-  it("blocks mobile export downloads when export unlock credits are insufficient", async () => {
+  it.each([
+    ["a generated book", { mobile: { bookType: "short_story" } }],
+    ["a Studio book", { mobile: { studio: { layout: "flow", kind: "story", createdAt: "2026-10-01T00:00:00.000Z" } } }],
+    ["an import", { mobile: { import: { format: "docx" } } }],
+    ["a book from before tiers and plans", {}]
+  ])("downloads %s free for a reader with no credits and no plan, and never answers 402", async (_kind, mediaSettings) => {
+    // The per-book 150-credit unlock used to settle here, and a reader short of
+    // it got 402 INSUFFICIENT_CREDITS. A book made while free, an author's own
+    // book and an old one are all the reader's file now (2026-10-15).
     mockAccessTokens({ "token-a": "user-a" });
     writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-mobile-owned");
+    writeProjectFile(state.bookStorageDir, "project-a", "book.epub", "epub-mobile-owned");
     mockPrisma.project.findFirst.mockResolvedValue({
       id: "project-a",
       title: "Owned Mobile Book",
       status: "COMPLETE",
       language: "en",
       currentPlanId: "plan-1",
-      mediaSettings: {}
+      contentRevision: 7,
+      mediaSettings
     });
-    vi.mocked(ensureProjectExportEntitlementOrSpend).mockRejectedValueOnce(
-      new InsufficientCreditsError({ requiredCredits: 150, availableCredits: 25, reservedCredits: 0 })
-    );
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+    // Were anything to try to charge, it would be refused.
+    const broke = new InsufficientCreditsError({ requiredCredits: 150, availableCredits: 0, reservedCredits: 0 });
+    vi.mocked(spendCredits).mockRejectedValue(broke);
+    vi.mocked(reserveCredits).mockRejectedValue(broke);
     const app = await buildMobileApp();
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/mobile/projects/project-a/export/pdf",
-      headers: bearer("token-a")
-    });
-
-    expect(response.statusCode).toBe(402);
-    expect(response.json().error).toMatchObject({
-      code: "INSUFFICIENT_CREDITS",
-      requiredCredits: 150,
-      availableCredits: 25
-    });
+    for (const [format, body] of [["pdf", "%PDF-mobile-owned"], ["epub", "epub-mobile-owned"]] as const) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/mobile/projects/project-a/export/${format}`,
+        headers: bearer("token-a")
+      });
+      expect(response.statusCode, format).toBe(200);
+      expect(response.body, format).toBe(body);
+    }
+    expectNothingSpent();
     await app.close();
   });
 
@@ -464,7 +454,7 @@ describe("mobile rate limits, exports and operator routes", () => {
       headers: bearer("token-a")
     });
     expect(withoutFile.statusCode).toBe(403);
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    expectNothingSpent();
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
 
     // The other two formats never ask about the plan.
@@ -478,7 +468,7 @@ describe("mobile rate limits, exports and operator routes", () => {
     await app.close();
   });
 
-  it("sends the Word file to a subscriber, owner-scoped, and charges the unlock after the bytes", async () => {
+  it("sends the Word file to a subscriber, owner-scoped, and charges nothing", async () => {
     mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
     const bytes = "PK-word-published";
     writeProjectFile(state.bookStorageDir, "project-a", "book.docx", bytes);
@@ -515,11 +505,8 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(own.headers["content-disposition"]).toBe('attachment; filename="Owned-Mobile-Book.docx"');
     expect(own.headers["x-export-provenance"]).toBe("exact");
     expect(own.headers["x-export-content-revision"]).toBe("7");
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).toHaveBeenCalledWith({
-      userId: "user-a",
-      projectId: "project-a",
-      idempotencyKey: "mobile:project:project-a:export-unlock"
-    });
+    // The plan gates the format; it never buys an unlock (2026-10-15).
+    expectNothingSpent();
     expect(other.statusCode).toBe(404);
     expect(other.json().error.code).toBe("PROJECT_NOT_FOUND");
     await app.close();
@@ -558,7 +545,7 @@ describe("mobile rate limits, exports and operator routes", () => {
         })
       })
     );
-    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    expectNothingSpent();
     await app.close();
   });
 

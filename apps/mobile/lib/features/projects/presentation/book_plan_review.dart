@@ -25,6 +25,7 @@ class ProjectPlanReview extends StatelessWidget {
     this.billing,
     this.onApprovePlan,
     this.approvalFooter,
+    this.onReport,
     super.key,
   });
 
@@ -40,6 +41,10 @@ class ProjectPlanReview extends StatelessWidget {
   /// A quiet line under Approve (the book page puts "I'll write it myself"
   /// there), never a second button beside it.
   final Widget? approvalFooter;
+
+  /// Sends the plan for review (Google Play's AI-generated content policy);
+  /// null on an author's own book, whose plan no model wrote.
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -160,7 +165,28 @@ class ProjectPlanReview extends StatelessWidget {
           icon: Icons.groups_outlined,
           child: Text(plan.audience),
         ),
+        if (onReport != null) PlanReportButton(onPressed: onReport!),
       ],
+    );
+  }
+}
+
+/// "Report plan": a quiet text button under what the plan says.
+class PlanReportButton extends StatelessWidget {
+  const PlanReportButton({required this.onPressed, super.key});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: AppButton.text(
+        key: const ValueKey('plan-report'),
+        onPressed: onPressed,
+        leading: const Icon(Icons.flag_outlined),
+        label: 'Report plan',
+      ),
     );
   }
 }
@@ -274,9 +300,12 @@ class PlanApprovalBar extends StatelessWidget {
 /// showing a plan they could not change. Collapsed to a line that opens on
 /// demand, it stops competing with the writing for the top of the page.
 class PlanSummaryCard extends StatelessWidget {
-  const PlanSummaryCard({required this.plan, super.key});
+  const PlanSummaryCard({required this.plan, this.onReport, super.key});
 
   final MobilePlan plan;
+
+  /// Sends the plan for review; shown when the card is opened.
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -326,6 +355,7 @@ class PlanSummaryCard extends StatelessWidget {
             ),
             const Divider(height: 24),
             PlanChapterList(chapters: plan.chapters),
+            if (onReport != null) PlanReportButton(onPressed: onReport!),
           ],
         ),
       ),

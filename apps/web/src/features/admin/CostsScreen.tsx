@@ -20,7 +20,8 @@ import type { AdminCostBreakdown, CostKind, CostUsage, ModelCost, OperationCost,
 
 const RANGES = [7, 30, 90] as const;
 
-const KIND_LABEL: Record<CostKind, string> = { text: "Text", image: "Images", audio: "Narration" };
+// Audio is narration and voice calls together (`providerCostKindSql` in the API).
+const KIND_LABEL: Record<CostKind, string> = { text: "Text", image: "Images", audio: "Audio" };
 
 export function CostsScreen() {
   const [days, setDays] = useState<number>(30);

@@ -105,20 +105,6 @@ export function resetMobileHarness(): void {
     expiresAt: null
   });
   mockBilling.hasActiveProjectEntitlement.mockResolvedValue(false);
-  mockBilling.ensureProjectExportEntitlementOrSpend.mockResolvedValue({
-    entitlement: {
-      id: "entitlement-export",
-      userId: "user-a",
-      projectId: "project-a",
-      type: "EXPORT_UNLOCK",
-      status: "ACTIVE",
-      source: "credits",
-      creditsCost: 150,
-      startsAt: new Date("2026-06-15T12:00:00.000Z"),
-      expiresAt: null
-    },
-    chargedLedgerEntry: null
-  });
   mockBilling.recordVerifiedGooglePlayPurchase.mockResolvedValue({
     purchaseRecordId: "purchase-1",
     status: "GRANTED",
@@ -510,6 +496,7 @@ export function projectRecord(overrides: Record<string, unknown> = {}) {
     title: "Owned Book",
     subtitle: null,
     authorName: null,
+    bookMatter: null,
     coverTagline: null,
     prompt: "Write a useful guide with enough detail to pass validation.",
     category: "BUSINESS",
@@ -829,6 +816,7 @@ export function detachedRepairJobRow() {
 export function statusRecord(overrides: Record<string, any> = {}) {
   const base = {
     generationTimings: { planningMs: null, bookMs: null },
+    waitingInLine: null,
     project: {
       id: "project-1",
       title: "Owned Book",
@@ -889,6 +877,8 @@ export async function buildMobileApp(options: Record<string, unknown> = {}): Pro
 
 export async function buildOperatorApp(): Promise<FastifyInstance> {
   const app = Fastify();
+  // Password auth off, as in local development: only the auth hook makes an operator.
+  await (await import("../../auth.js")).registerAuth(app, { WEB_PASSWORD: "" } as never);
   const { projectRoutes } = await import("../../routes/projects.js");
   await app.register(projectRoutes);
   return app;

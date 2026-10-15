@@ -44,7 +44,12 @@ function absolute(publicApiUrl: string, path: string): string {
   return `${publicApiUrl.replace(/\/+$/, "")}${path}`;
 }
 
-/** The Play Store listing, carrying the share as install referrer (read in-app later). */
+/**
+ * The Play Store listing, carrying the share as the install referrer. The app
+ * reads it once per install (`parseInstallReferrer`, apps/mobile
+ * `lib/features/attribution/`) to offer this share's remix and attribute the
+ * install, so both keys are a wire contract with installed builds.
+ */
 export function playStoreUrl(slug: string): string {
   const referrer = encodeURIComponent(`utm_source=share&utm_content=${slug}`);
   return `https://play.google.com/store/apps/details?id=${ANDROID_APP_PACKAGE}&referrer=${referrer}`;

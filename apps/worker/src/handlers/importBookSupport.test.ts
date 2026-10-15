@@ -5,7 +5,8 @@ import {
   importStats,
   importStyleProfileFromMediaSettings,
   mediaSettingsWithImportStyle,
-  normalizeImportedLanguage
+  normalizeImportedLanguage,
+  screenRestoredImportMatter
 } from "./importBookSupport.js";
 
 const segmented: SegmentedManuscript = {
@@ -105,5 +106,48 @@ describe("normalizeImportedLanguage", () => {
     expect(normalizeImportedLanguage("x", "en")).toBe("en");
     expect(normalizeImportedLanguage(undefined, "en")).toBe("en");
     expect(normalizeImportedLanguage(`${"x".repeat(50)}`, "en")).toBe("en");
+  });
+});
+
+describe("screenRestoredImportMatter", () => {
+  const refusedText = "This author writes about CSAM.";
+
+  it("drops each refused field alone and keeps every other field", () => {
+    const screened = screenRestoredImportMatter({
+      authorName: refusedText,
+      subtitle: "A Valley Story",
+      bookMatter: { dedication: "For my mother", aboutAuthor: refusedText, copyrightYear: "2020", allRightsReserved: true }
+    }, false);
+
+    expect(screened.restored).toEqual({
+      subtitle: "A Valley Story",
+      bookMatter: { dedication: "For my mother", copyrightYear: "2020", allRightsReserved: true }
+    });
+    expect(screened.refused).toEqual([
+      { field: "authorName", reason: "critical_illegal_harm" },
+      { field: "aboutAuthor", reason: "critical_illegal_harm" }
+    ]);
+  });
+
+  it("omits matter that has nothing left, as the import merge does", () => {
+    expect(screenRestoredImportMatter({ bookMatter: { dedication: refusedText } }, false)).toEqual({
+      restored: {},
+      refused: [{ field: "dedication", reason: "critical_illegal_harm" }]
+    });
+  });
+
+  it("applies the copyright rule only when the operator enabled it, and keeps printed memorial text", () => {
+    const restored = {
+      bookMatter: {
+        aboutAuthor: "Copy the entire copyrighted book without permission.",
+        dedication: "To the victims of the terrorist attack, who taught us how to grieve."
+      }
+    };
+
+    expect(screenRestoredImportMatter(restored, false)).toEqual({ restored, refused: [] });
+    expect(screenRestoredImportMatter(restored, true)).toEqual({
+      restored: { bookMatter: { dedication: restored.bookMatter.dedication } },
+      refused: [{ field: "aboutAuthor", reason: "copyright" }]
+    });
   });
 });

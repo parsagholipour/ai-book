@@ -5,6 +5,7 @@ import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
 import 'plan_build_progress.dart';
 import 'progress_step_row.dart';
+import 'waiting_in_line_note.dart';
 
 // What the book chat draws while the worker is busy with the book: the card in
 // the transcript, and the slim pill that keeps it in reach after scrolling up.
@@ -118,6 +119,14 @@ class _ChatOperationProgressCardState extends State<ChatOperationProgressCard> {
               ),
             ],
           ),
+          // A continuation or a rebuild waits its turn behind other books.
+          if (status.waitingInLineLabel != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            WaitingInLineNote(
+              status: status,
+              color: colors.onPrimaryContainer.withValues(alpha: 0.85),
+            ),
+          ],
           const SizedBox(height: AppSpacing.sm - 2),
           PlanBuildProgressBar(
             value: progress / 100,

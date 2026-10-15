@@ -45,7 +45,7 @@ export async function projectSummaryDto(
     where: { id: projectId, userId },
     include: mobileProjectSummaryInclude()
   })) as MobileProjectRecord | null;
-  return record ? serializeProjectSummary(record, appConfig, userId) : null;
+  return record ? serializeProjectSummary(record, appConfig) : null;
 }
 
 /** The manuscript DTO as of now — re-reading the project, whose title or cover a write may have changed. */

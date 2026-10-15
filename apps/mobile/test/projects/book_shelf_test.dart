@@ -409,31 +409,32 @@ void main() {
     expect(find.text('Open EPUB'), findsOneWidget);
   });
 
-  testWidgets('holding a published Studio book offers Keep writing beside its chat', (
-    tester,
-  ) async {
-    // Keep writing was offered only before the first publish, so an author's
-    // published book had no way back to its working copy from the shelf.
-    await tester.pumpWidget(
-      shelfTestApp([
-        shelfProject(
-          id: 'studio-book',
-          title: 'Letters',
-          status: 'complete',
-          hasPlan: true,
-          exportsReady: true,
-          source: 'written',
-        ),
-      ]),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'holding a published Studio book offers Keep writing beside its chat',
+    (tester) async {
+      // Keep writing was offered only before the first publish, so an author's
+      // published book had no way back to its working copy from the shelf.
+      await tester.pumpWidget(
+        shelfTestApp([
+          shelfProject(
+            id: 'studio-book',
+            title: 'Letters',
+            status: 'complete',
+            hasPlan: true,
+            exportsReady: true,
+            source: 'written',
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.longPress(find.byType(BookCover));
-    await tester.pumpAndSettle();
+      await tester.longPress(find.byType(BookCover));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Keep writing'), findsOneWidget);
-    expect(find.text('Go to chat'), findsOneWidget);
-  });
+      expect(find.text('Keep writing'), findsOneWidget);
+      expect(find.text('Go to chat'), findsOneWidget);
+    },
+  );
 
   testWidgets('Go to chat opens the selected book chat', (tester) async {
     final router = GoRouter(
@@ -525,44 +526,28 @@ void main() {
     );
   });
 
-  testWidgets(
-    'a ready but locked export only shows a lock when credits fall short',
-    (tester) async {
-      final lockedBook = shelfProject(
-        id: 'locked',
-        title: 'Locked Book',
-        status: 'complete',
-        hasPlan: true,
-      ).copyWithLockedPdf();
-
-      // Plenty of credits: the unlock is covered, so no lock is advertised.
-      await tester.pumpWidget(shelfTestApp([lockedBook], credits: 900));
-      await tester.pumpAndSettle();
-      await tester.longPress(find.byType(BookCover));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Unlock PDF'), findsOneWidget);
-      expect(find.byIcon(Icons.lock_outline), findsNothing);
-    },
-  );
-
-  testWidgets('a locked export shows a lock when credits are short', (
-    tester,
-  ) async {
-    final lockedBook = shelfProject(
-      id: 'locked',
-      title: 'Locked Book',
+  testWidgets('a finished book opens and shares with no lock, whatever the '
+      'balance', (tester) async {
+    // A written book's PDF and EPUB download free: a balance too small for
+    // the old per-book unlock changes nothing on the menu.
+    final book = shelfProject(
+      id: 'finished',
+      title: 'Finished Book',
       status: 'complete',
       hasPlan: true,
-    ).copyWithLockedPdf();
+      exportsReady: true,
+    );
 
-    await tester.pumpWidget(shelfTestApp([lockedBook], credits: 10));
+    await tester.pumpWidget(shelfTestApp([book], credits: 10));
     await tester.pumpAndSettle();
     await tester.longPress(find.byType(BookCover));
     await tester.pumpAndSettle();
 
-    // One lock each for Open PDF and Share PDF.
-    expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
+    expect(find.text('Open PDF'), findsOneWidget);
+    expect(find.text('Share PDF'), findsOneWidget);
+    expect(find.textContaining('Unlock'), findsNothing);
+    expect(find.textContaining('Get credits'), findsNothing);
+    expect(find.byIcon(Icons.lock_outline), findsNothing);
   });
 
   testWidgets('reopening the shelf paints known books before refetching', (
@@ -724,43 +709,6 @@ MobileBilling billingWith(int available, {bool creator = false}) {
   );
 }
 
-extension on MobileProjectSummary {
-  /// A finished book whose PDF is compiled but not yet paid for.
-  MobileProjectSummary copyWithLockedPdf() {
-    return MobileProjectSummary(
-      id: id,
-      title: title,
-      bookType: bookType,
-      lengthPreset: lengthPreset,
-      qualityPreset: qualityPreset,
-      imagesEnabled: imagesEnabled,
-      status: status,
-      statusLabel: statusLabel,
-      progressPercent: progressPercent,
-      currentAction: currentAction,
-      promptPreview: promptPreview,
-      targetPages: targetPages,
-      pageCount: pageCount,
-      imageCount: imageCount,
-      hasPlan: hasPlan,
-      exports: MobileExportSet(
-        pdf: MobileExportAvailability(
-          format: 'pdf',
-          available: true,
-          unlocked: false,
-          creditsRequired: 150,
-          downloadUrl: exports.pdf.downloadUrl,
-          filename: exports.pdf.filename,
-          contentType: exports.pdf.contentType,
-        ),
-        epub: exports.epub,
-      ),
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-    );
-  }
-}
-
 MobileProjectSummary shelfProject({
   required String id,
   required String title,
@@ -814,9 +762,7 @@ MobileExportSet shelfExports({
         ? MobileExportAvailability(
             format: 'docx',
             available: docxReady,
-            unlocked: docxReady,
             requiresSubscription: true,
-            creditsRequired: 150,
             downloadUrl: '/api/mobile/projects/p/export/docx',
             filename: 'book.docx',
             contentType:
@@ -826,8 +772,6 @@ MobileExportSet shelfExports({
     pdf: MobileExportAvailability(
       format: 'pdf',
       available: ready,
-      unlocked: ready,
-      creditsRequired: 150,
       downloadUrl: '/api/mobile/projects/p/export/pdf',
       filename: 'book.pdf',
       contentType: 'application/pdf',
@@ -835,8 +779,6 @@ MobileExportSet shelfExports({
     epub: MobileExportAvailability(
       format: 'epub',
       available: epubReady,
-      unlocked: epubReady,
-      creditsRequired: 150,
       downloadUrl: '/api/mobile/projects/p/export/epub',
       filename: 'book.epub',
       contentType: 'application/epub+zip',

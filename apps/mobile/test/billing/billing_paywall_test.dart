@@ -79,8 +79,14 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(repository.verifications.single.productId, 'tomeza.one_book_export');
-    expect(repository.verifications.single.purchaseToken, 'purchase-token-1');
+    // The pending payment was recorded first, with no status and no finish,
+    // so Google's notification can grant it even if the app never returns.
+    expect(
+      repository.verifications.map((call) => call.purchaseToken).toList(),
+      ['pending-token', 'purchase-token-1'],
+    );
+    expect(repository.verifications.first.purchaseStatus, isNull);
+    expect(repository.verifications.last.productId, 'tomeza.one_book_export');
     expect(store.finished.single.purchaseToken, 'purchase-token-1');
     await tester.tap(
       find.descendant(of: successDialog, matching: find.byType(FilledButton)),
@@ -146,7 +152,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Purchase successful'), findsOneWidget);
-    expect(repository.verifications.single.productId, 'tomeza.credit_pack_1');
+    expect(
+      repository.verifications.map((call) => call.purchaseToken).toList(),
+      ['pending-token', 'purchase-token-1'],
+    );
+    expect(repository.verifications.last.productId, 'tomeza.credit_pack_1');
   });
 
   testWidgets('showBillingPaywall returns the verified purchase to its caller', (

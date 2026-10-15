@@ -1,4 +1,4 @@
-import { estimateAudiobookCreditCost, isAudiobookNarratorVoice } from "@book-maker/core";
+import { estimateAudiobookCreditCost, isAudiobookNarratorVoice, narrationWordCount } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-maker/db/billing";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -6,7 +6,7 @@ import { objectKey, objectStore } from "@book-maker/storage";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
 import { ensureVoiceSample } from "../audiobookSamples.js";
 import { serializeAudiobook, serializeNarratorVoices } from "../audiobookSerializer.js";
-import type { MobileAudiobookDto, MobileNarratorVoiceDto } from "../dto.js";
+import type { MobileAudiobookDto, MobileAudiobookQuoteDto, MobileNarratorVoiceDto } from "../dto.js";
 import {
   hitTieredLimit,
   requireMobileAuth,
@@ -24,6 +24,9 @@ import {
   mobileAuthError,
   mobileVoiceSampleParamsSchema
 } from "../schemas.js";
+import { requireAiCapacity } from "../aiCapacity.js";
+import { requireBooksInProgressCapacity } from "../booksInProgress.js";
+import { requirePaidPlanPerk } from "../planPerks.js";
 
 /**
  * Narration: pick a voice, pay for it, then stream the chapters back as they
@@ -33,6 +36,19 @@ import {
  * these serve whole files. Individual chapters are a few megabytes, which is the
  * same shape as the export downloads next door.
  */
+
+/**
+ * What the narrator would read: the finished pages, counted the way the charge
+ * counts them. The quote route and the start route both price from this, so the
+ * number the app shows is the number the reader is charged.
+ */
+async function narrationLength(projectId: string): Promise<{ pageCount: number; wordCount: number }> {
+  const pages = await prisma.page.findMany({
+    where: { projectId, status: "COMPLETED" },
+    select: { markdown: true }
+  });
+  return { pageCount: pages.length, wordCount: narrationWordCount(pages.map((page) => page.markdown)) };
+}
 
 export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { appConfig } = context;
@@ -99,6 +115,35 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
     }
   );
 
+  // The app shows this price before it asks; the start route charges the same
+  // estimate over the same pages, so a quote is a promise rather than a mirror.
+  fastify.get(
+    "/api/mobile/projects/:id/audiobook/quote",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const project = await prisma.project.findFirst({
+        where: { id, userId: auth.user.id },
+        select: { id: true, status: true }
+      });
+      if (!project) {
+        return sendProjectNotFound(reply);
+      }
+      const { pageCount, wordCount } = await narrationLength(id);
+      if (project.status !== "COMPLETE" || pageCount === 0) {
+        return sendMobileError(reply, 409, "BOOK_NOT_READY", "Finish the book before narrating it.");
+      }
+      const estimate = estimateAudiobookCreditCost({ pageCount, wordCount });
+      return {
+        quote: { credits: estimate.totalCredits, pageCount, wordCount } satisfies MobileAudiobookQuoteDto
+      };
+    }
+  );
+
   fastify.post(
     "/api/mobile/projects/:id/audiobook",
     { schema: { tags: ["mobile"], body: mobileAudiobookStartOpenApiBody } },
@@ -132,7 +177,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
         return sendMobileError(reply, 409, "BOOK_NOT_READY", "Finish the book before narrating it.");
       }
 
-      const pageCount = await prisma.page.count({ where: { projectId: id, status: "COMPLETED" } });
+      const { pageCount, wordCount } = await narrationLength(id);
       if (pageCount === 0) {
         return sendMobileError(reply, 409, "BOOK_NOT_READY", "Finish the book before narrating it.");
       }
@@ -168,8 +213,22 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
       if (existing?.status === "COMPLETE" && !body.data.replace) {
         return sendMobileError(reply, 409, "AUDIOBOOK_EXISTS", "This book already has an audiobook.");
       }
+      // A plan perk (`planPerks.ts`): after the replay above — a narration that
+      // is already running was paid for — and before the breaker and the charge.
+      // A resumed failed narration is a new paid start, so it asks too.
+      if (!(await requirePaidPlanPerk(reply, auth.user.id, "audiobook"))) {
+        return;
+      }
+      // After the running narration's replay above, before the charge.
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "audiobook"))) {
+        return;
+      }
+      // Narration is long-lane work too, and counts against this account's share of it.
+      if (!(await requireBooksInProgressCapacity(reply, auth.user.id, { exceptProjectIds: [id] }))) {
+        return;
+      }
 
-      const estimate = estimateAudiobookCreditCost(pageCount);
+      const estimate = estimateAudiobookCreditCost({ pageCount, wordCount });
 
       // Restarting a failed narration is a paid retry of the attempt that paid
       // for it: naming the source blocks a fresh charge while the failed run's
@@ -203,9 +262,9 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
           quotedCredits: estimate.totalCredits,
           description: "Mobile audiobook narration",
           ...(sourceAttempt ? { retryOfAttemptId: sourceAttempt.id } : {}),
-          // The per-page half of the price is only recoverable from here, which
-          // is what the pricing dashboard's drivers report reads back.
-          metadata: { pageCount, voice: body.data.voice, creditEstimate: estimate },
+          // The per-page and per-word parts of the price are only recoverable
+          // from here, which is what the pricing dashboard's drivers report reads back.
+          metadata: { pageCount, wordCount, voice: body.data.voice, creditEstimate: estimate },
 
           // A narration that died half way through keeps its row, and with it the
           // chapters already on disk: the worker skips every READY chapter, so

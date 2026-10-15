@@ -12,6 +12,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.onSwitchBranch,
     this.onEdit,
     this.onReply,
+    this.onReport,
     this.onOpenReplanCopy,
     this.onOpenPaywall,
     this.showProposalActions = false,
@@ -37,6 +38,9 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   onSwitchBranch;
   final void Function(MobileProjectChatMessage message)? onEdit;
   final void Function(MobileProjectChatMessage message)? onReply;
+
+  /// Reports this reply for review; never offered on the reader's own words.
+  final void Function(MobileProjectChatMessage message)? onReport;
   final ValueChanged<String>? onOpenReplanCopy;
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
   final bool showProposalActions;
@@ -93,6 +97,9 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         message: chatBubbleCopyText(message.content, role: message.role),
         onEdit: isUser && onEdit != null ? () => onEdit!(message) : null,
         onReply: startReply,
+        onReport: message.isAssistant && onReport != null
+            ? () => onReport!(message)
+            : null,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

@@ -12,6 +12,8 @@ describe("the fallback brief of a draft the model did not fill in", () => {
     expect(audienceFor(guide)).toBe("new first-time managers");
     expect(audienceFor("A money workbook for freelancers with irregular income: how to budget when paychecks vary.")).toBe("freelancers with irregular income");
     expect(audienceFor("A bedtime story for 5 year olds about a sleepy fox")).toBe("5 year olds");
+    // The parent-voiced suggestion chip, hyphenated the way a parent writes it.
+    expect(audienceFor("A bedtime story for my 5-year-old")).toBe("5-year-old");
   });
 
   it("skips a purpose for the reader behind it, and answers nothing when no reader is named", () => {

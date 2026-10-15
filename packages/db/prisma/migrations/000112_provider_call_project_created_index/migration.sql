@@ -1,0 +1,18 @@
+-- A book's provider calls, oldest first: `WHERE "projectId" = ?` (ordered or
+-- windowed on "createdAt"), read by every operator per-book view —
+-- `projectCosts.ts`, `admin/generatedBooks.ts`, `admin/inspection.ts` — which
+-- sum a book's whole bill. The same index serves the daily prune
+-- (`tablePruneSweep.ts`: `WHERE "projectId" IS NULL AND "createdAt" < ?`; a
+-- btree indexes nulls, so IS NULL is an equality on the leading column) and the
+-- `ON DELETE SET NULL` that clears "projectId" when a book is deleted, which
+-- otherwise scans the whole table once per deleted book. Before this the prune
+-- rode the `(createdAt)` index of 000100 and filtered "projectId" row by row.
+--
+-- CONCURRENTLY and alone in its file, for the reasons 000065 and 000099 give:
+-- every worker inserts into this table on every provider call, a plain CREATE
+-- INDEX takes SHARE and blocks each of those inserts for the whole build while
+-- the previous release still serves, and `migrate deploy` does not wrap a file
+-- in a transaction, so one statement is one idempotent step to recover.
+-- Recovery from a failed build: `DROP INDEX CONCURRENTLY
+-- "ProviderCallLog_projectId_createdAt_idx"` and re-run.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "ProviderCallLog_projectId_createdAt_idx" ON "ProviderCallLog"("projectId", "createdAt");

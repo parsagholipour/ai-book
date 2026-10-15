@@ -1,4 +1,5 @@
 import type { ScriptProfile } from "../prompting/script.js";
+import { ABOUT_AUTHOR_CSS, MATTER_PAGE_MARGIN_RULE, MATTER_SHEET_CSS } from "./matterSheetLayout.js";
 import { DEFAULT_BOOK_PAGE_MARGIN_RULE } from "./pdfPagination.js";
 
 /**
@@ -40,6 +41,30 @@ export const BOOK_PDF_CSS = `
     @bottom-center {
       content: none;
     }
+  }
+  /*
+   * The title page behind a cover, and the matter sheet: unnumbered but
+   * counted, like the Contents. Only the book's first sheet may reset the
+   * counter, because printedPageOffset (pdfPageMap.ts) skips exactly one.
+   * Their margins are the house ones whatever the fitter does to the body's,
+   * so a dedication's sheet count does not move with the body type
+   * (matterSheetLayout.ts).
+   */
+  @page pdf-front {
+    size: A4;
+    ${MATTER_PAGE_MARGIN_RULE}
+    @bottom-center {
+      content: none;
+    }
+  }
+  /*
+   * About the Author: numbered like the body, but on the house margins
+   * whatever the fitter does to the body's, so the sheets a biography prints
+   * do not move with the body type (matterSheetLayout.ts).
+   */
+  @page pdf-back {
+    size: A4;
+    ${MATTER_PAGE_MARGIN_RULE}
   }
   html,
   body {
@@ -159,6 +184,9 @@ export const BOOK_PDF_CSS = `
    * margins collapse to zero once the free space is negative, which pins the
    * stack to the top and clips only its tail — verified identical to the
    * centred layout, to the point, for every title that fits.
+   *
+   * A word the reader typed with no spaces — a pen name, a URL — breaks where
+   * it must rather than running off the sheet's side into the clip.
    */
   .book-title-page {
     page: pdf-title;
@@ -170,6 +198,7 @@ export const BOOK_PDF_CSS = `
     flex-direction: column;
     text-align: center;
     color: #211a14;
+    overflow-wrap: anywhere;
     break-after: page;
     page-break-after: always;
   }
@@ -203,7 +232,31 @@ export const BOOK_PDF_CSS = `
     font-size: 12pt;
     color: #6b5c4c;
   }
-  .book-contents {
+  .book-title-page.book-title-page--after-cover {
+    page: pdf-front;
+  }
+  /*
+   * Where a publisher's imprint sits. Its own auto top margin shares the free
+   * space with the stack's, so the stack stays centred above it; once a title
+   * overflows, both collapse and this is the first line the clip takes.
+   */
+  .book-title-page > .book-title-page__imprint {
+    margin: auto 0 0;
+    padding-top: 10mm;
+    font-size: 9pt;
+    color: #8a7a6a;
+  }
+  /*
+   * Dedication in the upper third, publication details at the foot, set from
+   * the table that also counts its sheets (matterSheetLayout.ts). A
+   * min-height, not a height: this sheet resets no counter, so a dedication
+   * too long for its smallest size costs a counted sheet rather than its text.
+   */
+${MATTER_SHEET_CSS}  /*
+   * About the Author opens a fresh sheet off its marker (bookMatterPages.ts),
+   * set in points from the table that also counts its sheets.
+   */
+${ABOUT_AUTHOR_CSS}  .book-contents {
     box-sizing: border-box;
     min-height: 245mm;
     padding: 22mm 8mm 14mm;
@@ -404,7 +457,7 @@ const CURSIVE_OVERRIDES = `
  * and Persian prose does use `_emphasis_`, so this fires in practice.
  */
 const NO_ITALIC_OVERRIDES = `
-  em, i, cite, blockquote, .book-title-page__subtitle {
+  em, i, cite, blockquote, .book-title-page__subtitle, .book-matter-sheet__dedication {
     font-style: normal;
   }
   em, i {

@@ -10,6 +10,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../shared/diagnostics/crash_reporting.dart';
 import '../domain/book_push.dart';
 import 'book_notification_presenter.dart';
 
@@ -45,6 +46,16 @@ abstract interface class PushMessaging {
   /// This install's FCM token, or null when Firebase cannot issue one (no
   /// Play services, no network on first launch).
   Future<String?> token();
+
+  /// Retires this install's FCM token at sign-out, so pushes filed under the
+  /// account that left stop arriving whatever the server still believes; the
+  /// next [token] is a fresh one. Never throws: offline, the token survives,
+  /// and the next account's registration takes it over on the server.
+  Future<void> deleteToken();
+
+  /// Takes down the book notifications on screen at sign-out, so the next
+  /// account never sees the last one's books. Never throws.
+  Future<void> clearBookNotifications();
 
   String get platform;
 
@@ -110,15 +121,21 @@ class FirebasePushMessaging implements PushMessaging {
     }
     FirebaseMessaging.onBackgroundMessage(firebaseBackgroundMessageHandler);
     final plugin = FlutterLocalNotificationsPlugin();
-    final messaging = FirebasePushMessaging._(FirebaseMessaging.instance, plugin);
+    final messaging = FirebasePushMessaging._(
+      FirebaseMessaging.instance,
+      plugin,
+    );
     final presenter = BookNotificationPresenter(
       surface: LocalBookNotificationSurface(plugin),
       ledger: FileBookPushLedger(),
     );
     try {
       await initializeBookNotifications(plugin, onOpen: messaging._open);
-    } catch (error) {
+    } catch (error, stack) {
+      // Push is off for this install from here on, with nothing on screen to
+      // say so — a release build that stripped the icon did exactly this.
       debugPrint('Book notifications could not start: $error');
+      unawaited(reportNonFatal(error, stack));
       return null;
     }
     // In the foreground FCM hands the message to the app instead of the
@@ -168,7 +185,9 @@ class FirebasePushMessaging implements PushMessaging {
         return payload;
       }
       final initial = await _messaging.getInitialMessage();
-      return initial == null ? null : BookPush.fromData(initial.data)?.projectId;
+      return initial == null
+          ? null
+          : BookPush.fromData(initial.data)?.projectId;
     } catch (_) {
       return null;
     }
@@ -218,6 +237,38 @@ class FirebasePushMessaging implements PushMessaging {
       return null;
     }
   }
+
+  @override
+  Future<void> deleteToken() async {
+    try {
+      await _messaging.deleteToken();
+    } catch (error) {
+      debugPrint('The notification token could not be deleted: $error');
+    }
+  }
+
+  @override
+  Future<void> clearBookNotifications() async {
+    try {
+      if (Platform.isIOS) {
+        // iOS draws the alerts itself, and the app posts nothing else there.
+        await _plugin.cancelAll();
+        return;
+      }
+      // By channel, so the audiobook player's notification stays up. Android
+      // 7 reports no channel, so a book notification there waits for a swipe.
+      for (final shown in await _plugin.getActiveNotifications()) {
+        final id = shown.id;
+        if (id != null && _bookChannels.contains(shown.channelId)) {
+          await _plugin.cancel(id: id, tag: shown.tag);
+        }
+      }
+    } catch (error) {
+      debugPrint('Book notifications could not be cleared: $error');
+    }
+  }
+
+  static const _bookChannels = {bookProgressChannelId, bookReadyChannelId};
 
   @override
   Future<bool> openSettings() async {

@@ -22,21 +22,16 @@ const chapterStatusSchema = z.enum(["idea", "drafting", "revised", "final"]);
 
 /**
  * A book title. `createProjectSchema` — which the worker parses every project
- * through — refuses fewer than two characters, so the route refuses them too
- * rather than storing a book no job can read.
+ * through — takes one character and up (a whole title in CJK), so the route
+ * refuses only an empty one rather than storing a book no job can read.
  */
-const bookTitleSchema = z.string().trim().min(2).max(MANUSCRIPT_TITLE_MAX);
+const bookTitleSchema = z.string().trim().min(1).max(MANUSCRIPT_TITLE_MAX);
 
 export const studioProjectCreateBodySchema = z
   .object({
     // Empty means "Untitled book" rather than a validation error: the start
     // sheet's title field is optional.
-    title: z
-      .string()
-      .trim()
-      .max(MANUSCRIPT_TITLE_MAX)
-      .refine((title) => title.length !== 1, "A title needs at least two characters.")
-      .optional(),
+    title: z.string().trim().max(MANUSCRIPT_TITLE_MAX).optional(),
     kind: z.enum(STUDIO_KINDS),
     language: z.string().trim().min(2).max(40).optional(),
     requestId: requestIdSchema

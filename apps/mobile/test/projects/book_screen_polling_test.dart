@@ -162,8 +162,6 @@ MobileExportSet _exports() {
     pdf: const MobileExportAvailability(
       format: 'pdf',
       available: false,
-      unlocked: false,
-      creditsRequired: 150,
       downloadUrl: '/api/mobile/projects/project-1/export/pdf',
       filename: 'book.pdf',
       contentType: 'application/pdf',
@@ -171,8 +169,6 @@ MobileExportSet _exports() {
     epub: const MobileExportAvailability(
       format: 'epub',
       available: false,
-      unlocked: false,
-      creditsRequired: 150,
       downloadUrl: '/api/mobile/projects/project-1/export/epub',
       filename: 'book.epub',
       contentType: 'application/epub+zip',

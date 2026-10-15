@@ -405,10 +405,10 @@ class _QuestionPanel extends StatelessWidget {
             ),
             IconButton(
               tooltip: minimized ? 'Expand question' : 'Minimize question',
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              // A 22dp chevron with the platform's 48dp touch.
+              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
               padding: EdgeInsets.zero,
               iconSize: 22,
-              visualDensity: VisualDensity.compact,
               onPressed: this.collapsed
                   ? null
                   : () => onMinimizedChanged(!minimized),

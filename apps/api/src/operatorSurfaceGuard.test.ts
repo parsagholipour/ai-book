@@ -16,7 +16,8 @@ import { requireOperatorActor } from "./requestAuth.js";
 const mockPrisma = vi.hoisted(() => ({
   user: { upsert: vi.fn() },
   mobileSession: { findUnique: vi.fn() },
-  legalAcceptance: { findFirst: vi.fn() }
+  legalAcceptance: { findFirst: vi.fn() },
+  operatorSessionEpoch: { findUnique: vi.fn(), upsert: vi.fn() }
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mockPrisma }));

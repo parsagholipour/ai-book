@@ -11,18 +11,19 @@
  */
 
 import {
-  CREDIT_USD_VALUE,
   PAGE_QA_TRIGGER_REASONS,
   type PageQaTriggerReason
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import {
   costBreakdownFromRows,
+  providerCostKindSql,
   type CostUsage,
   type KindCost,
   type OperationCost,
   type ProviderCostRow
 } from "./costBreakdown.js";
+import { loadValuedSpends, sumValued } from "./creditValuation.js";
 import { netSettledCredits, round2, type AdminWindow } from "./metrics.js";
 import {
   qualityGateCostsForProject,
@@ -187,7 +188,7 @@ export async function loadGeneratedBookDetail(projectId: string): Promise<Genera
     refund_count: 0,
     refunded_credits: 0,
     provider_cost_usd: 0
-  });
+  }, 0);
   const breakdown = costBreakdownFromRows(costRows);
   const providerCostUsd = breakdown.totals.usd;
   const marginUsd = round6(economics.revenueUsd - providerCostUsd);
@@ -219,12 +220,17 @@ export async function loadGeneratedBookDetail(projectId: string): Promise<Genera
   };
 }
 
+/**
+ * Every charge on these books, valued by where its credits came from
+ * (`creditValuation.ts`): a book a free reader made on welcome credits earned
+ * nothing, however many credits it took.
+ */
 async function loadProjectEconomics(projectIds: string[]): Promise<Map<string, ProjectEconomics>> {
   if (projectIds.length === 0) {
     return new Map();
   }
   const values = projectIds.map((_id, index) => `($${index + 1}::text)`).join(", ");
-  const rows = await prisma.$queryRawUnsafe<ProjectEconomicsRow[]>(
+  const [rows, valued] = await Promise.all([prisma.$queryRawUnsafe<ProjectEconomicsRow[]>(
     `
       WITH selected(project_id) AS (VALUES ${values}),
       ledger AS (
@@ -265,20 +271,17 @@ async function loadProjectEconomics(projectIds: string[]): Promise<Map<string, P
       LEFT JOIN provider ON provider.project_id = s.project_id
     `,
     ...projectIds
-  );
+  ), loadValuedSpends({ kind: "projects", projectIds })]);
+  const valueByProject = sumValued(valued, (spend) => spend.projectId);
 
-  return new Map(rows.map((row) => [row.project_id, economicsFromRow(row)]));
+  return new Map(rows.map((row) => [row.project_id, economicsFromRow(row, valueByProject.get(row.project_id)?.usd ?? 0)]));
 }
 
 /** The Costs-tab grouping query, scoped to one project and with no time window. */
 async function loadProjectCostRows(projectId: string): Promise<ProviderCostRow[]> {
   return prisma.$queryRaw<ProviderCostRow[]>`
     SELECT
-      CASE
-        WHEN l.purpose LIKE 'tts.%' OR COALESCE(l.metadata ->> 'operation', '') LIKE 'tts.%' THEN 'audio'
-        WHEN l.purpose = 'image.generate' OR l.metadata ->> 'operation' = 'image.generate' THEN 'image'
-        ELSE 'text'
-      END AS kind,
+      ${Prisma.raw(providerCostKindSql("l"))} AS kind,
       l.purpose AS purpose,
       j.type::text AS generation_job_type,
       CASE
@@ -358,11 +361,12 @@ function parseQaTriggerReasons(raw: string | null | undefined): PageQaTriggerRea
   }
 }
 
-function economicsFromRow(row: ProjectEconomicsRow): ProjectEconomics {
+/** `valueUsd` is what the kept credits earned, valued by source; nothing else turns credits into dollars. */
+function economicsFromRow(row: ProjectEconomicsRow, valueUsd: number): ProjectEconomics {
   const grossCredits = Number(row.gross_credits ?? 0);
   const refundedCredits = Math.max(Number(row.refunded_credits ?? 0), 0);
   const netCredits = netSettledCredits(grossCredits, refundedCredits);
-  const revenueUsd = round2(netCredits * CREDIT_USD_VALUE);
+  const revenueUsd = round2(valueUsd);
   const providerCostUsd = round6(row.provider_cost_usd ?? 0);
   const marginUsd = round6(revenueUsd - providerCostUsd);
   return {
@@ -386,7 +390,7 @@ function economicsFor(economics: Map<string, ProjectEconomics>, projectId: strin
     refund_count: 0,
     refunded_credits: 0,
     provider_cost_usd: 0
-  });
+  }, 0);
   const { chargeCount: _chargeCount, refundCount: _refundCount, ...summary } = value;
   return summary;
 }

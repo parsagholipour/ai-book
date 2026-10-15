@@ -18,6 +18,7 @@ import { createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuil
 import { pageLimitExceededError } from "../bookPageLimit.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { sendProcessingOutcome, withAiProcessingUsage } from "../processingUsage.js";
+import { requireAiCapacity } from "../aiCapacity.js";
 
 /**
  * Legacy single-draft creation flow plus the book advisor.
@@ -147,6 +148,9 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!auth) {
         return;
       }
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "standard"))) {
+        return;
+      }
       if (!(await hitTieredLimit(advisorLimiter, reply, auth.user.id, "book-advisor"))) {
         return;
       }
@@ -156,7 +160,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       }
       return sendProcessingOutcome(reply, async () => {
         const advise = () => adviseMobileBook(parsed.data, {
-          enrich: advisorEnrichment,
+          enrich: advisorEnrichment && ((payload, base) => advisorEnrichment(payload, base, { userId: auth.user.id })),
           timeoutMs: options.advisorTimeoutMs
         });
         const advisor = advisorEnrichment

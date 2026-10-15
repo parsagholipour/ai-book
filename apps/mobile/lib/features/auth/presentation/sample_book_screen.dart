@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,9 +12,12 @@ import '../../../shared/api/api_client.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/motion.dart';
+import '../../reader/data/export_cache.dart' show fileHasPdfHeader;
 import '../../reader/presentation/book_reader_screen.dart'
     show readerViewerBuilderProvider;
 import '../../reader/presentation/reader_links.dart';
+import '../../reader/presentation/reader_overlays.dart'
+    show ReaderOpenErrorState;
 
 /// Whether the server publishes a try-before-signup sample book
 /// (`GET /api/mobile/sample-book`, unauthenticated; the operator opts in with
@@ -35,10 +40,36 @@ final sampleBookAvailableProvider = FutureProvider<bool>((ref) async {
 /// test can hand the screen a file without a network.
 final sampleBookFileProvider = FutureProvider.autoDispose<String>((ref) async {
   final directory = await getTemporaryDirectory();
-  final path = '${directory.path}/tomeza-sample-book.pdf';
-  await ref.read(dioProvider).download('/api/mobile/sample-book', path);
-  return path;
+  return downloadSampleBook(ref.read(dioProvider), directory);
 });
+
+/// Downloads the sample into [directory] and returns the file's path.
+///
+/// The bytes land beside the file and take its place only once they start
+/// like a PDF, the same check the reader's export cache makes: a captive
+/// portal or a proxy answers the request with a 200 and a page of its own,
+/// which would otherwise reach the viewer as a book that will not open. A
+/// refusal is an ordinary failure, so the screen offers its retry.
+Future<String> downloadSampleBook(Dio dio, Directory directory) async {
+  final path = '${directory.path}/tomeza-sample-book.pdf';
+  final part = File('$path.part');
+  try {
+    await dio.download('/api/mobile/sample-book', part.path);
+    if (!await fileHasPdfHeader(part)) {
+      throw const FormatException('The sample book is not a PDF.');
+    }
+    await part.rename(path);
+    return path;
+  } finally {
+    if (await part.exists()) {
+      try {
+        await part.delete();
+      } on FileSystemException {
+        // Temp-directory litter; the next download overwrites it.
+      }
+    }
+  }
+}
 
 /// A finished book, readable before creating an account.
 ///
@@ -71,6 +102,12 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
   PdfViewerParams? _params;
   Color? _paramsBackdrop;
 
+  /// Bumped by "Download again". Every download lands at the same path, and
+  /// pdfrx keys a file document on its name and will not reopen one it has
+  /// already failed on, so the fresh copy needs an identity of its own (the
+  /// reader's `readerDocumentRef` does the same for its cache).
+  int _download = 0;
+
   void _onLinkTap(PdfLink link) {
     unawaited(
       followPdfLink(
@@ -99,6 +136,8 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
         backgroundColor: backdrop,
         onPageChanged: _onPageChanged,
         onViewerReady: _onViewerReady,
+        // pdfrx's default is a developer's screen with a stack trace.
+        errorBannerBuilder: _buildOpenError,
         linkHandlerParams: PdfLinkHandlerParams(
           onLinkTap: _onLinkTap,
           linkColor: Colors.transparent,
@@ -106,6 +145,30 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
       );
     }
     return _params!;
+  }
+
+  /// Drawn by the viewer in place of a sample it could not open: the reader's
+  /// own state, whose one action fetches the file again.
+  Widget _buildOpenError(
+    BuildContext context,
+    Object error,
+    StackTrace? stackTrace,
+    PdfDocumentRef documentRef,
+  ) {
+    return ReaderOpenErrorState(topInset: 0, onDownloadAgain: _downloadAgain);
+  }
+
+  /// Fetches the sample again. Unlike the reader's cache there is no copy to
+  /// discard first: [downloadSampleBook] always downloads, and its rename
+  /// replaces the file that would not open.
+  void _downloadAgain() {
+    if (!mounted) return;
+    setState(() {
+      _download++;
+      _pageNumber = null;
+      _pageCount = null;
+    });
+    ref.invalidate(sampleBookFileProvider);
   }
 
   @override
@@ -138,8 +201,11 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
                   viewer: ref.watch(readerViewerBuilderProvider)(
                     context,
                     // The sample is one fixed file that is never recompiled
-                    // under the reader, so its path is a whole identity.
-                    PdfDocumentRefFile(path),
+                    // under the reader; only "Download again" replaces it.
+                    PdfDocumentRefFile(
+                      path,
+                      key: PdfDocumentRefKey(path, [_download]),
+                    ),
                     _controller,
                     _paramsFor(colors.surfaceContainerHigh),
                     1,

@@ -16,6 +16,7 @@ import { installManuscriptFakeDb, type ManuscriptFakeDb } from "./testing/manusc
 import {
   buildMobileApp,
   mockAccessTokens,
+  mockBilling,
   mockPrisma,
   mockQueue,
   openJobRow,
@@ -31,6 +32,7 @@ import {
   finishCompile,
   getManuscript,
   longProse,
+  patchSettings,
   publish,
   saveChapter
 } from "./testing/manuscriptTestSupport.js";
@@ -113,7 +115,11 @@ describe("the first publish", () => {
       planId: plan.id,
       contentRevision: 1,
       skipFinalReview: true,
-      exportPublicationProjectStatus: "EDITING"
+      exportPublicationProjectStatus: "EDITING",
+      // A free publish's compile settles alone: a failure or a delete puts the
+      // book back COMPLETE and never reaches a charge (launch review B3).
+      freeEditRecompile: true,
+      preEditProjectStatus: "COMPLETE"
     });
     expect(db.enqueued[0]!.dedupeKey).toMatch(new RegExp(`^compile-export:${projectId}:${plan.id}:revision-1:`));
     expect(db.enqueued[1]!.payload).toEqual({
@@ -279,6 +285,91 @@ describe("updating a published book", () => {
     expect(response.statusCode).toBe(200);
     // A retitle writes no page, so there is nothing to re-embed.
     expect(db.enqueued.slice(3).map((job) => job.type)).toEqual(["COMPILE_EXPORT", "GENERATE_IMAGE"]);
+  });
+
+  describe("a drawn cover", () => {
+    /** Published, compiled, and wearing a cover the author had drawn with AI. */
+    async function withDrawnCover(app: FastifyInstance, metadata: Record<string, unknown>) {
+      const { projectId } = await writtenBook(app);
+      await publish(app, projectId, "request-publish-0001");
+      finishCompile(db, projectId);
+      // What "Generate with AI" leaves: the source says AI, the row is the drawing.
+      db.projects[0]!.mediaSettings = { ...db.projects[0]!.mediaSettings, coverArtSource: "ai", includeCover: true };
+      db.images.push({ id: "cover-ai", projectId, pageId: null, type: "COVER", path: `/assets/images/${projectId}/cover.jpg`, metadata });
+      db.enqueued.length = 0;
+      return projectId;
+    }
+
+    it("is set again over its kept artwork, free, when the words on it change", async () => {
+      const app = await buildMobileApp();
+      const projectId = await withDrawnCover(app, {
+        coverArtSource: "ai",
+        artworkObjectKey: "images/project/cover-art.jpg",
+        typeset: { title: "The Lighthouse", subtitle: "", authorName: "" }
+      });
+      expect((await patchSettings(app, projectId, { authorName: "Parsa Q." })).statusCode).toBe(200);
+
+      const response = await publish(app, projectId, "request-publish-0002");
+
+      expect(response.statusCode).toBe(200);
+      expect(db.enqueued.map((job) => [job.type, job.dispatch])).toEqual([
+        ["COMPILE_EXPORT", false],
+        ["GENERATE_IMAGE", false]
+      ]);
+      const planId = db.planVersions[0]!.id;
+      expect(db.enqueued[1]!.payload).toEqual({
+        planId,
+        assetType: "COVER",
+        contentRevision: 2,
+        exportPublicationProjectStatus: "EDITING",
+        coverRetypeset: true
+      });
+      expect(db.enqueued[1]!.dedupeKey).toBe(`generate-cover:${projectId}:${planId}:revision-2:status-EDITING`);
+      // Re-set, not redrawn: the book still says its cover is AI art, and nobody paid.
+      expect(db.projects[0]!.mediaSettings).toMatchObject({ coverArtSource: "ai" });
+      expect(db.planVersions[0]!.inputSnapshot.mediaSettings).toMatchObject({ coverArtSource: "ai" });
+      expect(mockBilling.startGenerationAttempt).not.toHaveBeenCalled();
+      expect(mockQueue.dispatchGenerationJob.mock.calls.map((call) => call[0])).toContain(db.enqueued[1]!.id);
+    });
+
+    it("is not touched when only the words inside the book change", async () => {
+      const app = await buildMobileApp();
+      const projectId = await withDrawnCover(app, { coverArtSource: "ai", artworkObjectKey: "images/project/cover-art.jpg" });
+      expect((await patchSettings(app, projectId, { dedication: "For Sara" })).statusCode).toBe(200);
+
+      expect((await publish(app, projectId, "request-publish-0002")).statusCode).toBe(200);
+      expect(db.enqueued.map((job) => job.type)).toEqual(["COMPILE_EXPORT"]);
+    });
+
+    it("keeps its words when it was drawn before artwork was kept, because those are in its pixels", async () => {
+      const app = await buildMobileApp();
+      const projectId = await withDrawnCover(app, { coverArtSource: "ai", model: "imagen" });
+      expect((await patchSettings(app, projectId, { title: "The Last Lighthouse" })).statusCode).toBe(200);
+
+      expect((await publish(app, projectId, "request-publish-0002")).statusCode).toBe(200);
+      expect(db.enqueued.map((job) => job.type)).toEqual(["COMPILE_EXPORT"]);
+      expect(db.projects[0]!.mediaSettings).toMatchObject({ coverArtSource: "ai" });
+    });
+  });
+
+  it("writes the Studio's dedication onto the book's matter, and keeps every other matter page the book has", async () => {
+    const app = await buildMobileApp();
+    const { projectId } = await writtenBook(app);
+    db.projects[0]!.bookMatter = { dedication: "For the old crew", aboutAuthor: "Writes books by the sea.", isbn: "978-0-00-000000-0" };
+    expect((await patchSettings(app, projectId, { dedication: "For Sara, who kept the light" })).statusCode).toBe(200);
+
+    expect((await publish(app, projectId, "request-publish-0001")).statusCode).toBe(200);
+    expect(db.projects[0]!.bookMatter).toEqual({
+      dedication: "For Sara, who kept the light",
+      aboutAuthor: "Writes books by the sea.",
+      isbn: "978-0-00-000000-0"
+    });
+
+    // Clearing it in the Studio takes the page out of the book, and only that page.
+    finishCompile(db, projectId);
+    expect((await patchSettings(app, projectId, { dedication: "" })).statusCode).toBe(200);
+    expect((await publish(app, projectId, "request-publish-0002")).statusCode).toBe(200);
+    expect(db.projects[0]!.bookMatter).toEqual({ aboutAuthor: "Writes books by the sea.", isbn: "978-0-00-000000-0" });
   });
 
   it("refuses while another job or a chat Apply owns the book, and writes nothing", async () => {

@@ -2,8 +2,10 @@ import { useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { BreakdownBars, ColumnChart, SERIES_COLORS, TimeChart } from "./charts.js";
+import { CurrencyRevenueSection, ValuationNote } from "./EconomicsNotes.js";
+import { GrowthFunnel } from "./GrowthFunnel.js";
 import { count, percent, usd, usdShort } from "./format.js";
-import { useAdminOverview } from "./useAdminData.js";
+import { useAdminGrowth, useAdminOverview } from "./useAdminData.js";
 import type { AdminOverview, ShareFunnel } from "./types.js";
 
 const RANGES = [7, 30, 90] as const;
@@ -11,6 +13,7 @@ const RANGES = [7, 30, 90] as const;
 export function OverviewScreen() {
   const [days, setDays] = useState<number>(30);
   const overview = useAdminOverview(days);
+  const growth = useAdminGrowth(days);
 
   return (
     <div className={`admin-page${overview.stale ? " is-stale" : ""}`}>
@@ -37,6 +40,12 @@ export function OverviewScreen() {
       ) : (
         <OverviewBody data={overview.data} days={days} />
       )}
+      {/* Its own request: the cohort queries are the slowest on the page. */}
+      {growth.data ? (
+        <div className="admin-columns-2">
+          <GrowthFunnel growth={growth.data} windowLabel={`last ${days} days`} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -53,9 +62,12 @@ function OverviewBody(props: { data: AdminOverview; days: number }) {
         {/* Exactly one hero figure on the view. */}
         <p className="hero-figure">{usd(money.unitMarginUsd)}</p>
         <p className="muted">
-          {usd(money.creditsDeliveredUsd)} of credits delivered against {usd(money.providerSpendUsd)} of provider
-          spend — {percent(money.unitMarginPercent)} margin on the work actually done.
+          {usd(money.creditsDeliveredUsd)} earned by the {count(money.creditsDelivered)} credits delivered, against{" "}
+          {usd(money.providerSpendUsd)} of provider spend — {percent(money.unitMarginPercent)} margin on the work actually
+          done. {count(money.paidCreditsDelivered)} of those credits were paid for; the rest were welcome or operator
+          credits, worth nothing.
         </p>
+        <ValuationNote valuation={props.data.valuation} />
         {money.creditsRefunded > 0 ? (
           <p className="hero-caveat">
             <AlertTriangle size={14} aria-hidden />
@@ -72,17 +84,21 @@ function OverviewBody(props: { data: AdminOverview; days: number }) {
       </section>
 
       <div className="stat-grid">
-        <StatTile label="Cash collected" value={usd(money.cashCollectedUsd)} note={`${windowLabel} · verified purchases`} />
+        <StatTile
+          label="Cash, net of Google"
+          value={usd(money.cashNetUsd)}
+          note={`${usd(money.cashCollectedUsd)} gross at catalog price − ${usd(money.playFeeUsd)} Google fee · ${windowLabel}`}
+        />
         <StatTile label="Provider spend" value={usd(money.providerSpendUsd)} note="settled calls only" />
         <StatTile
           label="Cash margin"
           value={usd(money.cashMarginUsd)}
-          note={`${percent(money.cashMarginPercent)} of cash in`}
+          note={`${percent(money.cashMarginPercent)} of net cash in`}
         />
         <StatTile
           label="Credits outstanding"
           value={count(money.creditsOutstanding)}
-          note={`${usd(money.creditsOutstandingUsd)} owed as service, not income`}
+          note={`${count(money.paidCreditsOutstanding)} of them paid for (${usd(money.creditsOutstandingUsd)}), owed as service, not income`}
         />
         <StatTile label="Users" value={count(people.totalUsers)} note={`${count(people.newUsers)} new · ${count(people.activeUsers)} active`} />
         <StatTile
@@ -105,7 +121,7 @@ function OverviewBody(props: { data: AdminOverview; days: number }) {
 
       <TimeChart
         title="Value delivered vs provider spend"
-        subtitle="Credits consumed, valued at the credit rate, against what the providers actually billed. The gap is the unit margin."
+        subtitle="Credits consumed, each valued by where it came from net of Google's fee (welcome credits at $0), against what the providers actually billed. The gap is the unit margin."
         dates={dates}
         series={[
           { key: "delivered", label: "Credits delivered", color: SERIES_COLORS[0], values: series.map((p) => p.creditsDeliveredUsd) },
@@ -117,12 +133,14 @@ function OverviewBody(props: { data: AdminOverview; days: number }) {
       {/* Cash lands in lumps an order of magnitude above daily usage, so it gets
           its own axis in its own chart rather than a second scale on the one above. */}
       <ColumnChart
-        title="Cash collected"
-        subtitle="Verified purchases on the day they were recorded — lumpy by nature, and not the same thing as value delivered."
+        title="Cash collected, net of Google's fee"
+        subtitle="Verified purchases at catalog price less refunds and Google's fee, on the day they were recorded — lumpy by nature, and not the same thing as value delivered."
         dates={dates}
-        values={series.map((point) => point.cashUsd)}
+        values={series.map((point) => point.cashNetUsd)}
         format={usdShort}
       />
+
+      <CurrencyRevenueSection rows={props.data.revenueByCurrency} windowLabel={windowLabel} />
 
       <div className="admin-columns-2">
         <ColumnChart

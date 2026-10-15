@@ -21,15 +21,42 @@ import '../billing/billing_paywall_harness.dart';
 // the fresh proposal the server re-emitted on the refusal reply.
 void main() {
   testWidgets(
+    'a reply only a plan unlocks offers the plans, not credit packs',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _CreditsBlockedRepository(planReply: true),
+          store: FakeStoreBillingClient(),
+          billing: FakeBillingRepository(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add credits'), findsNothing);
+      await tester.tap(find.text('See plans'));
+      await tester.pumpAndSettle();
+
+      // The chat's own reply says it too, so only the sheet's line counts.
+      final paywall = find.byType(BillingPaywall);
+      expect(paywall, findsOneWidget);
+      expect(
+        find.descendant(
+          of: paywall,
+          matching: find.textContaining('comes with any plan'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
     'a top-up bought from an insufficient-credits reply offers to run '
     'the blocked edit',
     (tester) async {
       final repository = _CreditsBlockedRepository();
       final store = FakeStoreBillingClient();
       final billing = FakeBillingRepository();
-      await tester.pumpWidget(
-        _app(repository, store: store, billing: billing),
-      );
+      await tester.pumpWidget(_app(repository, store: store, billing: billing));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('You need 660 credits'), findsOneWidget);
@@ -102,15 +129,18 @@ Widget _app(
       billingRepositoryProvider.overrideWithValue(billing),
       creditLogRepositoryProvider.overrideWithValue(EmptyCreditLogRepository()),
     ],
-    child: const MaterialApp(
-      home: ProjectChatScreen(projectId: 'project-1'),
-    ),
+    child: const MaterialApp(home: ProjectChatScreen(projectId: 'project-1')),
   );
 }
 
 /// A chat whose last turn is the server's insufficient-credits reply, carrying
 /// the fresh resumable proposal it re-emits alongside the shortfall.
 class _CreditsBlockedRepository implements ProjectsRepository {
+  _CreditsBlockedRepository({this.planReply = false});
+
+  /// The last reply is the free account's answer to "remove the Made with
+  /// Tomeza line": a plan unlocks it, not credits.
+  final bool planReply;
   final appliedProposalIds = <String>[];
   final statusController = StreamController<MobileProjectStatus>.broadcast();
 
@@ -133,6 +163,31 @@ class _CreditsBlockedRepository implements ProjectsRepository {
   }
 
   MobileProjectChat _chat() {
+    if (planReply) {
+      return MobileProjectChat(
+        messages: [
+          _message(
+            id: 'm0',
+            parentId: null,
+            role: 'user',
+            content: 'remove the made with tomeza line',
+          ),
+          _message(
+            id: 'm1',
+            parentId: 'm0',
+            role: 'assistant',
+            content:
+                'Removing the “Made with Tomeza” line comes with any plan — '
+                'credits alone don’t unlock it.',
+            metadata: const {
+              'intent': {'kind': 'tomeza_credit'},
+              'insufficientCredits': <String, dynamic>{},
+            },
+          ),
+        ],
+        operations: const [],
+      );
+    }
     return MobileProjectChat(
       messages: [
         _message(

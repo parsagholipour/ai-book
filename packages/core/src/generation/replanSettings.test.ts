@@ -133,6 +133,232 @@ describe("explicitTargetPagesFromText", () => {
   });
 });
 
+describe("explicitTargetPagesFromText keeps every answer across the linear rewrite", () => {
+  // Captured by running the reader as it stood before its patterns were made
+  // linear (each optional word now carries its own trailing whitespace). The
+  // rewrite was meant to change the backtracking and nothing else, so every
+  // entry here — including the odd ones, like a bare "page 3" reading as 3,
+  // which `replanTargetPagesFromMessage` guards in the API — must not move.
+  const CORPUS: ReadonlyArray<readonly [string, number | undefined]> = [
+    ["make it 3 pages without illustrations", 3],
+    ["I want a 24 page workbook", 24],
+    ["page count: 12", 12],
+    ["about 30 pages", 30],
+    ["around 20 pages", 20],
+    ["roughly 15 pages please", 15],
+    ["approximately 40 pages", 40],
+    ["~25 pages", 25],
+    ["make it 40 pages long", 40],
+    ["40 pages long, please", 40],
+    ["it should be 18 pages", 18],
+    ["I need it to be 45 pages", 45],
+    ["a 45 page", 45],
+    ["make it 3pages", 3],
+    ["Create a 64-page picture book", 64],
+    ["a 12 - page story", 12],
+    ["a 12–page booklet", 12],
+    ["Write a 200 page novel", 200],
+    ["write a 1,000 page epic", undefined],
+    ["make it 1200 pages", undefined],
+    ["make it 0 pages", undefined],
+    ["make it 600 pages", 600],
+    ["make it 601 pages", undefined],
+    ["set the book to 50 pages", 50],
+    ["keep it at 32 pages", 32],
+    ["turn this into 16 pages", 16],
+    ["write the story as 10 pages", 10],
+    ["make the guide 22 pages", 22],
+    ["make it to 9 pages", 9],
+    ["make itto 7 pages", 7],
+    ["pages: 20", 20],
+    ["page length should be 25", 25],
+    ["pg count = 15", 15],
+    ["Page Count Is 14", 14],
+    ["PAGES = 9", 9],
+    ["page length: 22", 22],
+    ["pages should be 35", 35],
+    ["pagecount12", 12],
+    ["a 24 page ebook", 24],
+    ["a 10 pg guide", 10],
+    ["10pgs", 10],
+    ["a 5 pgs story", 5],
+    ["8 pages, actually make it 3 pages", 3],
+    ["12 pages? no, 14 pages", 14],
+    ["make it 99 pages long and 3 chapters", 99],
+    ["make it 20 pages and add a picture of a dragon", 20],
+    ["a 24 page workbook, and add an index", 24],
+    ["make it 5 pages, not 10", 5],
+    ["I do not want illustrations, 10 pages", 10],
+    ["no cover please. 12 pages", 12],
+    ["Brief:\nA book about bees.\nLength: 30 pages", 30],
+    ["make it\t12\tpages", 12],
+    ["12 pages", 12],
+    ["MAKE IT 30 PAGES", 30],
+    // Ranges read as their upper end, because the last number wins.
+    ["10-12 pages", 12],
+    ["10 to 12 pages", 12],
+    ["between 20 and 30 pages", 30],
+    ["20-30 pages", 30],
+    ["۲۰ تا ۳۰ صفحه", 30],
+    ["somewhere in the 15–20 page range", 20],
+    // Word-then-number reads as a count here; the API's guard drops it.
+    ["page 3", 3],
+    ["the title page", undefined],
+    ["remove the title page", undefined],
+    ["rewrite pages 3-5", 3],
+    ["fix page 7", 7],
+    ["on page 12, change the ending", 12],
+    ["pages 2, 5 and 7", 2],
+    ["page 3 has a typo", 3],
+    ["the title page should say 2024", undefined],
+    ["move page 4 after page 9", 9],
+    ["chapter 3 should be longer", undefined],
+    ["make the tone warmer", undefined],
+    ["", undefined],
+    ["   ", undefined],
+    ["it shouldn't be 10 pages", undefined],
+    ["not a 10 page book", undefined],
+    ["no more than 10 pages", undefined],
+    ["at least 20 pages", undefined],
+    ["fewer than 30 pages", undefined],
+    ["up to 40 pages", undefined],
+    ["under 50 pages", undefined],
+    ["over 60 pages", undefined],
+    ["instead of 20 pages", undefined],
+    ["نباید ۱۰ صفحه باشد", undefined],
+    ["حداقل ۲۰ صفحه", undefined],
+    ["أكثر من 20 صفحة", undefined],
+    ["kein 10 Seiten Buch", undefined],
+    ["nicht 10 Seiten", undefined],
+    ["más de 20 páginas", undefined],
+    ["add 3 pages at the end", undefined],
+    ["I want 2 more pages", undefined],
+    ["3 pages more please", undefined],
+    ["append another 4 pages", undefined],
+    ["give me 5 extra pages", undefined],
+    ["۳ صفحه اضافه کن", undefined],
+    ["3 صفحات أضف", undefined],
+    ["make it 20 pages more detailed", 20],
+    ["20 pages more or less", 20],
+    ["یک کتاب ۳ صفحه ای بساز", 3],
+    ["کتاب ۳۰ صفحه‌ای", 30],
+    ["۲۴ صفحه", 24],
+    ["اريد كتاب من ٢٥ صفحة", 25],
+    ["كتاب من 25 صفحات", 25],
+    ["اردو میں ۲۰ صفحہ کی کتاب", 20],
+    ["२० पृष्ठ की किताब", 20],
+    ["20 पेज की किताब", 20],
+    ["หนังสือ ๘ หน้า", 8],
+    ["做一本１２页的书", 12],
+    ["做一本12页的书", 12],
+    ["12頁の本", 12],
+    ["3ページの本", 3],
+    ["12페이지 책", 12],
+    ["30쪽 책", 30],
+    ["ספר של 8 עמודים", 8],
+    ["ספר של 1 עמוד", 1],
+    ["১২ pages", 12],
+    ["ein Buch mit 15 Seiten", 15],
+    ["eine Seite", undefined],
+    ["un libro de 30 páginas", 30],
+    ["um livro de 20 paginas", 20],
+    ["un libro di 25 pagine", 25],
+    ["una pagina", undefined],
+    ["книга на 40 страниц", 40],
+    ["книга на 12 страницах", 12],
+    ["صفحه ۵ را عوض کن", undefined],
+    ["۲۴ pages please", 24]
+  ];
+
+  it("reads the same count, or none, from every phrasing it read before", () => {
+    const moved = CORPUS.flatMap(([text, before]) => {
+      const after = explicitTargetPagesFromText(text);
+      return after === before ? [] : [{ text, before, after }];
+    });
+    expect(moved).toEqual([]);
+  });
+});
+
+describe("explicitTargetPagesFromText on adversarial input", () => {
+  // Chat text is read on the API's only thread. The patterns once let three
+  // adjacent `\s*` split one run of spaces every possible way before failing,
+  // so "page" plus 2,000 spaces took about a second and "remove the title page"
+  // padded to the 5,000-character chat limit ~20 s, freezing every user. Each
+  // input is timed at 1k characters before any runs at 10k, so a super-linear
+  // regression fails in a fraction of a second instead of hanging the suite.
+  const fill =
+    (head: string, filler: string) =>
+    (length: number): string => {
+      const room = length - head.length;
+      return head + filler.repeat(Math.ceil(room / filler.length)).slice(0, room);
+    };
+  /** The words, separated by equal runs of spaces: one run per optional slot. */
+  const spread =
+    (words: string[]) =>
+    (length: number): string => {
+      const gap = Math.floor((length - words.join("").length) / (words.length - 1));
+      return words.join(" ".repeat(gap)).padEnd(length, " ");
+    };
+  const ADVERSARIAL: ReadonlyArray<readonly [string, (length: number) => string]> = [
+    ["page + spaces", fill("page", " ")],
+    ["pages + tabs", fill("pages", "\t")],
+    ["page + newlines", fill("page", "\n")],
+    ["page + mixed whitespace", fill("page", " \t\n\r  　")],
+    ["the incident: remove the title page + spaces", fill("remove the title page", " ")],
+    ["page count + spaces", fill("page count", " ")],
+    ["page / count / is across long runs", spread(["page", "count", "is", "x"])],
+    ["page should + spaces", fill("page should", " ")],
+    ["page + separators", fill("page", " : = ")],
+    ["page + digits", fill("page ", "1")],
+    ["make + spaces", fill("make", " ")],
+    ["make it + spaces", fill("make it", " ")],
+    ["make the + spaces", fill("make the", " ")],
+    ["make / it / to across long runs", spread(["make", "it", "to", "x"])],
+    ["make it 3 + spaces", fill("make it 3", " ")],
+    ["digit + spaces", fill("3", " ")],
+    ["digit + tabs and newlines", fill("3", "\t\n")],
+    ["digit / hyphen across long runs", spread(["3", "-", "x"])],
+    ["digit / en dash across long runs", spread(["3", "–", "x"])],
+    ["Persian digit + spaces", fill("۳", " ")],
+    ["صفحه + spaces", fill("صفحه", " ")],
+    ["Seiten + spaces", fill("Seiten", " ")],
+    ["a length + spaces", fill("3 pages", " ")],
+    ["a postposed delta + spaces", fill("3 pages more", " ")],
+    ["a postposed delta + punctuation", fill("3 pages more", " .")],
+    ["repeated lengths", fill("", "1 page ")],
+    ["repeated references", fill("", "page 1 ")],
+    ["repeated Persian lengths", fill("", "۳ صفحه ")],
+    ["repeated digits", fill("", "1 ")],
+    ["repeated digits and hyphens", fill("", "1 - ")],
+    ["one long number", fill("", "1")],
+    ["no + spaces", fill("no", " ")],
+    ["repeated negations", fill("", "no ")]
+  ];
+
+  const elapsedMs = (run: () => unknown): number => {
+    const start = performance.now();
+    run();
+    return performance.now() - start;
+  };
+
+  it("stays linear on long runs of whatever its patterns accept between words", () => {
+    for (const [length, budgetMs] of [
+      [1_000, 200],
+      [10_000, 1_000]
+    ] as const) {
+      for (const [label, build] of ADVERSARIAL) {
+        const text = build(length);
+        expect(text).toHaveLength(length);
+        const lengthMs = elapsedMs(() => explicitTargetPagesFromText(text));
+        expect(lengthMs, `${label} at ${length} chars: ${lengthMs.toFixed(1)} ms`).toBeLessThan(budgetMs);
+        // The same message goes through the media reader on the same thread.
+        const mediaMs = elapsedMs(() => replanSettingsFromMessage(text));
+        expect(mediaMs, `${label} at ${length} chars (media): ${mediaMs.toFixed(1)} ms`).toBeLessThan(budgetMs);
+      }
+    }
+  });
+});
+
 describe("negativeMediaPreferenceFromMessage", () => {
   it("separates dropping illustrations from dropping the cover", () => {
     expect(negativeMediaPreferenceFromMessage("make it 3 pages without illustrations")).toEqual({

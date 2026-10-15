@@ -1,12 +1,17 @@
 /**
  * Every reader-facing word the compiler writes that the book's own text did not
  * supply — the Contents heading, the word "Chapter", the Sources heading, image
- * alt text and the title page's byline.
+ * alt text, the title page's byline and the few words of the matter pages.
  *
  * They live apart from the compiler because they are a vocabulary rather than
- * logic: adding a language is 7 lines of data here and nothing anywhere else.
+ * logic: adding a language is one entry here, plus its About the Author
+ * heading, rights line and byline word in the importer's
+ * `ingestion/manuscriptMatterWords.ts`, or a book exported in it re-imports
+ * with its matter left in the pages. Every book language the app offers
+ * (`CONVERSATION_LANGUAGES`) has an entry; `markdownLabels.test.ts` fails the
+ * one that falls back to English.
  */
-import { isEnglishLanguage, languageLabel } from "../prompting/language.js";
+import { isEnglishLanguage, languageTableEntry } from "../prompting/language.js";
 
 export type MarkdownLabels = {
   contentsEyebrow: string;
@@ -24,6 +29,12 @@ export type MarkdownLabels = {
    * which is how their own title pages are set.
    */
   by: string;
+  /** The heading of the back-matter biography. */
+  aboutAuthor: string;
+  /** The rights line under the © line, when the author asks for it. */
+  allRightsReserved: string;
+  /** The free tier's credit, brand name kept in Latin script. */
+  madeWithTomeza: string;
 };
 
 /**
@@ -40,7 +51,10 @@ export const DEFAULT_MARKDOWN_LABELS: MarkdownLabels = {
   figure: "Figure",
   source: "Source",
   bookCover: "Book cover",
-  by: "by"
+  by: "by",
+  aboutAuthor: "About the Author",
+  allRightsReserved: "All rights reserved.",
+  madeWithTomeza: "Made with Tomeza"
 };
 
 const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
@@ -53,7 +67,10 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "شكل",
     source: "المصدر",
     bookCover: "غلاف الكتاب",
-    by: "بقلم"
+    by: "بقلم",
+    aboutAuthor: "عن المؤلف",
+    allRightsReserved: "جميع الحقوق محفوظة.",
+    madeWithTomeza: "صُنع باستخدام Tomeza"
   },
   chinese: {
     contentsEyebrow: "目录",
@@ -64,7 +81,38 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "图",
     source: "来源",
     bookCover: "书籍封面",
-    by: "作者"
+    by: "作者",
+    aboutAuthor: "关于作者",
+    allRightsReserved: "版权所有。",
+    madeWithTomeza: "使用 Tomeza 制作"
+  },
+  danish: {
+    contentsEyebrow: "Indholdsfortegnelse",
+    contentsHeading: "Indhold",
+    chapter: "Kapitel",
+    sources: "Kilder",
+    illustration: "Illustration",
+    figure: "Figur",
+    source: "Kilde",
+    bookCover: "Bogomslag",
+    by: "af",
+    aboutAuthor: "Om forfatteren",
+    allRightsReserved: "Alle rettigheder forbeholdes.",
+    madeWithTomeza: "Lavet med Tomeza"
+  },
+  dutch: {
+    contentsEyebrow: "Inhoudsopgave",
+    contentsHeading: "Inhoud",
+    chapter: "Hoofdstuk",
+    sources: "Bronnen",
+    illustration: "Illustratie",
+    figure: "Figuur",
+    source: "Bron",
+    bookCover: "Boekomslag",
+    by: "door",
+    aboutAuthor: "Over de auteur",
+    allRightsReserved: "Alle rechten voorbehouden.",
+    madeWithTomeza: "Gemaakt met Tomeza"
   },
   french: {
     contentsEyebrow: "Table des matières",
@@ -75,7 +123,10 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "Figure",
     source: "Source",
     bookCover: "Couverture du livre",
-    by: "par"
+    by: "par",
+    aboutAuthor: "À propos de l’auteur",
+    allRightsReserved: "Tous droits réservés.",
+    madeWithTomeza: "Réalisé avec Tomeza"
   },
   german: {
     contentsEyebrow: "Inhaltsverzeichnis",
@@ -86,7 +137,38 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "Abbildung",
     source: "Quelle",
     bookCover: "Buchcover",
-    by: "von"
+    by: "von",
+    aboutAuthor: "Über den Autor",
+    allRightsReserved: "Alle Rechte vorbehalten.",
+    madeWithTomeza: "Erstellt mit Tomeza"
+  },
+  greek: {
+    contentsEyebrow: "Πίνακας περιεχομένων",
+    contentsHeading: "Περιεχόμενα",
+    chapter: "Κεφάλαιο",
+    sources: "Πηγές",
+    illustration: "Εικονογράφηση",
+    figure: "Σχήμα",
+    source: "Πηγή",
+    bookCover: "Εξώφυλλο βιβλίου",
+    by: "συγγραφέας",
+    aboutAuthor: "Σχετικά με τον συγγραφέα",
+    allRightsReserved: "Με επιφύλαξη παντός δικαιώματος.",
+    madeWithTomeza: "Δημιουργήθηκε με το Tomeza"
+  },
+  hebrew: {
+    contentsEyebrow: "תוכן העניינים",
+    contentsHeading: "תוכן העניינים",
+    chapter: "פרק",
+    sources: "מקורות",
+    illustration: "איור",
+    figure: "תרשים",
+    source: "מקור",
+    bookCover: "כריכת הספר",
+    by: "מאת",
+    aboutAuthor: "על המחבר",
+    allRightsReserved: "כל הזכויות שמורות.",
+    madeWithTomeza: "נוצר עם Tomeza"
   },
   hindi: {
     contentsEyebrow: "विषय-सूची",
@@ -97,7 +179,10 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "आकृति",
     source: "स्रोत",
     bookCover: "पुस्तक आवरण",
-    by: "लेखक"
+    by: "लेखक",
+    aboutAuthor: "लेखक के बारे में",
+    allRightsReserved: "सर्वाधिकार सुरक्षित।",
+    madeWithTomeza: "Tomeza से बनाई गई"
   },
   italian: {
     contentsEyebrow: "Indice",
@@ -108,7 +193,10 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "Figura",
     source: "Fonte",
     bookCover: "Copertina del libro",
-    by: "di"
+    by: "di",
+    aboutAuthor: "L’autore",
+    allRightsReserved: "Tutti i diritti riservati.",
+    madeWithTomeza: "Realizzato con Tomeza"
   },
   japanese: {
     contentsEyebrow: "目次",
@@ -119,7 +207,10 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "図",
     source: "出典",
     bookCover: "本の表紙",
-    by: "著者"
+    by: "著者",
+    aboutAuthor: "著者について",
+    allRightsReserved: "無断転載を禁じます。",
+    madeWithTomeza: "Tomezaで制作"
   },
   korean: {
     contentsEyebrow: "목차",
@@ -130,7 +221,24 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "그림",
     source: "출처",
     bookCover: "책 표지",
-    by: "저자"
+    by: "저자",
+    aboutAuthor: "저자 소개",
+    allRightsReserved: "모든 권리 보유.",
+    madeWithTomeza: "Tomeza로 제작"
+  },
+  norwegian: {
+    contentsEyebrow: "Innholdsfortegnelse",
+    contentsHeading: "Innhold",
+    chapter: "Kapittel",
+    sources: "Kilder",
+    illustration: "Illustrasjon",
+    figure: "Figur",
+    source: "Kilde",
+    bookCover: "Bokomslag",
+    by: "av",
+    aboutAuthor: "Om forfatteren",
+    allRightsReserved: "Alle rettigheter forbeholdt.",
+    madeWithTomeza: "Laget med Tomeza"
   },
   persian: {
     contentsEyebrow: "فهرست مطالب",
@@ -141,7 +249,24 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "شکل",
     source: "منبع",
     bookCover: "جلد کتاب",
-    by: "نوشتهٔ"
+    by: "نوشتهٔ",
+    aboutAuthor: "دربارهٔ نویسنده",
+    allRightsReserved: "همهٔ حقوق محفوظ است.",
+    madeWithTomeza: "ساخته‌شده با Tomeza"
+  },
+  polish: {
+    contentsEyebrow: "Spis treści",
+    contentsHeading: "Spis treści",
+    chapter: "Rozdział",
+    sources: "Źródła",
+    illustration: "Ilustracja",
+    figure: "Rysunek",
+    source: "Źródło",
+    bookCover: "Okładka książki",
+    by: "autor",
+    aboutAuthor: "O autorze",
+    allRightsReserved: "Wszelkie prawa zastrzeżone.",
+    madeWithTomeza: "Utworzono w Tomeza"
   },
   portuguese: {
     contentsEyebrow: "Sumário",
@@ -152,7 +277,10 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "Figura",
     source: "Fonte",
     bookCover: "Capa do livro",
-    by: "por"
+    by: "por",
+    aboutAuthor: "Sobre o autor",
+    allRightsReserved: "Todos os direitos reservados.",
+    madeWithTomeza: "Feito com Tomeza"
   },
   russian: {
     contentsEyebrow: "Оглавление",
@@ -163,7 +291,10 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "Рисунок",
     source: "Источник",
     bookCover: "Обложка книги",
-    by: "автор"
+    by: "автор",
+    aboutAuthor: "Об авторе",
+    allRightsReserved: "Все права защищены.",
+    madeWithTomeza: "Создано в Tomeza"
   },
   spanish: {
     contentsEyebrow: "Tabla de contenido",
@@ -174,7 +305,38 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "Figura",
     source: "Fuente",
     bookCover: "Cubierta del libro",
-    by: "por"
+    by: "por",
+    aboutAuthor: "Sobre el autor",
+    allRightsReserved: "Todos los derechos reservados.",
+    madeWithTomeza: "Hecho con Tomeza"
+  },
+  swedish: {
+    contentsEyebrow: "Innehållsförteckning",
+    contentsHeading: "Innehåll",
+    chapter: "Kapitel",
+    sources: "Källor",
+    illustration: "Illustration",
+    figure: "Figur",
+    source: "Källa",
+    bookCover: "Bokomslag",
+    by: "av",
+    aboutAuthor: "Om författaren",
+    allRightsReserved: "Alla rättigheter förbehållna.",
+    madeWithTomeza: "Skapad med Tomeza"
+  },
+  thai: {
+    contentsEyebrow: "สารบัญ",
+    contentsHeading: "สารบัญ",
+    chapter: "บทที่",
+    sources: "แหล่งข้อมูล",
+    illustration: "ภาพประกอบ",
+    figure: "แผนภาพ",
+    source: "ที่มา",
+    bookCover: "ปกหนังสือ",
+    by: "โดย",
+    aboutAuthor: "เกี่ยวกับผู้เขียน",
+    allRightsReserved: "สงวนลิขสิทธิ์",
+    madeWithTomeza: "สร้างด้วย Tomeza"
   },
   turkish: {
     contentsEyebrow: "İçindekiler",
@@ -185,7 +347,24 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "Şekil",
     source: "Kaynak",
     bookCover: "Kitap kapağı",
-    by: "yazan"
+    by: "yazan",
+    aboutAuthor: "Yazar hakkında",
+    allRightsReserved: "Tüm hakları saklıdır.",
+    madeWithTomeza: "Tomeza ile hazırlandı"
+  },
+  ukrainian: {
+    contentsEyebrow: "Зміст",
+    contentsHeading: "Зміст",
+    chapter: "Розділ",
+    sources: "Джерела",
+    illustration: "Ілюстрація",
+    figure: "Рисунок",
+    source: "Джерело",
+    bookCover: "Обкладинка книги",
+    by: "автор",
+    aboutAuthor: "Про автора",
+    allRightsReserved: "Усі права захищено.",
+    madeWithTomeza: "Створено за допомогою Tomeza"
   },
   urdu: {
     contentsEyebrow: "فہرست مضامین",
@@ -196,7 +375,24 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
     figure: "شکل",
     source: "ماخذ",
     bookCover: "کتاب کا سرورق",
-    by: "تحریر"
+    by: "تحریر",
+    aboutAuthor: "مصنف کے بارے میں",
+    allRightsReserved: "جملہ حقوق محفوظ ہیں۔",
+    madeWithTomeza: "Tomeza سے تیار کردہ"
+  },
+  vietnamese: {
+    contentsEyebrow: "Mục lục",
+    contentsHeading: "Mục lục",
+    chapter: "Chương",
+    sources: "Nguồn tham khảo",
+    illustration: "Hình minh họa",
+    figure: "Hình",
+    source: "Nguồn",
+    bookCover: "Bìa sách",
+    by: "tác giả",
+    aboutAuthor: "Về tác giả",
+    allRightsReserved: "Bảo lưu mọi quyền.",
+    madeWithTomeza: "Được tạo bằng Tomeza"
   }
 };
 
@@ -205,5 +401,5 @@ export function markdownLabels(language: string | undefined): MarkdownLabels {
   if (isEnglishLanguage(language)) {
     return DEFAULT_MARKDOWN_LABELS;
   }
-  return MARKDOWN_LABELS_BY_LANGUAGE[languageLabel(language).toLowerCase()] ?? DEFAULT_MARKDOWN_LABELS;
+  return languageTableEntry(MARKDOWN_LABELS_BY_LANGUAGE, language) ?? DEFAULT_MARKDOWN_LABELS;
 }

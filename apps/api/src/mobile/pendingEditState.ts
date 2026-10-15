@@ -29,7 +29,17 @@ import {
  * composition and settlement flows import from here, never the reverse.
  */
 
-export type PendingEditClarification = "scope" | "busy" | "confirm";
+/**
+ * Why an edit is waiting. `scope` is the router's question about where an edit
+ * goes, and a reply naming a scope ("everywhere", "the whole book") resumes it
+ * with that scope. `matter` is the matter composer's one question about what
+ * to print (`mobile/bookMatterChatEdits.ts`): its answer is the reader's own
+ * words, so it is always merged with the request as a follow-up and never read
+ * as a scope or a page — "For my mom, who stood by me throughout" is a
+ * dedication, not a scope. A matter question stored as `scope` by an older
+ * build still resumes the way it always did.
+ */
+export type PendingEditClarification = "scope" | "matter" | "busy" | "confirm";
 
 /**
  * The kinds an "apply it" may resume: every proposal-gated edit kind, plus the
@@ -233,10 +243,20 @@ export function findPendingScopeClarification(
     const request = typeof pending.request === "string" ? pending.request.trim() : "";
     if (
       (pending.clarification === "scope" ||
+        pending.clarification === "matter" ||
         pending.clarification === "busy" ||
         pending.clarification === "confirm") &&
       request.length > 0
     ) {
+      // A question is answered by the very next message — resumed with a
+      // scope, merged as the follow-up that spends it, or cancelled — so one
+      // with a newer reply after it is spent. Re-found, every later message
+      // was merged with its request as if it still answered it ("make page 3
+      // funnier" reached the router as a follow-up to "add an ISBN"), turn
+      // after turn, because nothing marks the turn that spent it.
+      if (sawNewerAssistantMessage && (pending.clarification === "scope" || pending.clarification === "matter")) {
+        return null;
+      }
       const proposal = pendingEditProposalFromMetadata(metadata, pending, request);
       // Only states whose confirmation executes a charge demand the explicit
       // form once stale. A scope state resumed by "ok" merely re-proposes, so
@@ -728,7 +748,7 @@ export function isPendingEditNudgeMessage(message: string): boolean {
 export function normalizeShortFollowUpMessage(message: string): string {
   return message
     .toLowerCase()
-    .replace(/[.!?]+$/g, "")
+    .replace(/(?<![.!?])[.!?]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }

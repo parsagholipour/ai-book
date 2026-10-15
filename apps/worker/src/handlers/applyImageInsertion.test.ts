@@ -124,7 +124,8 @@ const job = (data: Record<string, unknown> = {}) =>
 /** A previous delivery's line: same operation marker, its own unique filename. */
 const PRIOR_LINE = "![a dragon](/assets/images/project-1/chat-image-op-1-11111111-2222-3333-4444-555555555555.jpg)";
 
-const COMPILE_OPTIONS = { skipFinalReview: true, withoutQualityVerdict: true };
+/** An added picture's recompile is an edit's: no review, no verdict, never the book's failure. */
+const COMPILE_OPTIONS = expect.objectContaining({ review: { skipFinalReview: true, withoutQualityVerdict: true }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) });
 
 /** The path this delivery wrote its (delivery-unique) file to. */
 const writtenImagePath = () => mocks.put.mock.calls[0]?.[0] as string;

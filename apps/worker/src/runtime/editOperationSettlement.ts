@@ -147,7 +147,7 @@ export async function refundSkippedEditOperation(job: WorkerRuntimeJob, reason: 
  *
  * The sibling of `refundSkippedEditOperation`, for the case that settles as a
  * delivered *part* rather than a delivered nothing. A structural insert charges
- * `pagesBilled × pageRegenerationPerPage` up front and its apply resumes against
+ * for its `pagesBilled` up front and its apply resumes against
  * the page ids the shift recorded — so a redelivery meeting a book that holds
  * only some of them writes only some of them, and every path out of there is a
  * *completion*: `markCompleted` marks the attempt SUCCEEDED, and neither
@@ -156,11 +156,14 @@ export async function refundSkippedEditOperation(job: WorkerRuntimeJob, reason: 
  * pages and has two, `operationCanUndo` offers an undo of the shift rather than
  * of the charge, and the shortfall used to be kept in silence.
  *
- * `bookEditCreditCost` prices `restructure_pages` as `pagesBilled` times a
- * per-page rate with no flat half, so the share of the charge the missing pages
- * carried is exactly their share of the pages — read off the operation row's own
- * `creditsCharged` rather than recomputed from a price list that an operator may
- * have edited since the edit was quoted.
+ * `bookEditCreditCost` prices `restructure_pages` as a flat `addedPagesBase`
+ * plus `pagesBilled` times a per-page rate (since 2026-10-13; before, the
+ * per-page rate alone), so the share of the charge the missing pages carried is
+ * their share of the pages with the base spread across them — an approximation
+ * that refunds slightly more than the per-page half. Read off the operation
+ * row's own `creditsCharged` rather than recomputed from a price list that an
+ * operator may have edited since the edit was quoted. No handler calls this
+ * today: a recorded insert is indivisible (`restructurePages.ts`).
  *
  * Like `refundSkippedEditOperation` it does not swallow: a kept charge nobody is
  * looking for is worse than a delivery that fails loudly, and the caller runs it

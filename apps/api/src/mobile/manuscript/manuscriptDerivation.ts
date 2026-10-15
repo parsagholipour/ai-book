@@ -1,5 +1,6 @@
 import {
   manuscriptWordCount,
+  parseBookMatter,
   studioSettingsFromMediaSettings,
   type StudioLayout
 } from "@book-maker/core";
@@ -57,6 +58,7 @@ export const MANUSCRIPT_PROJECT_SELECT = {
   title: true,
   subtitle: true,
   authorName: true,
+  bookMatter: true,
   coverTagline: true,
   prompt: true,
   category: true,
@@ -78,6 +80,7 @@ export type ManuscriptProject = {
   title: string;
   subtitle: string | null;
   authorName: string | null;
+  bookMatter: unknown;
   coverTagline: string | null;
   prompt: string;
   category: string;
@@ -201,7 +204,7 @@ async function createWorkingCopy(tx: ManuscriptDb, project: ManuscriptProject): 
     kind: studio?.kind ?? "other",
     artStyle: studio?.artStyle ?? null,
     goalWords: null,
-    dedication: null,
+    dedication: parseBookMatter(project.bookMatter).dedication ?? null,
     castCharacterIds: [],
     published: null
   };

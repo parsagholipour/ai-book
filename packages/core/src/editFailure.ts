@@ -121,8 +121,8 @@ export const EDIT_START_NEEDS_CREDITS =
  */
 export function imageLimitReachedMessage(limit: number | null): string {
   return limit === null
-    ? "Your plan’s monthly illustrated books are used up. Upgrade for unlimited, or turn visuals off."
-    : `Free plans include ${limit} illustrated books a month. Upgrade for unlimited, or turn visuals off.`;
+    ? "Your plan’s monthly illustrated books are used up. Upgrade to a plan for no monthly cap, or turn visuals off."
+    : `Free plans include ${limit} illustrated books a month. Upgrade to a plan for no monthly cap, or turn visuals off.`;
 }
 
 /**

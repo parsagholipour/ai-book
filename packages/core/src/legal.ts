@@ -4,10 +4,14 @@
  * A material Terms update changes the acceptance version. A wording-only
  * correction may change the rendered revision date without changing these
  * values, so existing users are not asked to accept the same terms twice.
+ *
+ * The public pages (apps/web/src/features/legal) print these through the
+ * `@book-maker/core/legal` subpath, so this module must stay import-free
+ * (scripts/check-core-subpaths.mjs).
  */
-export const CURRENT_TERMS_VERSION = "2026-10-03";
-export const CURRENT_PRIVACY_VERSION = "2026-10-03";
-export const LEGAL_EFFECTIVE_DATE = "2026-10-03";
+export const CURRENT_TERMS_VERSION = "2026-10-13";
+export const CURRENT_PRIVACY_VERSION = "2026-10-13";
+export const LEGAL_EFFECTIVE_DATE = "2026-10-13";
 
 export const LEGAL_COMPANY_NAME = "Ravanix Technologies L.L.C-FZ";
 export const LEGAL_COMPANY_ADDRESS =

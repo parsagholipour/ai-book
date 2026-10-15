@@ -11,6 +11,7 @@ import { OverviewScreen } from "./features/admin/OverviewScreen.js";
 import { UsersScreen } from "./features/admin/UsersScreen.js";
 import { SafetySettingsScreen } from "./features/admin/SafetySettingsScreen.js";
 import { AppUpdatesScreen } from "./features/admin/AppUpdatesScreen.js";
+import { SpendControlsScreen } from "./features/admin/SpendControlsScreen.js";
 import { GenerationQualityScreen } from "./features/admin/GenerationQualityScreen.js";
 import { ConsoleScreen } from "./features/console/ConsoleScreen.js";
 import { PricingScreen } from "./features/pricing/PricingScreen.js";
@@ -68,6 +69,7 @@ function AuthenticatedApp() {
         <Route index element={<OverviewScreen />} />
         <Route path="operations" element={<OperationsScreen />} />
         <Route path="costs" element={<CostsScreen />} />
+        <Route path="spend" element={<SpendControlsScreen />} />
         <Route path="users" element={<UsersScreen />} />
         <Route path="moderation" element={<ModerationScreen />} />
         <Route path="settings" element={<SafetySettingsScreen />} />

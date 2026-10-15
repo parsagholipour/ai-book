@@ -58,6 +58,8 @@ import {
 import { ownedCharacterWithMentions } from "../libraryMentionGraph.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
+import { aiCapacityError, requireAiCapacity } from "../aiCapacity.js";
+import { spendBreaker } from "../../spendBreaker.js";
 import { fingerprintGenerationRequest } from "../support.js";
 
 /**
@@ -501,8 +503,12 @@ export async function registerMobileCharacterImageRoutes(
       // few hundred KB rather than up to the body limit, and EXIF/GPS are
       // already gone. A failed or absent reading still answers 200 — storing
       // the photo regardless is the contract, and reordering does not change it.
+      // The photo is stored whatever the AI spend breaker says; while it would
+      // refuse this reader AI work, the upload reads as having no vision
+      // provider, which is a supported state — no suggestion, nothing charged.
+      const visionAllowed = (await spendBreaker.check(auth.user.id, "standard", request.log)).allowed;
       const reading = await readCharacterPhoto({
-        vision: context.characterPhotoVision,
+        vision: visionAllowed ? context.characterPhotoVision : undefined,
         bytes: optimized.bytes,
         mimeType: optimized.mimeType,
         characterName: character.name,
@@ -657,13 +663,20 @@ export async function registerMobileCharacterImageRoutes(
           404: mobileAuthError,
           409: mobileAuthError,
           422: contentRestrictedError,
-          429: mobileAuthError
+          // The rate limit's 429 and the spend breaker's (`../aiCapacity.ts`),
+          // which carries its reset time.
+          429: aiCapacityError,
+          503: aiCapacityError
         }
       }
     },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
+        return;
+      }
+      // Ahead of the limiter, so asking while the breaker is open spends no bucket.
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "standard"))) {
         return;
       }
       if (!(await hitTieredLimit(context.generationLimiter, reply, auth.user.id, "character-portrait"))) {

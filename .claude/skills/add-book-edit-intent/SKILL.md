@@ -1,6 +1,6 @@
 ---
 name: add-book-edit-intent
-description: Use when adding or changing a conversational edit in the finished-book chat — a new `BookEditIntentKind` (alongside `page_rewrite`, `local_patch`, `back_matter`, `chapter_heading`, `add_image`, `move_image`, `remove_image`, `restructure_pages`, `continue_book`, `book_replan`), a new `editTarget` in `decideActionSchema`, a new `DecideAction`, or a change to how a request is priced, proposed or applied. The router lives in apps/api/src/bookEditIntent.ts (`classifyProjectChatMessage`, `normalizeIntentForStage`, `forcedDecision`, `PROPOSAL_GATED_EDIT_KINDS`) and the apply side in apps/api/src/mobile/bookEditIntents.ts (`handleProjectChatIntent`, `proposeBookEdit`) — two different ~900-line files whose names differ only by a plural. Reach for it on "make the chat understand X", "the chat quoted 960 credits to change a heading", "it keeps asking the same question", "the edit should be free", or "the proposal card says the wrong thing".
+description: Use when adding or changing a conversational edit in the finished-book chat — a new `BookEditIntentKind` (alongside `page_rewrite`, `local_patch`, `back_matter`, `chapter_heading`, `book_matter`, `add_image`, `move_image`, `remove_image`, `restructure_pages`, `continue_book`, `book_replan`), a new `editTarget` in `decideActionSchema`, a new `DecideAction`, or a change to how a request is priced, proposed or applied. The router lives in apps/api/src/bookEditIntent.ts (`classifyProjectChatMessage`, `normalizeIntentForStage`, `forcedDecision`, `PROPOSAL_GATED_EDIT_KINDS`) and the apply side in apps/api/src/mobile/bookEditIntents.ts (`handleProjectChatIntent`, `proposeBookEdit`) — two different ~900-line files whose names differ only by a plural. Reach for it on "make the chat understand X", "the chat quoted 960 credits to change a heading", "it keeps asking the same question", "the edit should be free", or "the proposal card says the wrong thing".
 ---
 
 # Adding or changing a book-edit intent
@@ -30,6 +30,12 @@ Two files, both around 900 lines, both about edit intents:
 Free-standing recognisers pair the same way: `apps/api/src/bookEditBackMatter.ts` (recognise) with
 `apps/api/src/mobile/backMatterEdits.ts` (apply), and `apps/api/src/bookEditChapterHeading.ts` with
 `apps/api/src/mobile/chapterHeadingEdits.ts`. Check which half you are in before grepping.
+`book_matter` splits differently: `apps/api/src/bookEditMatter.ts` only decides *whether* a message
+is a matter edit, and `apps/api/src/mobile/bookMatterChatEdits.ts` composes *what* changes with a
+model call whose prompt and decisions live in core (`authoring/bookMatterChatEdit.ts`, with the field
+cues, folding and quote test in `authoring/bookMatterWords.ts`, which fields may change in
+`authoring/bookMatterAskedFor.ts`, and the left-over reading in `authoring/bookMatterRequests.ts`) — an edit of existing text is never
+extracted by regex.
 
 Supporting leaves: `apps/api/src/bookEditMessage.ts` (reading a message — pages, quotes, scope,
 languages; imports types back from the router but never values), `apps/api/src/bookEditHeuristics.ts`
@@ -69,7 +75,10 @@ that is what once quoted hundreds of credits to rewrite every page of a book in 
 heading that is synthesized at export time and stored in no page.
 
 Add the recogniser stage-gated (`options.stage === "complete"`) unless it genuinely applies before
-approval.
+approval, and behind `fastPaths` (complete stage and not `mentionsBookMatter`), so a matter request
+never lands on it. A fast path may pass the matter guard only for a whole-message parse in which the
+matter word is the request's own text — `isWholeBookTitleRename` ("Rename the book to 'The
+Dedication'") and `MARKED_REPLACEMENT_TERM` are the two that do.
 
 **Structural?** Insert, delete or reorder pages is `restructure_pages`, and it is the one kind
 whose targets do not exist yet. It forks ahead of `affectedPagesForIntent` in both
@@ -103,7 +112,9 @@ to it when the budget is spent.
 
 `clarifyExhausted` itself is computed in `apps/api/src/mobile/routes/projectChat.ts` from
 `findPendingScopeClarification` (`apps/api/src/mobile/pendingEditState.ts`), which merges the stored
-request with the follow-up via `messageWithFollowUp`.
+request with the follow-up via `messageWithFollowUp`. It finds `scope` and `matter` questions (the
+book-matter composer's own, whose answer is always merged and never read as a scope), and only
+until an assistant reply follows them.
 
 So, for a new intent, answer: **when the budget is spent and the request is still ambiguous, what
 should it become?** If a whole-book `page_rewrite` is the wrong answer for your intent — and for

@@ -283,6 +283,20 @@ void main() {
       );
     });
 
+    testWidgets('adding a photo says whose photos may be added', (
+      tester,
+    ) async {
+      await pumpProfile(tester, testCharacter(hasPhoto: false));
+
+      expect(
+        find.text(
+          'Only add photos of yourself, or of people (or children in your '
+          'care) who agreed.',
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('the Pictures heading sits on the same gutter as About', (
       tester,
     ) async {

@@ -90,9 +90,9 @@ export function ConsoleScreen(props: { auth: ReturnType<typeof useAuth> }) {
     revisePlanWithMessage: actions.revisePlanWithMessage
   });
 
-  function handleLogout() {
+  function handleLogout(everywhere = false) {
     data.setError(null);
-    void auth.logout(async () => {
+    void (everywhere ? auth.logoutEverywhere : auth.logout)(async () => {
       data.clearProjectData();
       await voice.endVoiceCall();
       await voice.endVoiceRoom();
@@ -118,7 +118,8 @@ export function ConsoleScreen(props: { auth: ReturnType<typeof useAuth> }) {
         selectedImageModel={projectDraft.selectedImageModel}
         showImageModelControls={projectDraft.showImageModelControls}
         createProjectBusy={createProjectBusy}
-        onLogout={handleLogout}
+        onLogout={() => handleLogout()}
+        onLogoutEverywhere={() => handleLogout(true)}
         onCreateProject={() => void actions.createProject()}
         onRefreshProjects={() => void data.refreshAll()}
         onSelectProject={data.setSelectedId}

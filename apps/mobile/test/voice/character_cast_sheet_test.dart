@@ -30,16 +30,13 @@ VoiceCharacter character({
   );
 }
 
-VoiceCast cast({
-  List<VoiceCharacter>? characters,
-  int availableCredits = 600,
-}) {
+VoiceCast cast({List<VoiceCharacter>? characters, int availableCredits = 600}) {
   return VoiceCast(
     characters: characters ?? [character()],
     creditsPerMinute: 60,
     creditsToStart: 180,
     availableCredits: availableCredits,
-    maxCallSeconds: 1800,
+    maxCallSeconds: 900,
   );
 }
 
@@ -90,7 +87,10 @@ class MemoryVoiceDisclosureStore implements VoiceDisclosureStore {
   Future<bool> hasAcknowledged() async => acknowledged;
 }
 
-Future<void> pumpCastSheet(WidgetTester tester, FakeVoiceRepository repository) async {
+Future<void> pumpCastSheet(
+  WidgetTester tester,
+  FakeVoiceRepository repository,
+) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -121,38 +121,61 @@ Future<void> pumpCastSheet(WidgetTester tester, FakeVoiceRepository repository) 
 }
 
 void main() {
-  testWidgets('shows what a call costs in minutes the balance actually covers', (tester) async {
-    // 600 credits at 60 a minute is ten minutes, floored so the number is a
-    // promise rather than an estimate.
-    await pumpCastSheet(tester, FakeVoiceRepository(cast(availableCredits: 640)));
+  testWidgets(
+    'shows what a call costs in minutes the balance actually covers',
+    (tester) async {
+      // 600 credits at 60 a minute is ten minutes, floored so the number is a
+      // promise rather than an estimate.
+      await pumpCastSheet(
+        tester,
+        FakeVoiceRepository(cast(availableCredits: 640)),
+      );
 
-    expect(find.text('Call a character'), findsOneWidget);
-    expect(find.textContaining('60 credits a minute'), findsOneWidget);
-    expect(find.textContaining('about 10 minutes'), findsOneWidget);
-  });
+      expect(find.text('Call a character'), findsOneWidget);
+      expect(find.textContaining('60 credits a minute'), findsOneWidget);
+      expect(find.textContaining('about 10 minutes'), findsOneWidget);
+      // The server ends a call at 15 minutes, and the sheet says so.
+      expect(
+        find.textContaining('up to 15 min', findRichText: true),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('tells a user who cannot afford a call what they need', (tester) async {
-    await pumpCastSheet(tester, FakeVoiceRepository(cast(availableCredits: 20)));
-
-    expect(find.text('You need 180 credits to start a call.'), findsOneWidget);
-  });
-
-  testWidgets('toasts the opening hold when a call is tapped without the credits', (
+  testWidgets('tells a user who cannot afford a call what they need', (
     tester,
   ) async {
-    // A disabled row used to swallow the tap, so the cost line was the only
-    // explanation and easy to miss. The tap is the attempt; the toast names
-    // the number.
-    await pumpCastSheet(tester, FakeVoiceRepository(cast(availableCredits: 20)));
-    await tester.tap(find.text('Marlow'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await pumpCastSheet(
+      tester,
+      FakeVoiceRepository(cast(availableCredits: 20)),
+    );
 
-    expect(find.byType(SnackBar), findsOneWidget);
     expect(find.text('You need 180 credits to start a call.'), findsOneWidget);
-    expect(find.text('Call a character'), findsNothing);
-    expect(find.text('Before your first voice call'), findsNothing);
   });
+
+  testWidgets(
+    'toasts the opening hold when a call is tapped without the credits',
+    (tester) async {
+      // A disabled row used to swallow the tap, so the cost line was the only
+      // explanation and easy to miss. The tap is the attempt; the toast names
+      // the number.
+      await pumpCastSheet(
+        tester,
+        FakeVoiceRepository(cast(availableCredits: 20)),
+      );
+      await tester.tap(find.text('Marlow'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(
+        find.text('You need 180 credits to start a call.'),
+        findsOneWidget,
+      );
+      expect(find.text('Call a character'), findsNothing);
+      expect(find.text('Before your first voice call'), findsNothing);
+    },
+  );
 
   testWidgets('lists a callable character with their role', (tester) async {
     await pumpCastSheet(tester, FakeVoiceRepository(cast()));
@@ -161,47 +184,55 @@ void main() {
     expect(find.text('The lighthouse keeper'), findsOneWidget);
   });
 
-  testWidgets('discloses microphone and provider processing before the first call', (
-    tester,
-  ) async {
-    final disclosure = MemoryVoiceDisclosureStore();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          voiceRepositoryProvider.overrideWithValue(FakeVoiceRepository(cast())),
-          voiceDisclosureStoreProvider.overrideWithValue(disclosure),
-        ],
-        child: MaterialApp(
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: ElevatedButton(
-                onPressed: () => showCharacterCastSheet(
-                  context: context,
-                  projectId: 'project-1',
+  testWidgets(
+    'discloses microphone and provider processing before the first call',
+    (tester) async {
+      final disclosure = MemoryVoiceDisclosureStore();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            voiceRepositoryProvider.overrideWithValue(
+              FakeVoiceRepository(cast()),
+            ),
+            voiceDisclosureStoreProvider.overrideWithValue(disclosure),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: ElevatedButton(
+                  onPressed: () => showCharacterCastSheet(
+                    context: context,
+                    projectId: 'project-1',
+                  ),
+                  child: const Text('Open'),
                 ),
-                child: const Text('Open'),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('Open'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Marlow'));
-    await tester.pumpAndSettle();
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Marlow'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Before your first voice call'), findsOneWidget);
-    expect(find.textContaining('sent in real time'), findsOneWidget);
-    expect(find.textContaining('does not retain live-call audio'), findsOneWidget);
-    expect(disclosure.acknowledged, isFalse);
+      expect(find.text('Before your first voice call'), findsOneWidget);
+      expect(find.textContaining('sent in real time'), findsOneWidget);
+      expect(
+        find.textContaining('does not retain live-call audio'),
+        findsOneWidget,
+      );
+      expect(disclosure.acknowledged, isFalse);
 
-    await tester.tap(find.text('Not now'));
-    await tester.pumpAndSettle();
-    expect(disclosure.acknowledged, isFalse);
-  });
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      expect(disclosure.acknowledged, isFalse);
+    },
+  );
 
-  testWidgets('says a character is being prepared rather than hiding them', (tester) async {
+  testWidgets('says a character is being prepared rather than hiding them', (
+    tester,
+  ) async {
     await pumpCastSheet(
       tester,
       FakeVoiceRepository(
@@ -213,7 +244,9 @@ void main() {
     expect(find.text('Getting ready to talk…'), findsOneWidget);
   });
 
-  testWidgets('polls while a character is still being prepared', (tester) async {
+  testWidgets('polls while a character is still being prepared', (
+    tester,
+  ) async {
     final repository = FakeVoiceRepository(
       cast(characters: [character(status: VoiceCharacterStatus.preparing)]),
     );
@@ -229,7 +262,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('explains an empty cast instead of showing a blank sheet', (tester) async {
+  testWidgets('explains an empty cast instead of showing a blank sheet', (
+    tester,
+  ) async {
     await pumpCastSheet(tester, FakeVoiceRepository(cast(characters: [])));
 
     expect(find.text('No one to call yet'), findsOneWidget);

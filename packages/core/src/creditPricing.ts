@@ -33,16 +33,19 @@ export const DEFAULT_CREDIT_COSTS = {
   messageDailyLimitFree: 50,
   messageResetCreditsFree: 50,
   messageResetEnabledFree: 1,
+  // A paid plan's messages are free up to its daily limit, and the limit is the
+  // spend: at the old 150/300/600 a Creator reader chatting to the cap cost an
+  // estimated $9–45 a month on its own (launch review, 2026-10-13).
   messageCreditsCreator: 0,
-  messageDailyLimitCreator: 150,
+  messageDailyLimitCreator: 60,
   messageResetCreditsCreator: 100,
   messageResetEnabledCreator: 1,
   messageCreditsPro: 0,
-  messageDailyLimitPro: 300,
+  messageDailyLimitPro: 120,
   messageResetCreditsPro: 150,
   messageResetEnabledPro: 1,
   messageCreditsMax: 0,
-  messageDailyLimitMax: 600,
+  messageDailyLimitMax: 300,
   messageResetCreditsMax: 200,
   messageResetEnabledMax: 1,
 
@@ -59,7 +62,12 @@ export const DEFAULT_CREDIT_COSTS = {
   imageGeneration: 45,
   coverRegeneration: 120,
   premiumReview: 200,
-  exportUnlock: 150,
+  // Retired 2026-10-15: a finished book downloads free, so nothing charges
+  // this. Held at 0 (its ceiling is 0, so a stored 150 reads as 0) rather than
+  // deleted, because installed apps add `creditCosts.exportUnlock` to their
+  // book quote and fall back to 150 when the key is missing. Not a price:
+  // `RETIRED_CREDIT_PRICING_KEYS` keeps it out of every projection.
+  exportUnlock: 0,
   // A revision runs the same planner the first plan ran, so it climbs the same
   // ladder; the unsuffixed key is still the balanced rate.
   planRevision: 40,
@@ -69,6 +77,13 @@ export const DEFAULT_CREDIT_COSTS = {
   bookTextEditBase: 25,
   bookTextEditPerPage: 10,
   pageRegenerationPerPage: 80,
+  // Pages a finished book *gains* — a chat continuation's new chapters and a
+  // structural insert's new pages — are priced like the book they join: this
+  // flat base, then the tier's own `fullBookPerPage` for each page added
+  // (`addedPagesCreditCost` in apps/api). They used to bill
+  // `pageRegenerationPerPage`, so ten more pages cost more than a new ten-page
+  // book. A rewrite of an existing page keeps the rewrite rate.
+  addedPagesBase: 100,
   bookReplanBase: 120,
   // The quality tier's own rates. An unsuffixed key above *is* the balanced
   // rate — the tier that existed when there was only one — so every price
@@ -97,15 +112,33 @@ export const DEFAULT_CREDIT_COSTS = {
   bookTextEditPerPageFast: 5,
   bookTextEditPerPagePremium: 28,
   fullBookBaseUltra: 650,
-  // Max break-even: $0.12 / $0.002125 × 1.25 ≈ 71. 40 no longer clears the
-  // ultra cost assumption after counting polish + judge/tools/extract.
-  fullBookPerPageUltra: 71,
+  // Max break-even on the one measured ultra book, not on an assumed page cost:
+  // 20 pages cost $5.97 to write (docs/tier-audit-20-pages-2026-09-20.md), so the
+  // whole charge has to clear $5.97 / $0.002125 × 1.25 ≈ 3,510 credits, and
+  // (3,510 − 650 base − 120 plan − 150 export) / 20 ≈ 130. The old 71 assumed
+  // $0.12 a page and billed that book at $5.40 on Max. That run predates the
+  // 2026-09-21 effort fix, so this is the safe side of an unmeasured number:
+  // re-measure and lower it at /pricing, which needs no release. The 150
+  // export unlock that sum counted was removed on 2026-10-15, so that book now
+  // charges 3,370 (×1.20 of cost, not ×1.25); re-measure before switching
+  // Ultra on.
+  fullBookPerPageUltra: 130,
   imageGenerationUltra: 85,
   pageRegenerationPerPageUltra: 280,
   bookTextEditPerPageUltra: 36,
-  voiceCallPerMinute: 60,
+  // Modelled at $0.57–2.60 per ten minutes and never measured; at 60 a busy
+  // call lost money on every plan. Voice calls are a plan perk now as well
+  // (`routes/voice.ts`); measure on the Operations tab before lowering this.
+  voiceCallPerMinute: 120,
   audiobookBase: 80,
-  audiobookPerPage: 12,
+  // Narration is billed by the words read aloud, because that is what the
+  // speech provider bills: $0.00025 a second of audio, ~155 words a minute, so
+  // 100 words cost ~$0.0097 and clear the Max break-even ×1.25 at 6 credits.
+  // A flat 12 a page lost money on every prose page (~450 words, ~$0.044 of
+  // audio) and charged a 60-word picture-book page twelve times its cost.
+  // `audiobookPerPage` stays an operator knob and defaults to nothing.
+  audiobookPerPage: 0,
+  audiobookPer100Words: 6,
   characterPortraitGeneration: 45,
   // Not prices — the free tier's limits. They live here because they are the
   // same kind of knob: something an operator has to be able to move against
@@ -114,19 +147,42 @@ export const DEFAULT_CREDIT_COSTS = {
   // pinned to a Play price point that cannot change without one.
   // Retained for older clients and pricing revisions; recurring free grants are disabled.
   freeMonthlyCredits: 0,
-  welcomeCredits: 1_000,
+  // Enough for any free reader's first book on Balanced, with its plan and a
+  // few chat messages, so no reader meets the paywall before their first book
+  // exists. No book's price carries an export unlock, so the largest
+  // non-picture book, a 30-page illustrated workbook, is 905 plus its 40-credit
+  // plan, and the largest picture book — 30 pages, twelve pictures
+  // (`pictureBookIllustrationCap`), a drawn cover — is 1,175 plus its plan:
+  // 1,215. 1,150 left every picture book of 22 pages or more out (migration
+  // 000110 moves an installation still on it); `welcomeCredits.test.ts` in core
+  // walks every free length.
+  welcomeCredits: 1_250,
   welcomeCreditsEnabled: 1,
   welcomeCreditsRegionalEnabled: 0,
-  welcomeCreditsHighIncome: 1_000,
-  welcomeCreditsLowMiddleIncome: 1_000,
-  welcomeCreditsAccountsPerIpHighIncome: 2,
-  welcomeCreditsAccountsPerIpLowMiddleIncome: 1,
+  welcomeCreditsHighIncome: 1_250,
+  welcomeCreditsLowMiddleIncome: 1_250,
+  // Accounts one address may be welcomed on in 30 days. A grant waits for a
+  // verified email now, so the cap only has to stop a farm, not every second
+  // sign-up: at one, a whole carrier NAT or a family on one router got nothing
+  // past its first reader, silently (launch review, 2026-10-13; migration 000110).
+  welcomeCreditsAccountsPerIpHighIncome: 3,
+  welcomeCreditsAccountsPerIpLowMiddleIncome: 2,
   freeIllustratedBooksPerMonth: 3,
   freeManuscriptImportsPerMonth: 1,
   // The longest book a free account may have generated. Longer books — up to
   // the 600-page ceiling every request schema already enforces — are a plan
   // perk. Zero would refuse every free generation.
-  freeMaxBookPages: 30
+  freeMaxBookPages: 30,
+  // The longest book *any* account may have generated, a plan included. Until
+  // a long illustrated compile is measured on the production host, nothing
+  // longer is offered; imports and Studio books are not generated and stay
+  // exempt (`bookPageLimit.ts`). Bounded 30–600 (`CREDIT_PRICING_MINIMUMS`).
+  paidMaxBookPages: 200,
+  // A switch, not a price: 1 lets new books start on the Ultra effort, 0 hides
+  // it. Off at launch — Ultra is unmeasured on today's routing and its one
+  // measured run failed and cost $8. Books already on Ultra keep their tier for
+  // every edit (`ultraTier.ts` in apps/api).
+  ultraTierEnabled: 0
 } as const;
 
 export type CreditPricingKey = keyof typeof DEFAULT_CREDIT_COSTS;
@@ -168,14 +224,30 @@ export const PLAN_ALLOWANCE_KEYS = [
   "welcomeCreditsAccountsPerIpLowMiddleIncome",
   "freeIllustratedBooksPerMonth",
   "freeManuscriptImportsPerMonth",
-  "freeMaxBookPages"
+  "freeMaxBookPages",
+  "paidMaxBookPages",
+  "ultraTierEnabled"
 ] as const;
 
 export type PlanAllowanceKey = (typeof PLAN_ALLOWANCE_KEYS)[number];
-export type CreditPriceKey = Exclude<CreditPricingKey, PlanAllowanceKey>;
+
+/**
+ * Keys nothing charges any more, held at 0 by a ceiling of 0. They stay in the
+ * table so a stored price list still parses and the billing payload still
+ * carries them for installed apps that read them, but they are no price: a
+ * projection that counted them would invent income from work that is free.
+ * `exportUnlock` is the one — every finished book downloads free since
+ * 2026-10-15 (`apps/api/src/mobile/CLAUDE.md`).
+ */
+export const RETIRED_CREDIT_PRICING_KEYS = ["exportUnlock"] as const;
+
+export type RetiredCreditPricingKey = (typeof RETIRED_CREDIT_PRICING_KEYS)[number];
+export type CreditPriceKey = Exclude<CreditPricingKey, PlanAllowanceKey | RetiredCreditPricingKey>;
 
 export const CREDIT_PRICE_KEYS = CREDIT_PRICING_KEYS.filter(
-  (key): key is CreditPriceKey => !(PLAN_ALLOWANCE_KEYS as readonly string[]).includes(key)
+  (key): key is CreditPriceKey =>
+    !(PLAN_ALLOWANCE_KEYS as readonly string[]).includes(key) &&
+    !(RETIRED_CREDIT_PRICING_KEYS as readonly string[]).includes(key)
 );
 
 /**
@@ -214,7 +286,8 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   imageGeneration: 5_000,
   coverRegeneration: 10_000,
   premiumReview: 20_000,
-  exportUnlock: 20_000,
+  // Retired: a write cannot set it and a stored 150 reads back as 0.
+  exportUnlock: 0,
   planRevision: 5_000,
   planRevisionFast: 5_000,
   planRevisionPremium: 5_000,
@@ -222,6 +295,7 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   bookTextEditBase: 5_000,
   bookTextEditPerPage: 2_000,
   pageRegenerationPerPage: 5_000,
+  addedPagesBase: 20_000,
   bookReplanBase: 20_000,
   // Each tier rate is bounded exactly like the balanced rate it varies, so a
   // premium multiplier cannot be given more room than the price it derives from.
@@ -243,6 +317,7 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   voiceCallPerMinute: 2_000,
   audiobookBase: 20_000,
   audiobookPerPage: 2_000,
+  audiobookPer100Words: 2_000,
   characterPortraitGeneration: 5_000,
   // Generous ceilings: the failure mode for an allowance is giving too much
   // away, which is bounded and reversible, not an instant charge.
@@ -256,8 +331,26 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   welcomeCreditsAccountsPerIpLowMiddleIncome: 100,
   freeIllustratedBooksPerMonth: 100,
   freeManuscriptImportsPerMonth: 100,
-  freeMaxBookPages: 600
+  freeMaxBookPages: 600,
+  paidMaxBookPages: 600,
+  ultraTierEnabled: 1
 };
+
+/**
+ * Per-key floors, where zero would be a wrong answer rather than a price.
+ *
+ * Every other key may be zero. Free-plan messages must cost something, and a
+ * paid book ceiling under the free tier's 30 would refuse plans the books the
+ * free tier writes — so neither a write nor a stored revision may go below.
+ */
+export const CREDIT_PRICING_MINIMUMS: Partial<Record<CreditPricingKey, number>> = {
+  messageCreditsFree: 1,
+  paidMaxBookPages: 30
+};
+
+function creditPricingMinimum(key: CreditPricingKey): number {
+  return CREDIT_PRICING_MINIMUMS[key] ?? 0;
+}
 
 /**
  * The strict gate for a *write*.
@@ -270,7 +363,7 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
 export const creditPricingInputSchema = z
   .object(
     Object.fromEntries(
-      CREDIT_PRICING_KEYS.map((key) => [key, z.number().int().min(key === "messageCreditsFree" ? 1 : 0).max(CREDIT_PRICING_LIMITS[key])])
+      CREDIT_PRICING_KEYS.map((key) => [key, z.number().int().min(creditPricingMinimum(key)).max(CREDIT_PRICING_LIMITS[key])])
     ) as { [K in CreditPricingKey]: z.ZodNumber }
   )
   .strict();
@@ -342,7 +435,7 @@ function isChargeableInteger(candidate: unknown, key: CreditPricingKey): candida
   return (
     typeof candidate === "number" &&
     Number.isInteger(candidate) &&
-    candidate >= (key === "messageCreditsFree" ? 1 : 0) &&
+    candidate >= creditPricingMinimum(key) &&
     candidate <= CREDIT_PRICING_LIMITS[key]
   );
 }
@@ -352,6 +445,16 @@ function ultraKeyPremiumTwin(key: CreditPricingKey): CreditPricingKey | undefine
     return undefined;
   }
   return `${key.slice(0, -"Ultra".length)}Premium` as CreditPricingKey;
+}
+
+/** Whether new books may start on the Ultra effort (`ultraTierEnabled`). */
+export function isUltraTierEnabled(pricing: CreditPricing = creditPricing()): boolean {
+  return pricing.ultraTierEnabled === 1;
+}
+
+/** The longest book any account may have generated right now, never past the schemas' 600. */
+export function maxGeneratedBookPages(pricing: CreditPricing = creditPricing()): number {
+  return Math.min(600, pricing.paidMaxBookPages);
 }
 
 export type CreditPricingChange = { from: number; to: number };

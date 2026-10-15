@@ -7,7 +7,8 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import { InsufficientCreditsError, startVoiceRelayCall, spendCredits } from "@book-maker/db/billing";
 import { bearer, mockPrisma, teardownMobileHarness } from "./testing/mobileApiHarness.js";
-import { buildVoiceApp, callRecord, openingHold, perMinute, resetVoiceCallTestState } from "./testing/voiceCallTestUtils.js";
+import { allowPaidPlan, buildVoiceApp, callRecord, openingHold, perMinute, resetVoiceCallTestState } from "./testing/voiceCallTestUtils.js";
+import { VOICE_CALL_PLAN_MESSAGE } from "./planPerks.js";
 
 /**
  * Calling one of the reader's own saved characters, outside any book.
@@ -91,6 +92,7 @@ async function startLibraryCall(app: Awaited<ReturnType<typeof buildVoiceApp>>, 
 describe("library voice calls", () => {
   beforeEach(() => {
     resetVoiceCallTestState();
+    allowPaidPlan();
     mockPrisma.libraryCharacter.findFirst.mockResolvedValue(libraryRow());
     mockPrisma.libraryCharacter.findMany.mockResolvedValue([]);
     mockPrisma.libraryMention.findMany.mockResolvedValue([]);
@@ -188,6 +190,20 @@ describe("library voice calls", () => {
   });
 
   describe("starting a call", () => {
+    it("is a plan perk for a saved character too: a free account is refused before the hold", async () => {
+      allowPaidPlan(false);
+      const voiceSession = sessionMint();
+      const app = await buildVoiceApp({ voiceSession });
+
+      const response = await startLibraryCall(app);
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: { code: "SUBSCRIPTION_REQUIRED", message: VOICE_CALL_PLAN_MESSAGE } });
+      expect(startVoiceRelayCall).not.toHaveBeenCalled();
+      expect(voiceSession).not.toHaveBeenCalled();
+      await app.close();
+    });
+
     it("holds credits with no project and hands back the same session a book call gets", async () => {
       const app = await buildVoiceApp();
 
@@ -233,6 +249,28 @@ describe("library voice calls", () => {
       expect(request.voiceProfile).toMatchObject({ ageBand: "child" });
       expect(mockPrisma.voiceCharacter.update).not.toHaveBeenCalled();
       await app.close();
+    });
+
+    it("puts the operator's sexual-content rule in front of the persona while the filter is on", async () => {
+      const { SEXUAL_CONTENT_RULE } = await import("@book-maker/core");
+      const { forgetSexualContentFilterSetting } = await import("../contentSafety.js");
+      forgetSexualContentFilterSetting();
+      (mockPrisma as { safetySettingsRevision?: unknown }).safetySettingsRevision = { findFirst: vi.fn(async () => null) };
+      try {
+        const voiceSession = sessionMint();
+        const app = await buildVoiceApp({ voiceSession });
+
+        const response = await startLibraryCall(app);
+
+        expect(response.statusCode).toBe(200);
+        const instructions = voiceSession.mock.calls[0]?.[0].instructions as string;
+        expect(instructions.startsWith(`${SEXUAL_CONTENT_RULE}\n\n`)).toBe(true);
+        expect(instructions).toContain("You are Mina Park, a character the caller created themselves");
+        await app.close();
+      } finally {
+        delete (mockPrisma as { safetySettingsRevision?: unknown }).safetySettingsRevision;
+        forgetSexualContentFilterSetting();
+      }
     });
 
     it("grounds the character in the saved characters linked to it, in both directions", async () => {

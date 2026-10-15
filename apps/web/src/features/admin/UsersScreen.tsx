@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { Button } from "../shared/Button.js";
 import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { count, relative, usd } from "./format.js";
@@ -12,7 +13,7 @@ const PAGE_SIZE = 25;
 const SORTS: Array<{ value: AdminUserSort; label: string }> = [
   { value: "recent", label: "Newest" },
   { value: "spend", label: "Credits spent" },
-  { value: "cash", label: "Money spent" },
+  { value: "cash", label: "Money paid, net" },
   { value: "credits", label: "Credits held" },
   { value: "projects", label: "Books" }
 ];
@@ -21,7 +22,9 @@ export function UsersScreen() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<AdminUserSort>("recent");
   const [offset, setOffset] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
+  // `?user=<id>` opens that account's inspector: the Moderation screen links here.
+  const [params] = useSearchParams();
+  const [selected, setSelected] = useState<string | null>(params.get("user"));
   const debouncedQuery = useDebounced(query);
   const users = useAdminUsers({ query: debouncedQuery, sort, limit: PAGE_SIZE, offset });
 
@@ -74,7 +77,9 @@ export function UsersScreen() {
                   <th>Account</th>
                   <th className="numeric">Credits</th>
                   <th className="numeric">Spent</th>
-                  <th className="numeric">Paid</th>
+                  <th className="numeric" title="What they paid, less refunds and Google's fee (the gross catalog price below it)">
+                    Paid, net of Google
+                  </th>
                   <th className="numeric">Books</th>
                   <th>Plan</th>
                   <th>Last charge</th>
@@ -98,7 +103,12 @@ export function UsersScreen() {
                     </td>
                     <td className="numeric">{count(user.availableCredits)}</td>
                     <td className="numeric">{count(user.lifetimeSpent)}</td>
-                    <td className="numeric">{usd(user.cashUsd)}</td>
+                    <td className="numeric">
+                      {usd(user.cashNetUsd ?? user.cashUsd)}
+                      {user.cashUsd > 0 && user.cashNetUsd !== undefined ? (
+                        <span className="muted admin-subtle">{usd(user.cashUsd)} gross</span>
+                      ) : null}
+                    </td>
                     <td className="numeric">
                       {count(user.booksCompleted)}
                       <span className="muted">/{count(user.projects)}</span>

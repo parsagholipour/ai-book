@@ -45,7 +45,7 @@ describe("exported markdown page boundaries", () => {
   ])("keeps a continued table with %s intact, then closes it before prose", async (_name, first, second) => {
     const third = "| five | six |";
     const { compiled, body } = await renderPages([first, second, third, "After the table."]);
-    expect(body.match(/<table>/g)).toHaveLength(1);
+    expect(body.match(/<table\b/g)).toHaveLength(1);
     expect(body.match(/<td>/g)).toHaveLength(6);
     expect(body).toMatch(/<\/table>\s*<p><span id="bp-4">After<\/span> the table\.<\/p>/);
     expect(compiled.markdown).toContain(`${first}\n${second}\n${third}\n\nAfter the table.`);
@@ -73,8 +73,9 @@ describe("exported markdown page boundaries", () => {
 
   it.each([
     ["paragraph", "The sentence continues", "across pages.", "<p>"],
-    ["list", "- One", "- Two", "<ul>"],
-    ["quote", "> One", "> Two", "<blockquote>"],
+    // The first page's anchor lands on the block itself (`<ul id="bp-1">`) now that a title page precedes it.
+    ["list", "- One", "- Two", "<ul\\b"],
+    ["quote", "> One", "> Two", "<blockquote\\b"],
     ["code fence", "```text\n| A | B |\n|---|---|\n| one | two |", "plain code\n```", "<pre\\b"],
     ["pipe-bearing prose", "Use A | B as an operator.", "Continue the explanation.", "<p>"]
   ])("preserves a continuing %s", async (_name, first, second, tag) => {

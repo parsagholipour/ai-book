@@ -2,7 +2,9 @@ import {
   compiledGenerationTextModelRouting,
   generationTextModelOptions,
   resolveGenerationTextModelRouting,
-  type GenerationTextModelRouting
+  routedProvidersWithoutCredentials,
+  type GenerationTextModelRouting,
+  type UnkeyedRoutedProvider
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { config } from "../runtime/config.js";
@@ -41,4 +43,17 @@ export async function loadGenerationTextRoutingSnapshot(options: {
     await options.log(error).catch(() => undefined);
     throw error;
   }
+}
+
+/** The providers the live routing sends calls to with no key in this worker (checked once at boot). */
+export async function savedRoutingProvidersWithoutCredentials(): Promise<UnkeyedRoutedProvider[]> {
+  if (config.MOCK_AI) {
+    return [];
+  }
+  const compiled = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
+  const row = await prisma.generationQualityRevision.findFirst({
+    orderBy: { version: "desc" },
+    select: { settings: true }
+  });
+  return routedProvidersWithoutCredentials(config, resolveGenerationTextModelRouting(row?.settings, compiled));
 }

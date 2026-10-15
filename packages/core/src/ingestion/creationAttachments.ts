@@ -6,12 +6,15 @@ import { generateJsonWithRetry } from "../generation/generateJsonWithRetry.js";
 import {
   decodeUtf8,
   DocumentTextError,
-  extractDocxText,
-  extractEpubText,
+  extractDocxTextWithin,
+  extractEpubTextWithin,
   normalizeExtractedText,
   stripHtml,
-  stripRtf
+  stripRtf,
+  type BoundedDocumentText,
+  type DocumentTextBudget
 } from "./documentText.js";
+import { throughLastTag } from "./markupScan.js";
 
 /**
  * Attachments uploaded into the creation chat (documents as source material,
@@ -31,6 +34,28 @@ export const CREATION_ATTACHMENT_SUMMARY_MAX = 700;
 export const CREATION_ATTACHMENT_MAX_COUNT = 8;
 /** Upload size ceiling (bytes); route enforces it before buffering completes. */
 export const CREATION_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+/**
+ * How much of a document an attachment reads its text from: a Word body as it
+ * inflates, an EPUB's package files and chapters together, or the bytes of a
+ * text, HTML or RTF file. The attachment keeps 12,000 characters, which a
+ * document reaches within its first few hundred KB, so the rest is never
+ * inflated or parsed: a 225 KB .docx inflating to 63 MB of XML held the API's
+ * thread for 2.5 s (2026-10-13 launch review). A longer document is read from
+ * its start and marked truncated, as it always was; one whose first 2 MiB hold
+ * no text is refused as too large. Stripping 2 MiB of the worst markup (empty
+ * paragraphs) takes ~150 ms.
+ */
+export const CREATION_ATTACHMENT_READ_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Reading stops once twice the kept length is out, so normalizing and bounding still have text to cut. */
+const ATTACHMENT_TEXT_BUDGET: DocumentTextBudget = {
+  maxBytes: CREATION_ATTACHMENT_READ_MAX_BYTES,
+  maxChars: CREATION_ATTACHMENT_CONTENT_MAX * 2
+};
+
+/** An upload whose readable start held no text. */
+const ATTACHMENT_TOO_LARGE_TO_READ =
+  "That file is too large to read in the chat. Paste the part you need into a message, or attach a smaller file.";
 
 export const creationAttachmentSchema = z
   .object({
@@ -240,9 +265,12 @@ export async function ingestCreationAttachment(
     });
   }
 
-  const rawText = await extractLocalText(input.data, detected.format);
-  const normalized = normalizeExtractedText(rawText);
+  const extracted = await extractLocalText(input.data, detected.format);
+  const normalized = normalizeExtractedText(extracted.text);
   if (!normalized) {
+    if (!extracted.complete) {
+      throw new CreationAttachmentError("FILE_TOO_LARGE", ATTACHMENT_TOO_LARGE_TO_READ);
+    }
     throw new CreationAttachmentError(
       "UNREADABLE_FILE",
       "No readable text was found in that file."
@@ -254,7 +282,7 @@ export async function ingestCreationAttachment(
     ...base,
     summary,
     content: bounded.content,
-    truncated: bounded.truncated
+    truncated: bounded.truncated || !extracted.complete
   });
 }
 
@@ -280,25 +308,31 @@ function boundContent(text: string): { content: string; truncated: boolean } {
   };
 }
 
-async function extractLocalText(data: Buffer, format: AttachmentFormat): Promise<string> {
+/** The start of the file's text, never more of it than `ATTACHMENT_TEXT_BUDGET` reads. */
+async function extractLocalText(data: Buffer, format: AttachmentFormat): Promise<BoundedDocumentText> {
   try {
     if (format === "docx") {
-      return await extractDocxText(data);
+      return await extractDocxTextWithin(data, ATTACHMENT_TEXT_BUDGET);
     }
     if (format === "epub") {
-      return await extractEpubText(data, { maxChars: CREATION_ATTACHMENT_CONTENT_MAX * 2 });
+      return await extractEpubTextWithin(data, ATTACHMENT_TEXT_BUDGET);
     }
-    const text = decodeUtf8(data);
+    // An even cut, so a UTF-16 file is not split inside a code unit.
+    const complete = data.length <= CREATION_ATTACHMENT_READ_MAX_BYTES;
+    const text = decodeUtf8(complete ? data : data.subarray(0, CREATION_ATTACHMENT_READ_MAX_BYTES));
     if (format === "html") {
-      return stripHtml(text);
+      return { text: stripHtml(complete ? text : throughLastTag(text)), complete };
     }
     if (format === "rtf") {
-      return stripRtf(text);
+      return { text: stripRtf(text), complete };
     }
-    return text;
+    return { text, complete };
   } catch (error) {
     if (error instanceof DocumentTextError) {
-      throw new CreationAttachmentError(error.code, error.message);
+      throw new CreationAttachmentError(
+        error.code,
+        error.code === "FILE_TOO_LARGE" ? ATTACHMENT_TOO_LARGE_TO_READ : error.message
+      );
     }
     throw error;
   }

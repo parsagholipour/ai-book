@@ -6,12 +6,16 @@ import {
 export type ObjectMetadata = { size: number; lastModified?: Date; contentType?: string };
 export type StoredObject = ObjectMetadata & { key: string };
 export type PutOptions = { contentType?: string };
+/** An object's opening bytes, and the size of the whole object they were cut from. */
+export type LeadingBytes = { bytes: Buffer; size: number };
 export interface ObjectStore {
   /** Resolves once the bucket answers with this process's credentials; writes nothing. Rejects with the cause otherwise. */
   ready(): Promise<void>;
   put(key: string, data: Buffer | string, options?: PutOptions): Promise<void>;
   putIfAbsent(key: string, data: Buffer | string, options?: PutOptions): Promise<boolean>;
   get(key: string): Promise<Buffer | null>;
+  /** At most the first `maxBytes` of an object (a ranged GET), for a reader whose answer sits near the top of a large file. */
+  getLeadingBytes(key: string, maxBytes: number): Promise<LeadingBytes | null>;
   head(key: string): Promise<ObjectMetadata | null>;
   list(prefix: string): Promise<StoredObject[]>;
   delete(key: string): Promise<void>;
@@ -57,14 +61,30 @@ function isMissing(error: unknown): boolean {
   return value?.name === "NoSuchKey" || value?.name === "NotFound" || value?.$metadata?.httpStatusCode === 404;
 }
 
+/**
+ * The SDK waits forever by default: no connect timeout and no idle timeout, so one S3 call into a
+ * black-holed endpoint hung the API's boot (`ready()` runs before it listens) until the deploy's
+ * health wait gave up on a release whose predecessor was already stopped. A connection gets 5 s;
+ * an open socket that carries no byte for 60 s is dropped. Both are idle bounds, never a cap on a
+ * whole transfer, so a large upload or download over a slow link is unaffected; the SDK's own
+ * retries (three attempts) still apply to each.
+ */
+export const S3_HTTP_TIMEOUTS = Object.freeze({ connectionTimeout: 5_000, socketTimeout: 60_000 });
+
+/** The production client: credentials from the AWS SDK default chain, bounded by `S3_HTTP_TIMEOUTS`. */
+export function createS3Client(config: S3StorageConfig, timeouts: { connectionTimeout: number; socketTimeout: number } = S3_HTTP_TIMEOUTS): S3Client {
+  return new S3Client({
+    region: config.region, ...(config.endpoint ? { endpoint: config.endpoint } : {}),
+    forcePathStyle: config.forcePathStyle ?? false,
+    requestHandler: { ...timeouts }
+  });
+}
+
 /** Private bucket I/O. Credentials always come from the AWS SDK default chain. */
 export class S3ObjectStore implements ObjectStore {
   readonly client: S3Client;
   constructor(readonly config: S3StorageConfig, client?: S3Client) {
-    this.client = client ?? new S3Client({
-      region: config.region, ...(config.endpoint ? { endpoint: config.endpoint } : {}),
-      forcePathStyle: config.forcePathStyle ?? false
-    });
+    this.client = client ?? createS3Client(config);
   }
   /**
    * A HeadBucket needs `s3:ListBucket`, so it proves the bucket exists, the region is right, and the
@@ -100,6 +120,25 @@ export class S3ObjectStore implements ObjectStore {
       if (!result.Body) throw new Error(`S3 returned no body for ${key}`);
       return Buffer.from(await result.Body.transformToByteArray());
     } catch (error) { if (isMissing(error)) return null; throw error; }
+  }
+  async getLeadingBytes(key: string, maxBytes: number): Promise<LeadingBytes | null> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error(`Invalid byte count: ${maxBytes}`);
+    try {
+      const result = await this.client.send(new GetObjectCommand({ Bucket: this.config.bucket, Key: validateObjectKey(key),
+        Range: `bytes=0-${maxBytes - 1}` }));
+      if (!result.Body) throw new Error(`S3 returned no body for ${key}`);
+      const bytes = Buffer.from(await result.Body.transformToByteArray());
+      // A 206 names the whole object's size after the slash; a store that ignores Range answers 200 with all of it.
+      if (!result.ContentRange) return { bytes: bytes.subarray(0, maxBytes), size: bytes.length };
+      const size = /\/(\d+)$/.exec(result.ContentRange)?.[1];
+      if (!size) throw new Error(`S3 returned a range without the object's size for ${key}: ${result.ContentRange}`);
+      return { bytes: bytes.subarray(0, maxBytes), size: Number(size) };
+    } catch (error) {
+      if (isMissing(error)) return null;
+      // An empty object has no first byte, so every range on it is unsatisfiable.
+      if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 416) return { bytes: Buffer.alloc(0), size: 0 };
+      throw error;
+    }
   }
   async head(key: string): Promise<ObjectMetadata | null> {
     try {

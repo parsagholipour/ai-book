@@ -27,6 +27,48 @@ Note the two predicates that decide this — `jobOwnsProjectLifecycle` in `runti
 and `ownsProjectStatus` in `compileExport.ts` — are both module-private. You cannot import and
 reuse them; read them and add your branch alongside the others.
 
+**A free edit's recompile owns its verdict, never the paid book's failure.** A manual Edit Mode
+save, Undo and Redo (`queueUserEditExportRecompile`), a Writing Studio publish and a takeover all
+queue an attempt-less, skip-review `compile-export` on a book that was delivered and paid for
+before the edit. It used to be an ordinary outcome compile, so one failed render marked the
+downloaded book FAILED and `refundFailedProjectCredits` followed its `planId` to the book's own
+`FULL_BOOK_GENERATION` charge — and a delete while it was queued sent it down the API's legacy stop
+settlement to the same charge: a one-word edit then a delete refunded the whole book (launch review
+2026-10-13, B3). Those sites now build `freeEditRecompilePolicy(fallbackStatus)` (core
+`compilePublicationPolicy.ts`): ownership `freeEdit`, payload `FREE_EDIT_RECOMPILE` plus
+`PRE_EDIT_PROJECT_STATUS`. It is not the presentation reprint, because its prose really moved: it
+keeps `jobOwnsQualityVerdict`, and `compileExport.ts` treats it exactly as the outcome compile it
+was — same review, the status its verdict earns, the edit it fences on, the character pass.
+`payloadOwnsProjectOutcome` is false for it, so `markFailed`/`markStopped` and the API's stop put
+the book back to `freeRecompileFallbackStatus` (EDITING at its revision only) and refund nothing,
+`markRecovering` never moves it to GENERATING, the status serializers never report it as the
+book's failure and neither resume route requeues it; the missing files are what
+`ensureExportRepairQueued` rebuilds. The policy rides every handoff (successor compiles, fan-in
+recovery from the revision's compile row), and stranded recovery of a `MANUAL_EDIT` or
+`MANUSCRIPT_PUBLISH` revision with no compile row rebuilds it with COMPLETE as the fallback, the
+one the API's own dispatch-failure paths choose. The ledger refuses a delivered attempt's charge
+besides (`packages/db/CLAUDE.md`).
+
+**A paid chat edit's recompile is the same kind of compile, because its charge settled before it was queued.**
+It stayed `outcome` at first, carrying the edit's attempt — and that attempt went
+SUCCEEDED in the very transaction that published the pages (`settleDurableEditAttemptTx`), so
+`failGenerationAttempt` refused it and the only thing a failed render still did was the
+`jobOwnsProjectLifecycle` write: a delivered, readable book FAILED and "needs attention" over a
+re-typeset, its edit's charge correctly standing, its book charge untouched (pre-launch review,
+2026-10-13). Every apply fork's handoff — text (`textEditFollowUp.ts`), picture insertion and
+layout, restructure first delivery and APPLIED replay, and the continuation tail — now queues
+`editRecompilePolicy(fallbackStatus, review)` (core `compilePublicationPolicy.ts`): ownership
+`freeEdit` (the name is historical and stored in payloads and dedupe identities; read it as "an
+edit's recompile"), each fork's own review kept exactly (skip-review for text, skip-review without
+a verdict for pictures, the full review for a page change and a continuation), and the fork's own
+`PRE_EDIT_PROJECT_STATUS` as the fallback. So a failure or a stop — here and in the API's stop —
+puts the book back to its pre-edit status at the compile's revision, settles no attempt and walks to
+no charge; the files the edit already deleted are what `ensureExportRepairQueued` rebuilds, so the
+previous export is readable again once that repair lands, not before. Stranded recovery maps those
+kinds to the same policy, reading the fallback off the APPLIED operation's own apply job
+(`compileRecoveryPolicy.ts`), so image fan-in and the sweep rebuild an edit's recompile rather than
+an outcome one. A generation's own compile, a replan copy's and a book title's stay `outcome`.
+
 **A fence that cannot be read has a third answer, and it settles nothing.** The export repair's
 ownership fence asks Postgres two or three times per repaired page across the minutes a long book
 takes: advisory `exportPublicationSuperseded` reads around provider work, then a no-op
@@ -143,6 +185,12 @@ an export repair, and an import nobody opened had none (found 2026-10-02). An im
 COMPLETE or REVIEW_REQUIRED with no compile at its current revision and no edit now recovers the
 default outcome policy, which publishes over COMPLETE and, like every compile of an author's book,
 never runs the final review.
+The import commit also completes its GenerationJob and any paid attempt. Its BookImport stats
+retain the imported plan and revision; the processor replays the compile hook outside failure
+settlement, including on COMPLETED redelivery. Optional embedding reads/writes cannot invalidate
+that receipt. No completion tail writes Project.status, and a stopped or superseded import cannot
+publish. If Bull exhausts the tail's retry budget before the first compile row exists, the stranded
+sweep recovers only the COMPLETE import's original plan/revision, never a later edit.
 Presentation edits created before their compile intent became transactional have one narrower
 legacy recovery door: when the current EDITING revision has neither a compile nor an APPLIED edit,
 the immediately preceding revision's presentation compile supplies both the non-owning policy and
@@ -798,6 +846,53 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   for a fresh pick. The handler itself never refused an existing cover — only the enqueue gates
   (`maybeEnqueueCover`, `maybeEnqueueRevisionOwnedReplanCover`) do, and the API writes this row
   directly.
+- **A cover's words follow the book's row, and setting them again never draws and never fails
+  the book.** The cover is queued when drafting starts, so a pen name or dedication given on the
+  app's one-time "put your name on it" card (2026-10-06) usually lands after the cover was typeset.
+  `generateCover` now keeps a drawn picture beside the cover it became (`cover-art-<uuid>.<ext>`,
+  `metadata.artworkObjectKey`, at the cover's own width) and records the words every cover was set
+  with (`metadata.typeset`, core `coverTypeset.ts`). Keeping the artwork is best-effort
+  (`keptArtworkRecord`): it writes before cover publication, during generation this job's
+  failure is the book's, and a cover without the record simply reads as one drawn before artwork
+  was kept. `storeTypesetCover` writes each rendered cover to `cover-<uuid>.<ext>` before the
+  transaction replaces the COVER row. After the upload, publication locks Project then
+  GenerationJob and rechecks ACTIVE cover ownership and the current plan; revision-owned jobs
+  also require their revision and project status. A re-set must still own the COVER id it rendered.
+  A successful re-set completes its job in that same transaction: overlapping deliveries then
+  see a settled job, rather than canceling the shared paid book attempt over their own replacement.
+  The processor finishes progress and fan-in on completion or replay. Purchased redraws stay ACTIVE
+  until the handler has settled any artwork fallback refund.
+  This closes the window where Stop and a later upload could finish while the old candidate PUT
+  was pending. A superseded ACTIVE job uses stale cancellation; a stopped job propagates Stop,
+  and terminal jobs leave the current cover and settlement alone. Initial generation tolerates
+  matter-save revision changes so the drift check below can arrange its successor.
+  Both keys belong to the candidate: an upload or transaction
+  failure leaves the published row's bytes and artwork intact. Keep predecessors for exports that
+  still reference their URLs, and candidates after a database error because a lost response may
+  hide a committed row; project deletion removes them with its image prefix. A `COVER_RETYPESET` payload routes to
+  `coverRetypeset.ts`, which re-renders over the stored artwork or the kept catalog design and
+  writes a new row (the image URL version is the row id plus path). **It catches everything but a
+  stop**: during generation a cover job's failure is the book's (the rule above), and losing a run
+  over a byline is the wrong trade, so a failed or impossible re-set leaves the cover as it was and
+  completes. During first generation, both `maybeEnqueueCompile` and the outcome compile's fresh
+  Project read check for drift: a matter save can overtake fan-in's earlier byline read before the
+  compile row is inserted. A queued re-set makes that compile defer to the existing image-job
+  successor handoff before QA or rendering, preserving the paid attempt until publication. Other
+  compiles keep their existing policy. The generation checks run only while the book is GENERATING, when
+  `coverTypesetDrift` finds the recorded words differ from the row — or finds a design or kept
+  artwork that recorded no words at all, a cover typeset before `metadata.typeset` existed on a book
+  written across that deploy. Nobody can say what its pixels hold, the API's book-matter PATCH has
+  already answered `retypeset` for it, and the finished-book re-set never asked for the record
+  either, so it is set once from the row. Its dedupe key combines the current
+  COVER id, read with its metadata, and the stored and target words. A successful re-set replaces that row,
+  so repeated byline transitions (A → X → A → X) get fresh attempts; word pairs alone would reuse
+  the first completed A → X job and publish stale cover words. A failed re-set leaves the same
+  row and words behind, finds its spent job, and lets the book compile without a retry loop.
+  Finished books queue re-sets through
+  `commitCoverChange` (`drawCover.retypeset`), and Writing Studio publishes queue one when the
+  title, subtitle or byline moved over an `ai-kept` cover (`manuscriptPublish.ts`). A cover from
+  before artwork was kept has no record and no artwork, so these paths leave it alone; its words
+  change only with the paid redraw the title edit offers.
 - **The portrait job is the one `GenerationJob` with no project.** `GENERATE_CHARACTER_PORTRAIT`
   runs with `projectId` null, which is why that column is nullable: every project-scoped query
   (stop, settlement, status, `failureMessage`) simply never sees the row, and

@@ -3,12 +3,15 @@ import {
   createLiveGenerationTextModel,
   generationTextModelOptions,
   resolveGenerationTextModelRouting,
+  routedProvidersWithoutCredentials,
+  unkeyedRoutedProviderMessage,
   type AppConfig,
   type GenerationTextModelRouting,
   type ModelTier,
   type TextModelAdapter
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
+import { withContentSafetyRule } from "./contentSafety.js";
 
 /**
  * The live routing revision (the operator's Quality tab), read at each logical
@@ -39,9 +42,13 @@ export function liveRoutingLoader(config: AppConfig): () => Promise<GenerationTe
   };
 }
 
-/** Fast inline API decisions share the same live revision as worker calls. */
+/**
+ * Fast inline API decisions share the same live revision as worker calls.
+ * Both factories here are the only way the API builds a text model, so both
+ * carry the operator's sexual-content rule (`contentSafety.ts`).
+ */
 export function createLiveFastJudgmentsTextModel(config: AppConfig): TextModelAdapter {
-  return createLiveGenerationTextModel(config, { fastJudgments: true, loadRouting: liveRoutingLoader(config) });
+  return withContentSafetyRule(createLiveGenerationTextModel(config, { fastJudgments: true, loadRouting: liveRoutingLoader(config) }));
 }
 
 /**
@@ -51,5 +58,41 @@ export function createLiveFastJudgmentsTextModel(config: AppConfig): TextModelAd
  * would use, so a premium book's rewrite is premium prose.
  */
 export function createLiveTieredTextModel(config: AppConfig, tier: ModelTier): TextModelAdapter {
-  return createLiveGenerationTextModel(config, { tier, loadRouting: liveRoutingLoader(config) });
+  return withContentSafetyRule(createLiveGenerationTextModel(config, { tier, loadRouting: liveRoutingLoader(config) }));
+}
+
+type BootLog = {
+  warn(details: Record<string, unknown>, message: string): void;
+};
+
+/**
+ * A saved Quality-tab route stays saved when its provider's key is removed
+ * (`resolveGenerationTextModelRouting`), so its calls fail at generation time.
+ * The production check requires the keys the *default* routing can select and
+ * refuses to boot without them; this one is a warning, because the operator
+ * moves a route from the console, and the console needs the API running.
+ */
+export async function warnAboutUnkeyedSavedRouting(config: AppConfig, log: BootLog): Promise<void> {
+  if (config.MOCK_AI) {
+    return;
+  }
+  try {
+    const routing = await liveRoutingLoader(config)();
+    for (const gap of routedProvidersWithoutCredentials(config, routing)) {
+      log.warn(
+        {
+          event: "generation_text_routing.provider_unkeyed",
+          provider: gap.provider,
+          variables: gap.variables,
+          routeCount: gap.routes.length
+        },
+        unkeyedRoutedProviderMessage(gap)
+      );
+    }
+  } catch (error) {
+    log.warn(
+      { err: error, event: "generation_text_routing.provider_check_failed" },
+      "Could not check the saved model routing for providers without a key"
+    );
+  }
 }

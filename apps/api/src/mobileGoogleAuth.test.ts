@@ -78,6 +78,8 @@ describe("Google mobile authentication", () => {
     expect(response.json().session.accessToken).toMatch(/^bma_at_/);
     const data = db.user.create.mock.calls[0]![0].data;
     expect(data).toMatchObject({ email: identity.email, googleSubject: identity.subject, displayName: "Reader" });
+    // Google's `email_verified` is the proof the welcome grant waits for.
+    expect(data.emailVerifiedAt).toBeInstanceOf(Date);
     expect(data).not.toHaveProperty("passwordCredential");
     expect(data.legalAcceptances.create).toMatchObject({ source: "mobile_google_signup", termsAttested: true, ageGuardianAttested: true });
     expect(data.welcomeCreditGrant.create).toHaveProperty("ipHash");
@@ -129,9 +131,33 @@ describe("Google mobile authentication", () => {
     expect(response.json().user.id).toBe(user.id);
     expect(db.user.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({ id: user.id, googleSubject: null, status: "ACTIVE", disabledAt: null }),
-      data: { googleSubject: identity.subject }
+      data: { googleSubject: identity.subject, emailVerifiedAt: expect.any(Date) }
     });
+    expect(response.json().user.emailVerified).toBe(true);
     expect(db.user.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps an earlier verification when linking", async () => {
+    const verifiedAt = new Date("2026-06-01T00:00:00.000Z");
+    db.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      ...user, googleSubject: null, emailVerifiedAt: verifiedAt,
+      passwordCredential: { passwordHash: await hashPassword("correct-password") }
+    });
+    const response = await post(await app(), { password: "correct-password" });
+    expect(response.statusCode).toBe(200);
+    expect(db.user.updateMany.mock.calls[0]![0].data).toEqual({ googleSubject: identity.subject });
+    expect(response.json().user.emailVerified).toBe(true);
+  });
+
+  it("marks an unverified account verified when Google vouches for its own address", async () => {
+    db.user.findUnique.mockResolvedValueOnce({ ...user, emailVerifiedAt: null });
+    const response = await post(await app());
+    expect(response.statusCode).toBe(200);
+    expect(db.user.updateMany).toHaveBeenCalledWith({
+      where: { id: user.id, email: identity.email, emailVerifiedAt: null },
+      data: { emailVerifiedAt: expect.any(Date) }
+    });
+    expect(response.json().user.emailVerified).toBe(true);
   });
 
   it("does not replace a different linked Google identity", async () => {
@@ -174,5 +200,18 @@ describe("Google mobile authentication", () => {
     expect(response.statusCode).toBe(429);
     expect(response.headers).toHaveProperty("retry-after");
     expect(verifier).toHaveBeenCalledTimes(20);
+  });
+
+  it("counts an IPv6 caller rotating through its /64 as one caller", async () => {
+    const instance = await app();
+    verifier.mockRejectedValue(new Error("bad token"));
+    const fromAddress = (remoteAddress: string) =>
+      instance.inject({ method: "POST", url: "/api/mobile/auth/google", remoteAddress, payload: { idToken: "signed-token" } });
+
+    for (let i = 1; i <= 20; i++) await fromAddress(`2001:db8:abcd:12::${i.toString(16)}`);
+
+    expect((await fromAddress("2001:db8:abcd:12:ffff::1")).statusCode).toBe(429);
+    expect((await fromAddress("2001:db8:abcd:13::1")).statusCode).toBe(401);
+    expect(verifier).toHaveBeenCalledTimes(21);
   });
 });

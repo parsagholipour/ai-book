@@ -116,6 +116,7 @@ layer should depend on it — that is why handlers never import it directly.
 src/server.ts        app wiring, static assets, retention sweep, queue reconciliation
 src/routes/          the legacy operator API (/api/projects, …) used by apps/web
 src/admin/           metrics + inspection queries behind /api/admin (the dashboard)
+src/monitoring/      /api/ready (readiness) and the operator alert sweep that emails the owner
 src/mobile/          everything under /api/mobile — this is the surface the Flutter app uses
 src/mobile/manuscript/  the Writing Studio: an author's working copy, versions, AI assists, publish
 src/mobileAuth.ts    email/password + bearer/refresh tokens for mobile users
@@ -130,8 +131,8 @@ allowlist of operator paths instead, which is why `/api/projects/*` and `/api/pl
 accepted mobile bearers: every handler there scopes to `actor.userId`, so the app's own user
 reached exactly its own books — through routes that charge nothing.
 `POST /api/plans/:id/approve` starts a whole book with no credit reservation and no free-tier
-image slot, and `GET /api/projects/:id/export/*` renders inline and sends the file without the
-entitlement its `/api/mobile/*` twin takes. **Ownership is not authorization here**; the actor's
+image slot, and `GET /api/projects/:id/export/*` renders inline and sends any format, the Word
+file included, without the plan its `/api/mobile/*` twin asks for. **Ownership is not authorization here**; the actor's
 *kind* is, which is what `requireOperatorActor` asserts at every legacy handler. The assets are
 the one shared surface — the serializers hand the app URLs under them — which is why they live in
 `routes/projectAssets.ts` and are the only thing in that file group still calling
@@ -153,8 +154,8 @@ They are unrelated and easy to confuse:
 
 - **Mobile users** — database-backed accounts under `/api/mobile/auth/*`. Bearer access tokens,
   refresh tokens, only hashes stored in `MobileSession`. This is real multi-user auth.
-- **Operator console** — a single optional `WEB_PASSWORD` cookie guarding `/api/*`, `/docs` and
-  generated assets. Not per-user.
+- **Operator console** — a single `WEB_PASSWORD` cookie guarding `/api/*`, `/docs` and
+  generated assets. Not per-user. Optional locally; production refuses to start without a strong one.
 
 ## Testing
 
@@ -206,8 +207,18 @@ code in that area, however obvious the rule looks.
 
 - **Generation state lives in the database, not in Redis.** → apps/worker/CLAUDE.md
 - **Run logs are the debugging artifact.** → apps/worker/CLAUDE.md
+- **A job row that is gone was deleted with its book, and counts as stopped.** → apps/worker/CLAUDE.md
+- **Every job type names its lane, and an enqueue routes by that map on both sides of the queue.** → apps/worker/CLAUDE.md
+- **A row BullMQ reclaims while it still runs here waits for the original; it never runs beside it.** → apps/worker/CLAUDE.md
+- **A job is reclaimed up to five times, and the sixth stall is settled the moment BullMQ makes it.** → apps/worker/CLAUDE.md
+- **A source read's provider calls are logged, costed to its owner, unretried by the SDK, and stopped by its lease.** → apps/worker/CLAUDE.md
+- **A finished Bull job is not a record, so retention may remove it and nothing may read one back.** → apps/worker/CLAUDE.md
+- **One account holds at most its share of the long lane, asked at every door that starts long work, after the breaker and before anything is claimed.** → apps/api/src/mobile/CLAUDE.md
+- **A waiting book is told how many books are ahead of it, counted in the order the long lane really runs.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md
 - **A diagnostic write may not decide the render it describes.** → packages/core/src/adapters/CLAUDE.md
 - **The portrait job is the one `GenerationJob` with no project.** → apps/worker/src/handlers/CLAUDE.md
+- **A free edit's recompile owns its verdict, never the paid book's failure.** → apps/worker/src/handlers/CLAUDE.md
+- **A paid chat edit's recompile is the same kind of compile, because its charge settled before it was queued.** → apps/worker/src/handlers/CLAUDE.md
 - **Every fork out of `applyBookEdit` — structural and both image ones — is decided by the operation's `kind`, never by the payload.** → apps/worker/src/handlers/CLAUDE.md
 - **A structural edit's redelivery stamp comes down in the same transaction that puts the book back.** → apps/worker/src/handlers/CLAUDE.md
 - **A structural shift and every write after it belong to one durable, expiring delivery lease.** → apps/worker/src/generation/CLAUDE.md + apps/worker/src/handlers/CLAUDE.md
@@ -245,26 +256,50 @@ code in that area, however obvious the rule looks.
 
 - **Credits are reserved, then committed or refunded.** → packages/db/CLAUDE.md
 - **A charge has one cumulative reversal, and partial settlements name their claim.** → packages/db/CLAUDE.md
+- **A reader's own stop or delete refunds only what was not delivered, and an ended month's allowance lapses instead of turning permanent.** → packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **A delivered attempt's charge is final: the ledger refuses to reverse a charge whose attempt SUCCEEDED.** → packages/db/CLAUDE.md
 - **A paid attempt may only be parented onto the job its own `create` callback wrote.** → packages/db/CLAUDE.md
 - **A balance is two pools, and spending draws the expiring one first.** → packages/db/CLAUDE.md
 - **Welcome credits are granted lazily, once, not by a cron.** → packages/db/CLAUDE.md
+- **A welcome grant pays out only to a verified email, and the gate is inside `ensureWelcomeCreditsTx`, where no caller can grant past it.** → packages/db/CLAUDE.md
+- **Every door that starts AI work asks the spend breaker before it reserves anything; the breaker fails open on a failed read, but a pause it has already seen holds.** → apps/api/CLAUDE.md
+- **The spend breaker's global caps count what free accounts cost; a paying reader answers only to their own cap, the paid cap and a pause.** → apps/api/CLAUDE.md
 - **Free accounts spend welcome or purchased credits; only paid plans receive recurring grants.** → packages/db/CLAUDE.md
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
 - **A plan period cut short is *adopted*, not re-granted.** → packages/db/CLAUDE.md
+- **A store refund's debt is paid at the next period boundary, first by the allowance it hid and then by the new one.** → packages/db/CLAUDE.md
 - **The free tier's illustrated-book limit is claimed at plan approval, chat `add_image`, and illustrated rebuilds.** → apps/api/src/mobile/CLAUDE.md
-- **The free tier's book length is a rule asked at every door that starts generating a book, not a quota.** → apps/api/src/mobile/CLAUDE.md
-- **Reading a book in the app spends nothing; only taking its file out spends the export unlock, and the app asks first.** → apps/api/src/mobile/CLAUDE.md
+- **A generated book's length is a rule asked at every door that starts generating one, not a quota: the free tier's limit first for a free account, and a ceiling every plan shares.** → apps/api/src/mobile/CLAUDE.md
+- **A new book may not start on Ultra while the operator has it switched off, and a book already on Ultra keeps it.** → apps/api/src/mobile/CLAUDE.md
+- **Voice calls and audiobooks are plan perks, refused to a free account before the spend breaker and before anything is held.** → apps/api/src/mobile/CLAUDE.md
+- **Pages a finished book gains are priced like the book they join, never at the rewrite rate.** → packages/core/CLAUDE.md
+- **A finished book downloads free — every book a reader owns, PDF and EPUB, with no charge, no entitlement row and no 402; the export wire stays only for installed builds.** → apps/api/src/mobile/CLAUDE.md
+- **A book is one charge, taken when its plan is approved and the same for a free reader and a subscriber; a retry of an attempt charged before that keeps its stored price.** → apps/api/src/mobile/CLAUDE.md + packages/core/CLAUDE.md + packages/db/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md
+- **A free reader's first finished book is offered a plan once, unasked.** → apps/mobile/lib/features/projects/CLAUDE.md
+- **A written book's PDF and EPUB open, share and download in one tap; only the Word file keeps a lock, and it is a plan's, never credits.** → apps/mobile/lib/features/projects/CLAUDE.md
 - **Chat replies never name a credit price.** → apps/api/src/mobile/CLAUDE.md
 - **A credit-history line names what a charge bought, never the rate it was billed at.** → apps/api/src/mobile/CLAUDE.md
 - **A price key with no tier suffix is the *balanced* rate.** → packages/core/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md
 - **Credit prices are operator-editable, not constants.** → packages/core/CLAUDE.md
 - **A subscription token is granted only for the plan its own line items name, and the server acknowledges what it records.** → apps/api/src/mobile/CLAUDE.md
 - **A deletion request is carried out a day after it is made, and the user row stays as a tombstone that keeps the financial records.** → apps/api/CLAUDE.md
+- **The Play purchase stream has one owner, and it lives as long as the session, not the paywall.** → apps/mobile/CLAUDE.md
+- **A checkout's outcome is told to the growth funnel by the processor, once; its start by the controller that asked.** → apps/mobile/CLAUDE.md
+- **A plan is priced at its base plan, and an intro offer is sold only by the id the server names.** → apps/mobile/CLAUDE.md
+- **A plan's allowance is granted a month at a time, worth what its phase paid for: the yearly plan's 6,000 every month of its paid year, an intro offer's own credits, a switched plan's share of a short month.** → packages/db/CLAUDE.md
+- **A downgrade starts at the renewal date, and until then the token Play issued for it carries the plan it replaces.** → packages/db/CLAUDE.md + apps/mobile/CLAUDE.md
+- **A paid period outlives a token Google calls expired: only its paid end, a refund or its replacement ends it, whichever of Google's reports lands first.** → packages/db/CLAUDE.md
+- **A downgrade is deferred to the renewal date, and Play answers it with no purchase.** → apps/mobile/CLAUDE.md
+- **A payment's local price is the buyer's own currency for analytics, and it never decides a grant.** → packages/db/CLAUDE.md + apps/mobile/CLAUDE.md
+- **A blank order id is no order id.** → apps/api/src/mobile/CLAUDE.md
+- **The renewal sweep wakes at every month of a paid period, a check that grants nothing is pushed back, and a deleted account is never renewed into.** → apps/api/src/mobile/CLAUDE.md
+- **Deleting an account stops its Play subscriptions, and keeps a welcome grant's address only while the cap still counts it.** → apps/api/CLAUDE.md
 
 ### Chat, edits and back matter
 
 - **The edit chat gets one clarifying question per request, and it is enforced three times.** → apps/api/src/mobile/CLAUDE.md
 - **A fallback brief says what the lane says; it echoes the idea only where it can tell where the echo ends.** → apps/api/CLAUDE.md
+- **A creation-chat turn runs at most two grounded searches, counted in the tool, not the loop.** → apps/api/CLAUDE.md
 - **Moving and removing a picture are free, and neither is a page edit.** → apps/api/src/mobile/CLAUDE.md + apps/worker/src/generation/CLAUDE.md + apps/worker/src/handlers/CLAUDE.md
 - **And a status poll may read which fork an apply took, because the kind is written before the job exists.** → apps/api/src/mobile/CLAUDE.md
 - **A question declares how many of its answers count, and the picker follows.** → packages/core/CLAUDE.md
@@ -275,6 +310,9 @@ code in that area, however obvious the rule looks.
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
 - **A picture book's page design is not page text either, and it is changed only where it shows.** → apps/api/src/mobile/CLAUDE.md
 - **A book's title is not page text either, and only an AI cover makes changing it cost anything.** → apps/api/src/mobile/CLAUDE.md
+- **A book's matter pages are its own copy of the author profile, and changing them is free.** → apps/api/src/mobile/CLAUDE.md
+- **An imported manuscript's own matter is lifted into the book's matter and out of its pages, so it prints once.** → apps/api/src/mobile/CLAUDE.md
+- **A chat matter change is kept when the reader named it, pointed back to it, or asked for it alone — never a second field nobody named.** → apps/api/src/mobile/CLAUDE.md
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
 - **A model-backed page edit is patches first and a page second, and only a rewrite answers to page QA.** → apps/worker/src/handlers/CLAUDE.md + packages/core/src/generation/CLAUDE.md
 - **A rewrite that kept the page's prose inherits the page's approval.** → apps/worker/src/generation/CLAUDE.md
@@ -283,6 +321,7 @@ code in that area, however obvious the rule looks.
 - **A keep-the-same clause is consistency, never a list of things to show.** → packages/core/src/generation/CLAUDE.md
 - **A page-QA repair round may improve a set the adherence reviewer accepted, never cost it.** → apps/worker/src/handlers/CLAUDE.md
 - **The model-free recogniser fires only when the verb's object *is* the page.** → apps/api/src/mobile/CLAUDE.md
+- **A regex over chat text gives each optional word its own whitespace and starts a run at its first character, because the API reads it on its only thread.** → apps/api/src/mobile/CLAUDE.md
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.** → apps/api/src/mobile/CLAUDE.md
 - **A chat reply is light markdown on both sides of the wire, and neither side may forget the other.** → apps/mobile/lib/features/projects/CLAUDE.md
 - **Changing *which* pages a book has is its own edit, and it used to be a whole new project.** → apps/api/src/mobile/CLAUDE.md
@@ -343,6 +382,7 @@ code in that area, however obvious the rule looks.
 ### Characters, covers and illustrations
 
 - **Declining the cover buys a designed one, it does not remove the cover.** → packages/core/src/generation/CLAUDE.md
+- **A cover's words follow the book's row, and setting them again never draws and never fails the book.** → apps/worker/src/handlers/CLAUDE.md
 - **A cover that cannot be drawn now finishes the book instead of failing it.** → apps/worker/src/handlers/CLAUDE.md
 - **A purchased cover's attempt is settled by its own cover job, never by the compile after it.** → apps/worker/src/handlers/CLAUDE.md
 - **Two things decide whether a cover design reads, and neither is visible in the code.** → packages/core/src/generation/CLAUDE.md
@@ -359,6 +399,7 @@ code in that area, however obvious the rule looks.
 - **The renders no longer sit inside the lock, because tolerating a refusal is what made that budget reachable.** → apps/worker/src/generation/CLAUDE.md
 - **A waiter's budget is one owner's, and only a lease that changes hands renews it.** → apps/worker/src/generation/CLAUDE.md
 - **The stale set is the rows the commit read, and another plan version's sheets are not among them.** → apps/worker/src/generation/CLAUDE.md
+- **A children's picture book draws `min(pages, 12)` pictures: one a page up to twelve pages, and twelve spread across any longer book.** → packages/core/CLAUDE.md
 - **A library character reaches a book by copy and by name, never by foreign key.** → packages/core/src/generation/CLAUDE.md
 - **A character's look lives in pixels, so it has to be written down or the planner invents one.** → packages/core/src/generation/CLAUDE.md
 - **Nothing used to check that the planner obeyed, and now one pass does.** → packages/core/src/generation/CLAUDE.md
@@ -402,13 +443,15 @@ code in that area, however obvious the rule looks.
 ### Compiling, rendering and exports
 
 - **The book is typeset against md-to-pdf's stylesheets, but nothing else of md-to-pdf's remains.** → packages/core/src/generation/CLAUDE.md
+- **Every book has a title page, and only the book's first sheet resets the page counter.** → packages/core/src/generation/CLAUDE.md
 - **Chrome reads the book off disk; nothing crosses CDP.** → packages/core/src/generation/CLAUDE.md
 - **One Chromium, many pages — and the reset paths are the point.** → packages/core/src/generation/CLAUDE.md
+- **A book's render waits as long as its length needs, and the one CDP bound is the longest wait any render may have.** → packages/core/src/generation/CLAUDE.md
 - **A recompile makes no model call, and that is a cache with one rule.** → apps/worker/src/generation/CLAUDE.md
 - **The mobile export routes never render.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md + apps/api/src/routes/CLAUDE.md
 - **A download says which compile answered it, because the URL cannot.** → packages/core/src/generation/CLAUDE.md + apps/mobile/lib/features/reader/CLAUDE.md
 - **A companion export never fails the compile, and a new one is one registry entry.** → packages/core/src/generation/CLAUDE.md + apps/worker/src/generation/CLAUDE.md
-- **The Word route refuses a free account before it reads a byte or queues a repair, and charges the unlock only after the bytes are in hand.** → apps/api/src/mobile/CLAUDE.md
+- **The Word route refuses a free account before it reads a byte or queues a repair, and charges a subscriber nothing.** → apps/api/src/mobile/CLAUDE.md
 - **A sheet number belongs to one file, so it may only be sent with that file's digest.** → apps/mobile/lib/features/reader/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **The export barrier blocks the revision it names, not every revision, and only an expired publication lease lets recovery retire it.** → apps/worker/src/generation/CLAUDE.md + apps/api/src/routes/CLAUDE.md
@@ -434,7 +477,10 @@ code in that area, however obvious the rule looks.
 ### Audiobook and voice
 
 - **Voice provider access is controlled by a funded server relay.** → apps/api/src/mobile/CLAUDE.md
+- **A call ends at 15 minutes, and its Live context is compacted from the top of the persona, because every turn re-bills the whole window.** → packages/core/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **A relayed call's runway is its holds plus what the balance can still hold, and it reaches zero before the relay closes the socket.** → apps/api/src/mobile/CLAUDE.md
 - **A call names one callee, and a library character is the callee with no book.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/characters/CLAUDE.md
+- **Narrating is a plan perk; listening is not.** → apps/mobile/lib/features/audiobook/CLAUDE.md
 - **An audiobook is made *from* a finished book, so failing one must not touch the book.** → apps/worker/src/handlers/CLAUDE.md
 - **Narration is chaptered deterministically, never by the model.** → apps/worker/src/handlers/CLAUDE.md
 - **Sentence timings are measured, not guessed.** → apps/worker/src/handlers/CLAUDE.md
@@ -446,25 +492,43 @@ code in that area, however obvious the rule looks.
 
 ### Reader and app surfaces
 
+- **Every surface that shows AI output has a Report action, and a route that snapshots what it showed.** → apps/api/src/mobile/CLAUDE.md
 - **The Flutter creation chat screen is one library split with `part` files** → apps/mobile/lib/features/projects/CLAUDE.md
+- **Two operator switches bound a new book, and both ride the billing payload.** → apps/mobile/lib/features/projects/CLAUDE.md
 - **The in-app reader renders the compiled `book.pdf` with pdfrx (PDFium).** → apps/mobile/lib/features/reader/CLAUDE.md
 - **The description field refuses rather than truncates, so its bound is a ceiling well above the cap and a mention scan that stops at it.** → apps/mobile/lib/features/characters/CLAUDE.md
 - **The reader places the rendered page before it places the selection.** → apps/mobile/lib/features/reader/CLAUDE.md
+- **A failed book says which step failed, and says its credits came back only when the ledger does.** → apps/api/src/mobile/CLAUDE.md
+- **A status stream sends what changed, proves it is alive with a comment, and answers to the session it was opened with — three to an account.** → apps/api/src/mobile/CLAUDE.md
 - **An app update is a policy per store release, and only a build that already sends its build number can ever be retired.** → apps/api/CLAUDE.md
+- **A release build is signed with the upload key or not built at all.** → apps/mobile/CLAUDE.md
 - **A book push is decided by the API's sweep from the status the app already reads, and its ending is sent only by the delete that claims the book's row.** → apps/api/CLAUDE.md + apps/mobile/CLAUDE.md
+- **A resource named only from Dart is listed in `res/raw/tomeza_keep.xml`, or a release build deletes it.** → apps/mobile/CLAUDE.md
+- **A dead session signs the reader out; it never leaves them on error screens.** → apps/mobile/CLAUDE.md
+- **A cold start that cannot reach the server opens the session the phone holds, offline; only a refusal signs the reader out.** → apps/mobile/CLAUDE.md
+- **An email sign-up opens on its code, and the credits it waits for are named by the server.** → apps/mobile/CLAUDE.md
+- **A reader asked for credits while free ones wait on their email is offered the email first.** → apps/mobile/CLAUDE.md
+- **A token's expiry is the server's clock, so every test of it is made on the server's clock.** → apps/mobile/CLAUDE.md
 
 ### Admin dashboards and cost accounting
 
 - **A non-null `ProviderCallLog.costHint` *is* a settled, priced call.** → apps/api/src/admin/CLAUDE.md
-- **Nothing joins a provider call to the charge that paid for it, so the Operations tab derives it three ways.** → apps/api/src/admin/CLAUDE.md
+- **Nothing joins a provider call to the charge that paid for it, so the Operations tab derives it four ways.** → apps/api/src/admin/CLAUDE.md
 - **A costless call has four different causes and the Costs tab splits all four.** → apps/api/src/admin/CLAUDE.md
 - **"Revenue" is two different numbers and the dashboard shows both.** → apps/api/src/admin/CLAUDE.md
+- **A credit is valued by where it came from, net of Google's fee, and a welcome credit is worth nothing.** → apps/api/src/admin/CLAUDE.md
 - **A reversal is an amount, not a boolean.** → apps/api/src/admin/CLAUDE.md
 - **A grounded search's `costHint` includes only the grounding fee Google bills, decided by the prompt's ordinal in its pool's free allowance when the row is written.** → apps/api/src/admin/CLAUDE.md
+- **Every provider call row names the user it was spent for, and a voice call's usage is recorded from the provider's own token counts.** → apps/api/src/admin/CLAUDE.md
+- **Rows read for a bounded while are pruned once a day; a provider call a book still names is kept for the life of the book.** → apps/api/CLAUDE.md
+- **An app event says what kind of thing happened and nothing a reader wrote, and a completed purchase is never one.** → apps/api/src/admin/CLAUDE.md + apps/mobile/CLAUDE.md
+- **An install is attributed by its first report, which only exists once a reader signs in.** → apps/api/src/admin/CLAUDE.md
+- **Intro conversion is a later full-price subscription payment by the same reader; churn is a reader who held a paid plan as a UTC month opened and none as it closed.** → apps/api/src/admin/CLAUDE.md
 
 ### Writing Studio (author-written books)
 
 - **A publish seals every earlier edit, because undo writes text without a revision check.** → apps/api/src/mobile/CLAUDE.md
+- **A publish is free, and rationed per account.** → apps/api/src/mobile/CLAUDE.md
 - **A publish reuses rows by position and never shifts an index.** → apps/api/src/mobile/CLAUDE.md
 - **A publish stamps no `publicationRevision`, and its compile and cover are rows in its own commit.** → apps/api/src/mobile/CLAUDE.md
 - **The working copy never overwrites the book blindly: drift is a conflict, not a merge.** → apps/api/src/mobile/CLAUDE.md
@@ -486,8 +550,44 @@ code in that area, however obvious the rule looks.
 
 - **The public share surface is `/s/`, outside `/api/` and the auth complement, and it exists in production only because `deploy/nginx.conf` names it.** → apps/api/src/mobile/CLAUDE.md
 - **The share note's Jev gate holds the note for review on no verdict and never allows on one; it is a gate, not a screen, which is why it stays.** → apps/api/src/mobile/CLAUDE.md
-- **The preview cap is the export loophole's only lock, and it is applied again at serve time.** → apps/api/src/mobile/CLAUDE.md
-- **A full share settles the export unlock last, through the download's own helper and key.** → apps/api/src/mobile/CLAUDE.md
+- **The preview cap is the author's choice of how much a stranger reads, and it is applied again at serve time.** → apps/api/src/mobile/CLAUDE.md
+- **A full share is free, and the share routes keep the unlock's wire only for installed builds.** → apps/api/src/mobile/CLAUDE.md
+- **A share serves only text screened at the book's current revision, and a refused re-screen turns the link off for the author to share again, never takes it down.** → apps/api/src/mobile/CLAUDE.md + apps/api/CLAUDE.md
+- **An install from a share page finds its remix through Play's install referrer, so the link's keys are a wire contract.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/CLAUDE.md
+- **The install referrer is read once per install, reported once, and its share's remix offered once; the raw referrer never leaves the phone.** → apps/mobile/CLAUDE.md
+- **An account an operator turned sharing off shares nothing and remixes nothing, and the share write asks again under the user row's lock.** → apps/api/src/mobile/CLAUDE.md + apps/api/CLAUDE.md
+
+### Security
+
+- **Every auth decision reads the route the router matched, never `request.url`, and only the auth hook makes an operator.** → apps/api/CLAUDE.md + apps/api/src/routes/CLAUDE.md
+- **Every unauthenticated route that runs scrypt is limited by client network before it hashes, and hashing itself is gated.** → apps/api/CLAUDE.md
+- **An address is proven by a confirmed emailed code or by Google, and only a code mailed to the address the account has now can prove it.** → apps/api/CLAUDE.md
+- **A console cookie is signed with the generation it was issued under, lives a week, and "sign out everywhere" moves the generation.** → apps/api/CLAUDE.md
+- **Console and `/docs` responses carry `X-Frame-Options: SAMEORIGIN`, `nosniff` and `Referrer-Policy: same-origin`; the app's and the share pages' do not.** → apps/api/CLAUDE.md
+- **An operator's suspension is a status, not a tombstone: everything that asks for ACTIVE refuses it, and only a deletion's sweeps read DISABLED.** → apps/api/CLAUDE.md
+- **An upload is parsed in linear time, its zip directory is measured before JSZip reads it, and its inflation is counted as it happens.** → packages/core/CLAUDE.md
+- **A production process refuses to start without what a purchase, a refund, a password reset and the console's lock depend on, and the provider keys it demands are read off the routing, never listed.** → packages/core/CLAUDE.md
+- **A deleted book's prefixes are written down before they are deleted, and deleted again until they stay empty.** → apps/api/CLAUDE.md
+- **The sexual-content filter is on unless a revision says off: its rule rides every text call where it leaves the process, a failed switch read keeps it on, request screens fail open and the share screen holds for review.** → apps/api/CLAUDE.md
+
+### Production images and disk
+
+- **The dependency layer is built from manifests alone, or every deploy ships a new gigabyte.** → scripts/CLAUDE.md
+- **The host keeps the current and previous release's images by name; `docker image prune` would delete the rollback.** → scripts/CLAUDE.md
+- **Postgres and Redis are the last things the kernel may kill, and every Node process knows its heap ceiling.** → scripts/CLAUDE.md
+- **The worker drains while the API still serves, so a deploy's outage is the API's stop, the dump, the migration and the start.** → scripts/CLAUDE.md
+- **Nothing is migrated until the database it changes is in S3.** → scripts/CLAUDE.md
+- **The worker's healthcheck counts only its own container's heartbeat, because a lane's key outlives the worker that wrote it.** → scripts/CLAUDE.md
+- **A deleted or overwritten object stays recoverable for 30 days, and no longer.** → scripts/CLAUDE.md
+
+### Monitoring and alerts
+
+- **`/api/health` is liveness and touches nothing; `/api/ready` is readiness and is what a monitor watches.** → apps/api/CLAUDE.md
+- **An alert is a state, not an event: it fires once, recovers once, and survives a restart in its row — but the sweep never needs that row to send.** → apps/api/CLAUDE.md
+- **A worker lane is alive exactly while its heartbeat key is, and the beat comes from the event loop it vouches for.** → apps/worker/CLAUDE.md
+- **Mail is verified, not assumed, and a broken mailer is a readiness failure because it cannot be an email.** → apps/api/CLAUDE.md
+- **An open child-safety report is an alert on the first sweep that sees it, and settling the report is what clears it.** → apps/api/CLAUDE.md
+- **No housekeeping runs before the API listens.** → apps/api/CLAUDE.md
 
 ### Local stack
 

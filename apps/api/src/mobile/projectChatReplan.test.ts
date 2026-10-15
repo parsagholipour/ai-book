@@ -5,10 +5,11 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { grantProjectEntitlement, reserveCredits } from "@book-maker/db/billing";
+import { grantProjectEntitlement, hasActiveSubscriptionEntitlement, reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
 import { fakeDecideModel } from "../testing/bookEditIntentFixtures.js";
+import { replanCopyBookMatter } from "./projectRecords.js";
 import {
   approvedPlanRecord,
   bearer,
@@ -32,8 +33,15 @@ describe("mobile project chat book replan", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
 
-  it("includes the copy's export unlock in the rebuild charge exactly once", async () => {
+  it.each([
+    ["a subscriber", true],
+    ["a free reader", false]
+  ])("charges %s's rebuild once, at the price its card showed, with no export unlock and no grant", async (_reader, paid) => {
+    // The copy is a new generated book, priced the way plan approval prices
+    // one: a single charge, the same for every reader, and its finished file
+    // downloads free (2026-10-15).
     mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(paid);
     mockPrisma.project.findFirst.mockResolvedValue(projectRecord({
       status: "COMPLETE", currentPlanId: "plan-1", currentPlan: approvedPlanRecord(), pages: generatedPages()
     }));
@@ -49,7 +57,9 @@ describe("mobile project chat book replan", () => {
       expect(proposal.statusCode).toBe(200);
       const card = proposal.json().reply.metadata.editProposal;
       expect(card.kind).toBe("book_replan");
-      expect(grantProjectEntitlement).not.toHaveBeenCalled();
+      // 12 pages, 2 interior illustrations and a cover at balanced, plus the
+      // 120 rebuild base, whoever asks.
+      expect(card.credits).toBe(120 + 350 + 12 * 8 + 3 * 45);
 
       const apply = () => app.inject({
         method: "POST", url: "/api/mobile/projects/project-1/chat/proposals/apply", headers: bearer("token-a"),
@@ -61,15 +71,20 @@ describe("mobile project chat book replan", () => {
       expect(reserveCredits).toHaveBeenCalledWith(expect.objectContaining({
         operation: "BOOK_REPLAN", amountCredits: card.credits
       }));
-      expect(grantProjectEntitlement).toHaveBeenCalledWith(expect.objectContaining({
-        userId: "user-a", projectId: "project-copy", type: "EXPORT_UNLOCK",
-        creditsCost: card.credits, relatedLedgerEntryId: "ledger-BOOK_REPLAN"
-      }));
+      // The charge carries its itemised quote, the way plan approval's does, so a
+      // delete of the copy mid-run keeps only what the copy delivered (launch review H3).
+      const charge = vi.mocked(reserveCredits).mock.calls[0]![0] as { metadata: { creditEstimate?: Record<string, any> } };
+      expect(charge.metadata.creditEstimate).toMatchObject({ totalCredits: card.credits });
+      expect(charge.metadata.creditEstimate!.lineItems[0]).toMatchObject({ code: "BOOK_REPLAN" });
+      const lines = charge.metadata.creditEstimate!.lineItems as Array<{ code: string; credits: number }>;
+      expect(lines.reduce((total, line) => total + line.credits, 0)).toBe(card.credits);
+      expect(lines.map((line) => line.code)).not.toContain("EXPORT_UNLOCK");
 
+      // A second Apply replays the first: still one charge, still no grant.
       expect((await apply()).statusCode).toBe(200);
-      expect(grantProjectEntitlement).toHaveBeenCalledTimes(1);
       expect(reserveCredits).toHaveBeenCalledTimes(1);
       expect(mockPrisma.project.create).toHaveBeenCalledTimes(1);
+      expect(grantProjectEntitlement).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -147,6 +162,7 @@ describe("mobile project chat book replan", () => {
       projectRecord({
         id: "project-1",
         status: "COMPLETE",
+        bookMatter: { dedication: "For Sara", isbn: "978-0-00-000000-0" },
         currentPlanId: "plan-1",
         currentPlan: approvedPlanRecord(),
         pages: generatedPages()
@@ -230,6 +246,8 @@ describe("mobile project chat book replan", () => {
           userId: "user-a",
           title: "Owned Book (Revised)",
           status: "EDITING",
+          // The rebuilt book keeps its dedication and publication details.
+          bookMatter: { dedication: "For Sara", isbn: "978-0-00-000000-0" },
           mediaSettings: expect.objectContaining({
             mobile: expect.objectContaining({
               revisionOfProjectId: "project-1",
@@ -294,8 +312,9 @@ describe("mobile project chat book replan", () => {
       kind: "book_replan",
       summary:
         "Rebuild as a new 3-page copy without illustrations: It's too much talking. I think we should make it 3 pages without illustrations",
-      // The 12-page illustrated book quotes 851; this is the book asked for.
-      credits: 689
+      // The 12-page illustrated book quotes 701 to a free reader; this is the
+      // book asked for, without the export unlock a free reader's price leaves out.
+      credits: 539
     });
 
     const confirm = await app.inject({
@@ -308,7 +327,7 @@ describe("mobile project chat book replan", () => {
     expect(confirm.statusCode).toBe(200);
     // Charged what was quoted: the settings have to survive the round trip
     // through the stored proposal, or Apply prices the old book again.
-    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 689 }));
+    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 539 }));
     expect(mockPrisma.project.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -431,4 +450,79 @@ describe("mobile project chat book replan", () => {
     await app.close();
   });
 
+  it("leaves the dedication and the biography behind when the copy is rebuilt in another language", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        language: "en",
+        status: "COMPLETE",
+        bookMatter: {
+          dedication: "For my mother",
+          aboutAuthor: "Sam Lee writes about the sea.",
+          isbn: "978-0-00-000000-0",
+          imprint: "Lantern Press",
+          allRightsReserved: true
+        },
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-replan", projectId: "project-copy", type: "REPLAN_BOOK" })
+    );
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Now generate the Spanish version" }
+    });
+    expect(proposal.json().reply.metadata.editProposal).toMatchObject({ kind: "book_replan", targetLanguage: "Spanish" });
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "yes" }
+    });
+
+    expect(confirm.statusCode).toBe(200);
+    // The Spanish copy prints "Sobre el autor" and a Spanish matter sheet, and
+    // nothing translates the reader's own prose under them — so only the fields
+    // that read the same in any language come across.
+    expect(mockPrisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          language: "Spanish",
+          bookMatter: { isbn: "978-0-00-000000-0", imprint: "Lantern Press", allRightsReserved: true }
+        })
+      })
+    );
+    expect(confirm.json().reply.content).toContain(
+      "Your dedication and About the Author weren’t copied, so nothing prints untranslated — add them in Spanish"
+    );
+    await app.close();
+  });
+});
+
+describe("replanCopyBookMatter", () => {
+  const matter = { dedication: "For Sara", aboutAuthor: "Sam writes.", isbn: "978-0-00-000000-0" };
+
+  it("carries the matter verbatim when the copy keeps the book's language", () => {
+    expect(replanCopyBookMatter({ language: "en", bookMatter: matter }, null)).toEqual({ bookMatter: matter, withheld: [] });
+    // A code and a name for one language are the same language.
+    expect(replanCopyBookMatter({ language: "en", bookMatter: matter }, "English")).toEqual({ bookMatter: matter, withheld: [] });
+    expect(replanCopyBookMatter({ language: "es", bookMatter: matter }, "Spanish")).toEqual({ bookMatter: matter, withheld: [] });
+  });
+
+  it("writes no matter at all when a translation leaves nothing language-neutral", () => {
+    expect(replanCopyBookMatter({ language: "Persian", bookMatter: { dedication: "برای مادرم" } }, "en")).toEqual({
+      bookMatter: undefined,
+      withheld: ["dedication"]
+    });
+    expect(replanCopyBookMatter({ language: "en", bookMatter: null }, "Spanish")).toEqual({ bookMatter: undefined, withheld: [] });
+  });
 });

@@ -8,7 +8,18 @@ import {
 } from "../generation/structuralPageLease.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { PAGE_RESTRUCTURE_TRANSACTION_OPTIONS } from "@book-maker/db";
-import type { SettledProjectStatus } from "@book-maker/core";
+import { editRecompilePolicy, type CompilePublicationPolicy, type SettledProjectStatus } from "@book-maker/core";
+
+/**
+ * A page change reviews the whole book, as its compile always did, and its
+ * charge settled when the shift published — so the render owns its verdict and
+ * never the delivered book's failure: it puts the pre-edit status back
+ * (`editRecompilePolicy`). Both the first delivery and an APPLIED replay queue
+ * this one policy, so they name one compile.
+ */
+function restructureRecompilePolicy(fallbackStatus: SettledProjectStatus): CompilePublicationPolicy {
+  return editRecompilePolicy(fallbackStatus, { skipFinalReview: false, withoutQualityVerdict: false });
+}
 
 /** Queue only the exact publication generation the APPLIED operation stamped. */
 export async function queueRestructureCompile(
@@ -25,7 +36,7 @@ export async function queueRestructureCompile(
     identity: { planVersionId, publicationRevision },
     enqueueFailureMessage: `Failed to enqueue the export refresh for restructured project ${projectId}:`,
     enqueue: ({ planVersionId: compilePlanVersionId, publicationRevision: compileRevision }) =>
-      maybeEnqueueCompile(projectId, compilePlanVersionId, undefined, {
+      maybeEnqueueCompile(projectId, compilePlanVersionId, restructureRecompilePolicy(fallbackStatus), {
         contentRevision: compileRevision,
         requireContentRevisionMatch: true
       })
@@ -77,7 +88,7 @@ export async function replayAppliedRestructure(
       planVersionId: string;
       publicationRevision: number;
     }) =>
-      maybeEnqueueCompile(projectId, planVersionId, undefined, {
+      maybeEnqueueCompile(projectId, planVersionId, restructureRecompilePolicy(fallbackStatus), {
         contentRevision: publicationRevision,
         requireContentRevisionMatch: true
       })

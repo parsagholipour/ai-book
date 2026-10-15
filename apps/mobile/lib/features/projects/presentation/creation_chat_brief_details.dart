@@ -116,27 +116,49 @@ class _BriefDetails extends StatelessWidget {
                 final pages = presets.pageCountMode == 'custom'
                     ? presets.targetPages
                     : null;
+                final billing = ref.watch(billingProvider).asData?.value;
+                // Past what any plan writes is not a plan perk, so no lock:
+                // Build offers the longest book there is instead.
+                final tooLong =
+                    !built &&
+                    pages != null &&
+                    (billing?.exceedsBookPagesCeiling(pages) ?? false);
                 final locked =
                     !built &&
                     pages != null &&
-                    (ref
-                            .watch(billingProvider)
-                            .asData
-                            ?.value
-                            .locksBookPages(pages) ??
-                        false);
+                    !tooLong &&
+                    (billing?.locksBookPages(pages) ?? false);
                 return _TappableBriefChip(
                   label: 'Size',
                   value: pageCountLabelFor(presets),
-                  icon: locked ? Icons.lock_outline : null,
+                  icon: tooLong
+                      ? Icons.error_outline
+                      : locked
+                      ? Icons.lock_outline
+                      : null,
                   onTap: chipTap(_AdvancedSection.pages),
                 );
               },
             ),
-            _TappableBriefChip(
-              label: 'Effort',
-              value: qualityLabel(presets.qualityPreset),
-              onTap: chipTap(_AdvancedSection.effort),
+            // Says the effort Build will really start at: an Ultra choice
+            // reads as Extra polish while the operator has Ultra off.
+            Consumer(
+              builder: (context, ref, _) => _TappableBriefChip(
+                label: 'Effort',
+                value: qualityLabel(
+                  startableQualityPreset(
+                    presets.qualityPreset,
+                    ultraEnabled:
+                        ref
+                            .watch(billingProvider)
+                            .asData
+                            ?.value
+                            .ultraTierEnabled ??
+                        true,
+                  ),
+                ),
+                onTap: chipTap(_AdvancedSection.effort),
+              ),
             ),
             // A declined AI cover still buys a designed one, so the chip says
             // which cover the book gets — "Not included" read as no cover.
@@ -324,9 +346,9 @@ class _BriefQuickActionsState extends ConsumerState<_BriefQuickActions> {
     final requiresReview =
         liveStatus?.requiresReview ?? status == 'review_required';
     // The bubble's predicate: only a finished, review-clear book offers its
-    // primary unlocked export here.
+    // primary export here.
     final downloadExport = complete && !requiresReview
-        ? primaryUnlockedAvailableExport(exports)
+        ? primaryAvailableExport(exports)
         : null;
     return Wrap(
       spacing: 8,
@@ -374,9 +396,8 @@ class _BriefCreditEstimate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final creditCosts =
-        ref.watch(billingProvider).asData?.value.creditCosts ??
-        const <String, dynamic>{};
+    final billing = ref.watch(billingProvider).asData?.value;
+    final creditCosts = billing?.creditCosts ?? const <String, dynamic>{};
     final targetPages = presets.targetPages;
     final pages = presets.pageCountMode == 'custom' && targetPages != null
         ? targetPages

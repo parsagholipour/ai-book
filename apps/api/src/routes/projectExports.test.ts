@@ -26,7 +26,8 @@ vi.mock("@book-maker/db", () => ({
   prisma: mockPrisma,
   researchCitationsForExport: async (
     sources: Array<{ title: string; url: string | null; summary: string }>
-  ) => sources.map((source) => ({ ...source, url: source.url ?? undefined }))
+  ) => sources.map((source) => ({ ...source, url: source.url ?? undefined })),
+  bookMatterForExport: async () => ({ year: 2026, madeWithCredit: false })
 }));
 
 vi.mock("@book-maker/core", async (importOriginal) => {

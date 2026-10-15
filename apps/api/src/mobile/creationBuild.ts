@@ -33,6 +33,9 @@ import {
 } from "./dto.js";
 import { pageLimitRefusal, sendPageLimitExceeded } from "./bookPageLimit.js";
 import { sendInsufficientCredits, sendMobileError } from "./httpErrors.js";
+import { aiWorkKindForTier, sendAiCapacityRefusal } from "./aiCapacity.js";
+import { ULTRA_TIER_UNAVAILABLE_MESSAGE, ultraTierRefused } from "./ultraTier.js";
+import { spendBreaker } from "../spendBreaker.js";
 import {
   buildMobileCreateProjectInput,
   createMobileProjectRecord,
@@ -45,6 +48,7 @@ import {
 import { planOperation } from "./projectStatusSerializers.js";
 import { inputSnapshotFromProject, serializeProjectDetail } from "./projectSummarySerializers.js";
 import {
+  MOBILE_PRODUCT_PRESETS,
   mobilePageCountRecommendationAiSchema
 } from "./schemas.js";
 import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord, promiseWithTimeout } from "./support.js";
@@ -54,9 +58,11 @@ import {
   isLibraryMentionNameCharacterAt,
   libraryMentionTokenEndsAt,
   libraryCharacterRelativeFile,
+  maxGeneratedBookPages,
   planGenerationCreditCost,
 } from "@book-maker/core";
 import { createLiveFastJudgmentsTextModel } from "../generationTextModelRouting.js";
+import { withInlineProviderUsage } from "../inlineProviderUsage.js";
 import { linearizeCreationMessages } from "../creationChatTree.js";
 import { fieldsFromJson as characterFieldsFromJson } from "./characterSerializer.js";
 import { prisma } from "@book-maker/db";
@@ -68,6 +74,8 @@ import {
 import { type FastifyReply } from "fastify";
 import type { MobileRouteContext } from "./routeContext.js";
 import { assessCurrentContentRestrictions } from "../contentRestrictions.js";
+import { screenRequestForSexualContent } from "../contentSafetyScreen.js";
+import { moderationDepsFor } from "./contentSafetyDoors.js";
 import { expandLibraryCharacterGraph, generationDescription } from "./libraryMentionGraph.js";
 import { withAiProcessingUsage } from "./processingUsage.js";
 
@@ -130,7 +138,8 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
   const { appConfig, options, advisorEnrichment } = context;
 
   function advise(userId: string, payload: MobileCreationDraftPayload) {
-    const work = () => adviseMobileBook(payload, { enrich: advisorEnrichment, timeoutMs: options.advisorTimeoutMs });
+    const enrich = advisorEnrichment && ((draft: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => advisorEnrichment(draft, base, { userId }));
+    const work = () => adviseMobileBook(payload, { enrich, timeoutMs: options.advisorTimeoutMs });
     return advisorEnrichment ? withAiProcessingUsage(userId, "Book advice", work) : work();
   }
 
@@ -186,6 +195,44 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
         code: restriction.reason === "copyright" ? "COPYRIGHT_RESTRICTED" : "CONTENT_RESTRICTED",
         message: restriction.message
       };
+    }
+    // The book is the tier its presets name; the advisor never picks another
+    // one when nothing is selected, so this is the tier the plan is charged at.
+    const presetTier = MOBILE_PRODUCT_PRESETS[mergedPresets?.qualityPreset ?? "balanced"].modelTier;
+    // A new book may not start at Ultra while the operator has it switched off
+    // (`ultraTier.ts`) — an older app still offers it.
+    if (ultraTierRefused(presetTier)) {
+      return {
+        ok: false as const,
+        status: 422,
+        code: "QUALITY_TIER_UNAVAILABLE",
+        message: ULTRA_TIER_UNAVAILABLE_MESSAGE
+      };
+    }
+    // The AI spend breaker, ahead of the advisor's charged calls and the plan's
+    // charge, for the preflight, the build and the legacy create alike.
+    const capacity = await spendBreaker.check(userId, aiWorkKindForTier(presetTier));
+    if (!capacity.allowed) {
+      return { ok: false as const, aiRefusal: capacity };
+    }
+    // The operator's sexual-content filter reads the reader's own words — the
+    // idea, notes, details and every message of the chosen thread — before the
+    // advisor's calls and the plan's charge. Its verdict is cached, so the
+    // preflight and the build that follows it pay for one read.
+    const sexualContent = await screenRequestForSexualContent({
+      text: [
+        mergedPayload.rawIdea ?? "",
+        mergedPayload.sourceNotes ?? "",
+        JSON.stringify(mergedPayload.optionalDetails ?? {}),
+        ...linearizeCreationMessages(mergedPayload.messages ?? []).active
+          .filter((message) => message.role === "user")
+          .map((message) => message.content)
+      ].join("\n"),
+      door: "creation_build",
+      deps: moderationDepsFor(context, { projectId: null, userId })
+    });
+    if (sexualContent) {
+      return { ok: false as const, status: 422, code: "CONTENT_RESTRICTED", message: sexualContent.message };
     }
     const advisorContextFingerprint = advisorContextFingerprintFor(mergedPayload);
     // A snapshot stamped with the current revision and preset context was
@@ -417,7 +464,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
     });
     return {
       ok: true,
-      project: await serializeProjectDetail(refreshedProject, appConfig, userId),
+      project: await serializeProjectDetail(refreshedProject, appConfig),
       output: serializeCreationOutput(output),
       operation,
       sessionRevision: latestDraft?.revision ?? claimedRevision ?? draft.revision ?? 1
@@ -431,7 +478,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
   ): Promise<MobilePageCountRecommendationDto[]> {
     const fallback = deterministicPageCountRecommendations(payload, advisor);
     let textModel;
-    try { textModel = createLiveFastJudgmentsTextModel(appConfig); }
+    try { textModel = withInlineProviderUsage(createLiveFastJudgmentsTextModel(appConfig), { projectId: null, userId }); }
     catch { return fallback; }
     // Admission stays outside the provider fallback: exhausted accounts must
     // receive 429/402 rather than quietly starting another model request.
@@ -447,7 +494,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
               {
                 role: "system",
                 content:
-                  "Offer exactly three distinct integer page counts from 1 to 600, ordered smallest first: Concise, Balanced, and Expanded. " +
+                  `Offer exactly three distinct integer page counts from 1 to ${maxGeneratedBookPages()}, ordered smallest first: Concise, Balanced, and Expanded. ` +
                   "Tailor the counts to this book's structured brief, audience, desired outcome, selected book type and length preference, active conversation, and source notes. " +
                   "When selectedBookType is auto, no book type has been chosen. Recommend space for the proposal's actual content without assigning a genre or assuming a story, guide, or workbook. " +
                   "Work out the space needed for the requested topics, explanations, worked examples, and exercises before choosing counts. " +
@@ -657,6 +704,9 @@ export function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcom
   }
   if ("pageLimit" in outcome) {
     return sendPageLimitExceeded(reply, outcome.pageLimit);
+  }
+  if ("aiRefusal" in outcome) {
+    return sendAiCapacityRefusal(reply, outcome.aiRefusal);
   }
   return sendMobileError(reply, outcome.status, outcome.code, outcome.message);
 }

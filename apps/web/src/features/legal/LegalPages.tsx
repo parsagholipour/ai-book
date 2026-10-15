@@ -1,16 +1,92 @@
 import { useEffect, type ReactNode } from "react";
 import { Link } from "react-router";
+import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
+  LEGAL_COMPANY_ADDRESS,
+  LEGAL_COMPANY_NAME,
+  LEGAL_EFFECTIVE_DATE,
+  LEGAL_SUPPORT_EMAIL,
+  PUBLIC_ACCOUNT_DELETION_URL,
+  PUBLIC_PRIVACY_POLICY_URL,
+  PUBLIC_TERMS_OF_SERVICE_URL
+} from "@book-maker/core/legal";
 import { AppLogo } from "../shared/AppLogo.js";
 
-const company = "Ravanix Technologies L.L.C-FZ";
-const address = "Meydan Grandstand, 6th floor, Meydan Road, Nad Al Sheba, Dubai, U.A.E.";
-const supportEmail = "support@ravanix.app";
-const effectiveDate = "3 October 2026";
-const version = "2026-10-03";
+const company = LEGAL_COMPANY_NAME;
+const address = LEGAL_COMPANY_ADDRESS;
+const supportEmail = LEGAL_SUPPORT_EMAIL;
+
+/**
+ * What each public legal page is called, where it lives and which acceptance
+ * version it is. The SPA renders these through the routes in `App.tsx`, and the
+ * web build writes each one to `<path>/index.html` as static HTML
+ * (`legalPrerender.tsx`), so the policy text is readable without JavaScript.
+ */
+export type LegalDocument = {
+  path: "/terms" | "/privacy" | "/account-deletion";
+  title: string;
+  description: string;
+  version: string;
+  canonicalUrl: string;
+};
+
+export const TERMS_DOCUMENT: LegalDocument = {
+  path: "/terms",
+  title: "Terms and Conditions",
+  description: "The terms governing use of Tomeza.",
+  version: CURRENT_TERMS_VERSION,
+  canonicalUrl: PUBLIC_TERMS_OF_SERVICE_URL
+};
+
+export const PRIVACY_DOCUMENT: LegalDocument = {
+  path: "/privacy",
+  title: "Privacy Policy",
+  description: "How Tomeza collects, uses, shares, retains, and protects data.",
+  version: CURRENT_PRIVACY_VERSION,
+  canonicalUrl: PUBLIC_PRIVACY_POLICY_URL
+};
+
+/** Part of the privacy disclosures, so it carries the privacy version. */
+export const ACCOUNT_DELETION_DOCUMENT: LegalDocument = {
+  path: "/account-deletion",
+  title: "Delete your Tomeza account",
+  description: "How to request deletion of your account and data.",
+  version: CURRENT_PRIVACY_VERSION,
+  canonicalUrl: PUBLIC_ACCOUNT_DELETION_URL
+};
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December"
+] as const;
+
+/**
+ * `2026-10-13` → `13 October 2026`, by string arithmetic rather than `Date`, so
+ * the build machine's time zone and locale cannot move the printed day.
+ */
+export function formatLegalDate(isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  const month = match ? MONTH_NAMES[Number(match[2]) - 1] : undefined;
+  if (!match || !month) {
+    throw new Error(`Legal dates are YYYY-MM-DD; got ${JSON.stringify(isoDate)}.`);
+  }
+  return `${Number(match[3])} ${month} ${match[1]}`;
+}
 
 export function TermsPage() {
   return (
-    <LegalPage title="Terms and Conditions" description="The terms governing use of Tomeza.">
+    <LegalPage document={TERMS_DOCUMENT}>
       <LegalIntro>
         These Terms and Conditions (the <q>Terms</q>) are a binding agreement between you and {company} (
         <q>Ravanix</q>, <q>we</q>, <q>us</q>, or <q>our</q>) governing your access to and use of Tomeza, including its
@@ -41,7 +117,9 @@ export function TermsPage() {
         <p>
           Some operations use credits. Building a book plan uses credits at the then-current rate for the effort
           setting you choose. At the default rates, Balanced planning uses 40 credits; other effort settings use a
-          different amount. Writing the book after you approve the plan is a separate charge. Current amounts are
+          different amount. Writing the book after you approve the plan is a separate, single charge, and
+          downloading the finished book as a PDF or EPUB uses no further credits. Some features, such as the Word
+          (.docx) download, voice calls, and audiobooks, are available only with a paid plan. Current amounts are
           shown in Account and in Effort settings. The app shows the applicable credit amount before you approve
           writing, apply an edit, or start another paid operation.
         </p>
@@ -58,8 +136,10 @@ export function TermsPage() {
         </p>
         <p>
           Android purchases and subscriptions are processed by Google Play and are also subject to Google&apos;s terms.
-          Subscriptions renew unless cancelled through Google Play before renewal. Deleting Tomeza or requesting
-          account deletion does not itself cancel a subscription. Prices, taxes, currency conversion, trials, and
+          Subscriptions renew unless cancelled through Google Play before renewal. Uninstalling Tomeza does not cancel
+          a subscription. When we carry out an account deletion, we also cancel that account&apos;s Google Play
+          subscription so it does not renew; you can check or cancel it yourself in Google Play under{" "}
+          <strong>Payments &amp; subscriptions › Subscriptions</strong>. Prices, taxes, currency conversion, trials, and
           billing timing may be controlled by Google Play.
         </p>
         <p>
@@ -104,6 +184,11 @@ export function TermsPage() {
           required for your Inputs, instructions, requested transformations, generated outputs, publication,
           distribution, and commercial use. This includes copyright, trademark, publicity, privacy, confidentiality,
           data-protection, and contractual rights.
+        </p>
+        <p>
+          Upload a photo of a person only if it is you, or the person has agreed to its use in the Service. For a
+          child, that agreement must come from the child&apos;s parent or legal guardian. The Privacy Policy explains
+          how photos are used, shared with AI providers, and deleted.
         </p>
         <p>
           Ravanix does not verify ownership, clear rights, guarantee non-infringement, or determine whether material
@@ -237,7 +322,7 @@ export function TermsPage() {
 
 export function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" description="How Tomeza collects, uses, shares, retains, and protects data.">
+    <LegalPage document={PRIVACY_DOCUMENT}>
       <LegalIntro>
         This Privacy Policy explains how {company} (<q>Ravanix</q>, <q>we</q>, <q>us</q>, or <q>our</q>) processes
         personal data when you use Tomeza and related support services.
@@ -256,18 +341,73 @@ export function PrivacyPage() {
           We retain the country code, not precise location coordinates. This product includes GeoLite2 data created
           by <a href="https://www.maxmind.com/">MaxMind</a>.
         </p>
+        <p>
+          If you sign in with Google, Google Sign-In confirms your identity to us. We check the sign-in token Google
+          issues with Google and do not store it, and we keep your Google account identifier, your verified email
+          address, and, for a new account, the name on your Google account. We do not receive your Google password
+          and do not keep your Google profile photo. Your Tomeza session is managed by our own servers.
+        </p>
         <h3>User content</h3>
         <p>
           Prompts, chats, source notes, uploaded documents and images, titles, plans, generated books and images,
           exports, revisions, annotations, embeddings, and related metadata.
         </p>
+        <h3>Photos of people, including children</h3>
+        <p>
+          You can add a photo to a saved character so that books draw that character with a consistent look, and you
+          can add pictures to books you write. Only upload a photo of yourself, or of another person who has agreed
+          to it. For a photo of a child, you must be the child&apos;s parent or legal guardian or have their
+          permission.
+        </p>
+        <p>
+          When you add a photo to a character, we send it to an AI provider that reads images (currently Google
+          Gemini) to suggest a written description of the character and to tell whether the picture is a photograph
+          or a drawing. If you then ask us to draw the character, we send the photo to an AI image provider as the
+          reference for that drawing. These providers are listed in section 4. We use the photo only to create and
+          draw your character; we do not use it to identify anyone, and we do not create face templates or other
+          biometric identifiers from it.
+        </p>
+        <p>
+          A character&apos;s photo and the pictures drawn from it are kept with the character until you delete that
+          picture, the character, or your account. Illustrations already drawn for a book stay with that book until
+          you delete the book. Section 6 explains how long deleted files can remain in backups.
+        </p>
         <h3>Voice and audio data</h3>
         <p>
-          During a live character call, microphone audio is sent in real time from your device to the selected AI
-          voice provider. Ravanix&apos;s server does not retain the live-call audio. We may retain transcript text you
-          send, call duration, credit/billing records, and network or call telemetry. If your device offers a local
+          During a live character call, microphone audio is sent in real time from your device to Ravanix&apos;s
+          voice relay server, which passes it to the AI voice provider (Google Gemini) and passes the character&apos;s
+          spoken reply back to you. The relay forwards the audio as it arrives and does not store it. We retain the
+          call&apos;s transcript text, which the app sends us so a character can remember earlier conversations, along
+          with call duration, credit/billing records, and network or call telemetry. If your device offers a local
           call recording, it remains on your device unless you choose to share it. Generated conversations and
           audiobook audio are stored with the associated project.
+        </p>
+        <h3>Notifications</h3>
+        <p>
+          If you allow notifications, the app registers a device token from Firebase Cloud Messaging (a Google
+          service) with our server, linked to your signed-in session. While a book is being written, we send that
+          book&apos;s title, a short progress line, and how far along it is through Firebase Cloud Messaging, so your
+          device can show its progress and tell you when it is ready or needs attention. Signing out stops these
+          notifications, and deleting your account deletes the token.
+        </p>
+        <h3>How you found the app</h3>
+        <p>
+          When you install Tomeza from Google Play, the app asks Google Play once, on your device, for the install
+          referrer: the campaign details carried by the Play Store link you followed. After you sign in, the app sends
+          us only the campaign source, medium, and campaign name, and, if you came from a Tomeza share link, the
+          identifier of that shared book&apos;s link. We record these with your account to attribute the install,
+          which tells us which links bring people to Tomeza, and to offer you, once, to start a book like the one that
+          was shared with you. The rest of the referrer stays on your device. The app does not read your
+          device&apos;s advertising ID, and we do not share these details with advertisers. They are deleted after
+          about 400 days, or sooner if you delete your account.
+        </p>
+        <h3>Crash reports</h3>
+        <p>
+          Release versions of the app send crash reports to Firebase Crashlytics (a Google service) when the app
+          crashes or a feature stops working. A report contains the error and a technical trace of where it
+          happened, your device model, operating-system and app version, basic device state such as free memory,
+          the time, and a random installation identifier created by Firebase. We do not attach your name, email
+          address, or account identifier to crash reports.
         </p>
         <h3>Billing, support, and service records</h3>
         <p>
@@ -283,11 +423,16 @@ export function PrivacyPage() {
           <li>create and secure accounts and deliver the Service;</li>
           <li>generate, edit, store, narrate, and export user projects;</li>
           <li>provide live voice and character-memory features;</li>
+          <li>notify you about books being written, if you allow notifications;</li>
+          <li>
+            attribute app installs to the link that led to them, such as a shared book, and offer to start a book like
+            one that was shared with you;
+          </li>
           <li>verify purchases, manage credits, subscriptions, and entitlements;</li>
           <li>determine eligibility and amounts for regional welcome-credit offers;</li>
           <li>provide support and process reports and deletion requests;</li>
           <li>detect fraud, abuse, failures, and security threats;</li>
-          <li>diagnose and improve Service reliability and usability;</li>
+          <li>diagnose crashes and improve Service reliability and usability;</li>
           <li>enforce our Terms and comply with legal obligations; and</li>
           <li>establish, exercise, or defend legal claims.</li>
         </ul>
@@ -306,9 +451,11 @@ export function PrivacyPage() {
         <p>
           We share data only as reasonably needed with providers that help operate the Service, including hosting,
           database, storage, queue, security, support, and analytics infrastructure (including Amazon Web Services for
-          hosting and storage, and an email delivery provider for account emails); Google Play for purchases; and,
-          depending on the feature and availability, Google (Gemini, including live voice calls, which stream your
-          microphone audio from the app directly to Google, Google Search grounding, speech, and document reading),
+          hosting and storage, and an email delivery provider for account emails); Google Play for purchases; Google
+          Firebase Crashlytics for crash reports and Firebase Cloud Messaging for book notifications; Google Sign-In
+          if you choose to sign in with Google; and, depending on the feature and availability, Google (Gemini,
+          including live voice calls, whose microphone audio our own relay server passes to Google without storing
+          it, Google Search grounding, speech, and document reading),
           OpenAI, DeepSeek, DeepInfra, Alibaba Cloud, OpenRouter, and the Vercel AI Gateway for AI processing, and
           Cloudflare for relaying some voice-call connections. Research features send search terms (not your account
           details) to public catalogues such as the Internet Archive, Project Gutenberg, and Wikisource. Submitted
@@ -333,25 +480,36 @@ export function PrivacyPage() {
         <ul>
           <li>Uploaded source files are retained for up to 180 days.</li>
           <li>Projects and generated assets are kept until you delete the project or account.</li>
+          <li>
+            Character photos and character pictures are kept until you delete the picture, the character, or your
+            account.
+          </li>
           <li>Live-call transcripts and generated audio are kept with the associated project.</li>
+          <li>Install attribution details are kept for about 400 days.</li>
           <li>
             Billing, fraud, security, moderation, support, dispute, and legal records are kept for as long as
             reasonably required for those purposes and applicable law.
           </li>
         </ul>
         <p>
-          Backups and distributed systems may take additional time to cycle after deletion. De-identified or
-          aggregated information that no longer identifies you may be retained.
+          When you delete something, or when an account deletion is carried out, it is removed from the Service, but
+          copies can remain in our backups for a limited time. Stored files you delete or replace, such as book
+          files, exports, and pictures, remain as previous versions in our storage for about 30 days before they are
+          permanently removed. Our database is backed up daily and whenever we update the Service, and those
+          backups are kept for up to about a month, so deleted records can remain in a backup for up to about a
+          month. We use backups only to recover from data loss or a security incident. De-identified or aggregated information that no longer identifies you may be retained.
         </p>
       </Section>
 
       <Section title="7. Account and project deletion">
         <p>
-          You can delete projects in the app. You can request account deletion through Account settings or the
-          instructions on our <Link to="/account-deletion">Account Deletion page</Link>. We target completion within
-          30 days after verifying the request. Account deletion removes or de-identifies projects and user content,
-          subject to narrow retention for legal, billing, fraud-prevention, security, and dispute purposes. It does
-          not cancel a Google Play subscription; cancellation is handled separately through Google Play.
+          You can delete projects in the app. You can request account deletion in the app (Account, then Privacy &amp;
+          data) or by following the instructions on our <Link to="/account-deletion">Account Deletion page</Link>. A
+          request made in the app is carried out a day after you make it. A request made by email is completed
+          within 30 days after we verify it. Account deletion removes or de-identifies projects and user content,
+          subject to narrow retention for legal, billing, fraud-prevention, security, and dispute purposes. Deleting
+          your account also cancels your Google Play subscription so it does not renew; you can check or cancel it
+          yourself in Google Play under <strong>Payments &amp; subscriptions › Subscriptions</strong>.
         </p>
       </Section>
 
@@ -370,6 +528,11 @@ export function PrivacyPage() {
           Tomeza is not intended for anyone under 13, and we do not knowingly collect personal data from children
           under 13. A user below the applicable age of majority must have authorization from a parent or guardian. If
           you believe a child under 13 provided data, contact us so we can investigate and delete it where required.
+        </p>
+        <p>
+          A parent or guardian may upload a photo of their own child to create a character. That photo is the
+          account holder&apos;s content, is handled as described under <q>Photos of people, including children</q> in
+          section 1, and can be deleted at any time.
         </p>
       </Section>
 
@@ -397,7 +560,7 @@ export function PrivacyPage() {
 export function AccountDeletionPage() {
   const deletionMail = `mailto:${supportEmail}?subject=${encodeURIComponent("Tomeza account deletion request")}`;
   return (
-    <LegalPage title="Delete your Tomeza account" description="How to request deletion of your account and data.">
+    <LegalPage document={ACCOUNT_DELETION_DOCUMENT}>
       <LegalIntro>
         You can request deletion in the Tomeza app or by email. There is no charge for submitting a request.
       </LegalIntro>
@@ -406,9 +569,14 @@ export function AccountDeletionPage() {
         <ol>
           <li>Open Tomeza and sign in.</li>
           <li>Open <strong>Account</strong>.</li>
-          <li>Under <strong>Privacy and support</strong>, choose <strong>Request account deletion</strong>.</li>
-          <li>Review the explanation, optionally add a note, and confirm the request.</li>
+          <li>Under <strong>Privacy &amp; help</strong>, tap <strong>Privacy &amp; data</strong>.</li>
+          <li>In the <strong>Delete account</strong> section, tap <strong>Request account deletion</strong>.</li>
+          <li>Review the explanation, optionally add a note, and tap <strong>Send request</strong>.</li>
         </ol>
+        <p>
+          Your account and everything in it are deleted a day after you send the request. Write to <EmailLink />{" "}
+          before then if you change your mind.
+        </p>
       </Section>
 
       <Section title="Request deletion by email">
@@ -423,22 +591,25 @@ export function AccountDeletionPage() {
 
       <Section title="What happens next">
         <p>
-          We target completion within 30 days after verification. We delete or de-identify the account&apos;s projects,
-          generated books and images, exports, live-call transcripts, generated audio, and other user content. Source
-          uploads may already have expired under the 180-day retention limit.
+          A request made in the app is carried out a day after you send it. A request made by email is completed
+          within 30 days after we verify it. We delete or de-identify the account&apos;s projects, generated books and
+          images, exports, saved characters and their photos, live-call transcripts, generated audio, and other user
+          content. Source uploads may already have expired under the 180-day retention limit.
         </p>
         <p>
           We may retain limited billing, transaction, fraud-prevention, security, moderation, support, dispute, and
-          legal records for as long as reasonably required. Retained records are restricted to those purposes. Backup
-          copies may take additional time to cycle out.
+          legal records for as long as reasonably required. Retained records are restricted to those purposes.
+          Deleted files can remain as previous versions in our storage for about 30 days, and deleted records in our
+          database backups for up to about a month, before they are permanently removed.
         </p>
       </Section>
 
-      <Section title="Subscriptions are separate">
+      <Section title="Your Google Play subscription">
         <p>
-          Deleting the account, deleting the app, or sending a deletion request does not cancel a Google Play
-          subscription. Cancel it separately in Google Play&apos;s subscription center to prevent future renewal. You may
-          want to export work and cancel the subscription before requesting deletion.
+          Deleting your account also cancels your Google Play subscription: when the deletion is carried out, we
+          cancel the subscription with Google Play so it does not renew. You can check or cancel it yourself at any
+          time in Google Play under <strong>Payments &amp; subscriptions › Subscriptions</strong>. Uninstalling the app
+          does not cancel a subscription. You may want to export your work before requesting deletion.
         </p>
       </Section>
 
@@ -453,12 +624,21 @@ export function AccountDeletionPage() {
   );
 }
 
-function LegalPage(props: { title: string; description: string; children: ReactNode }) {
+/** The browser-tab title, shared with the static build so both say the same thing. */
+export function legalDocumentTitle(legalDocument: LegalDocument): string {
+  return `${legalDocument.title} · Tomeza`;
+}
+
+function LegalPage(props: { document: LegalDocument; children: ReactNode }) {
+  const { title, description, version, canonicalUrl } = props.document;
   useEffect(() => {
-    document.title = `${props.title} · Tomeza`;
-    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
-    description?.setAttribute("content", props.description);
-  }, [props.title, props.description]);
+    document.title = legalDocumentTitle(props.document);
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    meta?.setAttribute("content", description);
+    // Present only when the page was served from its static copy; keep it true
+    // after the router moves to a sibling legal page.
+    document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.setAttribute("href", canonicalUrl);
+  }, [props.document, description, canonicalUrl]);
 
   return (
     <div className="legal-site">
@@ -475,8 +655,10 @@ function LegalPage(props: { title: string; description: string; children: ReactN
       </header>
       <main className="legal-document">
         <p className="legal-eyebrow">Tomeza legal</p>
-        <h1>{props.title}</h1>
-        <p className="legal-version">Effective {effectiveDate} · Version {version}</p>
+        <h1>{title}</h1>
+        <p className="legal-version">
+          Effective {formatLegalDate(LEGAL_EFFECTIVE_DATE)} · Version {version}
+        </p>
         {props.children}
       </main>
       <footer className="legal-footer">

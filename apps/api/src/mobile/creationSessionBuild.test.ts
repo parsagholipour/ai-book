@@ -7,6 +7,8 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import { enqueueGenerationJob } from "../queue.js";
 import { InsufficientCreditsError, getBookPageLimit, reserveCredits } from "@book-maker/db/billing";
+import { DEFAULT_CREDIT_COSTS, resetCreditPricing, setCreditPricing } from "@book-maker/core";
+import { ULTRA_TIER_UNAVAILABLE_MESSAGE } from "./ultraTier.js";
 import {
   bearer,
   buildMobileApp,
@@ -43,7 +45,10 @@ function buildPayloadAtTier(qualityPreset: PlanningTier) {
 
 describe("mobile creation session project build", () => {
   beforeEach(resetMobileHarness);
-  afterEach(teardownMobileHarness);
+  afterEach(() => {
+    resetCreditPricing();
+    teardownMobileHarness();
+  });
 
   it.each([
     ["fast", 20, "planGenerationFast"],
@@ -51,6 +56,8 @@ describe("mobile creation session project build", () => {
     ["premium", 80, "planGenerationPremium"],
     ["ultra", 120, "planGenerationUltra"]
   ] as const)("charges and stamps the %s plan quote when Build starts", async (tier, credits, pricingKey) => {
+    // Ultra launches switched off; its rate is priced as an operator who turned it on.
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, ultraTierEnabled: 1 });
     mockAccessTokens({ "token-a": "user-a" });
     const payload = buildPayloadAtTier(tier);
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
@@ -101,6 +108,7 @@ describe("mobile creation session project build", () => {
   });
 
   it("makes no project, output, or job when Build cannot reserve the plan price", async () => {
+    setCreditPricing({ ...DEFAULT_CREDIT_COSTS, ultraTierEnabled: 1 });
     mockAccessTokens({ "token-a": "user-a" });
     const payload = buildPayloadAtTier("ultra");
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
@@ -156,8 +164,84 @@ describe("mobile creation session project build", () => {
     expect(response.json().error).toEqual({
       code: "PAGE_LIMIT_EXCEEDED",
       message: expect.stringContaining("30 pages"),
-      pageLimit: { limit: 30, requestedPages: 45, maxPages: 600 }
+      pageLimit: { limit: 30, requestedPages: 45, maxPages: 200 }
     });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses any account a book past the 200-page ceiling, with a sentence and nothing to buy", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // A paid plan: no free-tier cap.
+    vi.mocked(getBookPageLimit).mockResolvedValue(null);
+    const payload = buildPayloadAtTier("balanced");
+    payload.selectedPresets.targetPages = 250;
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: { requestId: "build-request-too-long" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toEqual({
+      code: "BOOK_LENGTH_UNAVAILABLE",
+      message: "Books longer than 200 pages aren't available yet. Choose 200 pages or fewer.",
+      pageLimit: { limit: 200, requestedPages: 250, maxPages: 200 }
+    });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("does not create a draft project at Ultra while the operator has it off", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects",
+      headers: bearer("token-a"),
+      payload: {
+        bookType: "lead_magnet",
+        prompt: "Create a practical pricing guide for solo consultants.",
+        lengthPreset: "standard",
+        qualityPreset: "ultra",
+        language: "en"
+      }
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe("QUALITY_TIER_UNAVAILABLE");
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses a new Ultra book while the operator has Ultra off, before the advisor or the charge", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = buildPayloadAtTier("ultra");
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(creationDraftRecord({ id: "session-draft", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    for (const route of ["build", "preflight"]) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/mobile/creation-sessions/session-draft/${route}`,
+        headers: bearer("token-a"),
+        payload: { requestId: `build-request-ultra-${route}` }
+      });
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toEqual({ error: { code: "QUALITY_TIER_UNAVAILABLE", message: ULTRA_TIER_UNAVAILABLE_MESSAGE } });
+    }
     expect(reserveCredits).not.toHaveBeenCalled();
     expect(mockPrisma.project.create).not.toHaveBeenCalled();
     expect(enqueueGenerationJob).not.toHaveBeenCalled();

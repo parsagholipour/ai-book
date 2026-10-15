@@ -5,7 +5,15 @@ import {
   type GenerationJobType
 } from "../../queue.js";
 import { addImageQuotaLimit } from "../addImageOperations.js";
+import { aiWorkKindForMediaSettings, aiWorkKindForTier, requireAiCapacity } from "../aiCapacity.js";
 import { pageLimitExceededError, pageLimitRefusal, sendPageLimitExceeded } from "../bookPageLimit.js";
+import { sendUltraTierUnavailable, ultraTierRefused } from "../ultraTier.js";
+import {
+  booksInProgressError,
+  requireBooksInProgressCapacity,
+  sendBooksInProgressLimit,
+  startsLongLaneWork
+} from "../booksInProgress.js";
 import { type MobileProjectRecoveryDto } from "../dto.js";
 import { queueDirectPlanRevision } from "../editOperations.js";
 import { retryBookEditOperation } from "../bookEditOperationRetries.js";
@@ -64,6 +72,7 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
+import { requireRequestWithoutSexualContent } from "../contentSafetyDoors.js";
 
 /**
  * Plan revision/approval, operation retries, and stalled-generation resume.
@@ -123,6 +132,18 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (pageLimit) {
         return sendPageLimitExceeded(reply, pageLimit);
       }
+      // The operator's sexual-content filter, before the plan is charged.
+      if (
+        !(await requireRequestWithoutSexualContent(context, reply, {
+          userId: auth.user.id,
+          projectId: id,
+          text: [project.title, project.prompt].join("\n"),
+          door: "plan",
+          log: request.log
+        }))
+      ) {
+        return;
+      }
 
       try {
         return reply
@@ -175,6 +196,17 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (plan.status === "APPROVED") {
         return sendMobileError(reply, 400, "PLAN_ALREADY_APPROVED", "Approved plans cannot be revised.");
       }
+      if (
+        !(await requireRequestWithoutSexualContent(context, reply, {
+          userId: auth.user.id,
+          projectId: plan.projectId,
+          text: parsed.data.message,
+          door: "plan_revision",
+          log: request.log
+        }))
+      ) {
+        return;
+      }
 
       try {
         const { operation, job } = await queueDirectPlanRevision({
@@ -185,7 +217,8 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           requestId: parsed.data.requestId ?? hashString(parsed.data.message),
           ...(parsed.data.respondedQuestionPrompts?.length
             ? { respondedQuestionPrompts: parsed.data.respondedQuestionPrompts }
-            : {})
+            : {}),
+          aiWorkKind: aiWorkKindForMediaSettings(plan.project.mediaSettings)
         });
         request.log.info(
           { event: "plan_revision.queued", projectId: plan.projectId, operationId: operation.id, generationJobId: job.id, source: "direct" },
@@ -242,6 +275,9 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
     }
     if (result.kind === "conflict") {
       return sendMobileError(reply, 409, "RETRY_NOT_AVAILABLE", result.reason);
+    }
+    if (result.kind === "books_in_progress") {
+      return sendBooksInProgressLimit(reply, result.refusal);
     }
     return reply.code(202).send({ operation: serializeBookEditOperation(result.operation) });
   };
@@ -342,7 +378,45 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (pageLimit) {
         return sendPageLimitExceeded(reply, pageLimit);
       }
+      // The book's one charge, the same for a free reader and a paid one. No
+      // export unlock rides it: the finished file downloads free.
       const creditEstimate = estimateFullBookCreditCost(generationInput);
+      // A start, never a replay, may not write a new book at Ultra while the
+      // operator has it switched off (`ultraTier.ts`).
+      if (plan.status !== "APPROVED" && ultraTierRefused(creditEstimate.assumptions.modelTier)) {
+        return sendUltraTierUnavailable(reply);
+      }
+      // An approved plan is a replay of a charge already taken; anything else is
+      // a start, and the spend breaker answers it before the slot or the charge.
+      if (
+        plan.status !== "APPROVED" &&
+        !(await requireAiCapacity(request, reply, auth.user.id, aiWorkKindForTier(creditEstimate.assumptions.modelTier)))
+      ) {
+        return;
+      }
+      // The book run is long-lane work, and one account may only hold so much of
+      // that lane (`booksInProgress.ts`); asked after the breaker, before the slot.
+      if (
+        plan.status !== "APPROVED" &&
+        !(await requireBooksInProgressCapacity(reply, auth.user.id, { exceptProjectIds: [plan.projectId] }))
+      ) {
+        return;
+      }
+      // The operator's sexual-content filter reads the brief the book is written
+      // from — before the illustrated-book slot or the charge, and never on a
+      // replay of an approval already paid for.
+      if (
+        plan.status !== "APPROVED" &&
+        !(await requireRequestWithoutSexualContent(context, reply, {
+          userId: auth.user.id,
+          projectId: plan.projectId,
+          text: [generationInput.title ?? "", generationInput.subtitle ?? "", generationInput.prompt].join("\n"),
+          door: "plan_approval",
+          log: request.log
+        }))
+      ) {
+        return;
+      }
 
       const imageQuota =
         creditEstimate.assumptions.estimatedInteriorImages > 0 ? await getImageQuota(auth.user.id) : null;
@@ -357,7 +431,6 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           description: "Mobile full book generation package",
           metadata: { planId: id, creditEstimate },
           imageQuotaLimit: imageQuota?.limit ?? null,
-          grantExportEntitlement: true,
           create: async (tx, { attemptId, ledgerEntry }) => {
             if (approvalBody.data.disableIllustrations) {
               // Merged over the live row inside the transaction, mirroring the
@@ -456,7 +529,8 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           401: mobileAuthError,
           403: { anyOf: [pageLimitExceededError, imageLimitReachedError] },
           404: mobileAuthError,
-          409: mobileAuthError
+          409: mobileAuthError,
+          429: booksInProgressError
         }
       }
     },
@@ -560,11 +634,18 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       const nextStatus = jobsReadyToResume.every((job) => isPlanningRecoveryJob(job.type as GenerationJobType))
         ? "PLANNING"
         : "GENERATING";
-      // A confirmed retry re-charges the full package, so it must also carry
-      // the package's benefits: refunding the failed attempt revoked the export
-      // entitlement and released the illustrated-book slot, and a retry that
-      // skipped them would deliver a paid book with locked exports while
-      // bypassing the free tier's image budget.
+      // A confirmed retry re-charges the full package, so it must also re-claim
+      // what the package claimed: refunding the failed attempt released the
+      // illustrated-book slot, and a retry that skipped it would bypass the free
+      // tier's image budget.
+      //
+      // It re-charges exactly the source attempt's stored price — the `credits`
+      // the retry quote showed the reader before they confirmed. An attempt
+      // charged before 2026-10-15 stored a price with the 150-credit export
+      // unlock inside it, and keeps it: the retry repeats the approval the
+      // reader agreed to, the quote and the charge stay one number, and
+      // `startGenerationAttempt` refuses a retry priced apart from its source.
+      // Nothing is granted for it; every finished book downloads free.
       const isFullBookRetry = sourceAttempt.operation === "FULL_BOOK_GENERATION";
       const isReplanRetry = sourceAttempt.operation === "BOOK_REPLAN";
       let imageQuotaLimit: number | null = null;
@@ -592,6 +673,27 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         // zero quote, or for a book illustrated by now.
         imageQuotaLimit = await addImageQuotaLimit(auth.user.id, id, sourceAttempt.quotedCredits);
       }
+      // A retry already started for this failure is replayed below without a
+      // second charge; only a new one asks the spend breaker, at the book's tier.
+      const retryAlreadyStarted = await prisma.generationAttempt.findFirst({
+        where: { retryOfAttemptId: sourceAttempt.id },
+        select: { id: true }
+      });
+      if (
+        !retryAlreadyStarted &&
+        !(await requireAiCapacity(request, reply, auth.user.id, aiWorkKindForMediaSettings(project.mediaSettings)))
+      ) {
+        return;
+      }
+      // A retry of a book run puts it back in the long lane; a retried plan or
+      // edit does not, and is never held to the books-in-progress limit.
+      if (
+        !retryAlreadyStarted &&
+        startsLongLaneWork(sourceJobs) &&
+        !(await requireBooksInProgressCapacity(reply, auth.user.id, { exceptProjectIds: [id] }))
+      ) {
+        return;
+      }
       let started;
       try {
         started = await startGenerationAttempt({
@@ -608,7 +710,6 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           description: "Confirmed mobile generation retry",
           metadata: { sourceAttemptId: sourceAttempt.id, retryRequestId: retryBody.data.requestId },
           imageQuotaLimit,
-          grantExportEntitlement: isFullBookRetry || isReplanRetry,
           create: async (tx, { attemptId, ledgerEntry }) => {
             // Claim Project before touching an edit operation, matching the
             // worker's lock order. A rejected retry rolls back its charge too.

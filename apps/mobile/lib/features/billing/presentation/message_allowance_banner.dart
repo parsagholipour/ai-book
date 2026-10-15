@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
+import '../../auth/presentation/verify_email_banner.dart';
 import '../data/billing_repository.dart';
 import '../data/message_allowance_repository.dart';
 import '../domain/message_allowance.dart';
@@ -51,6 +52,7 @@ Future<bool> _checkMessageAllowance(BuildContext context, WidgetRef ref) async {
     if (!current.isExhausted) {
       await showBillingPaywall(
         context,
+        trigger: PaywallTrigger.messageLimit,
         creditsNeeded: PaywallCreditsNeeded(
           credits: current.creditsPerMessage,
           reason: 'Sending this message.',
@@ -80,6 +82,7 @@ Future<void> handleMessageAllowanceError(
   } else if (error.code == 'INSUFFICIENT_CREDITS') {
     await showBillingPaywall(
       context,
+      trigger: PaywallTrigger.messageLimit,
       creditsNeeded: PaywallCreditsNeeded.fromApiError(
         error,
         reason: 'Sending this message.',
@@ -275,6 +278,13 @@ class _MessageAllowanceSheetState
                   'Balance: ${formatCredits(value.credits.available)} credits',
                 ),
                 const SizedBox(height: 16),
+                // Short of credits with free ones waiting on the email:
+                // verifying comes before the ways to pay.
+                if (!canAfford)
+                  VerifyEmailCreditsLead(
+                    billing: value,
+                    padding: const EdgeInsets.only(bottom: 16),
+                  ),
                 if (resetAvailable) ...[
                   Text(
                     'Reset for ${allowance.resetCredits} credits to get ${allowance.limit} more messages until the daily refresh. Message prices still apply.',
@@ -327,6 +337,7 @@ class _MessageAllowanceSheetState
   Future<void> _addCredits(int needed) async {
     await showBillingPaywall(
       context,
+      trigger: PaywallTrigger.messageLimit,
       creditsNeeded: PaywallCreditsNeeded(
         credits: needed,
         reason: 'Continuing your chat.',

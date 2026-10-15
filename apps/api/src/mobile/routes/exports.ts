@@ -1,13 +1,7 @@
 // Straight from the module that owns them rather than through the re-export in
 // routes/projects.ts, which is already over its size budget.
 import { readProjectExportArtifact, sanitizeDownloadFilename } from "../../routes/projectExports.js";
-import {
-  ensureExportEntitlementForDownload,
-  requireMobileAuth,
-  sendMobileError,
-  sendProjectNotFound,
-  sendSubscriptionRequired
-} from "../httpErrors.js";
+import { requireMobileAuth, sendMobileError, sendProjectNotFound, sendSubscriptionRequired } from "../httpErrors.js";
 import { ensureExportRepairQueued } from "../exportRepair.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import { prisma } from "@book-maker/db";
@@ -23,8 +17,16 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 
 /**
- * Entitlement-gated PDF, EPUB and Word downloads, one route per format in the
- * registry.
+ * PDF, EPUB and Word downloads, one route per format in the registry.
+ *
+ * **A book the caller owns downloads free.** Its one charge was taken when its
+ * plan was approved, and the finished file is the reader's with no lock — a
+ * generated book, a Studio book, an import, a book made before the change or
+ * made while free alike. Until 2026-10-15 a per-book 150-credit export unlock
+ * was settled here before the bytes went out; it double-charged subscribers
+ * (bundled into their book's price while their plan also "covered" it) and
+ * rarely fired for anyone else, so it was removed. Nothing here spends,
+ * writes an entitlement or answers 402.
  *
  * These never render. A missing file used to be compiled inside the request —
  * an unbounded Chromium render inside a Fastify handler, with no dedupe, on a
@@ -47,10 +49,9 @@ import type { MobileRouteContext } from "../routeContext.js";
  * **The Word file is a plan perk, and the refusal comes before anything else.**
  * A free account is answered 403 `SUBSCRIPTION_REQUIRED` before a byte is read
  * and before any repair is queued — a compile for a file the reader cannot
- * download is spend for nothing. The subscription gates the *format*; the
- * per-book export unlock below gates the *book*, and applies to every format
- * alike, so a subscriber who has already unlocked the PDF gets the Word file at
- * no further charge. The plan check is a fresh read, never the 60-second cache
+ * download is spend for nothing. That is a gate on the *format*, never a
+ * charge: a subscriber's Word download costs nothing, like every PDF and EPUB.
+ * The plan check is a fresh read, never the 60-second cache
  * `isSubscriberForRateLimit` keeps for rate ceilings: that cache reads a lookup
  * failure as "free", which is the right default for a ceiling and the wrong one
  * for a refusal.
@@ -95,32 +96,14 @@ function setExportProvenanceHeaders(reply: FastifyReply, artifact: ExportArtifac
 }
 
 /**
- * Charges the export unlock and sends the file.
- *
- * `bytes` is taken as an argument rather than read here, and that is the whole
- * point: the unlock must not settle unless there is something to hand back. The
- * route used to `stat`, charge, and only then read — so an edit landing in
- * between (it deletes the compiled exports before queueing the recompile) spent
- * the reader's credits and answered 404. The entitlement is per project and
- * idempotent, so nothing was double-charged and a retry did deliver, but the
- * first unlock still settled against no bytes. Holding the file in memory first
- * closes the window rather than narrowing it, and costs nothing extra: the
- * response was always the whole buffer.
+ * Sends the file as a download. The bytes are read before anything is answered
+ * and handed back from memory, so an edit that deletes the compiled exports
+ * mid-request cannot turn a found file into a 404 half-way through.
  */
-async function sendUnlocked(
+function sendDownload(
   reply: FastifyReply,
-  options: {
-    userId: string;
-    projectId: string;
-    artifact: ExportArtifact;
-    contentType: string;
-    filename: string;
-  }
+  options: { artifact: ExportArtifact; contentType: string; filename: string }
 ) {
-  const entitlement = await ensureExportEntitlementForDownload(reply, options.userId, options.projectId);
-  if (!entitlement) {
-    return;
-  }
   reply.header("Content-Disposition", `attachment; filename="${options.filename}"`);
   reply.type(options.contentType);
   setExportProvenanceHeaders(reply, options.artifact);
@@ -130,11 +113,9 @@ async function sendUnlocked(
 export async function registerMobileExportRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { appConfig } = context;
 
-  // The reader's copy of the PDF, with no unlock: reading a book in the app is
-  // free, and the unlock is for taking the file out of it — the download routes
-  // below. Generated books are unlocked by their generation charge, so this only
-  // changes anything for a book that never had one (a Studio book, an import),
-  // whose first open in the reader used to spend the unlock without a word.
+  // The reader's copy of the PDF, served inline for the in-app reader. The
+  // download route below hands out the same bytes as an attachment, and both
+  // are free; this one stays because installed apps open the reader with it.
   fastify.get(
     "/api/mobile/projects/:id/read/pdf",
     { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
@@ -193,16 +174,12 @@ export async function registerMobileExportRoutes(fastify: FastifyInstance, conte
         // produces the best available book, and the flagged issues travel on the
         // serialized quality report for the app to warn with. The reader paid
         // for this book; QA gets to warn, not to withhold.
-        //
-        // The bytes are in hand before anything is spent — see `sendUnlocked`.
         const artifact = await readProjectExportArtifact(appConfig, id, format, project);
         if (!artifact) {
           await ensureExportRepairQueued({ id, ...project }, format, appConfig);
           return sendExportNotReady(reply);
         }
-        return sendUnlocked(reply, {
-          userId: auth.user.id,
-          projectId: id,
+        return sendDownload(reply, {
           artifact,
           contentType: exportContentType(format),
           filename: `${sanitizeDownloadFilename(project.title)}.${format}`

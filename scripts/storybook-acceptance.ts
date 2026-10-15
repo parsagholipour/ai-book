@@ -20,7 +20,7 @@ import { libraryCharacterObjectKey } from "../packages/core/src/generation/libra
 import { pageCountAllowance } from "../packages/core/src/generation/pageCountAllowance.ts";
 import { compiledGenerationTextModelRouting, resolveGenerationTextModelRouting } from "../packages/core/src/adapters/generationTextModelRouting.ts";
 import { generationTextModelOptions } from "../packages/core/src/adapters/factory.ts";
-import { bookQueue, dispatchGenerationJob, enqueueGenerationJob, redisConnection } from "../apps/api/src/queue.ts";
+import { dispatchGenerationJob, enqueueGenerationJob, generationQueues, redisConnection } from "../apps/api/src/queue.ts";
 import { listRunLogs, objectStore, readRunLog } from "../packages/storage/src/index.ts";
 import { capturePublishedArtifacts, classifyGenerationCompletion, expectedStoryIllustrationIndexes, prepareStorybookIllustrations, sha256, summarizeAcceptance } from "./generation-acceptance.mjs";
 import { GENERATION_WATCHDOG_MS, nextBenchmarkRound, parseBenchmarkOptions, summarizeBenchmarkMatrix } from "./generation-performance.mjs";
@@ -88,9 +88,15 @@ async function localPreflight(allowedProjects: string[] = []) {
   if (!endpoint || !["minio", "localhost", "127.0.0.1"].includes(new URL(endpoint).hostname)) throw new Error("A local MinIO endpoint is required");
   await objectStore().ready();
   execFileSync("pdfinfo", ["-v"], { stdio: "pipe", timeout: 5000 });
-  const workers = await bookQueue.getWorkers();
-  if (workers.length !== 1) throw new Error(`Expected exactly one book worker; found ${workers.length}`);
-  const queueJobs = await bookQueue.getJobs(["active", "wait", "delayed", "paused", "prioritized", "waiting-children"], 0, -1);
+  // One worker process consumes both lanes, so each lane has exactly one consumer.
+  const laneWorkers = await Promise.all(generationQueues.map((queue) => queue.getWorkers()));
+  const workers = laneWorkers[0]!;
+  if (laneWorkers.some((lane) => lane.length !== 1)) {
+    throw new Error(`Expected exactly one book worker per lane; found ${laneWorkers.map((lane) => lane.length).join(" and ")}`);
+  }
+  const queueJobs = (await Promise.all(generationQueues.map((queue) =>
+    queue.getJobs(["active", "wait", "delayed", "paused", "prioritized", "waiting-children"], 0, -1)
+  ))).flat();
   const unrelatedQueueJobs = queueJobs.filter((job) => !allowedProjects.includes(job.data.projectId));
   if (unrelatedQueueJobs.length) throw new Error(`${unrelatedQueueJobs.length} unrelated Redis jobs are still queued or active; drain them before acceptance`);
   const unrelated = await prisma.generationJob.findMany({ where: {
@@ -102,7 +108,7 @@ async function localPreflight(allowedProjects: string[] = []) {
   const auditedStaleIds = new Set(["cmpynlilm000chtp9kxffajt8", "cmq7eaern000f1npdnuoymnya"]);
   const staleRows = [];
   for (const row of unrelated) {
-    const queued = await bookQueue.getJob(row.bullJobId ?? row.id);
+    const queued = (await Promise.all(generationQueues.map((queue) => queue.getJob(row.bullJobId ?? row.id)))).find(Boolean);
     if (!auditedStaleIds.has(row.id) || Date.now() - row.updatedAt.getTime() < 7 * 24 * 60 * 60_000 || queued) {
       throw new Error(`Unrelated open database job ${row.id} requires inspection before acceptance`);
     }
@@ -341,7 +347,7 @@ try {
   if (existsSync(dir)) save(join(dir, "harness-error.json"), { at: new Date().toISOString(), error: errorText(error) });
   process.exitCode = 1;
 } finally {
-  await bookQueue.close();
+  await Promise.all(generationQueues.map((queue) => queue.close()));
   await redisConnection.quit();
   await prisma.$disconnect();
 }

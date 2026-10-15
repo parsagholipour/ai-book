@@ -1,9 +1,11 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CHEAPEST_PAID_CREDIT_USD_VALUE,
   CREDIT_PRICE_KEYS,
   CREDIT_PRICING_KEYS,
   CREDIT_PRICING_LIMITS,
+  CREDIT_USD_VALUE,
   DEFAULT_CREDIT_COSTS,
   type CreditPricing,
   creditPricing,
@@ -168,10 +170,20 @@ describe("GET /api/admin/pricing", () => {
     expect(body.values).toEqual({ ...DEFAULT_CREDIT_COSTS });
     expect(body.defaults).toEqual({ ...DEFAULT_CREDIT_COSTS });
     expect(body.limits.fullBookPerPage).toBe(CREDIT_PRICING_LIMITS.fullBookPerPage);
+    // The console validates the floors the save will: free messages cost at
+    // least one, and no generated-book ceiling under the free tier's books.
+    expect(body.minimums).toMatchObject({ messageCreditsFree: 1, paidMaxBookPages: 30, ultraTierEnabled: 0, fullBookPerPage: 0 });
     expect(body.version).toBe(0);
-    // The same estimator production charges through, so the dashboard cannot drift.
-    expect(body.preview.totalCredits).toBe(1_079);
-    expect(body.preview.estimatedUsd).toBeCloseTo(10.79, 2);
+    // The same estimator production charges through, so the dashboard cannot
+    // drift — and, like it, it has no export unlock line (retired 2026-10-15).
+    expect(body.preview.totalCredits).toBe(929);
+    expect(body.preview.lineItems.map((line: { code: string }) => line.code)).not.toContain("EXPORT_UNLOCK");
+    // Dollars are the cheapest paid credit net of Google's fee, never the
+    // notional $0.01 no credit sells at: 929 credits ≈ $1.97, not $9.29.
+    expect(body.creditUsdValue).toBe(CHEAPEST_PAID_CREDIT_USD_VALUE);
+    expect(body.creditUsdValue).toBeLessThan(CREDIT_USD_VALUE / 3);
+    expect(body.preview.estimatedUsd).toBeCloseTo(Math.round(929 * CHEAPEST_PAID_CREDIT_USD_VALUE * 100) / 100, 2);
+    expect(body.preview.estimatedUsd).toBeCloseTo(1.97, 2);
     // The tiers are priced apart, so one total describes a third of the books
     // being sold. The top-level fields stay the balanced quote.
     expect(body.preview.tiers.map((quote: { tier: string }) => quote.tier)).toEqual([
@@ -184,8 +196,8 @@ describe("GET /api/admin/pricing", () => {
     expect(balanced.totalCredits).toBe(body.preview.totalCredits);
     expect(balanced).toMatchObject({
       planningCredits: DEFAULT_CREDIT_COSTS.planGeneration,
-      bookGenerationCredits: 1_039,
-      totalCredits: 1_079
+      bookGenerationCredits: 889,
+      totalCredits: 929
     });
     expect(fast.planningCredits).toBe(DEFAULT_CREDIT_COSTS.planGenerationFast);
     expect(premium.planningCredits).toBe(DEFAULT_CREDIT_COSTS.planGenerationPremium);
@@ -291,7 +303,9 @@ describe("PUT /api/admin/pricing", () => {
 
   it.each([
     ["a negative price", { imageGeneration: -5 }],
-    ["a fractional price", { fullBookPerPage: 8.5 }]
+    ["a fractional price", { fullBookPerPage: 8.5 }],
+    // Retired 2026-10-15: every book downloads free, so no save may price it.
+    ["an export unlock price", { exportUnlock: 150 }]
   ])("rejects %s", async (_label, patch) => {
     app = await buildApp();
 
@@ -387,13 +401,13 @@ describe("POST /api/admin/pricing/preview", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/admin/pricing/preview",
-      payload: { values: { ...DEFAULT_CREDIT_COSTS, exportUnlock: 400 } }
+      payload: { values: { ...DEFAULT_CREDIT_COSTS, fullBookBase: 600 } }
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().totalCredits).toBe(1_079 + 250);
+    expect(response.json().totalCredits).toBe(929 + 250);
     // The prices everyone else is being charged have not moved.
-    expect(creditPricing().exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
+    expect(creditPricing().fullBookBase).toBe(DEFAULT_CREDIT_COSTS.fullBookBase);
   });
 });
 
@@ -432,8 +446,8 @@ describe("GET /api/admin/pricing/drivers", () => {
     expect(body.books).toBe(2);
     expect(body.drivers.fullBookBase).toBe(2);
     expect(body.drivers.fullBookPerPage).toBe(40);
-    // A full generation bundles the export unlock, so two books means two.
-    expect(body.drivers.exportUnlock).toBe(2);
+    // No export unlock is counted: it is retired and no price.
+    expect(body.drivers).not.toHaveProperty("exportUnlock");
     expect(body.drivers.planRevision).toBe(3);
     // 90 seconds rounds up to two billable minutes.
     expect(body.drivers.voiceCallPerMinute).toBe(2);
@@ -552,14 +566,14 @@ describe("GET /api/admin/pricing/drivers", () => {
   });
 
   it("reports how faithfully the model reproduces the ledger", async () => {
-    mockDb.prisma.creditLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountCredits: -1000 } });
+    mockDb.prisma.creditLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountCredits: -2000 } });
     mockDb.prisma.voiceCall.findMany.mockResolvedValue([{ elapsedSeconds: 600 }]);
     app = await buildApp();
 
     const coverage = (await app.inject({ method: "GET", url: "/api/admin/pricing/drivers" })).json().coverage;
 
-    // 10 minutes at 60 credits = 600 modelled against 1000 charged.
-    expect(coverage.modelledCredits).toBe(600);
+    // 10 minutes at 120 credits = 1200 modelled against 2000 charged.
+    expect(coverage.modelledCredits).toBe(1200);
     expect(coverage.accuracyPercent).toBe(60);
   });
 

@@ -10,15 +10,15 @@ import {
   authSessionResponse,
   createMobileSession,
   emailSchema,
-  hashPassword,
   isActiveUser,
   passwordSchema,
   requestSessionContext,
-  sendAuthError,
-  verifyPassword
+  sendAuthError
 } from "./mobileAuth.js";
+import { hashPassword, passwordHashingErrorHandler, verifyPassword } from "./passwordHashing.js";
 import {
   InMemoryRateLimiter,
+  clientNetworkRateLimitKey,
   identityRateLimitKey,
   rateLimitKey,
   sendRateLimitError,
@@ -31,6 +31,16 @@ const RESET_CODE_TTL_MS = 15 * 60 * 1000;
 const RESET_CODE_MAX_ATTEMPTS = 5;
 const DEFAULT_FORGOT_RATE_LIMIT = { maxAttempts: 3, windowMs: 15 * 60 * 1000 };
 const DEFAULT_RESET_RATE_LIMIT = { maxAttempts: 10, windowMs: 15 * 60 * 1000 };
+// Per client network, whatever email each request names; both routes run
+// scrypt on every request, and every accepted forgot request mails someone, so
+// forgot is held tighter than reset.
+const DEFAULT_FORGOT_NETWORK_RATE_LIMIT = { maxAttempts: 10, windowMs: 15 * 60 * 1000 };
+const DEFAULT_RESET_NETWORK_RATE_LIMIT = { maxAttempts: 30, windowMs: 15 * 60 * 1000 };
+// Codes mailed to one address a day. The 15-minute per-email ceiling alone let
+// an attacker have six codes sent every window, five guesses each — about 2,900
+// guesses a day at a 6-digit code, and as many emails in the victim's inbox.
+// Ten a day is fifty guesses.
+const DEFAULT_FORGOT_DAILY_RATE_LIMIT = { maxAttempts: 10, windowMs: 24 * 60 * 60 * 1000 };
 
 const resetCodeSchema = z
   .string()
@@ -50,6 +60,9 @@ type MobilePasswordResetRouteOptions = {
   mailer: Mailer | null;
   forgotRateLimit?: Partial<RateLimitConfig>;
   resetRateLimit?: Partial<RateLimitConfig>;
+  forgotNetworkRateLimit?: Partial<RateLimitConfig>;
+  resetNetworkRateLimit?: Partial<RateLimitConfig>;
+  forgotDailyRateLimit?: Partial<RateLimitConfig>;
 };
 
 export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRouteOptions> = async (
@@ -65,6 +78,18 @@ export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRo
     ...DEFAULT_RESET_RATE_LIMIT,
     ...options.resetRateLimit
   });
+  const forgotNetworkLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_FORGOT_NETWORK_RATE_LIMIT,
+    ...options.forgotNetworkRateLimit
+  });
+  const resetNetworkLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_RESET_NETWORK_RATE_LIMIT,
+    ...options.resetNetworkRateLimit
+  });
+  const forgotDaily: RateLimitConfig = { ...DEFAULT_FORGOT_DAILY_RATE_LIMIT, ...options.forgotDailyRateLimit };
+  const forgotDailyLimiter = new InMemoryRateLimiter(forgotDaily);
+  // Scoped to this plugin's routes: a hash the gate refuses answers 429.
+  fastify.setErrorHandler(passwordHashingErrorHandler);
 
   fastify.post(
     "/api/mobile/auth/password/forgot",
@@ -75,6 +100,14 @@ export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRo
         return sendAuthError(reply, 400, "VALIDATION_ERROR", "Enter a valid email.");
       }
 
+      // Every limit here is counted before the account lookup and answers the
+      // same 429 for any email, so none of them says whether an account exists.
+      // The network limit goes first: a request it refuses must not spend the
+      // buckets of the address it named.
+      const networkLimit = forgotNetworkLimiter.hit(clientNetworkRateLimitKey(request, "password-forgot"));
+      if (!networkLimit.allowed) {
+        return sendRateLimitError(reply, networkLimit.retryAfterSeconds);
+      }
       const limit = forgotLimiter.hit(rateLimitKey(request, parsed.data.email));
       if (!limit.allowed) {
         return sendRateLimitError(reply, limit.retryAfterSeconds);
@@ -89,6 +122,12 @@ export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRo
       );
       if (!emailLimit.allowed) {
         return sendRateLimitError(reply, emailLimit.retryAfterSeconds);
+      }
+      // Last, so only a request every shorter limit let through counts toward
+      // the address's day.
+      const dailyLimit = forgotDailyLimiter.hit(identityRateLimitKey("password-forgot-daily", parsed.data.email));
+      if (!dailyLimit.allowed) {
+        return sendRateLimitError(reply, dailyLimit.retryAfterSeconds);
       }
 
       // Config-shaped, not account-shaped: this fires for every email equally,
@@ -106,25 +145,46 @@ export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRo
       const code = generateResetCode();
       const codeHash = await hashPassword(code);
 
-      const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+      const issuedAt = new Date();
+      const dayStart = new Date(issuedAt.getTime() - forgotDaily.windowMs);
+      // The codes this account was sent in the last day ride the account
+      // lookup itself, so a capped account and a missing one both answer
+      // after exactly one query.
+      const user = await prisma.user.findUnique({
+        where: { email: parsed.data.email },
+        include: { _count: { select: { passwordResetRequests: { where: { createdAt: { gte: dayStart } } } } } }
+      });
       if (!user || !isActiveUser(user)) {
         // Same 200 as the real path, with the scrypt work already spent above,
         // so neither the response nor its timing says whether the account exists.
         return { ok: true };
       }
+      // The daily cap above is memory, and a deploy empties it. Codes already
+      // issued are rows, so the day is counted again here, and a capped
+      // account gets the unknown account's answer: a 429 here would say the
+      // account exists, because only an account has rows to count.
+      if (user._count.passwordResetRequests >= forgotDaily.maxAttempts) {
+        return { ok: true };
+      }
 
       const context = requestSessionContext(request);
       // The newest email is the only one that works: pending codes for this
-      // account die when a new one is issued.
+      // account expire when a new one is issued, and stay as rows so the day
+      // above can count them. Rows older than that day are no longer counted
+      // by anything and go.
       await prisma.$transaction([
         prisma.passwordResetRequest.deleteMany({
-          where: { userId: user.id, consumedAt: null }
+          where: { userId: user.id, createdAt: { lt: dayStart } }
+        }),
+        prisma.passwordResetRequest.updateMany({
+          where: { userId: user.id, consumedAt: null, expiresAt: { gt: issuedAt } },
+          data: { expiresAt: issuedAt }
         }),
         prisma.passwordResetRequest.create({
           data: {
             userId: user.id,
             codeHash,
-            expiresAt: new Date(Date.now() + RESET_CODE_TTL_MS),
+            expiresAt: new Date(issuedAt.getTime() + RESET_CODE_TTL_MS),
             ...(context.ipHash ? { requestIpHash: context.ipHash } : {})
           }
         })
@@ -156,6 +216,10 @@ export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRo
         );
       }
 
+      const networkLimit = resetNetworkLimiter.hit(clientNetworkRateLimitKey(request, "password-reset"));
+      if (!networkLimit.allowed) {
+        return sendRateLimitError(reply, networkLimit.retryAfterSeconds);
+      }
       const limit = resetLimiter.hit(rateLimitKey(request, parsed.data.email));
       if (!limit.allowed) {
         return sendRateLimitError(reply, limit.retryAfterSeconds);
@@ -188,7 +252,14 @@ export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRo
       // Claim the attempt before verifying, atomically: two guesses racing
       // must both count, or the cap is only advisory.
       const claimed = await prisma.passwordResetRequest.updateMany({
-        where: { id: resetRequest.id, consumedAt: null, attempts: { lt: RESET_CODE_MAX_ATTEMPTS } },
+        // Expiry too, on the clock as it is now: a newer code expires this one
+        // in place, and may do so between the read above and this claim.
+        where: {
+          id: resetRequest.id,
+          consumedAt: null,
+          expiresAt: { gt: new Date() },
+          attempts: { lt: RESET_CODE_MAX_ATTEMPTS }
+        },
         data: { attempts: { increment: 1 } }
       });
       if (claimed.count === 0) {
@@ -201,16 +272,20 @@ export const mobilePasswordResetRoutes: FastifyPluginAsync<MobilePasswordResetRo
         return invalidResetCode(reply);
       }
 
+      // Hashed before the code is consumed: the hashing gate can refuse this
+      // derivation, and a refusal after the consume would spend the reader's
+      // right code on a password that was never written.
+      const passwordHash = await hashPassword(parsed.data.newPassword);
+
       // Single use, even against a concurrent reset presenting the same code.
       const consumed = await prisma.passwordResetRequest.updateMany({
-        where: { id: resetRequest.id, consumedAt: null },
+        where: { id: resetRequest.id, consumedAt: null, expiresAt: { gt: new Date() } },
         data: { consumedAt: now }
       });
       if (consumed.count === 0) {
         return invalidResetCode(reply);
       }
 
-      const passwordHash = await hashPassword(parsed.data.newPassword);
       await prisma.userPasswordCredential.upsert({
         where: { userId: user.id },
         update: { passwordHash },

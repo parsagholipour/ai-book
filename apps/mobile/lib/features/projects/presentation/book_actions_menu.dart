@@ -20,29 +20,24 @@ typedef _ExportChoice = ({_BookAction action, MobileExportAvailability export});
 ///
 /// Formats that have not been compiled yet stay visible but disabled — a book
 /// mid-write should still show what will be there, rather than a menu whose
-/// items appear and disappear as generation progresses. Formats that are ready
-/// but not unlocked follow the export panel's rule: ask before spending the
-/// unlock when the balance covers it (`confirmProjectExportUnlock`), and open
-/// the paywall when it does not. A format the
-/// plan does not include (the Word file) is offered with a lock and opens the
-/// paywall; the server rules on the request either way.
+/// items appear and disappear as generation progresses. A ready PDF or EPUB
+/// opens or shares straight away: a written book's files download free. A
+/// format the plan does not include (the Word file) is offered with a lock and
+/// opens the plan offer; the server rules on the request either way.
 Future<void> showBookActionsMenu({
   required BuildContext context,
   required WidgetRef ref,
   required Offset position,
   required MobileProjectSummary project,
 
-  /// The account's billing state, or null when it has not loaded. Null keeps
-  /// the credit-gated actions enabled and lets the server rule on the unlock,
-  /// matching the export panel rather than guessing that the user cannot pay —
-  /// and reads a plan-gated format as locked, matching the import tile.
+  /// The account's billing state, or null when it has not loaded. Null reads a
+  /// plan-gated format as locked, matching the import tile.
   required MobileBilling? billing,
   VoidCallback? onRefresh,
 }) async {
   final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
   if (overlay is! RenderBox) return;
 
-  final credits = billing?.credits.available;
   // A manuscript the author has not published has no chat to go to and no
   // files coming until they publish it; the one thing to do is keep writing.
   final unpublished = project.isUnpublishedManuscript;
@@ -124,14 +119,12 @@ Future<void> showBookActionsMenu({
           choice: (action: _BookAction.open, export: export),
           icon: projectExportIcon(export),
           billing: billing,
-          credits: credits,
         ),
       for (final export in exports)
         _bookActionItem(
           choice: (action: _BookAction.share, export: export),
           icon: Icons.ios_share_outlined,
           billing: billing,
-          credits: credits,
         ),
     ],
   );
@@ -144,20 +137,19 @@ Future<void> showBookActionsMenu({
   }
 
   // Chat is available throughout the book lifecycle and is unrelated to
-  // export readiness or unlock credits.
+  // export readiness.
   if (action == _BookAction.chat) {
     context.push('/projects/${project.id}/chat');
     return;
   }
 
-  // Calls are metered per minute by the call screen itself, so they do not go
-  // through the export unlock check below.
+  // Calls are metered per minute by the call screen itself.
   if (action == _BookAction.call) {
     await showCharacterCastSheet(context: context, projectId: project.id);
     return;
   }
 
-  // Narration is priced on its own screen, so it skips the export unlock too.
+  // Narration is priced on its own screen.
   if (action == _BookAction.listen) {
     context.push('/projects/${project.id}/listen');
     return;
@@ -166,13 +158,10 @@ Future<void> showBookActionsMenu({
   final choice = action as _ExportChoice;
   final export = choice.export;
 
-  // Same rule the export panel uses: a locked export still goes through when
-  // the account can cover it — the download itself spends the credits. Only a
-  // balance that cannot cover the unlock, or a plan the format needs, is sent
-  // to the paywall.
-  if (projectExportLockedBySubscription(export, billing) ||
-      projectExportNeedsCredits(export, credits)) {
-    await openProjectExportPaywall(
+  // Same rule the export panel uses: only a format the plan does not include
+  // goes to the plan offer; everything else is the file.
+  if (projectExportLockedBySubscription(export, billing)) {
+    await openProjectExportPlanOffer(
       context: context,
       ref: ref,
       projectId: project.id,
@@ -215,7 +204,6 @@ PopupMenuItem<Object> _bookActionItem({
   required _ExportChoice choice,
   required IconData icon,
   required MobileBilling? billing,
-  required int? credits,
 }) {
   final export = choice.export;
   final enabled = export.available;
@@ -223,21 +211,17 @@ PopupMenuItem<Object> _bookActionItem({
     export,
     billing,
   );
-  final needsCredits = projectExportNeedsCredits(export, credits);
-  // Open matches the tile: Upgrade / Get credits / Unlock / Open. Share only
-  // borrows that helper when the plan is missing, so it does not become Open
-  // or Unlock; otherwise it stays "Share Word".
+  // Open matches the tile: Upgrade / Open. Share only borrows that helper when
+  // the plan is missing, so it does not become Open; otherwise it stays
+  // "Share Word".
   final label = choice.action == _BookAction.share && !lockedBySubscription
       ? 'Share ${projectExportFormatLabel(export)}'
       : projectExportDownloadLabel(
           export,
-          needsCredits,
           lockedBySubscription: lockedBySubscription,
         );
-  // The lock warns about a purchase or a plan, so it only shows when credits are
-  // actually short or the plan is missing; a covered unlock is spent silently,
-  // as elsewhere.
-  final showLock = enabled && (needsCredits || lockedBySubscription);
+  // The lock marks the one plan-only format; a PDF or EPUB has none.
+  final showLock = enabled && lockedBySubscription;
   return PopupMenuItem<Object>(
     value: choice,
     enabled: enabled,

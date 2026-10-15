@@ -119,7 +119,8 @@ describe("the statuses the character routes declare", () => {
     // `VALIDATION_ERROR` replies are a 400 rung the others do not have.
     expect(declared["PUT /api/mobile/characters/:id/photo"]).toEqual([400, 401, 404, 422, 429]);
     // The one priced route in the group: 402 for the shortfall and 422 for a
-    // refused content screen, on top of everything a picture write can answer.
-    expect(declared["POST /api/mobile/characters/:id/portrait"]).toEqual([202, 400, 401, 402, 404, 409, 422, 429]);
+    // refused content screen, on top of everything a picture write can answer,
+    // and the AI spend breaker's 503 (its 429 shares the bucket's status).
+    expect(declared["POST /api/mobile/characters/:id/portrait"]).toEqual([202, 400, 401, 402, 404, 409, 422, 429, 503]);
   });
 });

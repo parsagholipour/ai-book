@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../book_matter/presentation/author_nudge_card.dart';
+import '../../book_matter/presentation/book_credits_card.dart';
 import '../../notes/presentation/book_notes_card.dart';
 import '../../studio/presentation/studio_book_card.dart';
 import '../../studio/presentation/studio_location.dart';
@@ -24,7 +27,7 @@ import 'project_export_panel.dart';
 /// because there is only this one. The book's files are not a section: they open
 /// from the hero, beside Read, so a finished page is a cover and four buttons
 /// rather than a stack of cards.
-class BookScreenBody extends StatelessWidget {
+class BookScreenBody extends ConsumerWidget {
   const BookScreenBody({
     required this.onRefresh,
     required this.onOpen,
@@ -46,6 +49,7 @@ class BookScreenBody extends StatelessWidget {
     this.onDeleteProject,
     this.onReportProject,
     this.onReportImage,
+    this.onReportPlan,
     super.key,
   });
 
@@ -70,11 +74,20 @@ class BookScreenBody extends StatelessWidget {
   final Future<void> Function()? onReportProject;
   final Future<void> Function(MobileProjectImage image)? onReportImage;
 
+  /// Reports the plan a model wrote; never offered on an author's own book.
+  final Future<void> Function(MobilePlan plan)? onReportPlan;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final project = this.project;
     final status = this.status;
     final stage = bookStageFor(project: project, status: status);
+    // Asked once, under whatever the book is doing: the author's name.
+    final nudgeProfile = authorNudgeProfile(
+      ref,
+      project: project,
+      stage: stage,
+    );
     final plan = project?.plan;
     final quality = status?.quality ?? project?.quality;
     final exports = status?.exports ?? project?.exports;
@@ -91,6 +104,7 @@ class BookScreenBody extends StatelessWidget {
 
     final sections = <Widget>[
       BookHero(
+        key: const ValueKey('book-section-hero'),
         stage: stage,
         project: project,
         status: status,
@@ -104,6 +118,7 @@ class BookScreenBody extends StatelessWidget {
       ),
       if (failedRevision != null)
         PlanRevisionFailedBanner(
+          key: const ValueKey('book-section-revision-failed'),
           operation: failedRevision!,
           busy: busyAction == 'retry-revision',
           onRetry: onRetryRevision,
@@ -112,9 +127,13 @@ class BookScreenBody extends StatelessWidget {
 
       // What is happening to this book right now, whatever that is.
       if (stage == BookStage.manuscript && project != null)
-        StudioBookCard(project: project)
+        StudioBookCard(
+          key: const ValueKey('book-section-studio'),
+          project: project,
+        )
       else if (stage == BookStage.needsPlan && project != null)
         NoPlanCard(
+          key: const ValueKey('book-section-no-plan'),
           project: project,
           billing: billing,
           busyAction: busyAction,
@@ -125,6 +144,7 @@ class BookScreenBody extends StatelessWidget {
           plan != null &&
           revisionController != null)
         ProjectPlanReview(
+          key: const ValueKey('book-section-plan-review'),
           project: project,
           plan: plan,
           billing: billing,
@@ -141,9 +161,13 @@ class BookScreenBody extends StatelessWidget {
                   projectId: project.id,
                   enabled: busyAction == null,
                 ),
+          onReport: onReportPlan == null || project.isAuthorManuscript
+              ? null
+              : () => onReportPlan!(plan),
         )
       else if (stage == BookStage.needsAttention && status != null)
         BookStoppedCard(
+          key: const ValueKey('book-section-stopped'),
           status: status,
           busyAction: busyAction,
           hasPlan: plan != null || (project?.hasPlan ?? false),
@@ -155,10 +179,18 @@ class BookScreenBody extends StatelessWidget {
       else if ((stage == BookStage.planning || stage == BookStage.writing) &&
           status != null)
         GenerationProgressOverviewCard(
+          key: const ValueKey('book-section-progress'),
           status: status,
           initialMessage: initialMessage,
           busyAction: busyAction,
           onResume: onResume,
+        ),
+
+      if (nudgeProfile != null && project != null)
+        AuthorNudgeCard(
+          key: const ValueKey('book-section-author-nudge'),
+          projectId: project.id,
+          profile: nudgeProfile,
         ),
 
       // Written in the Studio since the last publish, and not in the book yet.
@@ -182,6 +214,7 @@ class BookScreenBody extends StatelessWidget {
           (quality.isBlocked || quality.recommendsReview) &&
           projectId != null)
         BookQualityNotice(
+          key: const ValueKey('book-section-quality'),
           quality: quality,
           onOpenPage: (pageIndex) => context.push(
             authorManuscript
@@ -210,10 +243,15 @@ class BookScreenBody extends StatelessWidget {
       // — chapters and page counts read off their manuscript — so it is not
       // shown back to them as a plan.
       if (!stage.leadsWithPlan && plan != null && !authorManuscript)
-        PlanSummaryCard(plan: plan),
+        PlanSummaryCard(
+          key: const ValueKey('book-section-plan-summary'),
+          plan: plan,
+          onReport: onReportPlan == null ? null : () => onReportPlan!(plan),
+        ),
 
       if (project != null && stage.hasManuscript)
         GeneratedBookPreview(
+          key: const ValueKey('book-section-preview'),
           project: project,
           live: !finished,
           onReportProject: onReportProject,
@@ -229,6 +267,7 @@ class BookScreenBody extends StatelessWidget {
           stage != BookStage.manuscript &&
           (exports.pdf.available || exports.epub.available))
         ProjectExportPanel(
+          key: const ValueKey('book-section-exports'),
           exports: exports,
           billing: billing,
           busyAction: busyAction,
@@ -238,12 +277,25 @@ class BookScreenBody extends StatelessWidget {
           onRefresh: () => onRefresh(),
         ),
 
+      // The book's own title page and credits, on every book in every stage:
+      // something set once, so it sits with the notes rather than up top.
+      if (project != null)
+        BookCreditsCard(
+          key: const ValueKey('book-section-credits'),
+          projectId: project.id,
+        ),
+
       // The owner's private notes, on every book in every stage: below what
       // the book is doing, above anything that would delete it.
-      if (project != null) BookNotesCard(projectId: project.id),
+      if (project != null)
+        BookNotesCard(
+          key: const ValueKey('book-section-notes'),
+          projectId: project.id,
+        ),
 
       if (onDeleteProject != null)
         ProjectPrivacyActions(
+          key: const ValueKey('book-section-privacy'),
           isDeleting: busyAction == 'delete',
           onDeleteProject: onDeleteProject!,
         ),
@@ -258,6 +310,14 @@ class BookScreenBody extends StatelessWidget {
         separatorBuilder: (context, index) =>
             const SizedBox(height: AppSpacing.sm),
         itemBuilder: (context, index) => sections[index],
+        // Every section is keyed, and found by its key, so a section that
+        // comes or goes moves the others rather than rebuilding them: when a
+        // book finishes, its progress card leaves, and the card below it —
+        // the name nudge mid-sentence, say — must keep its state.
+        findItemIndexCallback: (key) {
+          final index = sections.indexWhere((section) => section.key == key);
+          return index < 0 ? null : index;
+        },
       ),
     );
   }

@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { objectKey, objectStore, withTemporaryDirectory } from "@book-maker/storage";
 import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
+import { bookIllustrationAt } from "./bookIllustrationMarkdown.js";
 
 /** S3 renders require ownership; only explicit local fixtures require a disk root. */
 export type BookImageOptions =
@@ -15,7 +16,9 @@ export async function withStoredBookImages<T>(markdown: string, options: {
   if (!options.projectId) throw new Error("An object-storage render requires projectId.");
   return withTemporaryDirectory("render-images", async (directory) => {
     const seen = new Set<string>();
+    const isIllustration = bookIllustrationAt(markdown);
     for (const match of markdown.matchAll(imageMarkdownRe())) {
+      if (!isIllustration(match.index)) continue;
       const asset = resolveBookImageAsset(match[2] ?? "", {
         imageStorageDir: directory,
         publicApiBase: options.publicApiUrl.replace(/\/+$/, ""),

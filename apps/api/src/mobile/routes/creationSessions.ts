@@ -1,4 +1,5 @@
 import { withChatStreaming } from "../chatStreaming.js";
+import { requireAiCapacity, sendAiCapacityRefusal } from "../aiCapacity.js";
 import { sendProcessingOutcome } from "../processingUsage.js";
 import { registerCreationSessionHistoryRoute } from "./creationSessionHistory.js";
 import { getBookPageLimit, settleMessageUsage } from "@book-maker/db/billing";
@@ -183,6 +184,10 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (firstMessage && !(await enforceContentRestrictions(reply, firstMessage))) {
         return;
       }
+      // Only a first message reaches a model; a bare start is a greeting.
+      if (firstMessage && !(await requireAiCapacity(request, reply, auth.user.id, "standard"))) {
+        return;
+      }
       const runMessage = async () => {
         // Saved replays and attempts whose message lease is still held must
         // not spend the allowance for starting another turn.
@@ -231,7 +236,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
               : {})
           };
           turn = await runCreationTurn(turnRequest, {
-            enrich: creationEnrichment,
+            enrich: creationEnrichment && ((turnInput, base) => creationEnrichment(turnInput, base, { userId: auth.user.id })),
             timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
             onEnrichError: (error) =>
               request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
@@ -401,6 +406,10 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       } else {
         treeWithUser = appendCreationMessage(priorTree, userMessage).messages;
       }
+      // After the replay above and before the message is charged or rate limited.
+      if (!(await requireAiCapacity(request, reply, auth.user.id, "standard"))) {
+        return;
+      }
       return withMessageUsage({ userId: auth.user.id, requestKey: messageRequestKey(`creation:${id}`, parsedBody.data.requestId) }, reply, async () => {
         // Admission rejects in-flight replays before this turn-rate check.
         if (!(await hitTieredLimit(advisorLimiter, reply, auth.user.id, "creation-session-message"))) return;
@@ -450,7 +459,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           conversationSummary: incoming.conversationSummary
         };
         const turn = await runCreationTurn(turnRequest, {
-          enrich: creationEnrichment,
+          enrich: creationEnrichment && ((turnInput, base) => creationEnrichment(turnInput, base, { userId: auth.user.id })),
           timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
           onEnrichError: (error) =>
             request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
@@ -701,7 +710,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       return sendProcessingOutcome(reply, async () => {
         const prepared = await prepareMobileCreationBuild(auth.user.id, id, parsedBody.data);
         if (!prepared.ok) {
-          return sendMobileError(reply, prepared.status, prepared.code, prepared.message);
+          return "aiRefusal" in prepared
+            ? sendAiCapacityRefusal(reply, prepared.aiRefusal)
+            : sendMobileError(reply, prepared.status, prepared.code, prepared.message);
         }
         // Persist the advisor stamped with the revision and preset context it
         // was computed from, so the build tap that follows reuses it instead of

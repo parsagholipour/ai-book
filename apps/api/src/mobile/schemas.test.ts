@@ -1,6 +1,7 @@
 import swagger from "@fastify/swagger";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
+import { createProjectSchema } from "@book-maker/core";
 import {
   mobileCharacterCreateOpenApiBody,
   mobileCharacterPortraitOpenApiBody,
@@ -117,6 +118,16 @@ describe("generated mobile request schemas", () => {
       coverEnabled: true,
       illustrationsEnabled: true
     });
+  });
+
+  it("takes a one-character title, a whole title in Chinese or Japanese, on the create body and in its OpenAPI copy", () => {
+    const base = { bookType: "short_story", prompt: "A quiet story about the first snow of winter." };
+    expect(mobileProjectCreateBodySchema.parse({ ...base, title: "雪" }).title).toBe("雪");
+    expect(mobileProjectCreateBodySchema.safeParse({ ...base, title: "   " }).success).toBe(false);
+    expect(mobileProjectCreateBodySchema.safeParse({ ...base, title: "a".repeat(161) }).success).toBe(false);
+    expect(property(mobileProjectCreateOpenApiBody, "title").minLength).toBe(1);
+    // The domain schema every job parses a project through takes it too.
+    expect(createProjectSchema.parse({ title: "雪", prompt: base.prompt }).title).toBe("雪");
   });
 
   it("keeps property defaults optional and strips Fastify-incompatible root defaults", () => {

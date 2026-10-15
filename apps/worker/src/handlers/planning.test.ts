@@ -9,19 +9,25 @@ const mocks = vi.hoisted(() => ({
     character: { deleteMany: vi.fn(), createMany: vi.fn() },
     location: { deleteMany: vi.fn(), createMany: vi.fn() },
     researchSource: { createMany: vi.fn(), findMany: vi.fn() },
+    embedding: { findMany: vi.fn() },
+    generationJob: { findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
+    $executeRawUnsafe: vi.fn(),
     $transaction: vi.fn()
   },
   createPlan: vi.fn(),
   revisePlan: vi.fn(),
   nextPlanVersion: vi.fn(),
-  embedResearchSourcesForProject: vi.fn(),
+  prepareEmbedding: vi.fn(),
   txPlanVersionCreate: vi.fn(),
   txPlanVersionUpdate: vi.fn(),
   txPlanVersionUpdateMany: vi.fn(),
   txProjectUpdateMany: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db", () => ({
+  prisma: mocks.prisma, Prisma: {}, researchScope: (id: string) => `research:${id}`,
+  RESEARCH_SCOPE_PREFIX: "research:", embeddingIsDegraded: () => false
+}));
 vi.mock("../runtime/jobLifecycle.js", () => ({
   advanceJobStep: vi.fn(),
   editOperationIdFromJob: (job: { data: Record<string, unknown> }) =>
@@ -32,14 +38,18 @@ vi.mock("../runtime/config.js", () => ({ config: { MOCK_AI: true } }));
 vi.mock("../providers/loggedAdapters.js", () => ({
   createLoggedProviders: () => ({ text: {}, research: {}, embedding: {} })
 }));
-vi.mock("../generation/researchMemory.js", () => ({
-  embedResearchSourcesForProject: mocks.embedResearchSourcesForProject
-}));
 // True so the embed-degradation tests keep exercising the embedding path.
-vi.mock("../generation/embeddingWrites.js", () => ({ strategyUsesSemanticMemory: () => true }));
+vi.mock("../generation/embeddingWrites.js", () => ({
+  strategyUsesSemanticMemory: () => true,
+  prepareEmbedding: mocks.prepareEmbedding,
+  writePreparedEmbedding: vi.fn(async () => "stored")
+}));
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: async (id: string) => ({
     id,
+    currentPlanId: null,
+    contentRevision: 0,
+    updatedAt: new Date("2026-01-01"),
     title: "Working Title",
     prompt: "A guide to backyard birds with enough detail to parse correctly.",
     category: "SCIENCE",
@@ -64,9 +74,6 @@ vi.mock("../generation/qualitySettings.js", () => ({
   }),
   applyPlanThinkingBoost: vi.fn()
 }));
-vi.mock("../generation/storyStateStore.js", () => ({
-  seedProjectStoryState: vi.fn()
-}));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
@@ -77,7 +84,6 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { planBook, revisePlan } from "./planning.js";
-import { seedProjectStoryState } from "../generation/storyStateStore.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 
 const inputSnapshot = {
@@ -132,7 +138,9 @@ function mockTransaction() {
       },
       character: mocks.prisma.character,
       location: mocks.prisma.location,
-      researchSource: mocks.prisma.researchSource
+      researchSource: mocks.prisma.researchSource,
+      generationJob: mocks.prisma.generationJob,
+      $executeRawUnsafe: mocks.prisma.$executeRawUnsafe
     })
   );
 }
@@ -153,7 +161,11 @@ beforeEach(() => {
   mocks.prisma.project.findUnique.mockResolvedValue({ mediaSettings: null });
   mocks.nextPlanVersion.mockResolvedValue(3);
   mocks.revisePlan.mockResolvedValue(revisedPlan);
-  mocks.embedResearchSourcesForProject.mockResolvedValue(undefined);
+  mocks.prepareEmbedding.mockResolvedValue({ vectorLiteral: "[0.1]", error: null });
+  mocks.prisma.embedding.findMany.mockResolvedValue([]);
+  mocks.prisma.generationJob.findUnique.mockResolvedValue({ status: "ACTIVE", contentRevision: 0, steps: [] });
+  mocks.prisma.generationJob.findFirst.mockResolvedValue({ id: "gj-plan" });
+  mocks.prisma.generationJob.updateMany.mockResolvedValue({ count: 1 });
   mocks.prisma.researchSource.findMany.mockResolvedValue([]);
 });
 
@@ -444,31 +456,22 @@ describe("planBook", () => {
     expect(mocks.prisma.project.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "project-1" },
-        data: { currentPlanId: "plan-2", title: "Planned Title" }
+        data: expect.objectContaining({ currentPlanId: "plan-2", title: "Planned Title", status: "PLAN_READY", storyState: expect.any(Object) })
       })
     );
     expect(mocks.prisma.character.deleteMany).toHaveBeenCalledWith({ where: { projectId: "project-1" } });
     expect(mocks.prisma.character.createMany).toHaveBeenCalled();
     expect(mocks.prisma.location.deleteMany).toHaveBeenCalledWith({ where: { projectId: "project-1" } });
     expect(mocks.prisma.researchSource.createMany).toHaveBeenCalled();
-    expect(seedProjectStoryState).toHaveBeenCalledWith("project-1", []);
-
-    // PLAN_READY lands only after the job is marked complete, so a crash in
-    // between leaves the row recoverable rather than announcing a ready plan.
-    expect(mocks.prisma.project.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ data: { status: "PLAN_READY" } })
-    );
-    await completion.afterJobCompleted?.();
-    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
-      where: { id: "project-1" },
-      data: { status: "PLAN_READY" }
-    });
+    expect(mocks.prisma.generationJob.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "gj-plan", status: "ACTIVE" }),
+      data: expect.objectContaining({ status: "COMPLETED" })
+    }));
+    expect(completion).toEqual({ durableCompletionCommitted: true });
   });
 
   it("does not re-insert research sources a previous delivery already saved", async () => {
-    // A redelivered plan-book re-runs the whole transaction. Characters and
-    // locations are replaced wholesale, but sources were appended — doubling
-    // the book's Sources list, which every export rebuilds from these rows.
+    // Legacy or previous planning runs may already have saved these sources.
     mocks.prisma.researchSource.findMany.mockResolvedValue([
       { query: "birds", title: "Bird facts", url: "https://example.org/birds" }
     ]);
@@ -492,7 +495,7 @@ describe("planBook", () => {
 
   it("treats a failed research embedding as degradation, not failure", async () => {
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    mocks.embedResearchSourcesForProject.mockRejectedValue(new Error("embedding outage"));
+    mocks.prepareEmbedding.mockRejectedValue(new Error("embedding outage"));
 
     await expect(planBook(planJob())).resolves.toBeDefined();
     consoleWarn.mockRestore();
@@ -500,7 +503,7 @@ describe("planBook", () => {
 
   it("still propagates a user stop out of the embedding step", async () => {
     const stop = new StopRequestedError();
-    mocks.embedResearchSourcesForProject.mockRejectedValue(stop);
+    mocks.prepareEmbedding.mockRejectedValue(stop);
 
     await expect(planBook(planJob())).rejects.toBe(stop);
   });

@@ -107,17 +107,17 @@ describe("mobile safety routes", () => {
 
     expect(metadata.statusCode).toBe(200);
     expect(metadata.json().legal).toMatchObject({
-      termsVersion: "2026-10-03",
-      privacyVersion: "2026-10-03",
-      effectiveDate: "2026-10-03",
+      termsVersion: "2026-10-13",
+      privacyVersion: "2026-10-13",
+      effectiveDate: "2026-10-13",
       companyName: "Ravanix Technologies L.L.C-FZ"
     });
     expect(acceptance.statusCode).toBe(200);
     expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "user-a",
-        termsVersion: "2026-10-03",
-        privacyVersion: "2026-10-03",
+        termsVersion: "2026-10-13",
+        privacyVersion: "2026-10-13",
         termsAttested: true,
         ageGuardianAttested: false,
         source: "mobile_reacceptance"
@@ -170,8 +170,8 @@ describe("mobile safety routes", () => {
     expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "user-a",
-        termsVersion: "2026-10-03",
-        privacyVersion: "2026-10-03",
+        termsVersion: "2026-10-13",
+        privacyVersion: "2026-10-13",
         termsAttested: true,
         ageGuardianAttested: true,
         source: "mobile_reacceptance"
@@ -302,12 +302,16 @@ describe("mobile safety routes", () => {
     });
     expect(vi.mocked(stopProjectGenerationJobs)).toHaveBeenCalledWith("project-1");
     expect(mockPrisma.project.delete).toHaveBeenCalledWith({ where: { id: "project-1" } });
+    // The stop counts what was delivered from the pages, which the delete's cascade then takes.
+    expect(vi.mocked(stopProjectGenerationJobs).mock.invocationCallOrder[0]).toBeLessThan(
+      mockPrisma.project.delete.mock.invocationCallOrder[0] ?? 0
+    );
     expect(otherDelete.statusCode).toBe(404);
     await app.close();
   });
 
   it("lists and reviews moderation reports through the local admin path", async () => {
-    const app = await buildApp();
+    const app = await buildApp({}, { authHook: true });
 
     const list = await app.inject({ method: "GET", url: "/api/admin/moderation/reports" });
     const review = await app.inject({
@@ -363,8 +367,13 @@ describe("mobile safety routes", () => {
   });
 });
 
-async function buildApp(options: Record<string, unknown> = {}): Promise<FastifyInstance> {
+async function buildApp(options: Record<string, unknown> = {}, { authHook = false } = {}): Promise<FastifyInstance> {
   const app = Fastify();
+  if (authHook) {
+    // Password auth off, as in local development: the hook is what makes the operator.
+    const { registerAuth } = await import("./auth.js");
+    await registerAuth(app, { WEB_PASSWORD: "" } as never);
+  }
   const { mobileSafetyRoutes } = await import("./mobileSafety.js");
   await app.register(mobileSafetyRoutes, options);
   return app;

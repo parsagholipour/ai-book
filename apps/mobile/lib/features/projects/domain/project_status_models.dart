@@ -1,6 +1,8 @@
 // Live status of a project: the streamed progress payload behind the creation
 // chat's progress bubble and the /handoff screen. Re-exported from
 // project_models.dart so existing imports keep seeing these types.
+import 'dart:convert';
+
 import 'export_models.dart';
 
 class MobileProjectStatus {
@@ -34,6 +36,8 @@ class MobileProjectStatus {
     this.recoveryQuote,
     this.hasCoverPage,
     this.pdfPageNumbering,
+    this.booksAheadInLine,
+    this.payload,
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
        illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
        imageSettingsReported =
@@ -88,6 +92,25 @@ class MobileProjectStatus {
 
   /// The exact PDF publication whose stored map supplied [hasCoverPage].
   final MobilePdfPageNumbering? pdfPageNumbering;
+
+  /// The server's payload this status was read from, re-encoded: what makes
+  /// two statuses equal (see [operator ==]).
+  final String? payload;
+
+  /// How many other books the server will write before this one's waiting
+  /// work (`waitingInLine.booksAhead`). Null while nothing of this book is
+  /// waiting — not started yet by anyone, or already being written.
+  final int? booksAheadInLine;
+
+  /// The calm line drawn under the book's progress while it waits its turn,
+  /// or null when it is not waiting. A count the server measures; the words
+  /// are the app's, like the page chip beside them.
+  String? get waitingInLineLabel {
+    final ahead = booksAheadInLine;
+    if (ahead == null || ahead < 0) return null;
+    if (ahead == 0) return 'Starting soon';
+    return 'Waiting in line — $ahead ${ahead == 1 ? 'book' : 'books'} ahead of yours';
+  }
 
   /// Whether the server is still actively working on the book; drives status
   /// streaming and detail-polling cadence. A scheduled automatic retry remains
@@ -181,8 +204,33 @@ class MobileProjectStatus {
       pdfPageNumbering: MobilePdfPageNumbering.tryFromJson(
         json['pdfPageNumbering'],
       ),
+      booksAheadInLine: (json['waitingInLine'] as Map?)?['booksAhead'] as int?,
+      payload: jsonEncode(json),
     );
   }
+
+  /// Two statuses read from the same payload are the same status.
+  ///
+  /// The status stream answers about once a second while a book works, and
+  /// the server's heartbeat may resend a status unchanged. Compared by
+  /// identity, every one of those rebuilt each screen watching the book — the
+  /// whole creation-chat transcript, re-parsing its markdown, once a second.
+  /// Riverpod skips a notification whose value is `==` to the last.
+  ///
+  /// The payload rather than field by field, so a field added to the status
+  /// can never be forgotten here and swallow a real change. A status built in
+  /// code (tests) has no payload and keeps identity semantics.
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    final mine = payload;
+    return mine != null &&
+        other is MobileProjectStatus &&
+        other.payload == mine;
+  }
+
+  @override
+  int get hashCode => payload?.hashCode ?? identityHashCode(this);
 
   bool get isComplete => status == 'complete';
 

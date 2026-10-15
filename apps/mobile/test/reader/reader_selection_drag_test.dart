@@ -167,7 +167,6 @@ void main() {
             export: pdfExport(),
             loader: loader,
             status: statusWith(pdfExport()),
-            onOpenPaywall: () {},
           ),
         ),
       ),

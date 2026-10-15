@@ -30,6 +30,7 @@ class BillingExportCheckout extends StatelessWidget {
     required this.error,
     required this.message,
     required this.onBuy,
+    this.onRetry,
     super.key,
   });
 
@@ -55,6 +56,10 @@ class BillingExportCheckout extends StatelessWidget {
   final String? message;
   final VoidCallback? onBuy;
 
+  /// Offered in place of a dead button while Google Play is unreachable or
+  /// sent no price for [product]. Ignored whenever [onBuy] is set.
+  final VoidCallback? onRetry;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -62,6 +67,7 @@ class BillingExportCheckout extends StatelessWidget {
     final plan = product;
     final name = plan == null ? null : billingPlanName(plan);
     final status = error ?? message;
+    final retry = onBuy == null ? onRetry : null;
     return Container(
       key: const ValueKey('export-checkout'),
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
@@ -85,11 +91,13 @@ class BillingExportCheckout extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-          if (accessIncluded || (plan != null && !loading)) ...[
+          // Only Play's price: a plan it sent none for gets no price line.
+          if (accessIncluded ||
+              (plan != null && storeProduct != null && !loading)) ...[
             Text(
               accessIncluded
                   ? includedLabel ?? '$format export is included in your plan.'
-                  : '$name · ${storeProduct?.price ?? fallbackPrice(plan!)} / month',
+                  : '$name · ${planPriceLine(plan!, storeProduct)}',
               textAlign: TextAlign.center,
               style: text.labelLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
@@ -97,7 +105,7 @@ class BillingExportCheckout extends StatelessWidget {
           ],
           AppButton.primary(
             key: buttonKey,
-            onPressed: onBuy,
+            onPressed: onBuy ?? retry,
             loading: pending || restoring,
             loadingLabel: restoring
                 ? 'Restoring purchases'
@@ -108,6 +116,8 @@ class BillingExportCheckout extends StatelessWidget {
                 ? includedActionLabel ?? 'Back to your book'
                 : isCurrent
                 ? 'Your current plan'
+                : retry != null
+                ? 'Try again'
                 : onBuy == null
                 ? 'Plan unavailable'
                 : unlockLabel?.call(name ?? 'a plan') ??
@@ -116,7 +126,7 @@ class BillingExportCheckout extends StatelessWidget {
           if (!accessIncluded) ...[
             const SizedBox(height: 8),
             Text(
-              'Renews monthly · Cancel anytime in Google Play',
+              '${plan?.renewsLabel ?? 'Renews monthly'} · Cancel anytime in Google Play',
               textAlign: TextAlign.center,
               style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
             ),

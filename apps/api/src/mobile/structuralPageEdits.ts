@@ -426,14 +426,18 @@ function structuralContentRequirements(
     if (insert) {
       // The router can say one place twice — "at the very beginning of the book,
       // before the current first page, that explains…" — so the strip repeats
-      // until it removes nothing.
+      // until it removes nothing. A run of separators goes in one pass: taken one
+      // per pass, as it was, a run of commas cost a pass each and was quadratic,
+      // and nothing else can strip while one is in front, so the result is the same.
       remainder = remainder.slice(insert[0].length);
       const unplaced = remainder;
       for (let previous = ""; previous !== remainder; ) {
         previous = remainder;
         remainder = stripLeadingStructuralPlacement(
           withoutPlacementOnlyAside(
-            remainder.replace(/^\s*[,;:—–-]\s*/, " ").replace(/^\s*(?:in|into)\s+(?:the\s+)?(?:book|story|manuscript)\b/i, "")
+            remainder
+              .replace(/^\s*[,;:—–-][\s,;:—–-]*/, " ")
+              .replace(/^\s*(?:in|into)\s+(?:the\s+)?(?:book|story|manuscript)\b/i, "")
           )
         );
       }
@@ -441,8 +445,9 @@ function structuralContentRequirements(
       // ("Add 2 pages that bridge…", "…, that explains why dinners matter"),
       // which reads as a sentence only once it has the pages back as its
       // subject. Not "which" after a place: in "page 4, which is where Mina
-      // finds the key" it is page 4 the clause describes.
-      const relative = remainder === unplaced ? /^\s*(?:that|which)\s+(?=[a-z])/i : /^\s*[,;:—–-]?\s*that\s+(?=[a-z])/i;
+      // finds the key" it is page 4 the clause describes. (The separator carries
+      // its own `\s*`; around an absent one, two split a run of spaces every way.)
+      const relative = remainder === unplaced ? /^\s*(?:that|which)\s+(?=[a-z])/i : /^\s*(?:[,;:—–-]\s*)?that\s+(?=[a-z])/i;
       const subject = (edit?.pageCount ?? 1) > 1 ? "The new pages " : "The new page ";
       remainder = remainder.replace(relative, subject);
       remainder = withoutPlacementOnlySentence(remainder);
@@ -498,9 +503,11 @@ function stripLeadingStructuralPlacement(value: string): string {
   // that says what the new page should hold is the brief.
   // "Between page 4 and page 5", and the same place said from both sides —
   // "after printed page 4 and before printed page 5" — are one placement too.
+  // The comma carries its own `\s*`: as `\s*,?\s*` a run of spaces after the
+  // page could be split two ways before "and" failed, which was quadratic.
   const numbered = new RegExp(
     `^\\s*(?:(?:to\\s+)?(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:after|before|following|preceding|between)|at|to)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}` +
-      `(?:\\s*,?\\s*and\\s+(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:before|preceding|ahead\\s+of)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN})?` +
+      `(?:\\s*(?:,\\s*)?and\\s+(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:before|preceding|ahead\\s+of)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN})?` +
       `(?:\\s*\\((?=\\s*(?:the\\b|titled\\b|called\\b|which\\b|i\\.e\\.|["“]))(?![^()]*\\b(?:should|must|about|covers?|explains?|adds?)\\b)[^()]{0,160}\\)` +
       `|\\s*,\\s*(?:which|that)\\s+is\\b(?![^.!?]*\\b(?:should|must|where)\\b)[^.!?]{0,160}(?=[.!?]|$))?`,
     "i"
@@ -584,66 +591,81 @@ function stripEmbeddedStructuralPlacement(
     return value;
   }
 
+  // Both start at the first space of a run (a match never ends on one), so
+  // neither retries the run from every space in it — that was quadratic.
   const numbered = new RegExp(
-    `\\s+(?:(?:to\\s+)?(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:after|before|following|preceding)|at)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
+    `(?<!\\s)\\s+(?:(?:to\\s+)?(?:${STRUCTURAL_PLACEMENT_ADVERB_PATTERN}\\s+)?(?:after|before|following|preceding)|at)\\s+${STRUCTURAL_PAGE_SELECTION_PATTERN}`,
     "gi"
   );
   const edge =
-    /\s+(?:(?:at|to)\s+(?:the\s+)?(?:very\s+)?(?:front|beginning|start|end|back)\s+of\s+(?:the\s+)?book|as\s+(?:the\s+)?(?:first|last|opening|closing)\s+pages?)\b/gi;
+    /(?<!\s)\s+(?:(?:at|to)\s+(?:the\s+)?(?:very\s+)?(?:front|beginning|start|end|back)\s+of\s+(?:the\s+)?book|as\s+(?:the\s+)?(?:first|last|opening|closing)\s+pages?)\b/gi;
   const placements = [...value.matchAll(numbered), ...value.matchAll(edge)].sort(
     (left, right) => (left.index ?? 0) - (right.index ?? 0)
   );
+  const insideQuotedSpan = quotedSpanReader(value);
   for (const placement of placements) {
     const index = placement.index;
-    if (index === undefined || isInsideQuotedSpan(value, index)) {
+    if (index === undefined || insideQuotedSpan(index)) {
       continue;
     }
     const prefix = value.slice(contentPrefix[0].length, index);
-    if (!prefix.trim() || CONTENT_PAGE_REFERENCE_CUE.test(prefix)) {
+    if (!prefix.trim()) {
       continue;
+    }
+    if (CONTENT_PAGE_REFERENCE_CUE.test(prefix)) {
+      // Every later placement's prefix holds this one, and a placement starts on
+      // a space, so the cue is in all of them: none of them can be stripped.
+      return value;
     }
     return `${value.slice(0, index)}${value.slice(index + placement[0].length)}`;
   }
   return value;
 }
 
-/** True when `index` sits inside straight, curly or backtick quotation. */
-function isInsideQuotedSpan(value: string, index: number): boolean {
+/**
+ * Whether each offset, asked in rising order, sits inside straight, curly or
+ * backtick quotation. One pass for every placement, where a fresh scan from
+ * the start for each one was quadratic.
+ */
+function quotedSpanReader(value: string): (index: number) => boolean {
+  let offset = 0;
   let straightSingle = false;
   let straightDouble = false;
   let curlySingle = false;
   let curlyDouble = false;
   let backtick = false;
-  for (let offset = 0; offset < index; offset += 1) {
-    const character = value[offset];
-    const previousIsWord = /[\p{L}\p{N}]/u.test(value[offset - 1] ?? "");
-    const nextIsWord = /[\p{L}\p{N}]/u.test(value[offset + 1] ?? "");
-    if (character === "'" && !(previousIsWord && nextIsWord) && !straightDouble) {
-      // A straight apostrophe is not two characters the way the curly pair is,
-      // so a plain toggle is wrong in one direction only. `dogs'`, `1990s'` and
-      // `James'` are possessives shaped exactly like a *closing* quote — word
-      // character behind, space ahead — and each one opened a span nothing
-      // could close, so every placement after it read as quoted and
-      // `stripEmbeddedStructuralPlacement` kept the "after page 100" it exists
-      // to remove. An opening mark needs a word to open onto; a closing one
-      // only needs an open span. The intra-word guard above is still what keeps
-      // "don't" from closing one from the inside.
-      straightSingle = straightSingle ? false : !previousIsWord && nextIsWord;
-    } else if (character === '"' && !straightSingle) {
-      straightDouble = !straightDouble;
-    } else if (character === "‘" && !straightDouble) {
-      curlySingle = true;
-    } else if (character === "’" && curlySingle) {
-      curlySingle = false;
-    } else if (character === "“" && !straightSingle) {
-      curlyDouble = true;
-    } else if (character === "”" && curlyDouble) {
-      curlyDouble = false;
-    } else if (character === "`") {
-      backtick = !backtick;
+  return (index) => {
+    for (; offset < index; offset += 1) {
+      const character = value[offset];
+      const previousIsWord = /[\p{L}\p{N}]/u.test(value[offset - 1] ?? "");
+      const nextIsWord = /[\p{L}\p{N}]/u.test(value[offset + 1] ?? "");
+      if (character === "'" && !(previousIsWord && nextIsWord) && !straightDouble) {
+        // A straight apostrophe is not two characters the way the curly pair is,
+        // so a plain toggle is wrong in one direction only. `dogs'`, `1990s'` and
+        // `James'` are possessives shaped exactly like a *closing* quote — word
+        // character behind, space ahead — and each one opened a span nothing
+        // could close, so every placement after it read as quoted and
+        // `stripEmbeddedStructuralPlacement` kept the "after page 100" it exists
+        // to remove. An opening mark needs a word to open onto; a closing one
+        // only needs an open span. The intra-word guard above is still what keeps
+        // "don't" from closing one from the inside.
+        straightSingle = straightSingle ? false : !previousIsWord && nextIsWord;
+      } else if (character === '"' && !straightSingle) {
+        straightDouble = !straightDouble;
+      } else if (character === "‘" && !straightDouble) {
+        curlySingle = true;
+      } else if (character === "’" && curlySingle) {
+        curlySingle = false;
+      } else if (character === "“" && !straightSingle) {
+        curlyDouble = true;
+      } else if (character === "”" && curlyDouble) {
+        curlyDouble = false;
+      } else if (character === "`") {
+        backtick = !backtick;
+      }
     }
-  }
-  return straightSingle || straightDouble || curlySingle || curlyDouble || backtick;
+    return straightSingle || straightDouble || curlySingle || curlyDouble || backtick;
+  };
 }
 
 function cleanRequirement(value: string): string {
@@ -655,7 +677,9 @@ function cleanRequirement(value: string): string {
     // whose meaning changes if the relationship to the deletion is erased.
     .replace(/^\s*(?:(?:and|then)\s+)+/i, "")
     .replace(/\s+([,.;!?])/g, "$1")
-    .replace(/[,:;—–-]+\s*$/g, "")
+    // From the first character of a trailing run only. Tried from every
+    // character of a long run that does not reach the end, it was quadratic.
+    .replace(/(?<![,:;—–-])[,:;—–-]+\s*$/g, "")
     .trim();
 }
 

@@ -8,9 +8,11 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import {
   InsufficientCreditsError,
   commitReservedCredits,
+  hasActiveSubscriptionEntitlement,
   refundCreditLedgerEntry,
   reserveCredits
 } from "@book-maker/db/billing";
+import { AUDIOBOOK_PLAN_MESSAGE } from "./planPerks.js";
 
 import { seedObject } from "../testing/objectStorage.js";
 import { join } from "node:path";
@@ -278,16 +280,63 @@ describe("mobile audiobook routes", () => {
         contentRevision: 3
       });
       mockPrisma.audiobook.findUnique.mockResolvedValue(null);
-      mockPrisma.page.count.mockResolvedValue(60);
+      // Sixty finished pages of 200 narrated words each: 12,000 words.
+      mockPrisma.page.findMany.mockResolvedValue(
+        Array.from({ length: 60 }, () => ({ markdown: Array.from({ length: 200 }, () => "word").join(" ") }))
+      );
       mockPrisma.audiobook.create.mockResolvedValue({ id: "audiobook-new" });
       mockPrisma.audiobook.update.mockResolvedValue({});
       mockPrisma.audiobook.deleteMany.mockResolvedValue({ count: 0 });
       vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-audiobook" }));
       vi.mocked(reserveCredits).mockResolvedValue({ id: "reservation-1" } as never);
       vi.mocked(commitReservedCredits).mockResolvedValue({ id: "spend-1" } as never);
+      // Narration is a plan perk (`planPerks.ts`).
+      vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);
     });
 
-    it("charges base plus per page and queues one narration job", async () => {
+    it("is a plan perk: a free account is sent to the paywall before the charge or any row", async () => {
+      vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+      const app = await buildMobileApp();
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Zephyr" }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: { code: "SUBSCRIPTION_REQUIRED", message: AUDIOBOOK_PLAN_MESSAGE } });
+      expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+      expect(mockPrisma.audiobook.create).not.toHaveBeenCalled();
+      expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+      await app.close();
+    });
+
+    it("still replays a narration already running for a free account, which was paid for", async () => {
+      vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+      mockPrisma.audiobook.findUnique.mockResolvedValue({
+        id: "audiobook-1",
+        projectId: "project-1",
+        voice: "Zephyr",
+        status: "GENERATING",
+        contentRevision: 3,
+        generationJobId: null,
+        chapters: []
+      });
+      const app = await buildMobileApp();
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Zephyr" }
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+      await app.close();
+    });
+
+    it("charges base plus every hundred narrated words and queues one narration job", async () => {
       const app = await buildMobileApp();
       const response = await app.inject({
         method: "POST",
@@ -302,10 +351,10 @@ describe("mobile audiobook routes", () => {
           userId: "user-a",
           projectId: "project-1",
           operation: "AUDIOBOOK_GENERATION",
-          // 80 base + 60 pages × 12.
+          // 80 base + 120 hundreds of words × 6.
           amountCredits: 800,
           idempotencyKey: "generation-attempt:attempt-mobile-audiobook-start-project-1-3-new",
-          metadata: expect.objectContaining({ pageCount: 60, voice: "Zephyr" })
+          metadata: expect.objectContaining({ pageCount: 60, wordCount: 12_000, voice: "Zephyr" })
         })
       );
       expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
@@ -505,6 +554,33 @@ describe("mobile audiobook routes", () => {
       // The retry is anchored to the attempt that paid for the failed run:
       // a still-pending refund now blocks the new charge instead of stacking.
       expect(state.generationAttempts.at(-1)).toMatchObject({ retryOfAttemptId: "attempt-failed-audio" });
+      await app.close();
+    });
+
+    it("quotes exactly what the start charges, from the same pages", async () => {
+      const app = await buildMobileApp();
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/mobile/projects/project-1/audiobook/quote",
+        headers: bearer("token-a")
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ quote: { credits: 800, pageCount: 60, wordCount: 12_000 } });
+      await app.close();
+    });
+
+    it("quotes nothing for a book that is not finished", async () => {
+      mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", status: "GENERATING", contentRevision: 3 });
+      const app = await buildMobileApp();
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/mobile/projects/project-1/audiobook/quote",
+        headers: bearer("token-a")
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe("BOOK_NOT_READY");
       await app.close();
     });
 

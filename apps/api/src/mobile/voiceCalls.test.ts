@@ -21,11 +21,16 @@ import {
   callRecord,
   openingHold,
   perMinute,
-  resetVoiceCallTestState
+  resetVoiceCallTestState,
+  allowPaidPlan
 } from "./testing/voiceCallTestUtils.js";
+import { VOICE_CALL_PLAN_MESSAGE } from "./planPerks.js";
 
 describe("mobile voice calls", () => {
-  beforeEach(resetVoiceCallTestState);
+  beforeEach(() => {
+    resetVoiceCallTestState();
+    allowPaidPlan();
+  });
   afterEach(teardownMobileHarness);
 
   describe("the cast", () => {
@@ -47,6 +52,8 @@ describe("mobile voice calls", () => {
       expect(cast.creditsPerMinute).toBe(perMinute);
       expect(cast.creditsToStart).toBe(openingHold);
       expect(cast.availableCredits).toBe(5_000);
+      // The cast sheet's "up to 15 min" is read off this, never a constant in the app.
+      expect(cast.maxCallSeconds).toBe(15 * 60);
       await app.close();
     });
 
@@ -114,6 +121,29 @@ describe("mobile voice calls", () => {
       await app.close();
     });
 
+    it("is a plan perk: a free account is sent to the paywall before any hold, persona build or token", async () => {
+      allowPaidPlan(false);
+      const voiceSession = vi.fn();
+      // Not READY, so a call that got past the gate would queue the persona build.
+      mockPrisma.voiceCharacter.findFirst.mockResolvedValue(characterRecord({ status: "PENDING" }));
+      const app = await buildVoiceApp({ voiceSession });
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
+        headers: bearer("token-a"),
+        payload: { transport: "relay-v1" }
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toEqual({ error: { code: "SUBSCRIPTION_REQUIRED", message: VOICE_CALL_PLAN_MESSAGE } });
+      expect(startVoiceRelayCall).not.toHaveBeenCalled();
+      expect(reserveCredits).not.toHaveBeenCalled();
+      expect(enqueueOrRequeueGenerationJob).not.toHaveBeenCalled();
+      expect(voiceSession).not.toHaveBeenCalled();
+      await app.close();
+    });
+
     it("holds credits and hands back connection details for the app's own socket", async () => {
       mockPrisma.voiceCharacter.findFirst.mockResolvedValue(characterRecord());
       const app = await buildVoiceApp();
@@ -138,6 +168,8 @@ describe("mobile voice calls", () => {
         creditsPerMinute: perMinute
       });
       expect(session.secondsRemaining).toBe(VOICE_CALL_POLICY.reserveBlockMinutes * 60);
+      // And the ended screen's "Calls stop at 15 minutes" off this.
+      expect(session.maxCallSeconds).toBe(15 * 60);
       expect(startVoiceRelayCall).toHaveBeenCalledWith(expect.objectContaining({
         userId: "user-a", callee: { projectId: "project-1", characterId: "character-1" }
       }));

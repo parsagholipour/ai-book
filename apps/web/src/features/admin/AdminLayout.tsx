@@ -1,12 +1,14 @@
-import { ArrowLeft, BarChart3, Coins, Receipt, Settings, ShieldAlert, Smartphone, Sparkles, Users, Workflow } from "lucide-react";
+import { ArrowLeft, BarChart3, Coins, Gauge, Receipt, Settings, ShieldAlert, Smartphone, Sparkles, Users, Workflow } from "lucide-react";
 import { NavLink, Outlet } from "react-router";
 import { AppLogo } from "../shared/AppLogo.js";
 import { ButtonLink } from "../shared/Button.js";
+import { TestAlertButton } from "./TestAlertButton.js";
 
 export const ADMIN_TABS = [
   { to: "/admin", label: "Overview", icon: BarChart3, end: true },
   { to: "/admin/operations", label: "Operations", icon: Workflow, end: false },
   { to: "/admin/costs", label: "Costs", icon: Receipt, end: false },
+  { to: "/admin/spend", label: "AI spend", icon: Gauge, end: false },
   { to: "/admin/users", label: "Users", icon: Users, end: false },
   { to: "/admin/moderation", label: "Moderation", icon: ShieldAlert, end: false },
   { to: "/admin/settings", label: "Safety", icon: Settings, end: false },
@@ -33,9 +35,12 @@ export function AdminLayout() {
             <p>Revenue, usage, and the levers behind them</p>
           </div>
         </div>
-        <ButtonLink to="/" size="sm" startIcon={<ArrowLeft />}>
-          Back to console
-        </ButtonLink>
+        <div className="admin-header-actions">
+          <TestAlertButton />
+          <ButtonLink to="/" size="sm" startIcon={<ArrowLeft />}>
+            Back to console
+          </ButtonLink>
+        </div>
       </header>
 
       <nav className="admin-tabs" aria-label="Dashboard sections">

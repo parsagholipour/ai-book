@@ -4,17 +4,17 @@
  * The operator export routes under `/api/projects/:id/export/*` scope to
  * `actor.userId` — the local admin user — so they can only serve books the
  * console generated itself. The dashboard's generated-books list is mostly
- * app users' books, so these routes take the operator cookie alone (the
- * `/api/admin/` prefix is already the exact operator-only surface) and reuse
- * the same inline-rendering senders, which publish a rebuild exactly the way
- * a compile does.
+ * app users' books, so these routes check no owner — only that the auth hook
+ * established an operator (`requireOperatorActor`), never that the path looked
+ * like `/api/admin/` — and reuse the same inline-rendering senders, which
+ * publish a rebuild exactly the way a compile does.
  */
 
 import type { FastifyPluginAsync } from "fastify";
 import { loadConfig } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
-import { markOperatorRequest } from "../requestAuth.js";
+import { requireOperatorActor } from "../requestAuth.js";
 import { sendProjectEpubExport, sendProjectPdfExport } from "./projectExports.js";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
@@ -23,7 +23,9 @@ export const adminProjectExportRoutes: FastifyPluginAsync = async (fastify) => {
   const appConfig = loadConfig();
 
   fastify.get("/api/admin/projects/:id/export/pdf", { schema: { tags: ["admin"] } }, async (request, reply) => {
-    await markOperatorRequest(request);
+    if (!(await requireOperatorActor(request, reply))) {
+      return;
+    }
     const { id } = idParamsSchema.parse(request.params);
     const project = await prisma.project.findUnique({
       where: { id },
@@ -44,7 +46,9 @@ export const adminProjectExportRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get("/api/admin/projects/:id/export/epub", { schema: { tags: ["admin"] } }, async (request, reply) => {
-    await markOperatorRequest(request);
+    if (!(await requireOperatorActor(request, reply))) {
+      return;
+    }
     const { id } = idParamsSchema.parse(request.params);
     const project = await prisma.project.findUnique({
       where: { id },

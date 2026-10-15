@@ -2,8 +2,13 @@ import { withChatStreaming } from "../chatStreaming.js";
 import { settleMessageUsage } from "@book-maker/db/billing";
 import { messageRequestKey, withMessageUsage } from "../messageUsage.js";
 import { createSourceService } from "@book-maker/db";
-import { jsonRecord, createSourceEmbedding, sourceRefsFromInput } from "@book-maker/core";
+import { jsonRecord, createSourceEmbedding, sourceRefsFromInput, type TextModelAdapter } from "@book-maker/core";
+import { withInlineProviderUsage } from "../../inlineProviderUsage.js";
 import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
+import { bookMatterForRouter } from "../../bookEditMatter.js";
+import { establishedChatLanguage, matterChatLanguage } from "../bookMatterChatLanguage.js";
+import { PROJECT_CHAT_REPLY_COPY } from "../projectChatReplyCopy.js";
+import { chatCopy } from "../../chatReplyCopy.js";
 import { modelPageForReaderContext, numberingForProject } from "../../bookPageNumbering.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import { libraryCharacterAppearanceRule, libraryCharacterPromptBlock } from "@book-maker/core";
@@ -63,8 +68,11 @@ import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
+import { requireRequestWithoutSexualContent } from "../contentSafetyDoors.js";
 import { expandLibraryCharacterGraph, generationDescription } from "../libraryMentionGraph.js";
 import { orderedCharacterRefs } from "../libraryMentionRows.js";
+import { aiWorkKindForMediaSettings, proposalRunsModel, requireAiCapacity } from "../aiCapacity.js";
+import { proposalStartsLongLaneWork, requireBooksInProgressCapacity } from "../booksInProgress.js";
 
 /**
  * Post-generation chat: messages, edit proposals, undo, redo and branch switching.
@@ -72,6 +80,13 @@ import { orderedCharacterRefs } from "../libraryMentionRows.js";
 
 export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { safeFastRoutingTextModel, draftLimiter } = context;
+  // Every model call the chat makes inline — the router, the book-matter
+  // composer, answers and proposal follow-ups — writes its cost row, priced from
+  // the provider's own token counts (`inlineProviderUsage.ts`).
+  const costedRoutingTextModel = (projectId: string, userId: string): TextModelAdapter | undefined => {
+    const model = safeFastRoutingTextModel();
+    return model ? withInlineProviderUsage(model, { projectId, userId }) : undefined;
+  };
 
   fastify.get(
     "/api/mobile/projects/:id/chat",
@@ -217,6 +232,45 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       // resolvePendingEditTurn; this handler only consumes the verdict.
       const { resolvedPendingEdit, clarifyExhausted, resolvedMessage, confirmedPendingEdit, pendingScopeIsRecoverable, resolvesPendingScope } =
         resolvePendingEditTurn(pendingScope, parsed.data.message, { currentScope });
+      // After the replay above and before the message is charged: most turns
+      // reach the router, and a typed confirmation applies the card it confirms,
+      // so that one asks at the book's own tier, as the Apply button does. A
+      // typed cancel is answered without a model and is never refused.
+      const turnKind =
+        confirmedPendingEdit && pendingScope && proposalRunsModel(pendingScope)
+          ? aiWorkKindForMediaSettings(project.mediaSettings)
+          : "standard";
+      if (
+        !(pendingScope && isPendingEditCancellationMessage(parsed.data.message)) &&
+        !(await requireAiCapacity(request, reply, auth.user.id, turnKind))
+      ) {
+        return;
+      }
+      // A typed confirmation of a continuation, rebuild or whole-book rewrite card is that card's
+      // Apply, so it meets the same books-in-progress limit the button does.
+      if (
+        confirmedPendingEdit &&
+        pendingScope &&
+        proposalStartsLongLaneWork(pendingScope) &&
+        !(await requireBooksInProgressCapacity(reply, auth.user.id, { exceptProjectIds: [id] }))
+      ) {
+        return;
+      }
+      // The operator's sexual-content filter, on the reader's own words before
+      // any edit is routed, proposed or held for — a typed cancel excepted,
+      // which asks nothing of a model (`contentSafetyDoors.ts`).
+      if (
+        !(pendingScope && isPendingEditCancellationMessage(parsed.data.message)) &&
+        !(await requireRequestWithoutSexualContent(context, reply, {
+          userId: auth.user.id,
+          projectId: id,
+          text: parsed.data.message,
+          door: "project_chat",
+          log: request.log
+        }))
+      ) {
+        return;
+      }
 
       return withMessageUsage({ userId: auth.user.id, projectId: id, requestKey: messageRequestKey(`project:${id}`, parsed.data.requestId) }, reply, async () => {
         // Admission rejects in-flight replays before this turn-rate check.
@@ -259,11 +313,15 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         }
 
         if (pendingScope && isPendingEditCancellationMessage(parsed.data.message)) {
+          // No model reads a cancel word, so it is answered in the language the
+          // conversation already speaks — a Persian matter question answered
+          // "cancel" used to get its one English reply here.
+          const replyLanguage = matterChatLanguage(undefined, activeMessages);
           const replyMessage = await createAssistantChatMessage({
             projectId: id,
             parentId: userMessage.id,
-            content: "Okay, I dropped that request. No edit was applied.",
-            metadata: { pendingEditCancelled: true, charged: false }
+            content: chatCopy(PROJECT_CHAT_REPLY_COPY, replyLanguage).cancelled,
+            metadata: { pendingEditCancelled: true, charged: false, replyLanguage }
           });
           return {
             ...(await loadProjectChatResponse(id)),
@@ -306,7 +364,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         // scoped to the pages that have it rather than quoted for the whole book.
         const pages = chatPagesForProject(project, await loadChatPageFeatures(project.id));
         const stage = chatStageForProject(project.status, project.currentPlan, project.mediaSettings);
-        const routingTextModel = safeFastRoutingTextModel();
+        const routingTextModel = costedRoutingTextModel(project.id, auth.user.id);
         const sourceRefs = sourceRefsFromInput({ mediaSettings: jsonRecord(jsonRecord(project.currentPlan?.inputSnapshot).mediaSettings ?? project.mediaSettings) });
         // With a current page map, the numbers the user types are the printed PDF
         // pages they can see; without one everything stays in model indexes.
@@ -341,6 +399,9 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           confirmedPendingEdit && pendingScope?.intent
             ? pendingScope
             : null;
+        // Only a language some turn recorded is "established"; English by
+        // default would tell the router a pre-language Persian chat is English.
+        const conversationLanguage = establishedChatLanguage(undefined, activeMessages);
         const intent = confirmedProposal?.intent
           ? confirmedProposal.intent
           : await classifyProjectChatMessage({
@@ -356,12 +417,14 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
                 role: message.role === "USER" ? "user" : "assistant",
                 content: message.content
               })),
+              ...(conversationLanguage ? { conversationLanguage } : {}),
               textModel: routingTextModel,
               ...(sourceRefs.length ? { sourceService: createSourceService(auth.user.id, sourceRefs, createSourceEmbedding(context.appConfig)) } : {}),
               loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null,
               clarifyExhausted,
               pageNumbering,
               ...(project.language ? { language: project.language } : {}),
+              bookMatter: bookMatterForRouter(project),
               ...(readerSelection ? { readerSelection } : {}),
               // Given to the router, not merged into the message: without a
               // referent "make that shorter" falls to the heuristics' catch-all
@@ -397,12 +460,13 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           // saved a moment earlier, and running an undo on "apply it" against
           // whatever had finished in between.
           if (intent.kind === "undo_last_edit" || intent.kind === "redo_last_edit") {
-            const verb = intent.kind === "undo_last_edit" ? "undo" : "redo";
+            const replyLanguage = matterChatLanguage(intent.responseLanguage, activeMessages);
+            const copy = chatCopy(PROJECT_CHAT_REPLY_COPY, replyLanguage);
             const replyMessage = await createAssistantChatMessage({
               projectId: id,
               parentId: userMessage.id,
-              content: `This book is still being worked on. Ask me to ${verb} again once the current job finishes.`,
-              metadata: { intent, blockedByActiveJob: true, charged: false }
+              content: intent.kind === "undo_last_edit" ? copy.undoBusy : copy.redoBusy,
+              metadata: { intent, replyLanguage, blockedByActiveJob: true, charged: false }
             });
             return {
               ...(await loadProjectChatResponse(id)),
@@ -415,6 +479,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
             parentMessageId: userMessage.id,
             intent,
             request: resolvedMessage,
+            activeMessages,
             // A deflected confirmation keeps its priced proposal, so the resume
             // after the job settles executes it instead of re-proposing.
             ...(confirmedProposal ? { pendingState: confirmedProposal } : {}),
@@ -486,7 +551,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         proposalId: parsed.data.proposalId,
         requestId: parsed.data.requestId,
         action: "apply",
-        textModel: safeFastRoutingTextModel()
+        textModel: costedRoutingTextModel(id, auth.user.id)
       });
     }
   );
@@ -521,7 +586,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         proposalId: parsed.data.proposalId,
         requestId: parsed.data.requestId,
         action: "cancel",
-        textModel: safeFastRoutingTextModel()
+        textModel: costedRoutingTextModel(id, auth.user.id)
       });
     }
   );

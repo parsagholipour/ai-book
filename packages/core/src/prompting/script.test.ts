@@ -31,6 +31,13 @@ const CASES: ReadonlyArray<[string | null | undefined, Expected]> = [
   ["en", { script: "latin", direction: "ltr", code: "en" }],
   ["English", { script: "latin", direction: "ltr", code: "en" }],
   ["en-GB", { script: "latin", direction: "ltr", code: "en" }],
+  // The creation chat stores the model's BCP-47 answer, region and all.
+  ["he-IL", { script: "hebrew", direction: "rtl", code: "he" }],
+  ["ar-EG", { script: "arabic", direction: "rtl", code: "ar" }],
+  ["fa_IR", { script: "arabic", direction: "rtl", code: "fa" }],
+  ["th-TH", { script: "thai", direction: "ltr", code: "th" }],
+  ["nb", { script: "latin", direction: "ltr", code: "no" }],
+  ["nb-NO", { script: "latin", direction: "ltr", code: "no" }],
   ["", { script: "latin", direction: "ltr", code: "en" }],
   ["   ", { script: "latin", direction: "ltr", code: "en" }],
   [undefined, { script: "latin", direction: "ltr", code: "en" }],

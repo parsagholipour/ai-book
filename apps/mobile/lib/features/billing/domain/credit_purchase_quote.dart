@@ -96,7 +96,8 @@ class CreditPurchaseOption {
   /// rather than re-formatted, because the store said it best.
   final String unitLabel;
 
-  int get credits => product.creditAmount;
+  /// What one purchase adds: a pack's credits, or a plan's first month.
+  int get credits => product.creditsPerGrant;
 
   double get pricePerCredit =>
       credits <= 0 ? double.infinity : unitPrice / credits;
@@ -184,9 +185,9 @@ CreditQuote quoteCredits({
   bool hasStorePrice(MobileBillingProduct product) =>
       (storeProducts[product.sku]?.rawPrice ?? 0) > 0;
 
-  // Credit packs are what this sells. An export unlock also carries credits,
-  // but it is a different promise, so it only stands in when there are no packs
-  // at all rather than turning up as a third way to buy credits.
+  // Credit packs are what this sells. Any other consumable that carries
+  // credits only stands in when there are no packs at all, rather than turning
+  // up as a third way to buy credits.
   final packs = products
       .where((product) => product.productType == 'CREDIT_PACK')
       .where((product) => product.creditAmount > 0)
@@ -247,7 +248,7 @@ CreditQuote quoteCredits({
   // as the packs'.
   final planOptions =
       plans
-          .where((plan) => plan.creditAmount >= credits)
+          .where((plan) => plan.creditsPerGrant >= credits)
           .where((plan) => !useStore || hasStorePrice(plan))
           .map(
             (plan) => CreditPurchaseOption(

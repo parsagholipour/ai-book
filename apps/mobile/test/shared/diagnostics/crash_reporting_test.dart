@@ -21,12 +21,15 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  test('framework failures retain presentation and their original stack', () {
+  test('framework failures retain presentation and their original stack, '
+      'and are not crashes', () {
+    // The framework caught them and the app went on running.
     final presented = <FlutterErrorDetails>[];
-    final recorded = <(Object, StackTrace)>[];
+    final recorded = <(Object, StackTrace, bool)>[];
     FlutterError.onError = presented.add;
     installCrashHandlers(
-      recordError: (error, stack) async => recorded.add((error, stack)),
+      recordError: (error, stack, {required fatal}) async =>
+          recorded.add((error, stack, fatal)),
     );
     final error = StateError('widget build failed');
     final stack = StackTrace.current;
@@ -35,25 +38,29 @@ void main() {
     FlutterError.reportError(details);
 
     expect(presented, [details]);
-    expect(recorded, [(error, stack)]);
+    expect(recorded, [(error, stack, false)]);
   });
 
-  test('uncaught async failures are recorded and marked handled', () {
-    final recorded = <(Object, StackTrace)>[];
-    installCrashHandlers(
-      recordError: (error, stack) async => recorded.add((error, stack)),
-    );
-    final error = StateError('unawaited operation failed');
-    final stack = StackTrace.current;
+  test(
+    'uncaught async failures are recorded as crashes and marked handled',
+    () {
+      final recorded = <(Object, StackTrace, bool)>[];
+      installCrashHandlers(
+        recordError: (error, stack, {required fatal}) async =>
+            recorded.add((error, stack, fatal)),
+      );
+      final error = StateError('unawaited operation failed');
+      final stack = StackTrace.current;
 
-    expect(PlatformDispatcher.instance.onError!(error, stack), isTrue);
-    expect(recorded, [(error, stack)]);
-  });
+      expect(PlatformDispatcher.instance.onError!(error, stack), isTrue);
+      expect(recorded, [(error, stack, true)]);
+    },
+  );
 
   test('a reporting failure does not escape and report itself again', () async {
     var calls = 0;
     installCrashHandlers(
-      recordError: (error, stack) async {
+      recordError: (error, stack, {required fatal}) async {
         calls++;
         throw StateError('reporting service unavailable');
       },

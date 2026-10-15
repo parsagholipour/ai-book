@@ -11,13 +11,15 @@ import type { FigureRenderContext } from "./figures/figureSvgShared.js";
  * What the Word export takes out of the compiled markdown before marked sees
  * it, and the pictures it embeds.
  *
- * The compiler writes three things as raw HTML that the PDF and EPUB render as
- * markup and a Word document cannot: the coverless title page, the Contents
- * with its dotted leaders, and the `<a id="chapter-N"></a>` destinations the
- * Contents links to. `prepareDocxSource` reads the first back into fields,
- * drops the other two — the document rebuilds its own Contents from the chapter
- * headings and bookmarks them itself — and cuts the manuscript around every
- * figure block, so the JSON of a figure is never lexed as prose.
+ * The compiler writes four things as raw HTML that the PDF and EPUB render as
+ * markup and a Word document cannot: the title page, the matter sheet (the
+ * dedication and publication details), the Contents with its dotted leaders,
+ * and the `<a id="chapter-N"></a>` destinations the Contents links to.
+ * `prepareDocxSource` reads the first two back into fields and drops the Contents.
+ * Chapter anchors survive until the token walk identifies their headings, then
+ * become bookmarks. The document rebuilds its own Contents only when the compiler printed one
+ * (`contents`) — and cuts the manuscript around every figure block, so the
+ * JSON of a figure is never lexed as prose.
  *
  * Nothing here renders HTML, which is the whole of this export's answer to the
  * `stripEmbeddedDocuments` concern: a manuscript is user text, and the one
@@ -29,6 +31,15 @@ export type DocxTitlePage = {
   title: string;
   subtitle: string | undefined;
   byline: string | undefined;
+  /** The line at the title page's foot — the free tier's credit when no matter sheet holds it. */
+  imprint?: string | undefined;
+};
+
+export type DocxMatterSheet = {
+  /** Paragraphs; a line break inside one is a `\n`. */
+  dedication: string[];
+  publication: string[];
+  credit: string | undefined;
 };
 
 export type DocxSegment = { kind: "markdown"; text: string } | { kind: "figure"; fence: FigureFence };
@@ -36,16 +47,29 @@ export type DocxSegment = { kind: "markdown"; text: string } | { kind: "figure";
 export type DocxSource = {
   cover: { alt: string; src: string } | undefined;
   titlePage: DocxTitlePage | undefined;
+  matterSheet: DocxMatterSheet | undefined;
+  /**
+   * Whether the compiler printed a Contents. It writes one only for a book
+   * long enough to be set in chapters (`chapterPresentationFor`), so this —
+   * not a count of `##` headings, which the Sources and About the Author have
+   * too — is what decides whether the Word file prints one.
+   */
+  contents: boolean;
   segments: DocxSegment[];
 };
 
 const TITLE_PAGE_OPEN_RE = /^<section\b[^>]*class=["'][^"']*\bbook-title-page\b/i;
 const CONTENTS_OPEN_RE = /^<section\b[^>]*class=["'][^"']*\bbook-contents\b/i;
+const MATTER_SHEET_OPEN_RE = /^<section\b[^>]*class=["'][^"']*\bbook-matter-sheet\b/i;
 const SECTION_CLOSE_RE = /^<\/section>\s*$/i;
-const CHAPTER_ANCHOR_RE = /^<a\s+id=(["'])chapter-[a-z0-9-]+\1><\/a>\s*$/i;
+
+export function docxChapterAnchorId(markup: string): string | undefined {
+  return /^<a\s+id=(["'])(chapter-[a-z0-9_-]+)\1><\/a>\s*$/i.exec(markup)?.[2];
+}
 
 function unescapeHtml(text: string): string {
   return text
+    .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -62,11 +86,33 @@ function titlePageFrom(section: string): DocxTitlePage | undefined {
   }
   const subtitle = section.match(/<p\b[^>]*\bbook-title-page__subtitle\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
   const byline = section.match(/<p\b[^>]*\bbook-title-page__byline\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
+  const imprint = section.match(/<p\b[^>]*\bbook-title-page__imprint\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
   return {
     title: unescapeHtml(title),
     subtitle: subtitle === undefined ? undefined : unescapeHtml(subtitle) || undefined,
-    byline: byline === undefined ? undefined : unescapeHtml(byline) || undefined
+    byline: byline === undefined ? undefined : unescapeHtml(byline) || undefined,
+    ...(imprint === undefined ? {} : { imprint: unescapeHtml(imprint) || undefined })
   };
+}
+
+/** The `<p>`s of one `<div class="…__name">` inside the matter sheet, each with its class. */
+function matterParagraphs(section: string, name: string): Array<{ text: string; className: string }> {
+  const block = section.match(new RegExp(`<div\\b[^>]*\\bbook-matter-sheet__${name}\\b[^>]*>([\\s\\S]*?)<\\/div>`, "i"))?.[1];
+  if (block === undefined) return [];
+  return [...block.matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi)]
+    .map((match) => ({ text: unescapeHtml(match[2] ?? ""), className: match[1] ?? "" }))
+    .filter((paragraph) => paragraph.text);
+}
+
+function matterSheetFrom(section: string): DocxMatterSheet | undefined {
+  const publication = matterParagraphs(section, "publication");
+  const credit = publication.find((paragraph) => paragraph.className.includes("book-matter-sheet__credit"));
+  const sheet: DocxMatterSheet = {
+    dedication: matterParagraphs(section, "dedication").map((paragraph) => paragraph.text),
+    publication: publication.filter((paragraph) => paragraph !== credit).map((paragraph) => paragraph.text),
+    credit: credit?.text
+  };
+  return sheet.dedication.length + sheet.publication.length > 0 || sheet.credit ? sheet : undefined;
 }
 
 /**
@@ -74,10 +120,17 @@ function titlePageFrom(section: string): DocxTitlePage | undefined {
  * fence toggles the scan off, so a code sample about the book's own markup is
  * printed rather than consumed.
  */
-function stripFurniture(markdown: string): { text: string; titlePage: DocxTitlePage | undefined } {
+function stripFurniture(markdown: string): {
+  text: string;
+  titlePage: DocxTitlePage | undefined;
+  matterSheet: DocxMatterSheet | undefined;
+  contents: boolean;
+} {
   const lines = markdown.split("\n");
   const kept: string[] = [];
   let titlePage: DocxTitlePage | undefined;
+  let matterSheet: DocxMatterSheet | undefined;
+  let contents = false;
   let inFence = false;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
@@ -90,8 +143,10 @@ function stripFurniture(markdown: string): { text: string; titlePage: DocxTitleP
       kept.push(line);
       continue;
     }
-    if (TITLE_PAGE_OPEN_RE.test(line) || CONTENTS_OPEN_RE.test(line)) {
+    if (TITLE_PAGE_OPEN_RE.test(line) || CONTENTS_OPEN_RE.test(line) || MATTER_SHEET_OPEN_RE.test(line)) {
       const isTitlePage = TITLE_PAGE_OPEN_RE.test(line);
+      const isMatterSheet = MATTER_SHEET_OPEN_RE.test(line);
+      if (CONTENTS_OPEN_RE.test(line)) contents = true;
       const section: string[] = [line];
       while (index + 1 < lines.length && !SECTION_CLOSE_RE.test(lines[index]!)) {
         index += 1;
@@ -100,21 +155,27 @@ function stripFurniture(markdown: string): { text: string; titlePage: DocxTitleP
       if (isTitlePage && !titlePage) {
         titlePage = titlePageFrom(section.join("\n"));
       }
+      if (isMatterSheet && !matterSheet) {
+        matterSheet = matterSheetFrom(section.join("\n"));
+      }
       continue;
     }
-    if (CHAPTER_ANCHOR_RE.test(line)) {
+    if (docxChapterAnchorId(line)) {
+      // The compiler can join an anchor directly after the previous page's
+      // prose. Give it its own token without changing any rendered paragraphs.
+      kept.push("", line, "");
       continue;
     }
     kept.push(line);
   }
-  return { text: kept.join("\n"), titlePage };
+  return { text: kept.join("\n"), titlePage, matterSheet, contents };
 }
 
 /** The manuscript cut around its figures, with the front matter read off. */
 export function prepareDocxSource(markdown: string, options: { extractCover?: boolean } = {}): DocxSource {
   const cover = options.extractCover === false ? undefined : leadingCoverIllustration(markdown);
   const body = cover ? cover.rest : markdown;
-  const { text, titlePage } = stripFurniture(body);
+  const { text, titlePage, matterSheet, contents } = stripFurniture(body);
   const segments: DocxSegment[] = [];
   let cursor = 0;
   for (const fence of findFigureFences(text)) {
@@ -130,6 +191,8 @@ export function prepareDocxSource(markdown: string, options: { extractCover?: bo
   return {
     cover: cover ? { alt: cover.alt, src: cover.src } : undefined,
     titlePage,
+    matterSheet,
+    contents,
     segments
   };
 }

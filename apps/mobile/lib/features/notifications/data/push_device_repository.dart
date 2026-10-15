@@ -5,7 +5,8 @@ import 'push_messaging.dart';
 
 /// Where this install's book notifications go (`PUT` / `DELETE
 /// /api/mobile/push-device`). The server binds the token to the session
-/// that filed it, so signing out needs no call here.
+/// that filed it, so signing out needs no call here (but see
+/// [PushRegistrar.signOut] for the session the server never heard end).
 abstract interface class PushDeviceRepository {
   Future<void> register({required String token, required String platform});
   Future<void> unregister(String token);
@@ -57,9 +58,28 @@ class PushRegistrar {
   Future<void>? _inFlight;
 
   Future<void> sync({required String? userId}) {
-    // One at a time: resume and a token refresh can land together.
+    return _queue(() => _sync(userId));
+  }
+
+  /// The account on this install is gone — logged out, or its session ended.
+  /// Its notifications come down and the token it filed is deleted, because
+  /// the server's copy dies with the session only if the server heard about
+  /// the logout: offline, or with a session the server still thinks live, it
+  /// kept sending the old account's books. The next sign-in's [sync] files the
+  /// fresh token Firebase issues.
+  Future<void> signOut() {
+    return _queue(() async {
+      _filed = null;
+      _withdrawn = null;
+      await _messaging.clearBookNotifications();
+      await _messaging.deleteToken();
+    });
+  }
+
+  Future<void> _queue(Future<void> Function() step) {
+    // One at a time: resume, a token refresh and a sign-out can land together.
     final previous = _inFlight ?? Future<void>.value();
-    final next = previous.then((_) => _sync(userId)).catchError((_) {});
+    final next = previous.then((_) => step()).catchError((_) {});
     _inFlight = next;
     return next;
   }

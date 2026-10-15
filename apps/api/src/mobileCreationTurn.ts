@@ -81,7 +81,7 @@ export const mobileCreationTurnSchema = z
     // through the update_settings tool, never through the finish_turn patch,
     // so a model cannot invent a byline without an explicit user statement.
     authorName: z.string().trim().min(1).max(120).optional(),
-    title: z.string().trim().min(2).max(160).optional(),
+    title: z.string().trim().min(1).max(160).optional(),
     // True when the user asked to build the plan from chat ("ok build it").
     buildRequested: z.boolean().default(false)
   })

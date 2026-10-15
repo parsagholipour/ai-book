@@ -64,7 +64,7 @@ describe("APPLIED structural publication replay", () => {
       expect(mocks.renewStructuralPageLeaseTx).toHaveBeenCalledWith(mocks.tx, "op-1", "owner-2");
       expect(mocks.prisma.project.update).not.toHaveBeenCalled();
       expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
-      expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-8", undefined, {
+      expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-8", expect.objectContaining({ review: { skipFinalReview: false, withoutQualityVerdict: false }, expectedProjectStatus: "EDITING", ownership: expect.objectContaining({ kind: "freeEdit" }) }), {
         contentRevision: 8,
         requireContentRevisionMatch: true
       });

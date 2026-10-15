@@ -91,6 +91,24 @@ describe("creation turn enrichment", () => {
     expect(JSON.stringify(model.calls[1]?.messages)).toContain("English");
   });
 
+  it("keeps a one-character title the reader named through update_settings", async () => {
+    // One character is a whole title in Chinese or Japanese (雪); the tool's old
+    // two-character floor refused the call and the title never reached the draft.
+    const request: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "A quiet winter picture book. Call it 雪." }]
+    };
+    const model = toolModel([
+      { toolCalls: [{ name: "update_settings", arguments: { title: "雪" } }] },
+      { finish: { assistantMessage: "雪 it is.", question: null, language: "en" } }
+    ]);
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: neverSearchAdapter() }, request, deterministicCreationTurn(request)
+    );
+
+    expect(patch.title).toBe("雪");
+  });
+
   it("rejects a finish_turn that contradicts the independently resolved language", async () => {
     const model = toolModel([
       { finish: { assistantMessage: "I'll write it in Portuguese.", question: null, language: "pt" } },

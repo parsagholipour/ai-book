@@ -1,15 +1,25 @@
 import {
+  BOOK_MATTER_TEXT_FIELDS,
   libraryCharactersFromMediaSettings,
+  parseBookMatter,
   publishedExportFilename,
   readExportProvenanceRecord,
   readPublishedExport,
   studioSettingsFromMediaSettings
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { prisma, type Prisma } from "@book-maker/db";
 import { objectKey, objectStore } from "@book-maker/storage";
-import { copyrightRestrictionsEnabled, type ContentRestrictionAssessment } from "../../contentRestrictions.js";
+import {
+  copyrightRestrictionsEnabled,
+  type ContentRestrictionAssessment,
+  type ContentRestrictionRefusal
+} from "../../contentRestrictions.js";
+import { screenBookTextForSexualContent, type BookTextScreen } from "../../contentSafetyScreen.js";
+import type { UserTextModerationDeps } from "../../userTextModeration.js";
 import { assessManuscriptText } from "../manuscript/manuscriptContentScreen.js";
+import { screenMatterFields } from "../matterContentScreen.js";
 import { previewSheetRange, sharedPdfLayout, type SharedPdfLayout } from "./sharePageRange.js";
+import { bookTextReview } from "./shareRecords.js";
 import {
   pdfSheetCount,
   readCachedSharePreview,
@@ -36,6 +46,7 @@ export const shareProjectSelect = {
   title: true,
   subtitle: true,
   authorName: true,
+  bookMatter: true,
   status: true,
   category: true,
   subcategory: true,
@@ -52,6 +63,7 @@ export type ShareProject = {
   title: string;
   subtitle: string | null;
   authorName: string | null;
+  bookMatter: unknown;
   status: string;
   category: string;
   subcategory: string | null;
@@ -130,30 +142,146 @@ export async function bookShowsRealLikeness(userId: string, mediaSettings: unkno
 }
 
 /**
- * The book text screen: the Studio's windowed preflight
- * (`manuscriptContentScreen.ts`), page by page, plus the title. It is the
- * cheap deterministic screen that already exists; nothing here classifies a
- * book with a model. Run at create and at every mode change.
+ * Everything a share prints as text — title, subtitle, author, matter and every
+ * page — and the `contentRevision` it is the text of.
  */
-export async function screenSharedBookText(project: Pick<ShareProject, "id" | "title" | "subtitle">): Promise<ContentRestrictionAssessment> {
+export type SharedBookText = {
+  projectId: string;
+  contentRevision: number;
+  title: string;
+  subtitle: string | null;
+  authorName: string | null;
+  bookMatter: unknown;
+  pages: Array<{ title: string; markdown: string }>;
+};
+
+/**
+ * The book's text and its revision, read in **one** snapshot. A screen stamps
+ * the revision it read on the share (`BookShare.screenedContentRevision`), and
+ * the public page serves the book only while that stamp is the book's current
+ * revision. Read separately, an edit committing between the two reads would be
+ * stamped as screened at a revision whose text nobody read; under REPEATABLE
+ * READ the project row and the pages are one moment, and every edit writes its
+ * pages and bumps the revision in one commit. `null` when the book is gone.
+ */
+export async function readSharedBookText(projectId: string): Promise<SharedBookText | null> {
+  return prisma.$transaction(
+    async (tx) => {
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, contentRevision: true, title: true, subtitle: true, authorName: true, bookMatter: true }
+      });
+      if (!project) {
+        return null;
+      }
+      const pages = await tx.page.findMany({
+        where: { projectId },
+        orderBy: { index: "asc" },
+        select: { title: true, markdown: true }
+      });
+      return {
+        projectId,
+        contentRevision: project.contentRevision,
+        title: project.title,
+        subtitle: project.subtitle,
+        authorName: project.authorName,
+        bookMatter: project.bookMatter,
+        pages
+      };
+    },
+    { isolationLevel: "RepeatableRead" }
+  );
+}
+
+/**
+ * The book text screen: the Studio's windowed preflight
+ * (`manuscriptContentScreen.ts`), page by page, plus the title. Matter is
+ * screened field by field as printed text, exactly as its editor screens it.
+ * This is the cheap deterministic screen; the model screen of the operator's
+ * sexual-content filter is {@link moderateSharedBookText}, run after it.
+ * {@link screenSharedBook} runs both, at create, at every mode change and
+ * whenever the book's revision has moved past the share's stamp.
+ */
+export async function screenSharedBookText(text: SharedBookText): Promise<ContentRestrictionAssessment> {
   const copyrightRestrictions = await copyrightRestrictionsEnabled();
-  const heading = [project.title, project.subtitle ?? ""].join("\n").trim();
+  const matter = parseBookMatter(text.bookMatter);
+  const matterAssessment = screenMatterFields({
+    authorName: text.authorName,
+    ...Object.fromEntries(BOOK_MATTER_TEXT_FIELDS.map((field) => [field, matter[field]]))
+  }, copyrightRestrictions);
+  if (matterAssessment) return matterAssessment.refusal;
+  const heading = [text.title, text.subtitle ?? ""].join("\n").trim();
   const headingAssessment = assessManuscriptText(heading, copyrightRestrictions);
   if (!headingAssessment.allowed) {
     return headingAssessment;
   }
-  const pages = await prisma.page.findMany({
-    where: { projectId: project.id },
-    orderBy: { index: "asc" },
-    select: { title: true, markdown: true }
-  });
-  for (const page of pages) {
+  for (const page of text.pages) {
     const assessment = assessManuscriptText(`${page.title}\n${page.markdown}`, copyrightRestrictions);
     if (!assessment.allowed) {
       return assessment;
     }
   }
   return { allowed: true };
+}
+
+/**
+ * The sexual-content filter's model screen over everything the share prints —
+ * title, matter and every page — in windows (`screenBookTextForSexualContent`).
+ * `null` when the operator has the filter off. A confident violation is the
+ * route's 422; windows with no verdict hold the share for an operator's review
+ * rather than refusing it, as the share note's gate does.
+ */
+export async function moderateSharedBookText(
+  text: SharedBookText,
+  deps: UserTextModerationDeps,
+  log?: Parameters<typeof screenBookTextForSexualContent>[0]["log"],
+  options: { budgetMs?: number } = {}
+): Promise<BookTextScreen | null> {
+  const matter = parseBookMatter(text.bookMatter);
+  return screenBookTextForSexualContent({
+    sections: [
+      [text.title, text.subtitle ?? "", text.authorName ?? ""].join("\n"),
+      ...BOOK_MATTER_TEXT_FIELDS.map((field) => String(matter[field] ?? "")),
+      ...text.pages.map((page) => `${page.title}\n${page.markdown}`)
+    ],
+    deps,
+    log,
+    ...(options.budgetMs === undefined ? {} : { budgetMs: options.budgetMs })
+  });
+}
+
+/** What both screens decided about one snapshot of a book's text, and the revision it was. */
+export type SharedBookVerdict =
+  | { verdict: "allowed"; contentRevision: number }
+  /** Windows without a verdict: the share is live and an operator reviews it. */
+  | { verdict: "held"; contentRevision: number; review: Prisma.InputJsonValue }
+  | { verdict: "refused"; contentRevision: number; refusal: ContentRestrictionRefusal };
+
+/**
+ * The deterministic screen (the CSAM names whatever the filter says), then the
+ * sexual-content filter's model screen while it is on — the same two, in the
+ * same order and with the same meaning, wherever a share is screened: its
+ * create, a mode change, and a re-screen after the book changed.
+ */
+export async function screenSharedBook(
+  text: SharedBookText,
+  deps: UserTextModerationDeps,
+  log?: Parameters<typeof screenBookTextForSexualContent>[0]["log"],
+  options: { budgetMs?: number } = {}
+): Promise<SharedBookVerdict> {
+  const contentRevision = text.contentRevision;
+  const deterministic = await screenSharedBookText(text);
+  if (!deterministic.allowed) {
+    return { verdict: "refused", contentRevision, refusal: deterministic };
+  }
+  const moderated = await moderateSharedBookText(text, deps, log, options);
+  if (moderated?.verdict === "refused") {
+    return { verdict: "refused", contentRevision, refusal: moderated.refusal };
+  }
+  if (moderated?.verdict === "held") {
+    return { verdict: "held", contentRevision, review: bookTextReview(moderated) };
+  }
+  return { verdict: "allowed", contentRevision };
 }
 
 export type LoadedLayout = { layout: SharedPdfLayout; digest: string; bytes: Buffer | null };

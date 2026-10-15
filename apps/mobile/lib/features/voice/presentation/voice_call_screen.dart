@@ -533,7 +533,31 @@ class _FinishedCallActions extends StatelessWidget {
         // caller to find it.
         if (state.recordingAvailable)
           note('The recording is under the menu, top right.'),
-        if (needsCredits) ...[
+        // A call refused because calls are a plan perk: ringing again would
+        // only be refused again, so the way on is the plans.
+        if (failed && state.planRequired) ...[
+          AppButton.primary(
+            key: const ValueKey('voice-call-see-plans'),
+            label: 'See plans',
+            leading: const Icon(Icons.workspace_premium_outlined),
+            onPressed: () {
+              AppHaptics.tap();
+              showBillingPaywall(
+                context,
+                projectId: state.character?.projectId,
+                title: 'Talk to your characters',
+                message: state.error,
+                trigger: PaywallTrigger.other,
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          AppButton.text(
+            label: backLabel,
+            leading: const Icon(Icons.arrow_back),
+            onPressed: back,
+          ),
+        ] else if (needsCredits) ...[
           AppButton.primary(
             label: 'Add credits',
             leading: const Icon(Icons.add_card_outlined),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
+import '../data/google_play_billing_client.dart';
 import '../domain/billing_models.dart';
 import 'billing_controller.dart';
 import 'billing_plan_tiles.dart';
@@ -55,22 +56,44 @@ class BillingOfferCheckout extends StatelessWidget {
     final store = state.storeProducts[item?.sku];
     final pending = state.pendingProductIds.isNotEmpty;
     final busy = pending || state.restoring || state.subscriptionBusy;
+    // Held for this product only: a slow payment for one pack leaves the rest
+    // of the shop open.
+    final awaitingPayment =
+        item != null && state.awaitingPaymentProductIds.contains(item.sku);
     final enabled =
         item != null &&
         store != null &&
         state.storeAvailable &&
         !state.loading &&
         !busy &&
+        !awaitingPayment &&
         !isCurrent;
     final storeDown = !state.loading && !state.storeAvailable && !covered;
-    final canRetry = storeDown && onRetry != null && !busy;
-    final status = state.error ?? state.message;
+    // Play answered without this product's price: its query failed, or the
+    // product is not active in Play Console yet. Retrying is the way out, not
+    // a greyed "Temporarily unavailable" with nothing to press.
+    final unpriced =
+        item != null &&
+        !covered &&
+        !isCurrent &&
+        state.unpricedAmong([item]).isNotEmpty;
+    final canRetry = (storeDown || unpriced) && onRetry != null && !busy;
+    // A plan below the one being run out starts at its renewal, not now.
+    final currentSku = state.billing?.plan?.productSku;
+    final status =
+        state.error ??
+        state.message ??
+        (awaitingPayment ? billingAwaitingPaymentMessage : null);
     final subscription = item?.isSubscription ?? false;
     final switching =
         subscription &&
         !isCurrent &&
         state.billing?.plan != null &&
         state.billing!.plan!.tier != 'free';
+    final deferred =
+        switching &&
+        currentSku != null &&
+        isPlanDowngrade(currentSku, item!.sku);
     final after = !subscription && item != null && state.billing != null
         ? state.billing!.credits.available + item.creditAmount
         : null;
@@ -115,6 +138,7 @@ class BillingOfferCheckout extends StatelessWidget {
           // also the difference between seeing the button and not.
           if (covered ||
               (item != null &&
+                  store != null &&
                   !state.loading &&
                   !storeDown &&
                   !billingLargeText(context))) ...[
@@ -122,7 +146,7 @@ class BillingOfferCheckout extends StatelessWidget {
               covered
                   ? 'You have enough credits to continue.'
                   : '${subscription ? billingPlanName(item!) : '${formatCredits(item!.creditAmount)} credits'}'
-                        ' · ${store?.price ?? fallbackPrice(item)} ${subscription ? '/ month' : 'once'}',
+                        ' · ${subscription ? planPriceLine(item, store) : '${store!.price} once'}',
               textAlign: TextAlign.center,
               style: text.labelLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
@@ -143,6 +167,8 @@ class BillingOfferCheckout extends StatelessWidget {
                 ? 'Your current plan'
                 : canRetry
                 ? 'Try again'
+                : awaitingPayment && !busy
+                ? 'Payment pending'
                 : !enabled
                 ? unavailableLabel
                 : subscription
@@ -165,11 +191,17 @@ class BillingOfferCheckout extends StatelessWidget {
                   ? 'Return to your book and try again.'
                   : storeDown
                   ? 'Google Play is not reachable right now.'
+                  : unpriced
+                  ? 'Couldn’t load this price from Google Play.'
+                  : deferred
+                  ? 'Starts when your current plan renews; you keep '
+                        '${state.billing!.plan!.label} until then. '
+                        '${item.renewsLabel}; cancel in Google Play.'
                   : switching
                   ? 'Switches now at full price. Credits reset; unused paid time carries over. '
-                        'Renews monthly; cancel in Google Play.'
+                        '${item?.renewsLabel ?? 'Renews monthly'}; cancel in Google Play.'
                   : subscription
-                  ? 'Renews monthly · Cancel anytime in Google Play'
+                  ? '${item?.renewsLabel ?? 'Renews monthly'} · Cancel anytime in Google Play'
                   : 'One-time purchase · Credits never expire',
               textAlign: TextAlign.center,
               style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),

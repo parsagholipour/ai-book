@@ -12,6 +12,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
+import '../../billing/data/billing_repository.dart';
 import '../../projects/data/projects_repository.dart';
 import '../../projects/domain/project_models.dart';
 import '../../projects/presentation/book_cover.dart';
@@ -20,6 +21,7 @@ import '../domain/audiobook_models.dart';
 import '../domain/audiobook_timeline.dart';
 import 'audio_sound_bars.dart';
 import 'audiobook_controller.dart';
+import 'audiobook_plan_offer.dart';
 import 'narrator_picker_sheet.dart';
 
 part 'audiobook_screen_controls.dart';
@@ -100,10 +102,10 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
                 color: _showTranscript ? colors.primary : null,
               ),
             ),
-          if (state.hasAudiobook)
+          if (state.hasAudiobook && !state.offline)
             IconButton(
               tooltip: 'Change narrator',
-              onPressed: () => _openPicker(detail, replacing: true),
+              onPressed: () => _openPicker(replacing: true),
               icon: const Icon(Icons.record_voice_over_outlined),
             ),
         ],
@@ -134,7 +136,11 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
       return 'failed';
     }
     if (!state.canPlay) {
-      return state.error != null ? 'download-error' : 'preparing';
+      return state.offline
+          ? 'offline-empty'
+          : state.error != null
+          ? 'download-error'
+          : 'preparing';
     }
     return 'player';
   }
@@ -142,6 +148,15 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
   Widget _body(AudiobookState state, MobileProjectDetail? detail) {
     if (state.loading) {
       return const _PlayerSkeleton();
+    }
+    // Offline with nothing to play: the narration was never downloaded here.
+    // Said as a fact about the phone, never as narration being made now.
+    if (state.offline && state.hasAudiobook && !state.canPlay) {
+      return _NotOnThisPhone(
+        onRetry: () => ref
+            .read(audiobookControllerProvider(widget.projectId).notifier)
+            .retry(),
+      );
     }
     if (!state.hasAudiobook) {
       // A failed load must not masquerade as "never narrated" — that offers to
@@ -157,8 +172,11 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
         );
       }
       return _NotNarratedYet(
-        onStart: () => _openPicker(detail, replacing: false),
+        onStart: () => _openPicker(replacing: false),
         busy: state.starting,
+        planLocked: audiobooksLockedByPlan(
+          ref.watch(billingProvider).asData?.value,
+        ),
       );
     }
 
@@ -168,7 +186,7 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
         message:
             audiobook.failureMessage ??
             'The narration did not finish. Your credits were refunded.',
-        onChooseNarrator: () => _openPicker(detail, replacing: true),
+        onChooseNarrator: () => _openPicker(replacing: true),
       );
     }
     if (!state.canPlay) {
@@ -190,8 +208,8 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
 
     return Column(
       children: [
-        if (audiobook.isStale)
-          _StaleBanner(onRenarrate: () => _openPicker(detail, replacing: true)),
+        if (audiobook.isStale && !state.offline)
+          _StaleBanner(onRenarrate: () => _openPicker(replacing: true)),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -248,10 +266,13 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
     showAudiobookChaptersSheet(context, projectId: widget.projectId);
   }
 
-  Future<void> _openPicker(
-    MobileProjectDetail? detail, {
-    required bool replacing,
-  }) async {
+  Future<void> _openPicker({required bool replacing}) async {
+    // Narrating is a plan perk: a free reader is offered the plans instead of
+    // a picker whose confirm the server would refuse. Listening is not gated.
+    if (audiobooksLockedByPlan(ref.read(billingProvider).asData?.value)) {
+      await showAudiobookPlanOffer(context, ref, projectId: widget.projectId);
+      return;
+    }
     final controller = ref.read(
       audiobookControllerProvider(widget.projectId).notifier,
     );
@@ -262,11 +283,18 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
     await showNarratorPickerSheet(
       context,
       projectId: widget.projectId,
-      pageCount: detail?.pageCount ?? detail?.targetPages ?? 0,
       replacing: replacing,
       currentVoice: replacing ? currentVoice : null,
-      onConfirm: (voice) =>
-          controller.narrate(voice: voice, replace: replacing),
+      onConfirm: (voice) async {
+        final failure = await controller.narrate(
+          voice: voice,
+          replace: replacing,
+        );
+        // A refusal may be the plan lock seen through stale billing: re-read
+        // it, so the next tap opens the plans rather than the picker again.
+        if (failure != null) ref.invalidate(billingProvider);
+        return failure;
+      },
     );
   }
 }

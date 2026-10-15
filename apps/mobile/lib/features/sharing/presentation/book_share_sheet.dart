@@ -6,8 +6,6 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
-import '../../billing/data/billing_repository.dart';
-import '../../billing/presentation/billing_paywall.dart';
 import '../data/book_share_repository.dart';
 import '../domain/book_share_models.dart';
 import 'book_share_form.dart';
@@ -17,11 +15,6 @@ import 'book_share_progress.dart';
 /// What the author is told when a save shared the book but held its note.
 const bookShareNoteHeldNotice =
     'Your book is shared; your note is waiting for review.';
-
-/// Why a paywall opened from here: the unlock a full share takes.
-const _unlockPaywallReason =
-    'Sharing the whole book uses its export unlock. Credits unlock protected '
-    'downloads for this book.';
 
 /// Opens the book's share sheet: its public link if it has one, the settings
 /// to make one if not.
@@ -153,16 +146,14 @@ class _BookShareSheetState extends ConsumerState<BookShareSheet> {
       saving: _saving,
       captionError: _captionError,
       refusal: _refusal,
-      notice: _stoppedNotice,
+      // A link the system turned off says why, in the server's words, ahead
+      // of the generic line an author's own stop gets.
+      notice: share != null && !share.isActive && share.stoppedReason != null
+          ? share.stoppedReason
+          : _stoppedNotice,
       askRights: _askRights,
       askLikeness: _askLikeness,
       onSubmit: (request) => _save(snapshot, request),
-      onGetCredits: () => _openPaywall(
-        PaywallCreditsNeeded(
-          credits: snapshot.book.exportUnlockCredits,
-          reason: _unlockPaywallReason,
-        ),
-      ),
       onCancel: live == null ? null : _cancelEditing,
       onCaptionEdited: () => setState(() => _captionError = null),
       onClose: _close,
@@ -189,29 +180,12 @@ class _BookShareSheetState extends ConsumerState<BookShareSheet> {
     });
   }
 
-  Future<void> _save(BookShareSnapshot snapshot, BookShareRequest draft) async {
+  Future<void> _save(
+    BookShareSnapshot snapshot,
+    BookShareRequest request,
+  ) async {
     if (_saving != null) return;
-    final book = snapshot.book;
     final live = snapshot.activeShare;
-    var request = draft;
-    if (draft.mode == BookShareMode.full && !book.exportUnlocked) {
-      // The download spends a covered unlock silently because tapping a file
-      // is the ask. Sharing is not, so the price is agreed to in so many words.
-      final agreed = await showAppConfirmationDialog(
-        context,
-        title: 'Unlock this book?',
-        message:
-            'Sharing the whole book uses its export unlock: '
-            '${book.exportUnlockCredits} credits, the same unlock the PDF '
-            'download takes. Its downloads are included afterwards. Previews '
-            'are free.',
-        confirmLabel: live == null ? 'Unlock and share' : 'Unlock and save',
-        cancelLabel: 'Not now',
-        icon: Icons.lock_open_outlined,
-      );
-      if (!agreed || !mounted) return;
-      request = draft.withUnlockAccepted();
-    }
     final note = request.caption?.trim() ?? '';
     final checkingNote = note.isNotEmpty && note != (snapshot.share?.caption);
     setState(() {
@@ -232,7 +206,7 @@ class _BookShareSheetState extends ConsumerState<BookShareSheet> {
     try {
       final saved = await _controller.save(request);
       if (!mounted) return;
-      final shared = saved.snapshot.activeShare;
+      final shared = saved.activeShare;
       setState(() {
         _saving = null;
         _editing = false;
@@ -251,14 +225,14 @@ class _BookShareSheetState extends ConsumerState<BookShareSheet> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = null);
-      await _showSaveError(error, editing: live != null);
+      _showSaveError(error, editing: live != null);
     }
   }
 
   /// Puts the server's refusal beside what it is about: a note's sentence
-  /// under the note, a missing confirmation as that checkbox, a short balance
-  /// as the paywall, anything else above the button.
-  Future<void> _showSaveError(Object error, {required bool editing}) async {
+  /// under the note, a missing confirmation as that checkbox, anything else
+  /// above the button.
+  void _showSaveError(Object error, {required bool editing}) {
     AppHaptics.error();
     final title = editing ? 'Changes not saved' : 'Not shared yet';
     if (error is! ApiException) {
@@ -276,13 +250,6 @@ class _BookShareSheetState extends ConsumerState<BookShareSheet> {
       return;
     }
     switch (code) {
-      case 'INSUFFICIENT_CREDITS':
-        await _openPaywall(
-          PaywallCreditsNeeded.fromApiError(
-            error,
-            reason: _unlockPaywallReason,
-          ),
-        );
       case 'CONTENT_RESTRICTED' || 'COPYRIGHT_RESTRICTED':
         setState(
           () => _refusal = BookShareRefusal(
@@ -296,14 +263,12 @@ class _BookShareSheetState extends ConsumerState<BookShareSheet> {
           _askLikeness = _askLikeness || code == 'SHARE_LIKENESS_REQUIRED';
           _refusal = BookShareRefusal(title: title, message: error.message);
         });
-      case 'EXPORT_UNLOCK_REQUIRED' ||
-          'SHARE_TAKEN_DOWN' ||
+      case 'SHARE_TAKEN_DOWN' ||
           'SHARE_NOT_AVAILABLE' ||
           'SHARE_BEING_UPDATED' ||
           'PREVIEW_TOO_LONG' ||
           'PREVIEW_PAGES_REQUIRED':
-        // The book changed under the sheet — its unlock, its length, its
-        // status. Read it again so the controls match what the server knows.
+        // The book changed under the sheet — its length, its status. Read it again so the controls match what the server knows.
         setState(
           () =>
               _refusal = BookShareRefusal(title: title, message: error.message),
@@ -315,17 +280,6 @@ class _BookShareSheetState extends ConsumerState<BookShareSheet> {
               _refusal = BookShareRefusal(title: title, message: error.message),
         );
     }
-  }
-
-  Future<void> _openPaywall(PaywallCreditsNeeded needed) async {
-    await showBillingPaywall(
-      context,
-      projectId: widget.projectId,
-      title: null,
-      creditsNeeded: needed,
-    );
-    if (!mounted) return;
-    ref.invalidate(billingProvider);
   }
 
   Future<void> _sendLink(BookShare share) async {

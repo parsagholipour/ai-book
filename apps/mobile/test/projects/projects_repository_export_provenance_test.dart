@@ -38,8 +38,6 @@ MobileExportAvailability _epub({int revision = 5, int? byteSize}) {
   return MobileExportAvailability(
     format: 'epub',
     available: true,
-    unlocked: true,
-    creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'the-book.epub',
     contentType: 'application/epub+zip',

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/authed_network_image.dart';
+import '../../projects/presentation/ai_content_report.dart';
 import '../../projects/presentation/plan_build_progress.dart'
     show PlanBuildProgressBar, PlanBuildSparkle;
 import '../domain/assist_models.dart';
@@ -96,6 +98,7 @@ Future<ManuscriptAssist?> showStudioAiInboxSheet(
                   padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                   child: _InboxRow(
                     key: ValueKey('studio-inbox-${assist.id}'),
+                    projectId: controller.projectId,
                     assist: assist,
                     chapter: chapterLabel(assist.chapterId),
                     onUse: () => Navigator.of(sheetContext).pop(assist),
@@ -109,8 +112,9 @@ Future<ManuscriptAssist?> showStudioAiInboxSheet(
   );
 }
 
-class _InboxRow extends StatelessWidget {
+class _InboxRow extends ConsumerWidget {
   const _InboxRow({
+    required this.projectId,
     required this.assist,
     required this.chapter,
     required this.onUse,
@@ -118,13 +122,29 @@ class _InboxRow extends StatelessWidget {
     super.key,
   });
 
+  final String projectId;
   final ManuscriptAssist assist;
   final String? chapter;
   final VoidCallback onUse;
   final VoidCallback onDiscard;
 
+  /// A finished suggestion is AI output the author is looking at, so it can be
+  /// reported before it is used; the server snapshots the stored result.
+  Future<void> _report(BuildContext context, WidgetRef ref) => reportAiContent(
+    context: context,
+    title: 'Report this AI suggestion',
+    submit: (reason, comment) => ref
+        .read(aiContentReportsApiProvider)
+        .reportStudioAssist(
+          projectId: projectId,
+          assistId: assist.id,
+          reason: reason,
+          comment: comment,
+        ),
+  );
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final status = assist.status;
@@ -195,6 +215,13 @@ class _InboxRow extends StatelessWidget {
                         label: failed ? 'Remove' : 'Discard',
                         onPressed: onDiscard,
                       ),
+                      if (ready)
+                        AppButton.text(
+                          key: ValueKey('studio-inbox-report-${assist.id}'),
+                          label: 'Report',
+                          leading: const Icon(Icons.flag_outlined, size: 18),
+                          onPressed: () => _report(context, ref),
+                        ),
                     ],
                   ),
                 ],

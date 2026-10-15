@@ -1,5 +1,4 @@
 import { Prisma, prisma } from "./client.ts";
-import { grantProjectEntitlementTx } from "./billingEntitlements.ts";
 import {
   type BillingTx,
   type CreditLedgerEntryRecord,
@@ -96,7 +95,6 @@ export type StartGenerationAttemptOptions = {
   description: string;
   metadata?: Record<string, unknown> | undefined;
   imageQuotaLimit?: number | null | undefined;
-  grantExportEntitlement?: boolean | undefined;
   /**
    * Writes the domain state and **creates** the durable job this attempt pays
    * for — *every* job it enqueues stamped with the `attemptId` it is handed, not
@@ -236,18 +234,6 @@ export async function startGenerationAttempt(
             data: { projectId: domain.projectId, generationJobId: domain.primaryJobId }
           });
         }
-        if (options.grantExportEntitlement && domain.projectId) {
-          await grantProjectEntitlementTx(tx, {
-            userId: options.userId,
-            projectId: domain.projectId,
-            type: "EXPORT_UNLOCK",
-            source: "full_generation_credits",
-            creditsCost: options.quotedCredits,
-            relatedLedgerEntryId: spend?.id ?? null,
-            metadata: { generationAttemptId: claimed.id, includedInFullGenerationPackage: true }
-          });
-        }
-
         const attempt = await tx.generationAttempt.update({
           where: { id: claimed.id },
           data: {

@@ -69,6 +69,11 @@ void main() {
       find.byKey(const ValueKey('character-editor-choose-photo')),
     );
     await tester.pumpAndSettle();
+    // Said before any photo is chosen, on every way in.
+    expect(
+      find.byKey(const ValueKey('character-photo-consent')),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('character-photo-gallery')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));

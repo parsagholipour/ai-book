@@ -1,5 +1,8 @@
 import {
+  hasReaderFacingSources,
+  includeSourcesPreference,
   modelPageIndexesForPdfPage,
+  parseBookMatter,
   parseStoredBookPdfNumbering,
   parseStoredBookPdfPageMap,
   pdfPageForPrintedPage,
@@ -7,13 +10,17 @@ import {
   pdfSpanForModelPages,
   printedPageForPdfPage,
   primaryModelPageForPdfPage,
+  shouldPrintSourcesBackMatter,
   type BookPdfPageMap,
   type BookPdfPageNumbering,
+  type ConversationLanguage,
   type PdfPageZone,
   type StoredBookPdfPageMap
 } from "@book-maker/core";
 import type { BookEditIntent, BookEditPageContext } from "./bookEditIntent.js";
-import { pageIndexesFromMessage, quotedTexts, spokenPageNumbersFromMessage } from "./bookEditMessage.js";
+import { bookMatterIntent } from "./bookEditMatter.js";
+import { furnitureReply } from "./bookFurnitureReplyCopy.js";
+import { pageIndexesFromMessage, pageIndexesMatchingText, quotedTexts, spokenPageNumbersFromMessage } from "./bookEditMessage.js";
 
 /**
  * Turning model page indexes into the numbers a reader can actually see.
@@ -85,6 +92,47 @@ export type ReaderPageNumbering = {
   printedPageEnd(index: number): number | undefined;
   /** The first sheet of one model page, or `undefined` when a map in force cannot place it. */
   printedPageStart(index: number): number | undefined;
+  /**
+   * What the pages after the book's text hold, when the caller had the row to
+   * say. Absent is unknown, and the chat then names them neutrally.
+   */
+  backMatter?: BookBackMatterContents;
+  /**
+   * The printed pages before the Contents that hold no book text, and what each
+   * one is, when the map measured any. Absent without a map.
+   */
+  frontMatter?: BookFrontMatterPage[];
+};
+
+/**
+ * One printed page of front matter. Since the matter pages, a covered book
+ * prints its title page and then the dedication-and-publication sheets ahead of
+ * the Contents; the map calls them all `front_matter` (`pdfPageZone`) without
+ * recording whether the skipped first sheet was a cover or the title page.
+ *
+ * `title_or_matter` is the honest answer when the row cannot settle it: a
+ * coverless book's title sheet is the unnumbered first sheet, so a dedication
+ * spanning several pages starts at printed page 1, just as a covered book's
+ * title page does. A map measured before the row last changed (EDITING keeps
+ * the previous map) cannot use the current matter to narrow that answer.
+ */
+export type BookFrontMatterPage = {
+  page: number;
+  holds: "title_page" | "matter_sheet" | "title_or_matter";
+};
+
+/**
+ * What the back matter the map's one start (`backMatterStartPdfPage`) opens
+ * holds. The compiler anchors that start on the first back-matter heading —
+ * the Sources list, or About the Author when no Sources print — so the map
+ * alone cannot say which, and naming it "the Sources list" told a reader
+ * asking about their bio's page to remove their sources.
+ */
+export type BookBackMatterContents = {
+  /** The Sources list prints (and comes first). */
+  sources: boolean;
+  /** The About the Author page prints (always last). */
+  aboutAuthor: boolean;
 };
 
 /**
@@ -121,7 +169,94 @@ export type ProjectPageMapSource = {
   contentRevision: number;
   /** When `EDITING`, a behind map still describes the PDF on screen. */
   status?: string;
+  /**
+   * What the compile prints after the text is read off these when every one
+   * of them was loaded (`backMatterContentsForProject`); a caller without them
+   * gets a numbering that names the back matter neutrally.
+   */
+  research?: ReadonlyArray<{ title: string; url: string | null; summary: string }>;
+  bookMatter?: unknown;
+  /** With `bookMatter`, says whether a matter sheet prints (`frontMatterForProject`). */
+  authorName?: string | null;
+  category?: string | null;
+  mediaSettings?: unknown;
 };
+
+/**
+ * What the book's back matter holds, decided the way the compile decides it:
+ * the Sources list when the category or the reader's preference prints it and
+ * a source carries a link (`backMatterEdits.ts` asks the same two questions),
+ * About the Author when the book's matter has a biography. Undefined when the
+ * caller did not load the fields that say.
+ */
+export function backMatterContentsForProject(project: ProjectPageMapSource): BookBackMatterContents | undefined {
+  if (!project.research || !("bookMatter" in project) || !("category" in project) || !("mediaSettings" in project)) {
+    return undefined;
+  }
+  const sources =
+    shouldPrintSourcesBackMatter({
+      category: project.category ?? undefined,
+      includeSources: includeSourcesPreference(project.mediaSettings)
+    }) && hasReaderFacingSources(project.research.map((source) => ({ ...source, url: source.url ?? undefined })));
+  return { sources, aboutAuthor: Boolean(parseBookMatter(project.bookMatter).aboutAuthor) };
+}
+
+/** What a reader calls the back matter, from what it holds. */
+export function backMatterName(contents: BookBackMatterContents | undefined): string {
+  if (contents?.sources && contents.aboutAuthor) return "the Sources list and the About the Author page";
+  if (contents?.sources) return "the Sources list";
+  if (contents?.aboutAuthor) return "the About the Author page";
+  return "the pages at the end of the book";
+}
+
+/**
+ * The printed front-matter pages of the book the map measured, named from the
+ * row when it describes the same revision. A matter sheet prints when the book
+ * has a dedication, a holder for its © line (the copyright holder, or the author
+ * name), an imprint or an ISBN — the compile's own test (`formatBookMatter`).
+ */
+export function frontMatterForProject(map: BookPdfPageMap, project: ProjectPageMapSource): BookFrontMatterPage[] {
+  const firstText = map.pages[0]?.startPdfPage ?? map.totalPdfPages + 1;
+  const printed: number[] = [];
+  for (let pdfPage = 1; pdfPage < firstText; pdfPage += 1) {
+    const page = pdfPageZone(map, pdfPage) === "front_matter" ? printedPageForPdfPage(map, pdfPage) : undefined;
+    if (page !== undefined) printed.push(page);
+  }
+  if (printed.length === 0) return [];
+  const known =
+    "bookMatter" in project &&
+    "authorName" in project &&
+    (map as StoredBookPdfPageMap).contentRevision === project.contentRevision;
+  const matter = parseBookMatter(project.bookMatter);
+  const sheet = Boolean(
+    matter.dedication || matter.copyrightHolder || project.authorName?.trim() || matter.imprint || matter.isbn
+  );
+  return printed.map((page, offset) => ({
+    page,
+    holds: !known
+      ? "title_or_matter"
+      : !sheet
+        ? "title_page"
+        // The compiler keeps the title to one sheet. After the first numbered
+        // sheet, only the dedication/publication section can still continue.
+        : offset > 0
+          ? "matter_sheet"
+          : "title_or_matter"
+  }));
+}
+
+const FRONT_MATTER_NAMES: Record<BookFrontMatterPage["holds"], string> = {
+  title_page: "the title page — the book's title, subtitle and author name",
+  matter_sheet: "the dedication and publication page — the dedication, the © line, the publisher and the ISBN",
+  title_or_matter: "front matter — the title page, or the dedication and publication page"
+};
+
+/** The front matter as the router and the matter composer are told it. */
+export function frontMatterForPrompt(numbering: ReaderPageNumbering): Array<{ page: number; holds: string }> | undefined {
+  return numbering.frontMatter?.length
+    ? numbering.frontMatter.map((entry) => ({ page: entry.page, holds: FRONT_MATTER_NAMES[entry.holds] }))
+    : undefined;
+}
 
 /**
  * The project's stored map, provided it still describes the PDF the reader
@@ -167,7 +302,10 @@ function storedRecordDescribesProject(
   return stored.contentRevision < project.contentRevision && project.status === "EDITING";
 }
 
-export function readerPageNumbering(pdfPageMap: BookPdfPageMap | undefined): ReaderPageNumbering {
+export function readerPageNumbering(
+  pdfPageMap: BookPdfPageMap | undefined,
+  options: { backMatter?: BookBackMatterContents | undefined; frontMatter?: BookFrontMatterPage[] | undefined } = {}
+): ReaderPageNumbering {
   const mapContentRevision = (pdfPageMap as StoredBookPdfPageMap | undefined)?.contentRevision;
   const mapPdfDigest = (pdfPageMap as StoredBookPdfPageMap | undefined)?.pdfDigest;
   // One model page, one end of its printed span. Without a map at all the model
@@ -188,6 +326,8 @@ export function readerPageNumbering(pdfPageMap: BookPdfPageMap | undefined): Rea
     pdfPageMap,
     ...(mapContentRevision !== undefined ? { mapContentRevision } : {}),
     ...(mapPdfDigest !== undefined ? { mapPdfDigest } : {}),
+    ...(options.backMatter ? { backMatter: options.backMatter } : {}),
+    ...(pdfPageMap && options.frontMatter?.length ? { frontMatter: options.frontMatter } : {}),
     displayPages(indexes: readonly number[]): number[] {
       if (!pdfPageMap) {
         return [...new Set(indexes)].sort((a, b) => a - b);
@@ -233,7 +373,10 @@ export const MODEL_PAGE_NUMBERING: ReaderPageNumbering = readerPageNumbering(und
 
 /** One-step helper for callers holding the project row. */
 export function numberingForProject(project: ProjectPageMapSource): ReaderPageNumbering {
-  return readerPageNumbering(bookPageMapForProject(project));
+  const map = bookPageMapForProject(project);
+  const backMatter = map?.backMatterStartPdfPage !== undefined ? backMatterContentsForProject(project) : undefined;
+  const frontMatter = map ? frontMatterForProject(map, project) : undefined;
+  return readerPageNumbering(map, { ...(backMatter ? { backMatter } : {}), ...(frontMatter?.length ? { frontMatter } : {}) });
 }
 
 /**
@@ -352,7 +495,10 @@ export function modelPagesForCopiedPrintedPages(
 
 /**
  * A deterministic answer for a request aimed at a furniture page — the cover,
- * the Contents, the Sources — used on the model-less routing paths only.
+ * the Contents, the back matter — used on model-less paths and to replace a
+ * routed edit that still targets furniture. The words are the conversation
+ * language's entry in `FURNITURE_REPLY_COPY` (English when none was chosen),
+ * settled before the reply can become the grounded answer's fallback.
  *
  * The router model gets `readerPageContext` and answers these itself; without
  * a model, a furniture number resolves to no page, the heuristics fall to
@@ -368,41 +514,34 @@ export function modelPagesForCopiedPrintedPages(
 export function furniturePageIntentFromMessage(
   message: string,
   pages: BookEditPageContext[],
-  numbering: ReaderPageNumbering
+  numbering: ReaderPageNumbering,
+  responseLanguage?: ConversationLanguage
 ): BookEditIntent | null {
   const map = numbering.pdfPageMap;
-  if (!map) {
+  const zones = spokenFurnitureZones(message, pages, numbering);
+  if (!map || !zones) {
     return null;
   }
-  const spoken = spokenPageNumbersFromMessage(message);
-  if (spoken.length === 0 || quotedTexts(message).length > 0) {
-    return null;
-  }
-  if (pageIndexesFromMessage(message, pages, { pdfPageMap: map }).length > 0) {
-    return null;
-  }
-  const zones = spoken.map((value) => {
-    const pdfPage = pdfPageForPrintedPage(map, value);
-    return pdfPage === undefined ? "outside" : pdfPageZone(map, pdfPage);
-  });
-  if (zones.some((zone) => zone === "content")) {
-    return null;
-  }
-  const first = spoken[0]!;
+  const first = zones[0]!;
   const storyStart = map.pages[0] ? printedPageForPdfPage(map, map.pages[0].startPdfPage) : undefined;
   const storyEnd = map.pages.length
     ? printedPageForPdfPage(map, map.pages[map.pages.length - 1]!.endPdfPage)
     : undefined;
-  const story =
+  const storyRange =
     storyStart !== undefined && storyEnd !== undefined
-      ? ` The story runs on printed pages ${storyStart}–${storyEnd}.`
-      : "";
+      ? `${storyStart}–${storyEnd}`
+      : undefined;
   return {
     kind: "answer",
     confidence: 0.95,
     reasoning: "The named printed page holds no book text.",
+    ...(responseLanguage ? { responseLanguage } : {}),
     affectedPageIndexes: [],
-    assistantMessage: `${furniturePageDescription(first, zones[0]!)}${story}`,
+    assistantMessage: furnitureReply(
+      responseLanguage, first.page, first.zone,
+      numbering.frontMatter?.find((entry) => entry.page === first.page)?.holds,
+      numbering.backMatter, storyRange
+    ),
     scope: "none",
     impact: "small_text",
     clarification: "none"
@@ -410,33 +549,83 @@ export function furniturePageIntentFromMessage(
 }
 
 /**
- * The sentence for one furniture zone, named by the number the reader spoke.
- *
- * **`cover` is a version-1 answer and only ever that**, which is a property of
- * the two numbering systems rather than an oversight. A version-2 PDF resets the
- * counter on the cover sheet, so that sheet carries no printed number at all:
- * `pdfPageForPrintedPage` refuses to resolve any printed number onto sheet 1,
- * the app's chrome labels it "Cover" instead of "Page 1"
- * (`printedPageLabel`, `apps/mobile/lib/features/reader/domain/reader_models.dart`),
- * and the router prompt is told the same thing — so a version-2 reader can never
- * *mean* the cover by a number, and "page 1" is the first numbered sheet. A
- * version-1 PDF counted its cover, `printedPageOffset` is 0 for those maps, and
- * that book's footer and chrome both call the cover page 1 — so this arm is the
- * live path there, and the `default` would tell that reader their book has no
- * printed page 1. Both halves are pinned in `bookPageNumbering.test.ts`; the arm
- * looks dead against a version-2 map and is not.
+ * The printed pages a message speaks, with what each one is, when every one of
+ * them lands off the book's text — null when the message speaks none, quotes a
+ * passage found in the body context, or names a page of prose by number or title.
  */
-function furniturePageDescription(printedPage: number, zone: PdfPageZone): string {
-  switch (zone) {
-    case "cover":
-      return `That’s the book’s cover — there’s no page text on it to edit. To change the cover, tell me what you’d like it to show.`;
-    case "contents":
-      return `Printed page ${printedPage} is the table of contents. It’s rebuilt from the chapters at every export, so there’s nothing on it to edit directly — say “don’t use the word Chapter” or similar to restyle its headings.`;
-    case "back_matter":
-      return `Printed page ${printedPage} is the Sources list at the back of the book. It’s rebuilt at every export — say “remove the sources list” if you’d like it gone.`;
-    case "front_matter":
-      return `Printed page ${printedPage} is the book’s front matter — there’s no page text on it to edit.`;
-    default:
-      return `This book’s PDF doesn’t have a printed page ${printedPage}.`;
+export function spokenFurnitureZones(
+  message: string,
+  pages: BookEditPageContext[],
+  numbering: ReaderPageNumbering
+): Array<{ page: number; zone: PdfPageZone }> | null {
+  const map = numbering.pdfPageMap;
+  if (!map) {
+    return null;
   }
+  const spoken = spokenPageNumbersFromMessage(message);
+  if (spoken.length === 0) {
+    return null;
+  }
+  // Quotes may contain new replacement words, not a passage locating prose:
+  // `change page 1 to "by Sam Lee"` still targets the printed title page.
+  if (quotedTexts(message).some((quote) => pageIndexesMatchingText(quote, pages).length > 0)) {
+    return null;
+  }
+  if (pageIndexesFromMessage(message, pages, { pdfPageMap: map }).length > 0) {
+    return null;
+  }
+  const zones = spoken.map((page) => {
+    const pdfPage = pdfPageForPrintedPage(map, page);
+    return { page, zone: pdfPage === undefined ? ("outside" as const) : pdfPageZone(map, pdfPage) };
+  });
+  return zones.some(({ zone }) => zone === "content") ? null : zones;
+}
+
+/**
+ * A routed edit aimed only at printed pages that hold no prose, taken off them.
+ *
+ * The router is told which printed pages are furniture (`readerPageContext`)
+ * and asked not to edit them, but nothing checked that it listened, and a page
+ * channel naming a furniture number is left as the router wrote it
+ * (`modelPagesForCopiedPrintedPages`) — so "change page 1" on a covered book,
+ * whose printed pages 1 and 2 are now the title page and the dedication sheet,
+ * could be priced as a rewrite of whichever model page shares the number.
+ * A text edit of front matter is a change to the book's matter, so it goes to
+ * the free matter edit, whose composer is told what each printed page holds;
+ * a delete or a move of it, and any edit of other furniture, gets the answer
+ * the model-free path gives. An insert is left alone: "a new page after page 2"
+ * names a place, and the front of the book is one.
+ *
+ * The router may omit its `responseLanguage`, so the reply falls back to the
+ * established conversation language as the model-free path does — or a
+ * Persian chat was answered in English only while the router was up.
+ */
+export function withoutFurniturePageEdit(
+  intent: BookEditIntent,
+  message: string,
+  pages: BookEditPageContext[],
+  numbering: ReaderPageNumbering,
+  conversationLanguage?: ConversationLanguage
+): BookEditIntent {
+  const aimsAtPages =
+    intent.kind === "page_rewrite" ||
+    intent.kind === "local_patch" ||
+    intent.kind === "clarify" ||
+    (intent.kind === "restructure_pages" && intent.structuralEdit?.action !== "insert");
+  const zones = aimsAtPages ? spokenFurnitureZones(message, pages, numbering) : null;
+  if (!zones) {
+    return intent;
+  }
+  const language = intent.responseLanguage ?? conversationLanguage;
+  // Deleting or moving a front-matter page is not a matter edit: "delete page 2"
+  // would clear every field on the sheet, so it is answered with what is there.
+  if (intent.kind !== "restructure_pages" && zones.every(({ zone }) => zone === "front_matter")) {
+    return bookMatterIntent({
+      confidence: Math.max(intent.confidence, 0.8),
+      reasoning: "The named printed page is front matter, printed from the book's details rather than a page.",
+      assistantMessage: "I’ll change that on the book’s front matter.",
+      ...(language ? { responseLanguage: language } : {})
+    });
+  }
+  return furniturePageIntentFromMessage(message, pages, numbering, language) ?? intent;
 }

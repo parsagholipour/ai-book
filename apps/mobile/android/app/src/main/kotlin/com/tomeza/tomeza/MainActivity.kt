@@ -14,5 +14,6 @@ class MainActivity : AudioServiceActivity() {
     registerVoiceCallAudioPlayer(this, flutterEngine.dartExecutor.binaryMessenger)
     registerVoiceCallAudioEncoder(flutterEngine.dartExecutor.binaryMessenger)
     registerNotificationSettings(this, flutterEngine.dartExecutor.binaryMessenger)
+    registerInstallReferrer(this, flutterEngine.dartExecutor.binaryMessenger)
   }
 }

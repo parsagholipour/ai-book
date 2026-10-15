@@ -56,8 +56,8 @@ export function hasAllPagesScope(message: string): boolean {
 function normalizeScopeOnlyText(message: string): string {
   return message
     .toLowerCase()
-    .replace(/[.!?]+$/g, "")
+    .replace(/(?<![.!?])[.!?]+$/g, "")
     .replace(/^(?:i\s+(?:said|mean|meant|told\s+you)\s+|just\s+|please\s+|do\s+|make\s+it\s+|the\s+)/i, "")
-    .replace(/\s+please$/i, "")
+    .replace(/(?<!\s)\s+please$/i, "")
     .trim();
 }

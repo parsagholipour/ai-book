@@ -14,23 +14,55 @@ import type { AdminShare, CaptionVerdict, ModerationAttempt, ShareModerationActi
 export const TAKEDOWN_REASON_MAX = 500;
 
 export type ShareSnapshot = {
-  /** Who filed it: the gate that had no verdict, or a reader on the public page. */
-  kind: "caption_review" | "public_report" | null;
+  /**
+   * Who filed it: the note's gate that had no verdict, the sexual-content
+   * filter's book-text screen that had none (`book_text_review`), or a reader
+   * on the public page.
+   */
+  kind: "caption_review" | "book_text_review" | "public_report" | null;
   caption: string | null;
   slug: string | null;
   title: string | null;
   verdict: CaptionVerdict | null;
+  /** On a `book_text_review`: how much of the book the screen read and could not decide. */
+  bookText: BookTextReview | null;
+};
+
+/** `bookTextReview` in apps/api/src/mobile/shares/shareRecords.ts. */
+export type BookTextReview = {
+  /** 8,000-character windows of title, matter and pages. */
+  windows: number;
+  /** Windows a model answered without a confident verdict. */
+  undecided: number;
+  /** Windows never read: the screen's budget or window cap ran out first. */
+  unscreened: number;
+  reasons: string[];
+  decidedAt: string | null;
 };
 
 export function readShareSnapshot(value: unknown): ShareSnapshot {
   const record = asRecord(value);
   const kind = record?.kind;
   return {
-    kind: kind === "caption_review" || kind === "public_report" ? kind : null,
+    kind: kind === "caption_review" || kind === "book_text_review" || kind === "public_report" ? kind : null,
     caption: text(record?.caption),
     slug: text(record?.slug),
     title: text(record?.title),
-    verdict: readCaptionVerdict(record?.verdict)
+    verdict: readCaptionVerdict(record?.verdict),
+    bookText: kind === "book_text_review" ? readBookTextReview(record?.verdict) : null
+  };
+}
+
+export function readBookTextReview(value: unknown): BookTextReview | null {
+  const record = asRecord(value);
+  if (!record || record.surface !== "book_text") return null;
+  const count = (raw: unknown) => (typeof raw === "number" && Number.isInteger(raw) && raw >= 0 ? raw : 0);
+  return {
+    windows: count(record.windows),
+    undecided: count(record.undecidedWindows),
+    unscreened: count(record.unscreenedWindows),
+    reasons: Array.isArray(record.reasons) ? record.reasons.filter((reason): reason is string => text(reason) !== null) : [],
+    decidedAt: text(record.decidedAt)
   };
 }
 
@@ -111,18 +143,31 @@ export function words(id: string): string {
 export type ShareActionAvailability = Record<ShareModerationAction, { enabled: boolean; why: string | null }>;
 
 /**
- * Which of the three actions apply to this share. The server answers 409
- * NO_CAPTION to a caption action on a share with no note, and a second take-down
- * would only overwrite the reason the author was already shown.
+ * Which of the four actions apply to this share. The server answers 409
+ * NO_CAPTION to a caption action on a share with no note, and NO_TEXT_REVIEW to
+ * approving a book text nothing is holding; a second take-down would only
+ * overwrite the reason the author was already shown. `heldBookText` is whether
+ * the queue holds a pending `book_text_review` for this share.
  */
-export function shareActionAvailability(share: AdminShare): ShareActionAvailability {
+export function shareActionAvailability(share: AdminShare, heldBookText = false): ShareActionAvailability {
   const noCaption = share.caption?.trim() ? null : "This share has no note.";
   const takenDown = share.status === "taken_down" ? "Already taken down." : null;
+  const noTextReview = heldBookText ? null : "No book text is waiting for review on this share.";
   return {
     approve_caption: { enabled: noCaption === null, why: noCaption },
     remove_caption: { enabled: noCaption === null, why: noCaption },
+    approve_book_text: { enabled: noTextReview === null, why: noTextReview },
     take_down: { enabled: takenDown === null, why: takenDown }
   };
+}
+
+/** The shares the queue holds a pending book-text review for: the one approval that closes it is a share action. */
+export function sharesWithHeldBookText(reports: ReadonlyArray<{ status: string; bookShareId: string | null; targetSnapshot?: unknown }>): Set<string> {
+  return new Set(
+    reports
+      .filter((report) => report.status === "pending" && report.bookShareId && readShareSnapshot(report.targetSnapshot).kind === "book_text_review")
+      .map((report) => report.bookShareId!)
+  );
 }
 
 export type ShareModerationBody = { action: ShareModerationAction; reason?: string; reportId?: string };

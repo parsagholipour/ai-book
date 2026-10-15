@@ -297,7 +297,8 @@ class _CreditsPill extends StatelessWidget {
         navigator.context,
         title: 'Add book credits',
         message:
-            'Credits are used when you approve a full book or unlock finished exports.',
+            'Credits are used when you plan and approve a book, and for edits and pictures. '
+            'A finished book downloads free.',
       );
     }
 

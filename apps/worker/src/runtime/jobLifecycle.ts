@@ -3,13 +3,12 @@ import {
   bookGenerationChargeFromPayloads,
   errorMessage,
   exportPublicationProjectStatusFromPayload,
+  freeRecompileFallbackStatus,
   isCoverPurchasePayload,
-  isPresentationOnlyRecompile,
   isRecoverableNetworkError,
   parseStructuralApplication,
   payloadOwnsProjectOutcome,
   preEditProjectStatus,
-  presentationRecompileFallbackStatus,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
   shouldRecoverJobAttempt as retryPolicyShouldRecover,
   workerJobNameForType,
@@ -227,7 +226,7 @@ export async function cancelStaleGenerationJob(job: WorkerRuntimeJob, reason: st
   // Only an open row takes the CANCELED verdict. A row that is already
   // FAILED keeps its own story — a user stop's markers must survive this —
   // while the attempt settlement below is idempotent either way.
-  await prisma.generationJob.updateMany({
+  const canceled = await prisma.generationJob.updateMany({
     where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
     data: {
       status: "CANCELED",
@@ -241,6 +240,19 @@ export async function cancelStaleGenerationJob(job: WorkerRuntimeJob, reason: st
     await failGenerationAttempt(attemptId, reason, "CANCELED").catch((error) => {
       console.error(`Failed to settle stale-canceled attempt ${attemptId}`, error);
     });
+  }
+  if (!attemptId && job.name === "plan-book" && job.data.billingLedgerEntryId) {
+    // A superseded legacy plan refunds its own immutable charge, never the
+    // newer project's latest one. CANCELED also replays a lost refund; a
+    // sibling's COMPLETED publication must keep its charge.
+    const canceledPlan = canceled.count === 1 || (await prisma.generationJob.findUnique({
+      where: { id: generationJobId }, select: { status: true }
+    }))?.status === "CANCELED";
+    if (canceledPlan) {
+      await refundCreditLedgerEntry(job.data.billingLedgerEntryId, reason).catch((error) => {
+        console.error(`Failed to refund canceled plan ${generationJobId}`, error);
+      });
+    }
   }
   // Only the run's root job: a stale-cancelled GENERATE_BOOK means the run it
   // was charged for is never going to finish, so its own payload entry comes
@@ -423,8 +435,8 @@ export async function markFailed(job: WorkerRuntimeJob, error: unknown) {
   if (job.name === "import-book") {
     await releaseImportQuotaForJob(job);
   }
-  if (projectId && isPresentationOnlyRecompile(job.data)) {
-    await restorePresentationRecompileStatus(job, projectId);
+  if (projectId && freeRecompileFallbackStatus(job.data) !== null) {
+    await restoreFreeRecompileStatus(job, projectId);
     return;
   }
   if (projectId && jobOwnsProjectLifecycle(job)) {
@@ -672,8 +684,8 @@ export async function markStopped(job: WorkerRuntimeJob) {
   if (job.name === "import-book") {
     await releaseImportQuotaForJob(job);
   }
-  if (projectId && isPresentationOnlyRecompile(job.data)) {
-    await restorePresentationRecompileStatus(job, projectId);
+  if (projectId && freeRecompileFallbackStatus(job.data) !== null) {
+    await restoreFreeRecompileStatus(job, projectId);
     return;
   }
   if (projectId && jobOwnsProjectLifecycle(job)) {
@@ -694,8 +706,17 @@ function jobOwnsProjectLifecycle(job: WorkerRuntimeJob): boolean {
   return workerJobOwnsFailureLifecycle(job.name, job.data);
 }
 
-async function restorePresentationRecompileStatus(job: WorkerRuntimeJob, projectId: string): Promise<void> {
+/**
+ * A free recompile — a presentation reprint, or a free edit's (manual save,
+ * Undo, Redo, Studio publish or takeover) — owns no FAILED and no charge: the
+ * book it reprints was delivered and paid for before it. Its failure or stop
+ * puts the book back to the settled status it carries, and a book whose files
+ * are missing is what `ensureExportRepairQueued` rebuilds.
+ */
+async function restoreFreeRecompileStatus(job: WorkerRuntimeJob, projectId: string): Promise<void> {
   const { contentRevision } = job.data;
+  const fallback = freeRecompileFallbackStatus(job.data);
+  if (!fallback) return;
   await prisma.project
     .updateMany({
       where: {
@@ -703,7 +724,7 @@ async function restorePresentationRecompileStatus(job: WorkerRuntimeJob, project
         status: "EDITING",
         ...(contentRevision === undefined ? {} : { contentRevision })
       },
-      data: { status: presentationRecompileFallbackStatus(job.data) }
+      data: { status: fallback }
     })
     .catch(() => ({ count: 0 }));
 }
@@ -777,6 +798,7 @@ function attemptCompletesWithJob(job: WorkerRuntimeJob): boolean {
     "compile-export",
     "apply-book-edit",
     "continue-book",
+    "import-book",
     "generate-audiobook",
     "generate-character-portrait",
     // A delivered assist commits its charge: `markCompleted` runs only after

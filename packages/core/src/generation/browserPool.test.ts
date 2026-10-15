@@ -3,6 +3,7 @@ import {
   browserPoolStatus,
   closeSharedBrowser,
   isBrowserDisconnectError,
+  MAX_RENDER_TIMEOUT_MS,
   withRenderPage
 } from "./browserPool.js";
 
@@ -302,10 +303,27 @@ describe("withRenderPage", () => {
     expect(state.launches).toBe(2);
   });
 
-  it("bounds Puppeteer's CDP requests to the render budget", async () => {
+  it("bounds Puppeteer's CDP requests to the largest render budget", async () => {
     await withRenderPage(async () => "ok");
 
-    expect(state.launchOptions[0]).toMatchObject({ protocolTimeout: 90_000 });
+    // One setting for the whole browser, and a long book's print is one
+    // request: at 90 s it failed that print whatever `page.pdf()` was told.
+    expect(state.launchOptions[0]).toMatchObject({ protocolTimeout: MAX_RENDER_TIMEOUT_MS });
+  });
+
+  it("caps a watchdog a caller asks for at the pool's ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      const settled = withRenderPage(async () => new Promise<string>(() => undefined), {
+        timeoutMs: 24 * 60 * 60_000
+      }).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(MAX_RENDER_TIMEOUT_MS);
+      expect(((await settled) as Error).message).toBe(
+        `Render exceeded ${MAX_RENDER_TIMEOUT_MS / 1000}s and was abandoned.`
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each(["context", "page"] as const)(

@@ -84,6 +84,8 @@ extension _ReaderViewViewer on _ReaderViewState {
         backgroundColor: colors.surfaceContainerHighest,
         onPageChanged: _onPageChanged,
         onViewerReady: _onViewerReady,
+        // pdfrx's default is a developer's error screen, stack trace and all.
+        errorBannerBuilder: _buildOpenError,
         pagePaintCallbacks: _paintCallbacks,
         pageOverlaysBuilder: _buildPageOverlays,
         viewerOverlayBuilder: _buildViewerOverlays,

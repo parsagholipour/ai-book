@@ -20,11 +20,17 @@ const db = vi.hoisted(() => {
     generationJob: model(),
     mobileSession: model(),
     passwordResetRequest: model(),
+    emailVerificationRequest: model(),
     userPasswordCredential: model(),
     legalAcceptance: model(),
+    authorProfile: model(),
     user: model(),
     accountDeletionRequest: model(),
-    $queryRaw: vi.fn(async () => []),
+    subscriptionState: model(),
+    productEvent: model(),
+    welcomeCreditGrant: model(),
+    pendingStorageDeletion: { upsert: vi.fn(async (_args: { where: { prefix: string } }) => ({})) },
+    $queryRaw: vi.fn(async (_sql: TemplateStringsArray, ..._values: unknown[]): Promise<unknown[]> => []),
     $executeRaw: vi.fn(async () => 0),
     $transaction: vi.fn(async (writes: unknown[]) => writes)
   };
@@ -35,6 +41,7 @@ const projectStorage = vi.hoisted(() => ({
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: db }));
+vi.mock("@book-maker/db/billing", () => ({ WELCOME_CREDITS_IP_WINDOW_DAYS: 30 }));
 vi.mock("./queue.js", () => jobs);
 vi.mock("./projectStorage.js", () => projectStorage);
 
@@ -49,7 +56,12 @@ const log = { warn: vi.fn(), info: vi.fn() };
  * financial records.
  */
 describe("carrying out an account deletion", () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    db.$queryRaw.mockImplementation(async (sql, ...values) => sql.join("").includes("accountStorageProjects")
+      ? [{ projects: JSON.parse(values[0] as string) }]
+      : []);
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("deletes every book through its own delete", async () => {
@@ -69,9 +81,12 @@ describe("carrying out an account deletion", () => {
     expect(await testObjectStore.get("images/characters/user-10/portrait.webp")).not.toBeNull();
     expect(db.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: expect.objectContaining({ email: deletedAccountEmail("user-1"), displayName: null, googleSubject: null, status: "DISABLED" })
+      data: expect.objectContaining({
+        email: deletedAccountEmail("user-1"), displayName: null, googleSubject: null, emailVerifiedAt: null, status: "DISABLED"
+      })
     });
     expect(db.mobileSession.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+    expect(db.emailVerificationRequest.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
     // Financial records are kept with the tombstone, not deleted.
     expect(db).not.toHaveProperty("creditLedgerEntry");
     expect(db.accountDeletionRequest.updateMany).toHaveBeenCalledWith({
@@ -91,6 +106,34 @@ describe("carrying out an account deletion", () => {
     expect([...testObjectStore.objects.keys()].sort()).toEqual(["attachments/import-10/source", "books/.account-runs/user-1/deleted"]);
     expect(db.bookImport.findMany).toHaveBeenCalledWith({ where: { userId: "user-1" }, select: { id: true } });
     expect(db.bookImport.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+  });
+
+  it("writes its own prefixes down before deleting them, so the storage sweep catches a late write", async () => {
+    db.mobileCreationDraft.findMany.mockResolvedValueOnce([{ id: "chat-1" }] as never);
+    db.bookImport.findMany.mockResolvedValueOnce([{ id: "import-1" }] as never);
+    db.sourceDocument.findMany.mockResolvedValueOnce([
+      { id: "source-1", storageDraftId: "chat-1" },
+      { id: "source-2", storageDraftId: "deleted-chat" }
+    ] as never);
+    seedObject("attachments/chat-1/upload", "private upload");
+    const deletePrefix = vi.spyOn(testObjectStore, "deletePrefix");
+
+    await executeAccountDeletion("user-1", log);
+
+    const recorded = db.pendingStorageDeletion.upsert.mock.calls.map(([args]) => args.where.prefix);
+    // Each once: a prefix two sources share is one row, not two racing upserts.
+    expect(recorded.sort()).toEqual([
+      "attachments/chat-1/",
+      "attachments/deleted-chat/",
+      "attachments/import-1/",
+      "images/characters/user-1/"
+    ]);
+    const firstOwnDelete = deletePrefix.mock.calls.findIndex(([prefix]) => /^(attachments|images)\//.test(prefix));
+    expect(firstOwnDelete).toBeGreaterThanOrEqual(0);
+    expect(db.pendingStorageDeletion.upsert.mock.invocationCallOrder.at(-1)!).toBeLessThan(deletePrefix.mock.invocationCallOrder[firstOwnDelete]!);
+    expect(db.pendingStorageDeletion.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ prefix: "images/characters/user-1/", projectId: null }) })
+    );
   });
 
   it("deletes account-owned and legacy portrait logs, including deleted characters' jobs", async () => {
@@ -208,6 +251,69 @@ describe("carrying out an account deletion", () => {
     expect(db.accountDeletionRequest.update).toHaveBeenCalledWith({
       where: { id: "request-1" },
       data: expect.objectContaining({ status: "COMPLETED" })
+    });
+  });
+
+  it("stops the account's Play subscriptions first, and finishes the deletion even when Google refuses", async () => {
+    db.subscriptionState.findMany.mockResolvedValueOnce([
+      { id: "sub-1", userId: "user-1", purchaseToken: "play-token", canceledAt: null, product: { sku: "tomeza.max_monthly" } }
+    ] as never);
+    const play = {
+      packageName: "com.tomeza.tomeza",
+      verifier: {
+        verifyPurchase: vi.fn(async () => ({ productSku: "tomeza.max_monthly", purchaseToken: "play-token", kind: "subscription" as const,
+          grantable: true, providerStatus: "SUBSCRIPTION_STATE_ACTIVE", subscription: { status: "ACTIVE" as const, autoRenewing: true } })),
+        cancelSubscription: vi.fn(async () => { throw new Error("Play unavailable"); })
+      }
+    };
+
+    const result = await executeAccountDeletion("user-1", log, { play });
+
+    expect(play.verifier.cancelSubscription).toHaveBeenCalledWith({ packageName: "com.tomeza.tomeza", purchaseToken: "play-token" });
+    expect(result.playSubscriptions).toEqual({ stopped: 0, failed: 1 });
+    // The token stays for the sweep to retry; the deletion is not held up.
+    expect(db.subscriptionState.update).not.toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ purchaseToken: null })
+    }));
+    expect(db.accountDeletionRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "COMPLETED" })
+    }));
+  });
+
+  it("deletes product analytics and releases a welcome address hash only once the cap no longer counts it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-13T00:00:00Z"));
+    try {
+      await executeAccountDeletion("user-1", log, { play: null });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(db.productEvent.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+    // A GRANTED row settled inside the 30-day window keeps its hash: clearing it
+    // would let the same address be welcomed again by deleting an account.
+    expect(db.welcomeCreditGrant.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        ipHash: { not: null },
+        OR: [{ outcome: { not: "GRANTED" } }, { settledAt: { lt: new Date("2026-09-13T00:00:00Z") } }]
+      },
+      data: { ipHash: null }
+    });
+  });
+
+  it("retries tombstones' Play cancellations and releases their aged welcome hashes on every sweep", async () => {
+    const now = new Date("2026-10-13T00:00:00Z");
+    expect(await runAccountDeletionSweep(log, now)).toBe(0);
+    expect(db.subscriptionState.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ user: { status: "DISABLED", accountDeletionRequests: { some: { status: "COMPLETED" } } } })
+    }));
+    expect(db.welcomeCreditGrant.updateMany).toHaveBeenCalledWith({
+      where: {
+        user: { status: "DISABLED", accountDeletionRequests: { some: { status: "COMPLETED" } } },
+        ipHash: { not: null },
+        OR: [{ outcome: { not: "GRANTED" } }, { settledAt: { lt: new Date("2026-09-13T00:00:00Z") } }]
+      },
+      data: { ipHash: null }
     });
   });
 

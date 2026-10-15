@@ -254,8 +254,8 @@ function explicitTitleFromText(text: string | undefined): string | undefined {
   }
 
   const quotedTitle =
-    source.match(/\b(?:title\s+(?:is|should\s+be)|called|titled|named|call\s+it|name\s+it|title\s+it)\s+["']([^"'\n]{2,160})["']/i)?.[1] ??
-    source.match(/\b(?:called|titled|named)\s+'([^'\n]{2,160})'/i)?.[1];
+    source.match(/\b(?:title\s+(?:is|should\s+be)|called|titled|named|call\s+it|name\s+it|title\s+it)\s+["']([^"'\n]{1,160})["']/i)?.[1] ??
+    source.match(/\b(?:called|titled|named)\s+'([^'\n]{1,160})'/i)?.[1];
   const cleanedQuoted = cleanExplicitTitle(quotedTitle);
   if (cleanedQuoted) {
     return cleanedQuoted;
@@ -264,11 +264,17 @@ function explicitTitleFromText(text: string | undefined): string | undefined {
   // Unquoted statements like "call it Midnight Garden" or "the title should be
   // Brave Little Fox" - capture to the end of the sentence.
   const unquotedTitle =
-    source.match(/\b(?:call|name|title)\s+(?:it|this|the\s+book)\s+([^.!?\n]{2,160})/i)?.[1] ??
-    source.match(/\b(?:the\s+)?title\s+(?:is|should\s+be)\s+([^.!?\n]{2,160})/i)?.[1];
+    source.match(/\b(?:call|name|title)\s+(?:it|this|the\s+book)\s+([^.!?\n]{1,160})/i)?.[1] ??
+    source.match(/\b(?:the\s+)?title\s+(?:is|should\s+be)\s+([^.!?\n]{1,160})/i)?.[1];
   return cleanExplicitTitle(unquotedTitle);
 }
 
+/**
+ * A title the reader stated, or nothing. One character is a whole title in
+ * CJK (雪), so length is no test; what is dropped is a capture with no letter
+ * or digit in it — a stray quote or dash — the same rule a chat title edit
+ * applies (`bookEditBookTitle.ts`).
+ */
 function cleanExplicitTitle(value: string | undefined): string | undefined {
   const cleaned = value
     ?.trim()
@@ -276,7 +282,7 @@ function cleanExplicitTitle(value: string | undefined): string | undefined {
     .replace(/\.$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  return cleaned && cleaned.length >= 2 ? cleaned.slice(0, 160) : undefined;
+  return cleaned && /[\p{L}\p{N}]/u.test(cleaned) ? cleaned.slice(0, 160) : undefined;
 }
 
 function fieldLine(label: string, value: string | undefined): string {

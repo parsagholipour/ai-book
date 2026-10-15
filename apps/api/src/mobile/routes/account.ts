@@ -14,7 +14,12 @@ import {
 import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import { serializeMobileBilling } from "../billingSerializer.js";
 import { serializeMobileCreditLog } from "../creditLog.js";
-import { creditLogQuerySchema, mobileAuthError, mobileGooglePlayVerificationBodySchema } from "../schemas.js";
+import {
+  LOCAL_PRICE_MICROS_MAX,
+  creditLogQuerySchema,
+  mobileAuthError,
+  mobileGooglePlayVerificationBodySchema
+} from "../schemas.js";
 import { prisma } from "@book-maker/db";
 import { endSubscriptionNow, recordVerifiedGooglePlayPurchase } from "@book-maker/db/billing";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -109,9 +114,15 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
           properties: {
             productId: { type: "string", minLength: 3, maxLength: 160 },
             purchaseToken: { type: "string", minLength: 8, maxLength: 8000 },
-            transactionId: { type: "string", minLength: 1, maxLength: 240 },
+            // Blank is accepted and read as absent: Play has no order id yet for
+            // a pending payment or a promo code, and the app sends `""`.
+            transactionId: { type: ["string", "null"], maxLength: 240 },
             purchaseStatus: { type: "string", enum: ["purchased", "restored"] },
-            projectId: { type: "string", minLength: 1, maxLength: 160 }
+            projectId: { type: "string", minLength: 1, maxLength: 160 },
+            // Analytics only, never a grant: what Play priced the purchase at in
+            // the buyer's currency. Both or neither.
+            localPriceMicros: { type: "integer", minimum: 0, maximum: LOCAL_PRICE_MICROS_MAX },
+            localCurrency: { type: "string", pattern: "^[A-Z]{3}$" }
           },
           required: ["productId", "purchaseToken"]
         },
@@ -156,7 +167,10 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
               clientPurchaseStatus: parsed.data.purchaseStatus ?? null,
               projectId: parsed.data.projectId ?? null
             }
-          }
+          },
+          ...(parsed.data.localPriceMicros !== undefined && parsed.data.localCurrency !== undefined
+            ? { clientPrice: { micros: parsed.data.localPriceMicros, currency: parsed.data.localCurrency } }
+            : {})
         });
         // Acknowledged here, once the purchase is on record, rather than left to
         // the app alone: Play refunds an unacknowledged purchase after three days
@@ -166,7 +180,9 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
           await googlePlayVerifier
             .acknowledgePurchase({
               packageName: appConfig.GOOGLE_PLAY_PACKAGE_NAME ?? "",
-              productId: product.sku,
+              // A deferred plan change is still the plan it replaces until it
+              // takes effect, and that is the product Play files the token under.
+              productId: verification.subscription?.deferredReplacement?.fromProductSku ?? product.sku,
               productType: product.productType,
               purchaseToken: parsed.data.purchaseToken
             })
@@ -180,7 +196,17 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
             status: purchase.status.toLowerCase(),
             creditsGranted: purchase.creditsGranted,
             subscriptionStatus: purchase.subscriptionStatus?.toLowerCase() ?? null,
-            entitlementType: purchase.entitlementType
+            entitlementType: purchase.entitlementType,
+            // A downgrade starts at renewal: nothing was granted now, and the
+            // current plan runs out what it was paid for first.
+            ...(purchase.scheduledChange
+              ? {
+                  scheduledChange: {
+                    productSku: purchase.scheduledChange.productSku,
+                    startsAt: purchase.scheduledChange.startsAt?.toISOString() ?? null
+                  }
+                }
+              : {})
           },
           billing: await billingFor(auth.user.id)
         } satisfies MobileGooglePlayVerificationResponseDto;
@@ -210,11 +236,22 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
       if (!hitAuthenticatedLimit(billingVerificationLimiter, reply, auth.user.id, "billing-refresh")) {
         return;
       }
-      const subscription = await prisma.subscriptionState.findFirst({
-        where: { userId: auth.user.id, provider: "GOOGLE_PLAY", purchaseToken: { not: null } },
-        orderBy: { currentPeriodEnd: "desc" },
-        select: { purchaseToken: true, product: { select: { sku: true, productType: true } } }
-      });
+      // The plan the reader holds first: the app records a slow-card checkout
+      // as soon as Play reports it, and that INACTIVE row has no period end,
+      // which Postgres sorts ahead of every date in a descending order.
+      const owned = { userId: auth.user.id, provider: "GOOGLE_PLAY" as const, purchaseToken: { not: null } };
+      const select = { purchaseToken: true, product: { select: { sku: true, productType: true } } } as const;
+      const subscription =
+        (await prisma.subscriptionState.findFirst({
+          where: { ...owned, status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED", "PAUSED"] } },
+          orderBy: { currentPeriodEnd: { sort: "desc", nulls: "last" } },
+          select
+        })) ??
+        (await prisma.subscriptionState.findFirst({
+          where: owned,
+          orderBy: [{ currentPeriodEnd: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
+          select
+        }));
       if (!subscription?.purchaseToken || !subscription.product) {
         return sendMobileError(reply, 400, "NO_ACTIVE_SUBSCRIPTION", "There is no subscription to check.");
       }

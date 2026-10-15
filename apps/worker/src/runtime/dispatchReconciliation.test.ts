@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => {
       project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
       page: { findMany: vi.fn() },
-      imageAsset: { count: vi.fn() },
+      imageAsset: { count: vi.fn(), findFirst: vi.fn(async () => null) },
       generationJob: {
         findUnique: vi.fn(),
         findFirst: vi.fn(),
@@ -34,7 +34,10 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { PrismaClientKnownRequestError: mocks.KnownRequestError }
 }));
-vi.mock("./queue.js", () => ({ queue: { add: mocks.queueAdd, getJob: mocks.queueGetJob } }));
+vi.mock("./queue.js", () => {
+  const queue = { add: mocks.queueAdd, getJob: mocks.queueGetJob };
+  return { queue, queueNamed: () => queue, allLaneQueues: [queue] };
+});
 vi.mock("./config.js", () => ({ config: { MAX_PARALLEL_PAGE_JOBS: 3 } }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => projectInput }));
 
@@ -174,6 +177,27 @@ function createdCompile(): Record<string, unknown> {
 }
 
 describe("reconcileStrandedGeneration compile policy", () => {
+  it("recovers a completed import whose first compile never reached the durable queue", async () => {
+    const project = strandedProject({ status: "COMPLETE", contentRevision: 1, mediaSettings: { mobile: { import: { source: "upload" } } } });
+    mocks.prisma.project.findMany.mockImplementation(async ({ where }) => {
+      // Model eligibility at the database boundary: COMPLETE was excluded by
+      // the old sweep, so exhausting the import's Bull budget lost this tail.
+      return where.OR?.some((branch: { status?: string }) => branch.status === "COMPLETE") ? [project] : [];
+    });
+    mocks.prisma.project.findUnique.mockResolvedValue(project);
+
+    await reconcileStrandedGeneration();
+
+    expect(mocks.prisma.generationJob.create).toHaveBeenCalledTimes(1);
+    expect(createdCompile()).toMatchObject({ type: "COMPILE_EXPORT", contentRevision: 1 });
+    expect(mocks.prisma.project.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ OR: expect.arrayContaining([expect.objectContaining({
+        status: "COMPLETE", contentRevision: 1, currentPlan: { version: 1 },
+        bookImport: { status: "COMPLETE" }, jobs: { none: { type: "COMPILE_EXPORT" } }
+      })]) })
+    }));
+  });
+
   it("retires an abandoned current-revision export barrier before queueing recovery", async () => {
     queueStrandedProject({
       exportInvalidationRevision: 7,
@@ -232,7 +256,7 @@ describe("reconcileStrandedGeneration compile policy", () => {
     expect(mocks.prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          status: { in: ["GENERATING", "EDITING"] },
+          OR: expect.arrayContaining([{ status: { in: ["GENERATING", "EDITING"] } }]),
           jobs: { none: { status: { in: ["QUEUED", "ACTIVE"] } } }
         })
       })

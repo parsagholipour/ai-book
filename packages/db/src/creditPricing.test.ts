@@ -121,7 +121,12 @@ describe("loadCreditPricing", () => {
     await saveCreditPricing({ values: { ...loaded.values, imageGeneration: 100, messageCreditsFree: 7 } });
     const restored = await revertCreditPricing({ version: 1 });
     expect(restored.values).toMatchObject({ freeMonthlyCredits: 0, messageCreditsFree: 1, imageGeneration: 90 });
-    expect(creditPricing()).toMatchObject({ freeMonthlyCredits: 0, messageCreditsFree: 1, welcomeCredits: 1000, messageCreditsCreator: 0 });
+    expect(creditPricing()).toMatchObject({
+      freeMonthlyCredits: 0,
+      messageCreditsFree: 1,
+      welcomeCredits: DEFAULT_CREDIT_COSTS.welcomeCredits,
+      messageCreditsCreator: 0
+    });
   });
 
   it("uses the compiled defaults when nothing has ever been saved", async () => {
@@ -146,7 +151,7 @@ describe("loadCreditPricing", () => {
     fakeDb.state.rows.push({
       id: "rev-junk",
       version: 4,
-      values: { imageGeneration: -1, exportUnlock: 200, mystery: 7 },
+      values: { imageGeneration: -1, coverRegeneration: 200, mystery: 7 },
       changed: {},
       note: null,
       updatedBy: null,
@@ -156,8 +161,27 @@ describe("loadCreditPricing", () => {
     const state = await loadCreditPricing();
 
     expect(state.values.imageGeneration).toBe(DEFAULT_CREDIT_COSTS.imageGeneration);
-    expect(state.values.exportUnlock).toBe(200);
+    expect(state.values.coverRegeneration).toBe(200);
     expect(state.values).not.toHaveProperty("mystery");
+  });
+
+  it("reads a stored export unlock as the retired key's 0", async () => {
+    // Every price list saved before 2026-10-15 holds `exportUnlock: 150`; the
+    // key stays for installed apps, and nothing charges it any more.
+    fakeDb.state.rows.push({
+      id: "rev-unlock",
+      version: 5,
+      values: { ...DEFAULT_CREDIT_COSTS, exportUnlock: 150 },
+      changed: {},
+      note: null,
+      updatedBy: null,
+      createdAt: new Date()
+    } satisfies Row);
+
+    const state = await loadCreditPricing();
+
+    expect(state.values.exportUnlock).toBe(0);
+    expect(creditPricing().exportUnlock).toBe(0);
   });
 });
 
@@ -166,8 +190,8 @@ describe("saveCreditPricing", () => {
     const saved = await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS,
       welcomeCreditsAccountsPerIpHighIncome: 4, welcomeCreditsAccountsPerIpLowMiddleIncome: 3 } });
     expect(saved.changed).toEqual({
-      welcomeCreditsAccountsPerIpHighIncome: { from: 2, to: 4 },
-      welcomeCreditsAccountsPerIpLowMiddleIncome: { from: 1, to: 3 }
+      welcomeCreditsAccountsPerIpHighIncome: { from: 3, to: 4 },
+      welcomeCreditsAccountsPerIpLowMiddleIncome: { from: 2, to: 3 }
     });
     resetCreditPricing();
     const loaded = await loadCreditPricing();
@@ -205,11 +229,11 @@ describe("saveCreditPricing", () => {
   it("records only the keys that moved", async () => {
     await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, imageGeneration: 90 } });
     const second = await saveCreditPricing({
-      values: { ...DEFAULT_CREDIT_COSTS, imageGeneration: 90, exportUnlock: 200 }
+      values: { ...DEFAULT_CREDIT_COSTS, imageGeneration: 90, coverRegeneration: 200 }
     });
 
     expect(second.version).toBe(2);
-    expect(second.changed).toEqual({ exportUnlock: { from: DEFAULT_CREDIT_COSTS.exportUnlock, to: 200 } });
+    expect(second.changed).toEqual({ coverRegeneration: { from: DEFAULT_CREDIT_COSTS.coverRegeneration, to: 200 } });
   });
 
   it("writes nothing when the values already match", async () => {
@@ -235,7 +259,7 @@ describe("saveCreditPricing", () => {
   it("retries on top of a racing writer that claimed the version first", async () => {
     fakeDb.state.stealVersionOnNextCreate = true;
 
-    const result = await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, exportUnlock: 200 } });
+    const result = await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, coverRegeneration: 200 } });
 
     expect(result.version).toBe(2);
     expect(result.applied).toBe(true);
@@ -243,7 +267,7 @@ describe("saveCreditPricing", () => {
     // writer wins outright — and the diff says so rather than hiding it: the
     // racing writer's planRevision: 999 is recorded as being rolled back.
     expect(result.changed).toEqual({
-      exportUnlock: { from: DEFAULT_CREDIT_COSTS.exportUnlock, to: 200 },
+      coverRegeneration: { from: DEFAULT_CREDIT_COSTS.coverRegeneration, to: 200 },
       planRevision: { from: 999, to: DEFAULT_CREDIT_COSTS.planRevision }
     });
   });
@@ -254,7 +278,7 @@ describe("saveCreditPricing", () => {
     fakeDb.state.stealVersionOnNextCreate = true;
 
     await expect(
-      saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, exportUnlock: 200 }, expectedVersion: 0 })
+      saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, coverRegeneration: 200 }, expectedVersion: 0 })
     ).rejects.toBeInstanceOf(CreditPricingConflictError);
   });
 
@@ -262,10 +286,10 @@ describe("saveCreditPricing", () => {
     // The whole reason the snapshot is applied after the write and not inside it.
     fakeDb.state.throwAfterCreate = true;
 
-    await expect(saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, exportUnlock: 999 } })).rejects.toThrow(
+    await expect(saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, coverRegeneration: 999 } })).rejects.toThrow(
       /write failed/
     );
-    expect(creditPricing().exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
+    expect(creditPricing().coverRegeneration).toBe(DEFAULT_CREDIT_COSTS.coverRegeneration);
   });
 });
 
@@ -308,14 +332,14 @@ describe("revertCreditPricing", () => {
 
 describe("getCreditPricingState", () => {
   it("reports the head without disturbing the live prices", async () => {
-    await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, exportUnlock: 200 }, note: "launch promo" });
+    await saveCreditPricing({ values: { ...DEFAULT_CREDIT_COSTS, coverRegeneration: 200 }, note: "launch promo" });
     resetCreditPricing();
 
     const state = await getCreditPricingState();
 
     expect(state.version).toBe(1);
     expect(state.note).toBe("launch promo");
-    expect(state.values.exportUnlock).toBe(200);
-    expect(creditPricing().exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
+    expect(state.values.coverRegeneration).toBe(200);
+    expect(creditPricing().coverRegeneration).toBe(DEFAULT_CREDIT_COSTS.coverRegeneration);
   });
 });

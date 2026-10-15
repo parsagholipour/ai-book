@@ -33,6 +33,13 @@ export interface GooglePlayVerifier {
    * payment and credits that stayed. Idempotent on Google's side.
    */
   acknowledgePurchase(request: GooglePlayVerificationRequest): Promise<void>;
+  /**
+   * Stops a subscription's future payments for good (Google's
+   * `DEVELOPER_REQUESTED_STOP_PAYMENTS`): the paid period runs out and nothing
+   * renews. Used when the account that owns it is deleted, because Google
+   * otherwise keeps charging a tombstone. Idempotent on Google's side.
+   */
+  cancelSubscription(request: { packageName: string; purchaseToken: string }): Promise<void>;
 }
 
 /** Whether a verified purchase still needs acknowledging, read off what Google reported. */
@@ -111,6 +118,7 @@ export function createGooglePlayVerifierFromConfig(config: AppConfig): GooglePla
 export function createMockGooglePlayVerifier(): GooglePlayVerifier {
   return {
     async acknowledgePurchase() {},
+    async cancelSubscription() {},
     async verifyPurchase(request) {
       const now = new Date();
       // Google issues a fresh order id every renewal, and the credit grant is
@@ -200,15 +208,15 @@ export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): Go
     return cache.token;
   }
 
-  async function googlePost(url: string): Promise<void> {
+  async function googlePost(url: string, body: unknown = {}, failure = "Google Play purchase acknowledgement failed."): Promise<void> {
     const token = await accessToken();
     const response = await fetchImpl(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: "{}"
+      body: JSON.stringify(body)
     });
     if (!response.ok) {
-      throw new GooglePlayVerificationError("Google Play purchase acknowledgement failed.", response.status);
+      throw new GooglePlayVerificationError(failure, response.status);
     }
   }
 
@@ -276,6 +284,19 @@ export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): Go
           `/purchases/${kind}/${encodeURIComponent(request.productId)}/tokens/${encodeURIComponent(request.purchaseToken)}:acknowledge`
         )
       );
+    },
+    async cancelSubscription(request) {
+      const packageName = request.packageName || options.packageName;
+      if (!packageName) {
+        throw new GooglePlayBillingConfigError();
+      }
+      await googlePost(
+        androidPublisherUrl(packageName, `/purchases/subscriptionsv2/tokens/${encodeURIComponent(request.purchaseToken)}:cancel`),
+        // The developer's stop, not the reader's: it cannot be restored from the
+        // Play subscription centre, which is right for an account that is gone.
+        { cancellationContext: { cancellationType: "DEVELOPER_REQUESTED_STOP_PAYMENTS" } },
+        "Google Play subscription cancellation failed."
+      );
     }
   };
 }
@@ -291,6 +312,34 @@ type GooglePlayProductPurchase = {
   regionCode?: string;
 };
 
+type GooglePlayMoney = { currencyCode?: string; units?: string; nanos?: number };
+
+type GooglePlaySubscriptionLineItem = {
+  productId?: string;
+  expiryTime?: string;
+  latestSuccessfulOrderId?: string;
+  autoRenewingPlan?: {
+    autoRenewEnabled?: boolean;
+    /** The base plan's recurring price in the buyer's currency, before tax and discounts. */
+    recurringPrice?: GooglePlayMoney;
+  };
+  offerDetails?: { basePlanId?: string; offerId?: string };
+  /** Exactly one key is present, naming the phase the current period is in. */
+  offerPhase?: {
+    freeTrial?: object;
+    introductoryPrice?: object;
+    basePrice?: object;
+    /** A plan change's first period; it may have absorbed the new offer's first phase. */
+    prorationPeriod?: { originalOfferPhaseType?: string };
+  };
+  /**
+   * Set on the *replaced* item of a `ReplacementMode.DEFERRED` plan change:
+   * this item runs to its expiry and is not renewed, and the named product
+   * takes over then. The item for that product carries no expiry until it does.
+   */
+  deferredItemReplacement?: { productId?: string };
+};
+
 type GooglePlaySubscriptionPurchaseV2 = {
   externalAccountIdentifiers?: { obfuscatedExternalAccountId?: string };
   latestOrderId?: string;
@@ -299,14 +348,8 @@ type GooglePlaySubscriptionPurchaseV2 = {
   acknowledgementState?: string;
   regionCode?: string;
   linkedPurchaseToken?: string;
-  lineItems?: Array<{
-    productId?: string;
-    expiryTime?: string;
-    latestSuccessfulOrderId?: string;
-    autoRenewingPlan?: {
-      autoRenewEnabled?: boolean;
-    };
-  }>;
+  pausedStateContext?: { autoResumeTime?: string };
+  lineItems?: GooglePlaySubscriptionLineItem[];
 };
 
 function mapOneTimePurchase(
@@ -339,7 +382,12 @@ function mapSubscriptionPurchase(
   purchaseToken: string,
   purchase: GooglePlaySubscriptionPurchaseV2
 ): VerifiedGooglePlayPurchase {
-  const matchingLineItem = purchase.lineItems?.find((item) => item.productId === productSku);
+  const lineItems = purchase.lineItems ?? [];
+  const deferring = lineItems.find((item) => item.productId && item.deferredItemReplacement?.productId);
+  if (deferring) {
+    return mapDeferredReplacement(productSku, purchaseToken, purchase, deferring);
+  }
+  const matchingLineItem = lineItems.find((item) => item.productId === productSku);
   if (!matchingLineItem) {
     throw new GooglePlayProductMismatchError(productSku);
   }
@@ -361,16 +409,117 @@ function mapSubscriptionPurchase(
       // Promoted out of the metadata below because it is the difference between
       // "renews on the 12th" and "ends on the 12th". Google reports it before it
       // ever moves the subscription to CANCELED.
-      autoRenewing: matchingLineItem?.autoRenewingPlan?.autoRenewEnabled ?? null
+      autoRenewing: matchingLineItem?.autoRenewingPlan?.autoRenewEnabled ?? null,
+      // A trial grants no credits and an introductory period is paid at the
+      // offer's price, so the phase decides both the grant and the cash.
+      offerPhase: subscriptionOfferPhase(matchingLineItem.offerPhase),
+      offerId: matchingLineItem.offerDetails?.offerId ?? null,
+      recurringPrice: moneyMicros(matchingLineItem.autoRenewingPlan?.recurringPrice),
+      // Google resumes a paused (or on-hold) subscription on its own schedule
+      // and tells nobody; this is when the renewal sweep should look again.
+      resumesAt: dateValue(purchase.pausedStateContext?.autoResumeTime)
     },
-    metadata: {
-      obfuscatedExternalAccountId: purchase.externalAccountIdentifiers?.obfuscatedExternalAccountId ?? null,
-      acknowledgementState: purchase.acknowledgementState ?? null,
-      regionCode: purchase.regionCode ?? null,
-      linkedPurchaseToken: purchase.linkedPurchaseToken ?? null,
-      autoRenewEnabled: matchingLineItem?.autoRenewingPlan?.autoRenewEnabled ?? null
-    }
+    metadata: subscriptionMetadata(purchase, matchingLineItem)
   };
+}
+
+/**
+ * A `ReplacementMode.DEFERRED` plan change — the app's downgrade — read off the
+ * token Play issued for it.
+ *
+ * Play issues the new token at once, but it carries the *old* plan until that
+ * plan's paid period ends: the old item has the expiry and a
+ * `deferredItemReplacement`, the new item has no expiry and no order yet. So
+ * this reports the plan the token renews into (the record's product, which is
+ * what the renewal sweep asks about later) with the old item's expiry as the
+ * end of the current period, no order id — nothing has been paid on this token
+ * yet, and the old item's order belongs to the old token's payment — and the
+ * change itself, which tells the recording path to grant nothing now and leave
+ * the old plan's entitlement and allowance standing until it runs out.
+ * Either product may be asked about: the app may file the purchase under the
+ * old one, because that is the entitlement Play associates with it.
+ */
+function mapDeferredReplacement(
+  productSku: string,
+  purchaseToken: string,
+  purchase: GooglePlaySubscriptionPurchaseV2,
+  deferring: GooglePlaySubscriptionLineItem
+): VerifiedGooglePlayPurchase {
+  const fromProductSku = deferring.productId!;
+  const toProductSku = deferring.deferredItemReplacement!.productId!;
+  if (productSku !== fromProductSku && productSku !== toProductSku) {
+    throw new GooglePlayProductMismatchError(productSku);
+  }
+  const incoming = (purchase.lineItems ?? []).find((item) => item.productId === toProductSku);
+  const status = mapSubscriptionStatus(purchase.subscriptionState);
+  const takesEffectAt = dateValue(deferring.expiryTime);
+  return {
+    productSku: toProductSku,
+    purchaseToken,
+    kind: "subscription",
+    // On status alone: the token is live until the old item runs out, and it
+    // must be acknowledged now or Play refunds it.
+    grantable: subscriptionCanGrantCredits(status, undefined),
+    providerStatus: purchase.subscriptionState ?? "SUBSCRIPTION_STATE_UNSPECIFIED",
+    externalPurchaseId: null,
+    purchasedAt: dateValue(purchase.startTime),
+    subscription: {
+      status,
+      currentPeriodStart: dateValue(purchase.startTime),
+      currentPeriodEnd: takesEffectAt,
+      autoRenewing: incoming?.autoRenewingPlan?.autoRenewEnabled ?? null,
+      offerPhase: null,
+      offerId: incoming?.offerDetails?.offerId ?? null,
+      recurringPrice: moneyMicros(incoming?.autoRenewingPlan?.recurringPrice),
+      resumesAt: null,
+      deferredReplacement: { fromProductSku, takesEffectAt }
+    },
+    metadata: { ...subscriptionMetadata(purchase, incoming ?? deferring), deferredFromProductSku: fromProductSku }
+  };
+}
+
+function subscriptionMetadata(
+  purchase: GooglePlaySubscriptionPurchaseV2,
+  lineItem: GooglePlaySubscriptionLineItem
+): Record<string, unknown> {
+  return {
+    obfuscatedExternalAccountId: purchase.externalAccountIdentifiers?.obfuscatedExternalAccountId ?? null,
+    acknowledgementState: purchase.acknowledgementState ?? null,
+    regionCode: purchase.regionCode ?? null,
+    linkedPurchaseToken: purchase.linkedPurchaseToken ?? null,
+    autoRenewEnabled: lineItem.autoRenewingPlan?.autoRenewEnabled ?? null,
+    basePlanId: lineItem.offerDetails?.basePlanId ?? null,
+    offerId: lineItem.offerDetails?.offerId ?? null
+  };
+}
+
+/** Google's `Money` as micros of its currency; null when it is missing or malformed. */
+function moneyMicros(money: GooglePlayMoney | undefined): { micros: number; currency: string } | null {
+  if (!money?.currencyCode || !/^[A-Z]{3}$/.test(money.currencyCode)) return null;
+  const units = Number(money.units ?? "0");
+  const nanos = money.nanos ?? 0;
+  if (!Number.isSafeInteger(units) || !Number.isInteger(nanos)) return null;
+  const micros = units * 1_000_000 + Math.trunc(nanos / 1_000);
+  return Number.isSafeInteger(micros) && micros >= 0 ? { micros, currency: money.currencyCode } : null;
+}
+
+function subscriptionOfferPhase(
+  phase: GooglePlaySubscriptionLineItem["offerPhase"] | undefined
+): "free_trial" | "introductory" | "base" | "proration" | null {
+  if (!phase) return null;
+  if (phase.freeTrial) return "free_trial";
+  if (phase.introductoryPrice) return "introductory";
+  if (phase.prorationPeriod) {
+    // A plan change charged at the new offer's first phase absorbs that phase
+    // into its proration period (Google's `originalOfferPhaseType`). It was
+    // still a trial or an intro, and is granted and priced as one.
+    const original = phase.prorationPeriod.originalOfferPhaseType;
+    if (original === "FREE_TRIAL") return "free_trial";
+    if (original === "INTRODUCTORY") return "introductory";
+    return "proration";
+  }
+  if (phase.basePrice) return "base";
+  return null;
 }
 
 function mapSubscriptionStatus(status: string | undefined): GooglePlaySubscriptionGrantState {
@@ -382,6 +531,11 @@ function mapSubscriptionStatus(status: string | undefined): GooglePlaySubscripti
     case "SUBSCRIPTION_STATE_CANCELED":
       return "CANCELED";
     case "SUBSCRIPTION_STATE_PAUSED":
+    // On hold is a declined renewal Google keeps retrying: no access now, and
+    // it may come back on its own exactly as a paused one does. As INACTIVE it
+    // fell out of the renewal sweep, so a subscriber whose card recovered was
+    // never granted again unless they opened the app.
+    case "SUBSCRIPTION_STATE_ON_HOLD":
       return "PAUSED";
     case "SUBSCRIPTION_STATE_EXPIRED":
       return "EXPIRED";

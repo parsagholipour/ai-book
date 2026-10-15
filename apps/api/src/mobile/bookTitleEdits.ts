@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { creditPricing, isAuthorManuscript, jsonRecord, storyPageDesignFor, storyPageDesignPreference } from "@book-maker/core";
+import {
+  coverRetypesetSource,
+  creditPricing,
+  isAuthorManuscript,
+  jsonRecord,
+  storyPageDesignFor,
+  storyPageDesignPreference
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { startGenerationAttempt } from "@book-maker/db/billing";
 import { type BookEditIntent } from "../bookEditIntent.js";
+import { bookTitleReply, type BookTitleNotice } from "./bookTitleChatCopy.js";
+import { matterChatLanguage, type MatterChatLanguage } from "./bookMatterChatLanguage.js";
 import { commitCoverChange, dispatchCoverJobs, ManuscriptCoverRefusal, type CommittedCoverChange } from "./coverChange.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { type PendingEditState } from "./pendingEditState.js";
@@ -22,7 +31,8 @@ import { fingerprintGenerationRequest, jsonInputValue } from "./support.js";
  * **What it costs is decided by the cover**, because the cover is the one place
  * the title is pixels. A designed cover is typeset over a bundled picture, so
  * it is set again with the new title for free, in the design it already wears
- * (a revision-owned cover row keeps it). A book with no cover, or with a
+ * (a revision-owned cover row keeps it); so is a drawn cover that kept its
+ * artwork (`ai-kept`), over the same picture. A book with no cover, or with a
  * picture the author uploaded, has nothing to redraw. An AI cover's artwork is
  * stored only with the old title on it, so the title changes with a redraw at
  * the cover price — a card the reader confirms, charged and settled like the
@@ -32,6 +42,9 @@ import { fingerprintGenerationRequest, jsonInputValue } from "./support.js";
  * An author's book takes its title from the Writing Studio, whose publish
  * re-typesets the cover with it; changing it here would leave the Studio's
  * published record behind.
+ *
+ * Every reply is in the conversation language (`matterChatLanguage`) and
+ * records it as `replyLanguage`, like the matter and busy replies around it.
  */
 export async function applyBookTitleEdit(options: {
   userId: string;
@@ -44,32 +57,34 @@ export async function applyBookTitleEdit(options: {
   quotedCredits?: number | undefined;
   /** `bookEditIntents.ts`'s card writer, handed in so the two modules do not import each other. */
   pendingEditMetadata: (state: PendingEditState) => Record<string, unknown>;
+  /** Prior assistant language decisions, used if this turn has no valid one. */
+  activeMessages?: readonly { role: string; metadata?: unknown }[] | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, intent, userMessageId } = options;
   const title = intent.bookTitle?.trim() ?? "";
+  const replyLanguage = matterChatLanguage(intent.responseLanguage, options.activeMessages);
+  const say = (notice: BookTitleNotice) => bookTitleReply(replyLanguage, notice, title);
   const reply = async (content: string, metadata: Record<string, unknown> = {}) => ({
     reply: await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
       content,
-      metadata: { intent, charged: false, ...metadata }
+      metadata: { intent, charged: false, replyLanguage, ...metadata }
     }),
     operation: null
   });
 
   if (!title) {
-    return reply("What should the new title be?");
+    return reply(say("ask"));
   }
   if (isAuthorManuscript(project.mediaSettings)) {
-    return reply(
-      "This book’s title is yours to set in the Writing Studio: open the book’s settings there, change the title and publish, and the cover follows."
-    );
+    return reply(say("studio"));
   }
   if (!project.currentPlanId || !["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
-    return reply("I can change the title once this book has finished generating.");
+    return reply(say("notFinished"));
   }
   if (title === project.title?.trim()) {
-    return reply(`The book is already called “${title}”.`);
+    return reply(say("already"));
   }
 
   const cover = await currentCoverKind(project.id);
@@ -82,28 +97,24 @@ export async function applyBookTitleEdit(options: {
     const committed = await commit(project.id, {
       title,
       ...(mediaSettingsPatch ? { mediaSettingsPatch } : {}),
-      // Said as "design" in the plan snapshot too: the cover job reads its
-      // source there, and a book whose AI cover fell back to a design would
-      // otherwise be drawn as AI art.
-      ...(cover === "design" ? { coverArtSource: "design" as const, drawCover: { purchase: false } } : {})
+      // Keep the design source in the plan too, and use the retypeset handler
+      // so changing its words never draws character references or new artwork.
+      ...(cover === "design" ? { coverArtSource: "design" as const, drawCover: { purchase: false, retypeset: true } } : {}),
+      // A drawn cover that kept its artwork is set again over the same picture.
+      ...(cover === "ai-kept" ? { drawCover: { purchase: false, retypeset: true } } : {})
     });
     if (committed instanceof ManuscriptCoverRefusal) {
-      return reply(chatRefusal(committed));
+      return reply(say(chatRefusal(committed)));
     }
     await dispatchCoverJobs(project.id, committed);
-    const done = `Done — the book is now called “${title}”.`;
-    const rest =
-      cover === "design"
-        ? "I’m setting the cover again with the new title and refreshing the exports."
-        : cover === "upload"
-          ? "Your cover is a picture you uploaded, so it keeps what it shows. I’m refreshing the exports."
-          : "I’m refreshing the exports.";
-    return reply(`${done} ${rest} This one’s free.`, { bookTitle: title });
+    const rest: BookTitleNotice =
+      cover === "design" || cover === "ai-kept" ? "retypeset" : cover === "upload" ? "uploaded" : "refreshing";
+    return reply(`${say("done")} ${say(rest)} ${say("free")}`, { bookTitle: title });
   }
 
   const cost = creditPricing().coverRegeneration;
   if (!options.executeProposal || options.quotedCredits === undefined || cost > options.quotedCredits) {
-    return proposeAiCoverTitle({ ...options, title, cost });
+    return proposeAiCoverTitle({ ...options, title, cost, replyLanguage });
   }
 
   const commandId = options.executionCommandId ?? randomUUID();
@@ -149,11 +160,11 @@ export async function applyBookTitleEdit(options: {
       }
     });
     if (started.replayed || !holder.committed) {
-      return reply("That title change is already under way.");
+      return reply(say("underWay"));
     }
   } catch (error) {
     if (error instanceof ManuscriptCoverRefusal) {
-      return reply(chatRefusal(error));
+      return reply(say(chatRefusal(error)));
     }
     throw error;
   }
@@ -163,8 +174,8 @@ export async function applyBookTitleEdit(options: {
       projectId: project.id,
       parentId: userMessageId,
       ...(holder.operationId ? { operationId: holder.operationId } : {}),
-      content: `Done — the book is now called “${title}”. I’m drawing a new cover with it and refreshing the exports.`,
-      metadata: { intent, charged: true, creditsCharged: cost, bookTitle: title }
+      content: `${say("done")} ${say("redrawing")}`,
+      metadata: { intent, charged: true, creditsCharged: cost, bookTitle: title, replyLanguage }
     }),
     operation: null
   };
@@ -179,19 +190,23 @@ async function proposeAiCoverTitle(options: {
   message: string;
   title: string;
   cost: number;
+  replyLanguage: MatterChatLanguage;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
-  const { project, title, cost } = options;
+  const { project, title, cost, replyLanguage } = options;
   const proposalId = randomUUID();
   const proposalIntent: BookEditIntent = { ...options.intent, bookTitle: title, clarification: "none" };
+  // The card's own summary stays English like every other card's, because the
+  // app draws it beside English buttons; the bubble speaks the conversation.
   const summary = `Retitle the book “${title}” and draw a new AI cover with it`;
   return {
     reply: await createAssistantChatMessage({
       projectId: project.id,
       parentId: options.userMessageId,
-      content: `${summary}. Your cover is AI artwork with the title set into it, so a new title means drawing the cover again — it will look different. Tap Apply to confirm, or Cancel to drop it.`,
+      content: bookTitleReply(replyLanguage, "proposal", title),
       metadata: {
         intent: proposalIntent,
         charged: false,
+        replyLanguage,
         pendingEdit: options.pendingEditMetadata({
           request: options.message,
           scope: "none",
@@ -231,10 +246,8 @@ async function commit(
 }
 
 /** The shared transaction speaks to the Studio; the chat says the same thing about a title. */
-function chatRefusal(refusal: ManuscriptCoverRefusal): string {
-  return refusal.code === "PROJECT_BUSY"
-    ? "This book is still being worked on. Ask me again once the current job finishes."
-    : "I can change the title once this book has finished updating.";
+function chatRefusal(refusal: ManuscriptCoverRefusal): BookTitleNotice {
+  return refusal.code === "PROJECT_BUSY" ? "busy" : "notUpdated";
 }
 
 /**
@@ -245,8 +258,16 @@ function chatRefusal(refusal: ManuscriptCoverRefusal): string {
  * image model, and treating it as a design would re-typeset a fresh pick over
  * the reader's picture.
  */
-export async function currentCoverKind(projectId: string): Promise<"none" | "design" | "upload" | "ai"> {
-  const asset = await prisma.imageAsset.findFirst({
+/**
+ * What changing the words on a book's cover costs, read off its row. `ai-kept`
+ * is a drawn cover whose artwork was kept beside it (`coverTypeset.ts` in
+ * core): its words are re-set over the same picture for free, like a design's.
+ * `ai` is a drawn cover from before artwork was kept, whose words are pixels.
+ */
+export type CoverKind = "none" | "design" | "upload" | "ai" | "ai-kept";
+
+export async function currentCoverKind(projectId: string, client: Pick<typeof prisma, "imageAsset"> = prisma): Promise<CoverKind> {
+  const asset = await client.imageAsset.findFirst({
     where: { projectId, type: "COVER" },
     orderBy: { createdAt: "desc" },
     select: { metadata: true }
@@ -254,14 +275,14 @@ export async function currentCoverKind(projectId: string): Promise<"none" | "des
   return coverKindFromMetadata(asset ? asset.metadata : undefined);
 }
 
-export function coverKindFromMetadata(metadata: unknown): "none" | "design" | "upload" | "ai" {
+export function coverKindFromMetadata(metadata: unknown): CoverKind {
   if (metadata === undefined) {
     return "none";
   }
   const record = jsonRecord(metadata);
   if (record.source === "upload") return "upload";
   if (record.coverArtSource === "design" || typeof record.coverDesignId === "string") return "design";
-  return "ai";
+  return coverRetypesetSource(record) === "artwork" ? "ai-kept" : "ai";
 }
 
 /** The design a children's book wears now, written down when nothing else holds it. */

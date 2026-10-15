@@ -2,6 +2,7 @@ import { withStoredBookImages, type BookImageOptions } from "./storedBookImages.
 import { writeFile } from "node:fs/promises";
 import {
   AlignmentType,
+  Bookmark,
   Document,
   Footer,
   HeadingLevel,
@@ -20,14 +21,18 @@ import {
   type INumberingOptions,
   type IStylesOptions
 } from "docx";
+import JSZip from "jszip";
 import type { Token } from "marked";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
+import { withoutXmlIllegalCharacters } from "../xmlCharacters.js";
+import { DOCX_TOMEZA_CREDIT_BOOKMARK } from "../docxBookMatter.js";
 import {
   loadDocxImageAssets,
   prepareDocxSource,
   rasterizeFigure,
   type DocxImage,
   type DocxSegment,
+  type DocxMatterSheet,
   type DocxTitlePage
 } from "./docxAssets.js";
 import {
@@ -40,6 +45,7 @@ import {
   SUBTITLE_STYLE,
   blocksFromToken,
   collectChapters,
+  docxChapterAnchor,
   imageParagraph,
   inlineRuns,
   lexMarkdown,
@@ -67,7 +73,11 @@ import { splitStoryPageMarkdown, type StoryPagePlan } from "./pdfStoryPages.js";
  * - **The Contents is a static list of hyperlinks**, one per chapter heading,
  *   each bound to a bookmark on its heading. A Word TOC *field* would make the
  *   document ask "update fields?" on every open, and a book's contents do not
- *   change under the reader.
+ *   change under the reader. It is the PDF's Contents: printed only when the
+ *   compiled markdown carried one, and listing chapters, never the Sources or
+ *   About the Author after them — built from every `##` heading instead, a
+ *   short chapterless book with both printed "Contents · Sources · About the
+ *   Author" after its text.
  * - **No HTML is rendered.** The compiler's own furniture is read back into
  *   fields by `prepareDocxSource`; anything else a manuscript carries as markup
  *   is dropped, and only `http`, `https` and `mailto` links survive.
@@ -273,10 +283,12 @@ function pageNumberFooter(): Footer {
   });
 }
 
-function titlePageBlocks(titlePage: DocxTitlePage, ctx: DocxRenderContext): FileChild[] {
+function titlePageBlocks(titlePage: DocxTitlePage, ctx: DocxRenderContext, afterCover: boolean): FileChild[] {
   const blocks: FileChild[] = [
     new Paragraph({
       heading: HeadingLevel.TITLE,
+      // A cover fills its own page; the title page is the next leaf, not the space under it.
+      ...(afterCover ? { pageBreakBefore: true } : {}),
       ...(ctx.profile.direction === "rtl" ? { bidirectional: true } : {}),
       children: [textRun(titlePage.title, ctx)]
     })
@@ -286,6 +298,47 @@ function titlePageBlocks(titlePage: DocxTitlePage, ctx: DocxRenderContext): File
   }
   if (titlePage.byline) {
     blocks.push(styledParagraph(titlePage.byline, BYLINE_STYLE, ctx));
+  }
+  if (titlePage.imprint) {
+    blocks.push(
+      styledParagraph(titlePage.imprint, CAPTION_STYLE, ctx, {
+        children: [new Bookmark({ id: DOCX_TOMEZA_CREDIT_BOOKMARK, children: [textRun(titlePage.imprint, ctx)] })],
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 2400 }
+      })
+    );
+  }
+  return blocks;
+}
+
+/**
+ * The dedication and the publication details on a page of their own. Word has
+ * no bottom-aligned block short of a section break, so the details simply
+ * follow the dedication at a distance.
+ */
+function matterSheetBlocks(sheet: DocxMatterSheet, ctx: DocxRenderContext): FileChild[] {
+  const blocks: FileChild[] = sheet.dedication.map((paragraph, index) =>
+    new Paragraph({
+      style: SUBTITLE_STYLE,
+      ...(index === 0 ? { pageBreakBefore: true, spacing: { before: 2400, after: 200 } } : {}),
+      ...(ctx.profile.direction === "rtl" ? { bidirectional: true } : {}),
+      children: paragraph
+        .split("\n")
+        .flatMap((line, lineIndex) => (lineIndex > 0 ? [new TextRun({ break: 1 }), textRun(line, ctx)] : [textRun(line, ctx)]))
+    })
+  );
+  const publication = [...sheet.publication, ...(sheet.credit ? [sheet.credit] : [])];
+  for (const [index, line] of publication.entries()) {
+    const first = index === 0;
+    blocks.push(
+      styledParagraph(line, CAPTION_STYLE, ctx, {
+        ...(index === sheet.publication.length ? {
+          children: [new Bookmark({ id: DOCX_TOMEZA_CREDIT_BOOKMARK, children: [textRun(line, ctx)] })]
+        } : {}),
+        ...(first && blocks.length === 0 ? { pageBreakBefore: true } : {}),
+        spacing: { before: first ? (blocks.length === 0 ? 0 : 3600) : 0, after: 60 }
+      })
+    );
   }
   return blocks;
 }
@@ -356,19 +409,21 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
   const story = options.pageMapPlan ? splitStoryPageMarkdown(markdown, options.pageMapPlan) : undefined;
   const source = prepareDocxSource(story?.frontmatter ?? markdown);
   const segments: Array<DocxSegment & { storyStart?: boolean }> = [...source.segments];
+  let carriesContents = source.contents;
   if (story) for (const part of [...story.scenes.map((scene) => scene.markdown), ...(story.backmatter ? [story.backmatter] : [])]) {
-    segments.push(...prepareDocxSource(part, { extractCover: false }).segments.map((segment, index) => ({ ...segment, storyStart: index === 0 })));
+    const prepared = prepareDocxSource(part, { extractCover: false });
+    carriesContents ||= prepared.contents;
+    segments.push(...prepared.segments.map((segment, index) => ({ ...segment, storyStart: index === 0 })));
   }
   const images = await loadDocxImageAssets(markdown, options);
 
   const lexed = segments.map((segment) => (segment.kind === "markdown" ? lexMarkdown(segment.text) : []));
-  const chapters = collectChapters(lexed);
+  const chapters = collectChapters(lexed, [labels.sources, labels.aboutAuthor]);
   const ctx: DocxRenderContext = {
     profile,
     fonts: fontSet,
     images,
     chapters,
-    nextChapter: 0,
     listInstance: 0
   };
 
@@ -382,11 +437,15 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
     }
   }
   if (source.titlePage) {
-    children.push(...titlePageBlocks(source.titlePage, ctx));
+    children.push(...titlePageBlocks(source.titlePage, ctx, frontMatter));
+    frontMatter = true;
+  }
+  if (source.matterSheet) {
+    children.push(...matterSheetBlocks(source.matterSheet, ctx));
     frontMatter = true;
   }
 
-  const printsContents = chapters.length > 1;
+  const printsContents = carriesContents && chapters.length > 1;
   let contentsPlaced = false;
   let sawTitleHeading = false;
   let bodyStarted = false;
@@ -402,7 +461,7 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
     const tokens = lexed[index] ?? [];
     for (let position = 0; position < tokens.length; position += 1) {
       const token = tokens[position]!;
-      if (token.type === "space") {
+      if (token.type === "space" || docxChapterAnchor(token)) {
         continue;
       }
       const isTitleHeading = !sawTitleHeading && !bodyStarted && token.type === "heading" && (token as { depth: number }).depth === 1;
@@ -465,9 +524,37 @@ export async function generateBookDocx(markdown: string, options: GenerateBookDo
     ]
   });
 
-  const bytes = await Packer.toBuffer(document);
+  const bytes = await withoutXmlIllegalPartCharacters(await Packer.toBuffer(document));
   if (options.outputPath) {
     await writeFile(options.outputPath, bytes);
   }
   return bytes;
+}
+
+/**
+ * The package with every character XML 1.0 forbids taken out of its parts.
+ *
+ * The docx library writes text verbatim: a run's text, a code line, an
+ * equation, a picture's alt text, the title and the author in the document
+ * properties. A U+000B from a dedication pasted out of Word — or from a Studio
+ * page, an import or a chat edit, which have no cleaning of their own — landed
+ * raw in `document.xml`, and Word refused the whole file as corrupt. Those are
+ * doors inside a library this code cannot hook, so the parts it wrote are the
+ * one place they all meet. A lone surrogate never gets this far: Node's UTF-8
+ * encoder has already written it as U+FFFD. A package with nothing to strip is
+ * returned as the bytes the library made.
+ */
+async function withoutXmlIllegalPartCharacters(bytes: Buffer): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(bytes);
+  let changed = false;
+  for (const part of Object.values(zip.files)) {
+    if (part.dir || !/\.(?:xml|rels)$/i.test(part.name)) continue;
+    const xml = await part.async("string");
+    const legal = withoutXmlIllegalCharacters(xml);
+    if (legal !== xml) {
+      zip.file(part.name, legal);
+      changed = true;
+    }
+  }
+  return changed ? zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }) : bytes;
 }

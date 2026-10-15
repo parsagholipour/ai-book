@@ -288,7 +288,7 @@ class BillingOfferFooter extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
               child: Text(
                 'Building a book plan uses credits; the current amount is listed in Account. '
-                'Writing, edits, illustrations, and export unlocks also use credits. '
+                'Writing, edits and illustrations also use credits; downloading a finished book does not. '
                 'Writing costs depend on your book and settings. Monthly credits reset each billing period. '
                 'Purchased credits never expire and are spent after your monthly credits. '
                 'Paid plans remove the monthly illustrated-book limit; illustrations still use credits.',

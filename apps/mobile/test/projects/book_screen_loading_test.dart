@@ -370,6 +370,8 @@ class FakeBillingRepository implements BillingRepository {
     String? transactionId,
     String? purchaseStatus,
     String? projectId,
+    int? localPriceMicros,
+    String? localCurrency,
   }) async {
     return GooglePlayVerificationResult(
       purchase: const VerifiedPurchase(
@@ -480,8 +482,6 @@ const fakeExports = MobileExportSet(
   pdf: MobileExportAvailability(
     format: 'pdf',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     filename: 'Generated-Plan.pdf',
     contentType: 'application/pdf',
@@ -489,8 +489,6 @@ const fakeExports = MobileExportSet(
   epub: MobileExportAvailability(
     format: 'epub',
     available: false,
-    unlocked: false,
-    creditsRequired: 150,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'Generated-Plan.epub',
     contentType: 'application/epub+zip',

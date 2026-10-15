@@ -7,6 +7,7 @@ import '../domain/character_image_models.dart';
 import '../domain/character_models.dart';
 import 'character_identity.dart';
 import 'character_network_image.dart';
+import 'character_photo_pick.dart';
 import 'character_portrait_drawing.dart';
 
 /// The character's picture at the size it deserves, and every state that
@@ -294,6 +295,15 @@ class _EmptyPlate extends StatelessWidget {
                     leading: const Icon(Icons.add_photo_alternate_outlined),
                     expanded: true,
                     onPressed: onAdd,
+                  ),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    characterPhotoConsentLine,
+                    key: const ValueKey('character-header-photo-consent'),
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: palette.foreground,
+                    ),
                   ),
                   if (onDescribe != null) ...[
                     const SizedBox(height: AppSpacing.xxs),

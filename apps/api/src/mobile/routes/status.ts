@@ -2,7 +2,9 @@ import { ensureExportRepairQueued, ensureExportRepairQueuedFor, missingExportFor
 import { requireMobileAuth, sendMobileError, sendProjectNotFound } from "../httpErrors.js";
 import { imageContentType, mobileAssetFilenameFromPath } from "../projectArtifactSerializers.js";
 import { isLiveProjectStatus, loadSerializedProjectStatus } from "../projectStatusSerializers.js";
+import { admitStatusStream, statusStreamTiming } from "../statusStreams.js";
 import { assetParamsSchema, idParamsSchema, mobileAuthError } from "../schemas.js";
+import { readBearerToken, verifyMobileAccessToken } from "../../mobileAuth.js";
 import { prisma } from "@book-maker/db";
 import { objectKey, objectStore } from "@book-maker/storage";
 import type { FastifyInstance } from "fastify";
@@ -31,7 +33,7 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
       if (!project) {
         return sendProjectNotFound(reply);
       }
-      const status = await loadSerializedProjectStatus(id, appConfig, auth.user.id);
+      const status = await loadSerializedProjectStatus(id, appConfig);
       if (!status) {
         return sendProjectNotFound(reply);
       }
@@ -91,18 +93,27 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
         "X-Accel-Buffering": "no"
       });
 
+      // Read once, at connect: the stream answers to the token it was opened
+      // with, so a refresh (which revokes that session row) ends it too.
+      const accessToken = readBearerToken(request);
       let closed = false;
       let sending = false;
-      let timer: ReturnType<typeof setInterval> | null = null;
-      const close = () => {
+      let lastSent: string | null = null;
+      const timers: Array<ReturnType<typeof setInterval>> = [];
+      const write = (chunk: string) => {
+        if (!closed) reply.raw.write(chunk);
+      };
+      let release: () => void = () => undefined;
+      const close = (code?: string) => {
         if (closed) return;
+        if (code) write(`event: error\ndata: ${JSON.stringify({ code })}\n\n`);
         closed = true;
-        if (timer) {
-          clearInterval(timer);
-          timer = null;
-        }
+        for (const timer of timers) clearInterval(timer);
+        timers.length = 0;
+        release();
         reply.raw.end();
       };
+      release = admitStatusStream(auth.user.id, { end: (code) => close(code) });
 
       const sendStatus = async () => {
         if (closed || sending) {
@@ -110,10 +121,10 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
         }
         sending = true;
         try {
-          const status = await loadSerializedProjectStatus(id, appConfig, auth.user.id);
+          const status = await loadSerializedProjectStatus(id, appConfig);
+          if (closed) return;
           if (!status) {
-            reply.raw.write(`event: error\ndata: ${JSON.stringify({ code: "PROJECT_NOT_FOUND" })}\n\n`);
-            close();
+            close("PROJECT_NOT_FOUND");
             return;
           }
           if (!isLiveProjectStatus(status.status)) {
@@ -130,22 +141,54 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
               await ensureExportRepairQueuedFor(id, auth.user.id, missing, appConfig);
             }
           }
-          reply.raw.write(`event: status\ndata: ${JSON.stringify({ status })}\n\n`);
+          // Only a status that changed is sent: an unchanged one used to go out
+          // every second, and each one rebuilt the app's whole chat screen.
+          const serialized = JSON.stringify({ status });
+          if (serialized !== lastSent) {
+            lastSent = serialized;
+            write(`event: status\ndata: ${serialized}\n\n`);
+          }
           if (!isLiveProjectStatus(status.status)) {
             close();
           }
         } catch (error) {
           request.log.warn({ err: error, projectId: id }, "Could not stream mobile project status");
-          reply.raw.write(`event: error\ndata: ${JSON.stringify({ code: "STATUS_STREAM_ERROR" })}\n\n`);
+          write(`event: error\ndata: ${JSON.stringify({ code: "STATUS_STREAM_ERROR" })}\n\n`);
         } finally {
           sending = false;
         }
       };
 
-      request.raw.on("close", close);
+      // Auth was checked once, at connect. A stream outliving a revoked
+      // session, a disabled account or its own access token kept serving the
+      // book to whoever held the socket, so it re-asks on a timer. It ends with
+      // a code of its own, never `SESSION_REVOKED`: an ordinary token refresh
+      // revokes the session row this token belongs to, so a reader whose app
+      // treated that as a dead session would be signed out every 15 minutes.
+      // Whether the session is really over is the next HTTP request's answer.
+      const checkSession = async () => {
+        if (closed) return;
+        try {
+          const verified = accessToken ? await verifyMobileAccessToken(accessToken) : null;
+          if (!verified?.ok) {
+            close("STATUS_STREAM_SESSION_ENDED");
+          }
+        } catch (error) {
+          // A failed read is not a revoked session; the next check asks again.
+          request.log.warn({ err: error, projectId: id }, "Could not re-check a status stream's session");
+        }
+      };
+
+      request.raw.on("close", () => close());
       await sendStatus();
       if (!closed) {
-        timer = setInterval(sendStatus, 1000);
+        timers.push(
+          setInterval(() => void sendStatus(), statusStreamTiming.pollMs),
+          // A comment line, which every SSE parser — the app's included —
+          // skips: it proves the socket is alive without rebuilding a screen.
+          setInterval(() => write(": ping\n\n"), statusStreamTiming.heartbeatMs),
+          setInterval(() => void checkSession(), statusStreamTiming.sessionCheckMs)
+        );
       }
     }
   );

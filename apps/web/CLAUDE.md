@@ -3,7 +3,7 @@
 React/Vite. The internal console behind the `WEB_PASSWORD` cookie — not a customer surface, and the
 only consumer of `/api/admin/*`.
 
-`src/features/`: `admin` (the `/admin` dashboard — overview, users, moderation), `pricing` (writes
+`src/features/`: `admin` (the `/admin` dashboard — overview, users, moderation, AI spend), `pricing` (writes
 `CreditPricingRevision`), `projects`, `planning`, `voice`, `jobs`, `auth`, `legal`, `previews`.
 
 This workspace is by far the least tested (8 test files, ~700 lines against ~13k of source), so
@@ -107,12 +107,21 @@ the server, check here:
   zero-dependency `./collections` subpath; never replace that with a barrel import.
 - **Pricing.** The `/pricing` screen edits the operator-editable price table; the shapes come from
   `packages/core/src/creditPricing.ts`. Anything projecting revenue must iterate `CREDIT_PRICE_KEYS`
-  rather than every key, or it invents income from the free tier's *limit* keys.
+  rather than every key, or it invents income from the free tier's *limit* keys, and turns credits
+  into dollars only at the `creditUsdValue` the API sends (the cheapest paid credit net of Google's
+  fee), labelled as such — never a hard-coded cent.
 - **Exports.** The console downloads via a plain link, so its export routes render inline rather
   than queueing a repair — see `apps/api/src/routes/CLAUDE.md`.
 - **App update releases.** `src/features/admin/appUpdatePolicy.ts` restates the platforms, the
   policies and how a release list reduces per platform from `apps/api/src/appUpdates.ts`. A new
   policy or platform lands on both sides.
+- **Account moderation.** `src/features/admin/AccountModerationPanel.tsx` restates the four action
+  names, the reason's 1,000-character bound and what each action does from
+  `apps/api/src/accountModeration.ts`, and `shareModeration.ts` restates the four share actions and
+  the `book_text_review` record from `apps/api/src/routes/adminShares.ts` and
+  `apps/api/src/mobile/shares/shareRecords.ts`. The Moderation screen's banner counts what the
+  `safety_reports` alert counts (`apps/api/src/monitoring/alertConditions.ts`); change one, change
+  the other.
 
 `src/features/voice/BrowserVoiceRoomClient.ts` and `BrowserVoiceCallClient.ts` are the two largest
 files in the repo and both sit near their grandfathered size ceilings; split rather than grow them.

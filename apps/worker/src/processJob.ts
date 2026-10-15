@@ -26,7 +26,10 @@ import {
   staleGenerationJobReason
 } from "./runtime/jobLifecycle.js";
 import { serializeError } from "./runtime/serialization.js";
+import { importCompletion, ImportSupersededError } from "./runtime/importCompletion.js";
+import { PlanningSupersededError } from "./runtime/planningCompletion.js";
 import { runWithGenerationAttempt } from "./runtime/generationAttemptContext.js";
+import { runWithProviderSpendUser } from "./runtime/providerSpendUser.js";
 import { applyBookEdit } from "./handlers/applyBookEdit.js";
 import { buildCharacterPersona, prepareCharacterCandidates } from "./handlers/characters.js";
 import { compileExport } from "./handlers/compileExport.js";
@@ -69,7 +72,8 @@ export async function processWorkerJob(rawJob: RawWorkerJob): Promise<void> {
       opts: job.opts,
       providerConfig: providerConfigSnapshot()
     });
-    await processValidatedWorkerJob(job, runLogger);
+    // Every provider cost row this delivery writes names the user it was spent for.
+    await runWithProviderSpendUser(job, () => processValidatedWorkerJob(job, runLogger));
   });
 }
 
@@ -107,7 +111,7 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
       // paid attempt SUCCEEDED — and its two statements are not one
       // transaction, which is precisely the crash this branch replays.
       await markCompleted(job);
-      if (stagedReplanDelivery || job.name === "apply-book-edit" || job.name === "continue-book") {
+      if (stagedReplanDelivery || job.name === "apply-book-edit" || job.name === "continue-book" || job.name === "import-book") {
         // Replan publication terminalizes this row in the manuscript
         // transaction. A Bull retry after a tail outage must still reach the
         // APPLIED operation's checkpointed follow-up, without reopening the
@@ -151,7 +155,7 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
           await buildCharacterPersona(job);
           break;
         case "import-book":
-          await importBook(job);
+          completion = await importBook(job);
           break;
         case "continue-book":
           completion = await continueBook(job);
@@ -174,6 +178,8 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
       completion = (await applyBookEdit(job)) ?? undefined;
     } else if (job.name === "continue-book") {
       completion = await continueBook(job);
+    } else if (job.name === "import-book") {
+      completion = importCompletion(job);
     }
     if (!replayCompletedDurableTail) {
       if (completion?.lifecycleCompletionCommitted) {
@@ -191,6 +197,13 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
       }
     }
   } catch (error) {
+    if (error instanceof PlanningSupersededError || error instanceof ImportSupersededError) {
+      // Publication rolled back. Cancel only this obsolete run; the project
+      // and its newer owner's verdict must not enter ordinary failure handling.
+      await cancelStaleGenerationJob(job, error.message);
+      await runLogger.append("job.superseded", {});
+      return;
+    }
     if (isStructuralRollbackRedeliveryError(error)) {
       // Before stop and markFailed: both of those refund the ACTIVE operation
       // and restore COMPLETE, and the revert did not land.
