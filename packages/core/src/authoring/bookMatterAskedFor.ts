@@ -1,4 +1,5 @@
 import type { BookMatterChatAnswer, BookMatterChatCurrent, BookMatterChatField } from "./bookMatterChatEdit.js";
+import { copiesAuthorProfile, namesAuthorProfile, type BookMatterChatProfile } from "./bookMatterProfile.js";
 import {
   arabicScriptFold,
   askedWordsIn,
@@ -68,6 +69,13 @@ import {
  * whole beside the biography that says so, removes no © holder (and so claims
  * none of the biography's words).
  *
+ * - A message pointing at the reader's saved profile ("use my profile", "add my
+ *   author info") asks for every field the change copies from it exactly
+ *   (`bookMatterProfile.ts`) — "All rights reserved" included, since the
+ *   reader switched it on there. Only a set, and only the profile's own value:
+ *   the door cannot print anything the reader did not save, nor take a field
+ *   off the book.
+ *
  * Anything else — a second field beside the one asked for, which nothing in the
  * message or the last reply asks for — is dropped.
  */
@@ -81,6 +89,8 @@ export type BookMatterAskContext = {
   originalRequest?: string | undefined;
   /** The fields the chat's last matter reply changed or asked about. */
   lastTurnFields?: readonly BookMatterChatField[] | undefined;
+  /** The reader's saved author profile, when it holds anything. */
+  profile?: BookMatterChatProfile | undefined;
 };
 
 /** A change as the gate reads it: what it prints, and its quote when that is the reader's words. */
@@ -112,6 +122,7 @@ export function changesAskedFor(changes: readonly Change[], context: BookMatterA
   const fields = new Set(read.filter((_, at) => !content[at]).map(({ change }) => change.field));
   const only = fields.size === 1 ? [...fields][0] : undefined;
   const cueNamed = new Map(read.map((one) => [one, namedByCue(one, read, context.current)] as const));
+  const profileNamed = namesAuthorProfile(context.message) || namesAuthorProfile(context.originalRequest);
 
   const asked: Change[] = [];
   const kept = new Set<BookMatterChatField>();
@@ -134,7 +145,8 @@ export function changesAskedFor(changes: readonly Change[], context: BookMatterA
       field !== "allRightsReserved" &&
       namesOnlyThis([...namedBeyond(context.message, inMessage, printed?.words), ...inRequest]) &&
       (change.action === "set" || named(field) || namesByValue(one, messageQuote(), read, context.current));
-    if (byWords || alone) {
+    const fromProfile = profileNamed && copiesAuthorProfile(change, context.profile);
+    if (byWords || alone || fromProfile) {
       asked.push(change);
       kept.add(field);
     }

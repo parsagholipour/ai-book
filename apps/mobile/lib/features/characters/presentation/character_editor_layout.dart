@@ -18,6 +18,8 @@ class CharacterEditorLayout extends StatelessWidget {
     required this.onSave,
     required this.children,
     this.savingLabel,
+    this.notice,
+    this.onDismissNotice,
     super.key,
   });
 
@@ -31,6 +33,13 @@ class CharacterEditorLayout extends StatelessWidget {
   /// What the save button says while it works. Defaults to "Creating…" or
   /// "Saving…"; a create that goes on to upload a photo says so.
   final String? savingLabel;
+
+  /// Why the last thing the reader tried did not happen, said above the save
+  /// button. A snack bar cannot say it: the messenger shows one on the page's
+  /// Scaffold, and this sheet covers that page — a failed Create spun, stopped,
+  /// and showed nothing at all.
+  final ({String title, String message})? notice;
+  final VoidCallback? onDismissNotice;
 
   @override
   Widget build(BuildContext context) {
@@ -99,17 +108,33 @@ class CharacterEditorLayout extends StatelessWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-                child: AppButton.primary(
-                  key: const ValueKey('character-editor-save'),
-                  label: creating ? 'Create character' : 'Save changes',
-                  loadingLabel:
-                      savingLabel ?? (creating ? 'Creating…' : 'Saving…'),
-                  leading: Icon(
-                    creating ? Icons.add_rounded : Icons.check_rounded,
-                  ),
-                  loading: saving,
-                  expanded: true,
-                  onPressed: busy ? null : onSave,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (notice case final notice?) ...[
+                      AppInlineNotice(
+                        key: const ValueKey('character-editor-notice'),
+                        tone: AppTone.error,
+                        title: notice.title,
+                        message: notice.message,
+                        onDismiss: onDismissNotice,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
+                    AppButton.primary(
+                      key: const ValueKey('character-editor-save'),
+                      label: creating ? 'Create character' : 'Save changes',
+                      loadingLabel:
+                          savingLabel ?? (creating ? 'Creating…' : 'Saving…'),
+                      leading: Icon(
+                        creating ? Icons.add_rounded : Icons.check_rounded,
+                      ),
+                      loading: saving,
+                      expanded: true,
+                      onPressed: busy ? null : onSave,
+                    ),
+                  ],
                 ),
               ),
             ),

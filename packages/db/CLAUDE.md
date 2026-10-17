@@ -790,7 +790,7 @@ diff rather than by silently reordering rows.
 - **Welcome credits are granted lazily, once, not by a cron.** Signup writes a PENDING
   `WelcomeCreditGrant`; `ensureCurrentPlanPeriod` settles it on the first balance read or reserve.
   The operator toggle and amount live on the price list (`welcomeCreditsEnabled`, `welcomeCredits`;
-  1,250 by default since migration 000110, sized to the largest free picture book with its plan —
+  1,500 by default since migration 000116, sized to the largest free picture book with its plan —
   "Credit pricing" in `packages/core/CLAUDE.md`).
   `welcomeCreditIpLimit` reads the signup country's cap from
   `welcomeCreditsAccountsPerIpHighIncome` or `welcomeCreditsAccountsPerIpLowMiddleIncome`

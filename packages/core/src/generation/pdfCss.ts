@@ -247,6 +247,39 @@ export const BOOK_PDF_CSS = `
     color: #8a7a6a;
   }
   /*
+   * A title page with a foot (the publication details, bookMatterPages.ts)
+   * centres its title, subtitle and byline in a stack that takes whatever
+   * height the foot leaves and clips its own tail, so an overflowing title
+   * loses its last lines inside the stack and never the © line. The foot is
+   * outside the clip, and its fields are bounded (BOOK_MATTER_LIMITS), so it
+   * always fits under any title.
+   */
+  .book-title-page > .book-title-page__stack {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .book-title-page__stack > :first-child {
+    margin-top: auto;
+  }
+  .book-title-page__stack > :last-child {
+    margin-bottom: auto;
+  }
+  .book-title-page > .book-title-page__publication {
+    flex: none;
+    margin: 0;
+    padding-top: 10mm;
+    font-size: 9pt;
+    line-height: 1.5;
+    color: #8a7a6a;
+  }
+  .book-title-page__publication > p {
+    margin: 0;
+  }
+  /*
    * Dedication in the upper third, publication details at the foot, set from
    * the table that also counts its sheets (matterSheetLayout.ts). A
    * min-height, not a height: this sheet resets no counter, so a dedication

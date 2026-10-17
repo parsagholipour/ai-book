@@ -1,5 +1,6 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { pageDesignCatalogLines, type PageDesignEdit } from "../bookEditPageDesign.js";
+import { bookUpdateMetadata } from "./bookUpdateMetadata.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { applyPresentationPreference } from "./presentationEdits.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
@@ -34,12 +35,17 @@ export async function applyPageDesignEdit(
   parentId: string
 ): Promise<MobileProjectChatMessageRecord> {
   const edit: PageDesignEdit = intent.pageDesign ?? { design: null };
-  const reply = (content: string, applied?: StoryPageDesignId) =>
+  const reply = (content: string, applied?: StoryPageDesignId, rebuilt?: { contentRevision: number }) =>
     createAssistantChatMessage({
       projectId: project.id,
       parentId,
       content,
-      metadata: { intent, charged: false, pageDesign: { ...edit, ...(applied ? { applied } : {}) } }
+      metadata: {
+        intent,
+        charged: false,
+        pageDesign: { ...edit, ...(applied ? { applied } : {}) },
+        ...bookUpdateMetadata(rebuilt?.contentRevision)
+      }
     });
 
   const plan = jsonRecord(project.currentPlan?.planningPackage);
@@ -79,10 +85,11 @@ export async function applyPageDesignEdit(
     return reply(`Your pages are already in the **${chosen.label}** design — ${chosen.summary}. ${otherDesignsLine(target)}`);
   }
 
-  await applyPresentationPreference({ ...project, currentPlanId: project.currentPlanId }, { storyPageDesign: target });
+  const rebuilt = await applyPresentationPreference({ ...project, currentPlanId: project.currentPlanId }, { storyPageDesign: target });
   return reply(
     `Done — your pages are now in the **${chosen.label}** design: ${chosen.summary}. This one’s free, and I’m refreshing the exports.\n\n${otherDesignsLine(target)}`,
-    target
+    target,
+    rebuilt
   );
 }
 

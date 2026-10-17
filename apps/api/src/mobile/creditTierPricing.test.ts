@@ -317,10 +317,10 @@ describe("plan approval prices by quality tier", () => {
   // 12 pages, 2 interior illustrations plus a cover. No export unlock: the
   // finished book downloads free (2026-10-15).
   const totals = {
-    fast: 220 + 12 * 5 + 3 * 45,
-    balanced: 350 + 12 * 8 + 3 * 45,
-    premium: 500 + 12 * 30 + 3 * 85 + 200,
-    ultra: 650 + 12 * 130 + 3 * 85 + 200
+    fast: 150 + 12 * 5 + 3 * 70,
+    balanced: 250 + 12 * 8 + 3 * 70,
+    premium: 500 + 12 * 30 + 3 * 130 + 200,
+    ultra: 650 + 12 * 130 + 3 * 130 + 200
   } as const;
 
   for (const tier of TIERS) {
@@ -362,7 +362,7 @@ describe("plan approval prices by quality tier", () => {
 
     expect(response.statusCode).toBe(202);
     expect(reserveCredits).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ operation: "FULL_BOOK_GENERATION", amountCredits: 350 + 12 * 8 + 3 * 45 })
+      expect.objectContaining({ operation: "FULL_BOOK_GENERATION", amountCredits: 250 + 12 * 8 + 3 * 70 })
     );
     const { metadata } = vi.mocked(reserveCredits).mock.calls[0]![0];
     const estimate = (metadata as { creditEstimate: { lineItems: Array<{ code: string }>; assumptions: object } }).creditEstimate;
@@ -434,7 +434,7 @@ describe("book edits price by the book's own quality tier", () => {
     // 12 pages, 2 interior illustrations and a cover at balanced, plus the 120
     // rebuild base — and no export unlock, for any reader.
     expect(bookEditCreditCost("book_replan", 0, projectAtTier("balanced") as never)).toBe(
-      120 + 350 + 12 * 8 + 3 * 45
+      120 + 250 + 12 * 8 + 3 * 70
     );
   });
 

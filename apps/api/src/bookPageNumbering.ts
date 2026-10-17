@@ -212,8 +212,10 @@ export function backMatterName(contents: BookBackMatterContents | undefined): st
 /**
  * The printed front-matter pages of the book the map measured, named from the
  * row when it describes the same revision. A matter sheet prints when the book
- * has a dedication, a holder for its © line (the copyright holder, or the author
- * name), an imprint or an ISBN — the compile's own test (`formatBookMatter`).
+ * has a dedication — the compile's own test (`formatBookMatter`); the © line,
+ * the imprint and the ISBN sit at the title page's foot. A book compiled before
+ * 2026-10-17 printed them on a sheet of their own, and its pages are named as
+ * the title page until its next compile, which is the same book_matter edit.
  */
 export function frontMatterForProject(map: BookPdfPageMap, project: ProjectPageMapSource): BookFrontMatterPage[] {
   const firstText = map.pages[0]?.startPdfPage ?? map.totalPdfPages + 1;
@@ -228,9 +230,7 @@ export function frontMatterForProject(map: BookPdfPageMap, project: ProjectPageM
     "authorName" in project &&
     (map as StoredBookPdfPageMap).contentRevision === project.contentRevision;
   const matter = parseBookMatter(project.bookMatter);
-  const sheet = Boolean(
-    matter.dedication || matter.copyrightHolder || project.authorName?.trim() || matter.imprint || matter.isbn
-  );
+  const sheet = Boolean(matter.dedication);
   return printed.map((page, offset) => ({
     page,
     holds: !known
@@ -246,9 +246,9 @@ export function frontMatterForProject(map: BookPdfPageMap, project: ProjectPageM
 }
 
 const FRONT_MATTER_NAMES: Record<BookFrontMatterPage["holds"], string> = {
-  title_page: "the title page — the book's title, subtitle and author name",
-  matter_sheet: "the dedication and publication page — the dedication, the © line, the publisher and the ISBN",
-  title_or_matter: "front matter — the title page, or the dedication and publication page"
+  title_page: "the title page — the book's title, subtitle and author name, with the © line, the publisher and the ISBN at its foot",
+  matter_sheet: "the dedication page",
+  title_or_matter: "front matter — the title page (title, subtitle, author name, © line, publisher and ISBN), or the dedication page"
 };
 
 /** The front matter as the router and the matter composer are told it. */

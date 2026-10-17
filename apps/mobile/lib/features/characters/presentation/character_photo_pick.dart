@@ -104,6 +104,7 @@ Future<Uint8List?> pickAndCropCharacterPhoto(
   BuildContext context, {
   required CharacterPhotoAction action,
   required PhotoPicker photoPicker,
+  void Function(String message)? onFailure,
 }) async {
   final source = action == CharacterPhotoAction.camera
       ? ImageSource.camera
@@ -122,15 +123,14 @@ Future<Uint8List?> pickAndCropCharacterPhoto(
         purpose: PhotoPickerPurpose.characterCropSource,
       );
     } catch (_) {
-      messenger.showAppSnackBar(
-        SnackBar(
-          content: Text(
-            source == ImageSource.camera
-                ? 'Could not open the camera.'
-                : 'Could not open your photos.',
-          ),
-        ),
-      );
+      final message = source == ImageSource.camera
+          ? 'Could not open the camera.'
+          : 'Could not open your photos.';
+      if (onFailure != null) {
+        onFailure(message);
+      } else {
+        messenger.showAppSnackBar(SnackBar(content: Text(message)));
+      }
       return null;
     }
     if (picked == null) return null;

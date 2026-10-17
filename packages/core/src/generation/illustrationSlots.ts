@@ -90,8 +90,8 @@ export const PICTURE_BOOK_MAX_PICTURES = 12;
  * is `floor((4p + 5) / 10)`, and 2p/5 never lands on a half. The slots are the
  * existing even spread, so 10 pages draw pages 1, 3, 6 and 8, and a scene
  * without one is set as a centred text sheet (`pdfStoryPages.ts`). With a drawn
- * cover, the largest free picture book (30 pages, twelve pictures) is 1,175
- * plus its 40-credit plan, inside the 1,250 welcome grant
+ * cover, the largest free picture book (30 pages, twelve pictures) is 1,400
+ * plus its 40-credit plan, inside the 1,500 welcome grant
  * (`welcomeCredits.test.ts`). Mirrored by `pictureBookIllustrationCount` in the
  * app's `project_models.dart`.
  */

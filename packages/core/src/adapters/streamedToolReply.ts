@@ -52,6 +52,37 @@ export function partialJsonString(input: string, field: string): string | undefi
   return undefined;
 }
 
+export type TurnPreview = {
+  /** A new model call or attempt begins: its text is held until it differs from what is shown. */
+  restart(): void;
+  text(text: string): void | Promise<void>;
+};
+
+/**
+ * One preview for a whole chat turn, however many model calls or retries it
+ * takes. The first text opens it, an empty one included: that is what starts
+ * the chat's event stream and its heartbeat. After that the preview is only
+ * ever replaced. A later call is held back while it re-types the text already
+ * shown, and takes over once it says something else or says more. It is never
+ * blanked: a reset to "" between calls put the thinking dots back over a reply
+ * the reader was halfway through, and then typed the reply out again.
+ */
+export function turnPreview(onText: (text: string) => void | Promise<void>): TurnPreview {
+  let shown: string | undefined;
+  let replacing = false;
+  return {
+    restart() {
+      replacing = false;
+    },
+    text(text) {
+      if (text === shown || (shown !== undefined && !replacing && shown.startsWith(text))) return;
+      replacing = true;
+      shown = text;
+      return onText(text);
+    }
+  };
+}
+
 /** Snapshots replace the preview, so retries never append to an abandoned answer. */
 export function streamedToolReply(toolName: string, onText: (text: string) => void | Promise<void>, field = "assistantMessage") {
   let previous = "";

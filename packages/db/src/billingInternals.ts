@@ -213,16 +213,27 @@ export async function runSerializable<T>(callback: (tx: BillingTx) => Promise<T>
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable
       });
     } catch (error) {
-      // P2034 is a serializable conflict. P2002 is a unique clash — do not retry it here.
-      const code = error && typeof error === "object" && "code" in error ? error.code : null;
-      // The pg adapter can surface a COMMIT-time serialization failure directly,
-      // before Prisma wraps it in P2034. It is the same aborted transaction.
-      const adapterConflict = error instanceof Error && error.name === "DriverAdapterError" &&
-        error.cause && typeof error.cause === "object" && "kind" in error.cause &&
-        error.cause.kind === "TransactionWriteConflict";
-      if (attempt >= 4 || (code !== "P2034" && !adapterConflict)) throw error;
+      if (attempt >= 4 || !isSerializationConflict(error)) throw error;
     }
   }
+}
+
+/**
+ * One aborted serializable transaction, whichever layer reported it. P2034 is Prisma's own name
+ * for it; P2002 is a unique clash and is not retried here. The pg adapter can surface a
+ * COMMIT-time failure directly, before Prisma wraps it in P2034, and a raw query inside the
+ * transaction (a `$queryRaw ... FOR UPDATE`) that hits one arrives as P2010 with the adapter's
+ * error in `meta` — the voice relay's hang-up settlement racing POST /end was answered 500.
+ */
+function isSerializationConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  if ("code" in error && error.code === "P2034") return true;
+  const adapterError = error instanceof Error && error.name === "DriverAdapterError" ? error
+    : "code" in error && error.code === "P2010" && "meta" in error
+      ? (error.meta as { driverAdapterError?: unknown } | null | undefined)?.driverAdapterError
+      : undefined;
+  const cause = adapterError && typeof adapterError === "object" && "cause" in adapterError ? adapterError.cause : null;
+  return !!cause && typeof cause === "object" && "kind" in cause && cause.kind === "TransactionWriteConflict";
 }
 
 export function jsonInput(value: Record<string, unknown>): Prisma.InputJsonValue {

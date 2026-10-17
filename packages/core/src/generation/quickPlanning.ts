@@ -6,6 +6,7 @@ import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { planLibraryCharacterGuidance } from "./planLibraryCharacters.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
+import { REAL_PEOPLE_KEEP_THEIR_NAMES_RULE } from "./realPeople.js";
 
 /** Compactness limits detail per chapter, never the number of chapters a long book needs. */
 export const QUICK_PLAN_GUIDANCE = [
@@ -32,6 +33,7 @@ export function quickPlanMessages(input: CreateProjectInput, options: {
       ? "Give each chapter at most 1–2 short illustration moments using exact character names. Use a short illustrationPlan.globalStyle and 2–4 pageRules, respecting the requested illustration cadence."
       : "Leave chapter illustrationPrompts and illustrationPlan.pageRules empty; do not add interior illustration moments.",
     BYLINE_IS_TYPESET_RULE,
+    REAL_PEOPLE_KEEP_THEIR_NAMES_RULE,
     ...options.autoGuidance,
     ...targetLanguageGenerationGuidance(input.language),
     ...kidsReadingGuidanceLines(input),

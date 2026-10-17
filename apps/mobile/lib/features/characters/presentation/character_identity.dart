@@ -30,16 +30,8 @@ import '../domain/character_models.dart';
 /// same at both sizes: the same palette pick, the same initials, the same
 /// picture once there is one.
 class CharacterIdentityArt extends StatelessWidget {
-  const CharacterIdentityArt({
-    required this.character,
-    this.showInitials = true,
-    super.key,
-  });
+  const CharacterIdentityArt({required this.character, super.key});
   final LibraryCharacter character;
-
-  /// Off when something is drawn over the plate that needs the room — the
-  /// profile's empty state writes its own cue there.
-  final bool showInitials;
 
   @override
   Widget build(BuildContext context) {
@@ -80,19 +72,18 @@ class CharacterIdentityArt extends StatelessWidget {
                 ),
               ),
             ),
-            if (showInitials)
-              Center(
-                child: Text(
-                  character.initials,
-                  textScaler: TextScaler.noScaling,
-                  style: TextStyle(
-                    fontSize: (constraints.maxHeight * 0.35).clamp(28, 88),
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -2,
-                    color: foreground,
-                  ),
+            Center(
+              child: Text(
+                character.initials,
+                textScaler: TextScaler.noScaling,
+                style: TextStyle(
+                  fontSize: (constraints.maxHeight * 0.35).clamp(28, 88),
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -2,
+                  color: foreground,
                 ),
               ),
+            ),
           ],
         ),
       ),

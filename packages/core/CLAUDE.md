@@ -330,6 +330,20 @@ arrive with one.
   balanced — a credit is worth $0.002832 to a Creator subscriber and only $0.002125 to a Max one
   after Play's cut, and Max is the plan someone can spend 80,000 credits of premium writing on, so
   a rate that merely tracked provider cost billed a long premium book at a loss.
+- **A book's price follows what it costs to make: its pictures carry most of it, its text base
+  little.** Pictures are 80–99% of an illustrated book's provider spend — $0.039 a call on
+  Balanced, $0.067 a page and $0.134 a cover on Premium and Ultra — and the text almost none: a
+  10-page Balanced story wrote for $0.012. The prices were the other way round (2026-10-17, "The
+  Last Table", `cmvcknby10014r7p65hvk5tlg`): 470 of its 515 credits were text, and its one 45-credit
+  picture line paid for three image calls (the cover and two unbilled reference sheets), 0.82× cost
+  at the cheapest credit; over the 14 illustrated books of the 30 days before, images were 80% of
+  cost and 30% of price. So `fullBookBase` came down 350 → 250 (Fast 220 → 150) and
+  `imageGeneration` went up 45 → 70 (Premium and Ultra 85 → 130): ×3.8 a Balanced call and ×2.1 a
+  premium cover at $0.002125 a credit, with room for the sheets a short book still draws. Text
+  stays well above cost (×5 on a 120-page book, more on shorter ones), which is where value
+  pricing lives; a picture is where cost does. Migration 000116 moves an installation whose price
+  list still holds the old defaults. Check it against the Operations tab's image margin before
+  moving a picture price down.
 - **Pages a finished book gains are priced like the book they join, never at the rewrite rate.**
   A chat continuation's new chapters and a structural insert's new pages used to bill
   `pageRegenerationPerPage` (80 a page on Balanced), so ten more pages cost more than a new ten-page
@@ -378,11 +392,12 @@ arrive with one.
   `imageGeneration`; the free tier's illustrated-book slot rules are unchanged. Mirrored by
   `estimatedInteriorImageCount` / `pictureBookIllustrationCount` in the app, and both sides spell
   the same table out (`freeBookQuote.test.ts`, `book_quote_test.dart`). **The welcome grant is
-  sized to it**: with a drawn cover on Balanced, a free reader's 12-page book is 716 and its plan 40
-  (756), a 16-page 833 with its plan, a 24-page 1,077, a 30-page — the free cap — 1,215, so the grant is 1,250 (migration 000110 moves an installation
-  still on 1,150, which under `min(pages, 12)` left out every picture book of 22 pages or more).
-  `welcomeCredits.test.ts` walks every free length; raise the grant with any price that would push
-  one past it. The dashboard's revenue projection (`admin/pricingDrivers.ts`) counts a charged
+  sized to it**: with a drawn cover on Balanced, a free reader's 12-page book is 766 and its plan 40
+  (806), a 16-page 908 with its plan, a 24-page 1,252, a 30-page — the free cap — 1,440, so the
+  grant is 1,500, leaving 60 for the creation chat (migration 000116 moved it from 1,250 with the
+  picture price; 000110 had moved it from 1,150, which under `min(pages, 12)` left out every picture
+  book of 22 pages or more). `welcomeCredits.test.ts` walks every free length and holds that room;
+  raise the grant with any price that would push one past it. The dashboard's revenue projection (`admin/pricingDrivers.ts`) counts a charged
   book's pictures off the quote its charge stored (`estimatedInteriorImages`, `includesCover`), and
   re-estimates with today's rule only a charge that stored none, so books charged under an earlier
   rule do not project pictures nobody paid for.

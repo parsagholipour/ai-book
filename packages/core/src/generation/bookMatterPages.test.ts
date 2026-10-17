@@ -73,7 +73,7 @@ describe("the matter sheet", () => {
     expect(bare).not.toContain("About the Author");
   });
 
-  it("sets the dedication and the publication details on one sheet, between the title page and the text", () => {
+  it("sets the dedication on a sheet of its own, and the publication details at the title page's foot", () => {
     const { markdown } = compile({
       authorName: "Ada Lovelace",
       matter: matter({
@@ -84,16 +84,44 @@ describe("the matter sheet", () => {
       })
     });
 
+    const titlePage = markdown.slice(markdown.indexOf('<section class="book-title-page'), markdown.indexOf("</section>") + "</section>".length);
     const sheet = markdown.slice(markdown.indexOf('<section class="book-matter-sheet">'));
     expect(markdown.indexOf("book-title-page")).toBeLessThan(markdown.indexOf("book-matter-sheet"));
     expect(markdown.indexOf("book-matter-sheet")).toBeLessThan(markdown.indexOf("The first page."));
     expect(sheet).toContain("<p>For Sara,<br />who asked for a dragon.</p>");
     expect(sheet).toContain("<p>And for Babbage.</p>");
-    expect(sheet).toContain("<p>© 2026 Ada Lovelace</p>");
-    expect(sheet).toContain("<p>All rights reserved.</p>");
-    expect(sheet).toContain("<p>Analytical Press</p>");
-    expect(sheet).toContain("<p>ISBN 978-0-00-000000-0</p>");
+    expect(sheet.slice(0, sheet.indexOf("</section>"))).not.toContain("©");
+    // The stack the clip may take, then the foot it never reaches.
+    expect(titlePage).toMatch(/<div class="book-title-page__stack">[\s\S]*by Ada Lovelace[\s\S]*<\/div>\n {2}<div class="book-title-page__publication">/);
+    for (const line of ["© 2026 Ada Lovelace", "All rights reserved.", "Analytical Press", "ISBN 978-0-00-000000-0"]) {
+      expect(titlePage).toContain(`<p>${line}</p>`);
+    }
     expect(findBookLikeMarkdownIssues(markdown)).toEqual([]);
+  });
+
+  it("spends no sheet on publication details alone: \"The Last Table\" printed one for two © lines", () => {
+    const { markdown } = compile({ authorName: "Parsa Gholipour", matter: matter({ allRightsReserved: true }) });
+    expect(markdown).not.toContain("book-matter-sheet");
+    expect(markdown).toContain('<div class="book-title-page__publication">\n    <p>© 2026 Parsa Gholipour</p>\n    <p>All rights reserved.</p>\n  </div>');
+  });
+
+  it("writes a title page with no foot exactly as before the foot existed", () => {
+    const { titlePage } = formatBookMatter({
+      title: "T",
+      subtitle: "S",
+      authorName: "Ada",
+      afterCover: true,
+      labels: markdownLabels("en")
+    });
+    expect(titlePage).toBe(
+      [
+        '<section class="book-title-page book-title-page--after-cover">',
+        '  <h1 class="book-title-page__title">T</h1>',
+        '  <p class="book-title-page__subtitle">S</p>',
+        '  <p class="book-title-page__byline">by Ada</p>',
+        "</section>"
+      ].join("\n")
+    );
   });
 
   it("is one HTML block, so marked never reads a line of it as markdown", () => {
@@ -176,7 +204,7 @@ describe("the matter sheet", () => {
         ...(language ? { language } : {})
       });
     expect(english("en")).toEqual(english());
-    expect(english().matterSheet).toContain("<p>© 2026 Ada</p>");
+    expect(english().titlePage).toContain("<p>© 2026 Ada</p>");
   });
 
   it("prefers the copyright holder to the byline", () => {
@@ -197,16 +225,15 @@ describe("the matter sheet", () => {
 });
 
 describe("the free tier's credit", () => {
-  it("sits at the foot of the title page when there is no matter sheet", () => {
-    const { markdown } = compile({ matter: matter({ madeWithCredit: true }) });
-    expect(markdown).toContain('<p class="book-title-page__imprint">Made with Tomeza</p>');
-    expect(markdown).not.toContain("book-matter-sheet");
-  });
+  it("sits at the foot of the title page, alone or under the publication details, and costs no page", () => {
+    const alone = compile({ matter: matter({ madeWithCredit: true }) }).markdown;
+    expect(alone).toContain('<p class="book-title-page__imprint">Made with Tomeza</p>');
+    expect(alone).not.toContain("book-matter-sheet");
 
-  it("joins the publication details when there is a sheet, and costs no extra page", () => {
-    const { markdown } = compile({ authorName: "Ada", matter: matter({ madeWithCredit: true }) });
-    expect(markdown).not.toContain("book-title-page__imprint");
-    expect(markdown).toContain('<p class="book-matter-sheet__credit">Made with Tomeza</p>');
+    const beside = compile({ authorName: "Ada", matter: matter({ madeWithCredit: true, dedication: "For Sara" }) }).markdown;
+    expect(beside).toContain('<p>© 2026 Ada</p>\n    <p class="book-title-page__imprint">Made with Tomeza</p>\n  </div>');
+    expect(beside).not.toContain("book-matter-sheet__credit");
+    expect(beside).not.toContain("book-matter-sheet__publication");
   });
 
   it("is absent on a paid book", () => {
@@ -290,8 +317,23 @@ describe("whether a published book carries the credit, read off its opening byte
     expect(fromHead(onTitlePage)).toBeUndefined();
     expect(bookCarriesTomezaCredit(onTitlePage)).toBe(true);
 
-    // A title page that closes 20 bytes before the head ends, so the matter sheet's opening is cut.
-    const withSheet = (title: string) => titled(title, { authorName: "Ada", matter: matter({ madeWithCredit: true }) });
+    // A book compiled before 2026-10-17 set the credit on its matter sheet: a title page that closes
+    // 20 bytes before the head ends cuts that sheet's opening, and only the whole file can say.
+    const withSheet = (title: string) =>
+      [
+        '<section class="book-title-page">',
+        `  <h1 class="book-title-page__title">${title}</h1>`,
+        "</section>",
+        "",
+        '<section class="book-matter-sheet">',
+        '  <div class="book-matter-sheet__publication">',
+        "    <p>© 2026 Ada</p>",
+        '    <p class="book-matter-sheet__credit">Made with Tomeza</p>',
+        "  </div>",
+        "</section>",
+        "",
+        "The first page."
+      ].join("\n");
     const closeAt = withSheet("x").indexOf("</section>");
     const cut = longBook(withSheet("x".repeat(TOMEZA_CREDIT_HEAD_BYTES - 20 - closeAt + 1)));
     expect(cut.indexOf("</section>")).toBe(TOMEZA_CREDIT_HEAD_BYTES - 20);
@@ -383,6 +425,18 @@ describe("the Word export reads the matter back", () => {
       publication: ["© 2026 Ada & Co", "ISBN 1"],
       credit: "Made with Tomeza"
     });
+    expect(source.titlePage?.imprint).toBeUndefined();
+    // The PDF prints a book's publication lines at its title page's foot; the Word file keeps them on a page
+    // of their own with the credit, as before, since a DOCX import reads a title page holding © lines as text.
+    const noDedication = prepareDocxSource(
+      compile({ authorName: "Parsa Gholipour", matter: matter({ allRightsReserved: true, madeWithCredit: true }) }).markdown
+    );
+    expect(noDedication.titlePage).toEqual({ title: "The Clockmaker", subtitle: "A patient trade", byline: "by Parsa Gholipour" });
+    expect(noDedication.matterSheet).toEqual({
+      dedication: [],
+      publication: ["© 2026 Parsa Gholipour", "All rights reserved."],
+      credit: "Made with Tomeza"
+    });
     expect(source.segments.map((segment) => (segment.kind === "markdown" ? segment.text : "")).join("")).not.toContain(
       "book-matter-sheet"
     );
@@ -396,8 +450,17 @@ describe("what the matter pages cost the book", () => {
     // …but one with no byline opened on an inline `# Title`, so its sheet is new.
     expect(bookMatterSheetCount(compile({}).markdown)).toBe(1);
     expect(bookMatterSheetCount(compile({ matter: matter({ madeWithCredit: true }) }).markdown)).toBe(1);
-    expect(bookMatterSheetCount(compile({ authorName: "Ada", matter: matter() }).markdown)).toBe(1);
-    expect(bookMatterSheetCount(compile({ authorName: "Ada", matter: matter({ aboutAuthor: "Bio." }) }).markdown)).toBe(2);
+    // The © line sits at the title page's foot and costs no sheet; a dedication does.
+    expect(bookMatterSheetCount(compile({ authorName: "Ada", matter: matter() }).markdown)).toBe(0);
+    expect(bookMatterSheetCount(compile({ authorName: "Ada", matter: matter({ dedication: "For Sara." }) }).markdown)).toBe(1);
+    expect(bookMatterSheetCount(compile({ authorName: "Ada", matter: matter({ aboutAuthor: "Bio." }) }).markdown)).toBe(1);
+    // A book compiled before 2026-10-17 with its © lines on a sheet of their own still counts that sheet.
+    expect(
+      bookMatterSheetCount(
+        '<section class="book-title-page">\n  <h1 class="book-title-page__title">T</h1>\n  <p class="book-title-page__byline">by Ada</p>\n</section>\n\n' +
+          '<section class="book-matter-sheet">\n  <div class="book-matter-sheet__publication">\n    <p>© 2026 Ada</p>\n  </div>\n</section>\n\nText.'
+      )
+    ).toBe(1);
     // A book compiled before the matter pages: a coverless title sheet with a byline, nothing new.
     expect(bookMatterSheetCount('<section class="book-title-page">\n  <h1 class="book-title-page__title">T</h1>\n  <p class="book-title-page__byline">by Ada</p>\n</section>\n\nText.')).toBe(0);
     expect(bookMatterSheetCount("# T\n\nText.")).toBe(0);
@@ -408,7 +471,7 @@ describe("what the matter pages cost the book", () => {
       authorName: "Ada",
       matter: matter({ aboutAuthor: "Bio." })
     });
-    expect(bookMatterSheetCount(covered.markdown)).toBe(3);
+    expect(bookMatterSheetCount(covered.markdown)).toBe(2);
   });
 
   it("counts every sheet a long dedication prints, and sets it at the size it was counted at", () => {
@@ -416,10 +479,11 @@ describe("what the matter pages cost the book", () => {
     const oneWordLines = Array.from({ length: 1000 }, () => "a").join("\n");
     for (const dedication of ["For Sara.", "Lorem ipsum dolor sit amet. ".repeat(70).trim(), poem, oneWordLines]) {
       const { markdown } = compile({ authorName: "Ada", matter: matter({ dedication, imprint: "Analytical Press", madeWithCredit: true }) });
+      // The publication lines and the credit are on the title page; the sheet is the dedication's alone.
       const layout = matterSheetLayout({
         dedication: dedication.split(/\n{2,}/).map((paragraph) => paragraph.split("\n")),
-        publication: ["© 2026 Ada", "Analytical Press"],
-        credit: "Made with Tomeza"
+        publication: [],
+        credit: undefined
       });
       expect(markdown, dedication.slice(0, 20)).toContain(`<section class="${layout.className}">`);
       expect(bookMatterSheetCount(markdown), dedication.slice(0, 20)).toBe(layout.sheets);
@@ -438,9 +502,9 @@ describe("what the matter pages cost the book", () => {
       [short, 1],
       [list, 5]
     ] as const) {
-      // A byline: a coverless title sheet with one is among the paid sheets; the © line is the matter sheet.
+      // A byline: a coverless title sheet with one is among the paid sheets, and the © line is at its foot.
       const { markdown } = compile({ authorName: "Ada", matter: matter({ aboutAuthor: bio }) });
-      expect(bookMatterSheetCount(markdown), bio.slice(0, 12)).toBe(1 + sheets);
+      expect(bookMatterSheetCount(markdown), bio.slice(0, 12)).toBe(sheets);
     }
     // Every escape undone: read as `\&`, thirty lines of sixty ampersands set a size smaller than they print.
     const ampersands = Array.from({ length: 30 }, () => "&".repeat(60)).join("\n");
@@ -448,7 +512,7 @@ describe("what the matter pages cost the book", () => {
     expect(markdown).toContain("\\&\\&");
     const layout = aboutAuthorLayout([ampersands.split("\n")]);
     expect(markdown).toContain(`<div class="${layout.className}"></div>`);
-    expect(bookMatterSheetCount(markdown)).toBe(1 + layout.sheets);
+    expect(bookMatterSheetCount(markdown)).toBe(layout.sheets);
   });
 
   it("reads the reader's escaped words back at their printed length", () => {

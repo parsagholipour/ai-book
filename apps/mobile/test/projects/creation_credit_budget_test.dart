@@ -26,38 +26,39 @@ void main() {
       coverEnabled: false,
       illustrationsEnabled: false,
     );
-    // 40 planning + 350 base + 10 * 8 writing. No export line: a written
+    // 40 planning + 250 base + 10 * 8 writing. No export line: a written
     // book downloads free.
-    expect(affordable(470, presets: presets), 10);
-    expect(affordable(469, presets: presets), 9);
-    expect(affordable(470, pages: 5, presets: presets), 5);
+    expect(affordable(370, presets: presets), 10);
+    expect(affordable(369, presets: presets), 9);
+    expect(affordable(370, pages: 5, presets: presets), 5);
   });
 
   test('includes cover and stepped Auto illustration charges', () {
-    // 40 planning + 350 base + 64 writing + 45 cover + 45 interior.
-    expect(affordable(544), 8);
-    expect(affordable(543), 7);
-    // Page 9 adds another interior image: 40 + 350 + 72 + 45 + 90.
-    expect(affordable(596), 8);
-    expect(affordable(597), 9);
-    expect(affordable(544, presets: _presets.copyWith(coverEnabled: false)), 8);
+    // 40 planning + 250 base + 64 writing + 70 cover + 70 interior.
+    expect(affordable(494), 8);
+    expect(affordable(493), 7);
+    // Page 9 adds another interior image: 40 + 250 + 72 + 70 + 140.
+    expect(affordable(571), 8);
+    expect(affordable(572), 9);
+    expect(affordable(494, presets: _presets.copyWith(coverEnabled: false)), 8);
+    // Cover only: 40 + 250 + 16 * 8 + 70.
     expect(
-      affordable(544, presets: _presets.copyWith(illustrationsEnabled: false)),
-      13,
+      affordable(494, presets: _presets.copyWith(illustrationsEnabled: false)),
+      16,
     );
   });
 
   test('never suggests zero as a valid book or borrows credits', () {
     expect(affordable(0), 0);
-    // 40 planning + 350 base + 8 writing + 45 cover + 45 interior.
-    expect(affordable(487), 0);
-    expect(affordable(488), 1);
+    // 40 planning + 250 base + 8 writing + 70 cover + 70 interior.
+    expect(affordable(437), 0);
+    expect(affordable(438), 1);
   });
 
   test('respects each effort tier including premium review', () {
     for (final entry in {
-      'fast': 280,
-      'balanced': 454,
+      'fast': 210,
+      'balanced': 354,
       'premium': 1020,
       'ultra': 2010,
     }.entries) {

@@ -8,6 +8,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import java.util.concurrent.LinkedBlockingQueue
 
 /**
  * Speaker side of a character voice call.
@@ -20,15 +21,70 @@ import io.flutter.plugin.common.MethodChannel.Result
  * `VOICE_COMMUNICATION` source, so playing the character back on
  * `USAGE_VOICE_COMMUNICATION` is what stops Gemini from hearing its own voice
  * and interrupting itself mid-sentence.
+ *
+ * The track is owned by one writer thread per call, never the main thread. A
+ * method channel handler runs on Android's main thread, which is also Dart's,
+ * and Gemini streams a reply faster than realtime: a write that waits for room
+ * in the track froze the app for the length of every reply. The mic chunks
+ * queued behind it reached the relay in one burst, past its audio rate limit,
+ * and the relay ended the call after the character's first answer.
  */
 class VoiceCallAudioPlayer(private val audioManager: AudioManager?) : MethodCallHandler {
   companion object {
     const val CHANNEL = "tomeza/voice_call_audio"
     /** Enough slack to ride out a stalled socket without adding audible delay. */
     private const val BUFFER_MULTIPLIER = 4
+    /** How long the writer waits for room in a full track before trying again. */
+    private const val FULL_TRACK_WAIT_MS = 10L
   }
 
-  private var track: AudioTrack? = null
+  private sealed interface Command {
+    class Write(val generation: Int, val bytes: ByteArray) : Command
+    object Flush : Command
+    object Stop : Command
+  }
+
+  private class Writer(val track: AudioTrack) {
+    val commands = LinkedBlockingQueue<Command>()
+    /** Bumped by a flush or stop, so every write queued before it is skipped. */
+    @Volatile var generation = 0
+    val thread = Thread({ run() }, "voice-call-playback")
+
+    private fun run() {
+      while (true) {
+        when (val command = commands.take()) {
+          is Command.Write -> play(command)
+          Command.Flush -> {
+            track.pause()
+            track.flush()
+            track.play()
+          }
+          Command.Stop -> {
+            runCatching { track.pause() }
+            runCatching { track.flush() }
+            runCatching { track.stop() }
+            track.release()
+            return
+          }
+        }
+      }
+    }
+
+    // Non-blocking writes, retried while the track is full: a blocking one could
+    // not notice a flush until the track had room, and dropping what did not fit
+    // would cut the tail off every long reply.
+    private fun play(command: Command.Write) {
+      var offset = 0
+      while (offset < command.bytes.size && command.generation == generation) {
+        val written = track.write(command.bytes, offset, command.bytes.size - offset, AudioTrack.WRITE_NON_BLOCKING)
+        if (written < 0) return
+        offset += written
+        if (offset < command.bytes.size) Thread.sleep(FULL_TRACK_WAIT_MS)
+      }
+    }
+  }
+
+  private var writer: Writer? = null
   private var previousMode: Int? = null
   private var previousSpeakerphone: Boolean? = null
 
@@ -72,7 +128,7 @@ class VoiceCallAudioPlayer(private val audioManager: AudioManager?) : MethodCall
       manager.isSpeakerphoneOn = call.argument<Boolean>("speakerphone") ?: true
     }
 
-    track = AudioTrack.Builder()
+    val track = AudioTrack.Builder()
       .setAudioAttributes(
         AudioAttributes.Builder()
           .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -89,21 +145,20 @@ class VoiceCallAudioPlayer(private val audioManager: AudioManager?) : MethodCall
       .setBufferSizeInBytes(minBufferBytes * BUFFER_MULTIPLIER)
       .setTransferMode(AudioTrack.MODE_STREAM)
       .build()
-      .also { it.play() }
+    track.play()
+    writer = Writer(track).also { it.thread.start() }
     result.success(null)
   }
 
+  /** Queues the audio and answers at once; the writer paces it into the track. */
   private fun write(call: MethodCall, result: Result) {
     val bytes = call.argument<ByteArray>("bytes")
-    val active = track
+    val active = writer
     if (bytes == null || active == null) {
       result.success(false)
       return
     }
-    // Blocking writes let AudioTrack's own buffer pace playback. Gemini streams
-    // faster than realtime, so a non-blocking write would drop the tail of every
-    // long reply once the buffer filled.
-    active.write(bytes, 0, bytes.size, AudioTrack.WRITE_BLOCKING)
+    active.commands.put(Command.Write(active.generation, bytes))
     result.success(true)
   }
 
@@ -115,21 +170,22 @@ class VoiceCallAudioPlayer(private val audioManager: AudioManager?) : MethodCall
    * make the interruption feel ignored.
    */
   private fun flush() {
-    track?.let { active ->
-      active.pause()
-      active.flush()
-      active.play()
+    writer?.let { active ->
+      active.generation += 1
+      active.commands.put(Command.Flush)
     }
   }
 
   private fun stop() {
-    track?.let { active ->
-      runCatching { active.pause() }
-      runCatching { active.flush() }
-      runCatching { active.stop() }
-      active.release()
+    writer?.let { active ->
+      active.generation += 1
+      active.commands.put(Command.Stop)
+      // The writer skips what is queued and is never blocked inside the track,
+      // so this is a few milliseconds; the bound only keeps a wedged device from
+      // hanging the main thread.
+      active.thread.join(500)
     }
-    track = null
+    writer = null
     audioManager?.let { manager ->
       previousMode?.let { manager.mode = it }
       previousSpeakerphone?.let { manager.isSpeakerphoneOn = it }

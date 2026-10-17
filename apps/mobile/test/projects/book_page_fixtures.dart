@@ -115,6 +115,7 @@ MobileProjectDetail bookProject({
   String statusLabel = 'Status',
   MobileProjectQuality quality = const MobileProjectQuality.pending(),
   String bookType = 'short_story',
+  String bookShape = 'book',
 }) {
   final resolvedPlan = withPlan ? (plan ?? bookPlan()) : null;
   return MobileProjectDetail(
@@ -123,6 +124,7 @@ MobileProjectDetail bookProject({
     subtitle: subtitle,
     authorName: 'Parsa',
     bookType: bookType,
+    bookShape: bookShape,
     lengthPreset: 'standard',
     qualityPreset: 'balanced',
     imagesEnabled: true,

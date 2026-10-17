@@ -17,8 +17,8 @@ void main() {
       );
 
   test('an illustration costs one image at the tier', () {
-    expect(price(LongAssistKind.illustrate, 'balanced'), 45);
-    expect(price(LongAssistKind.illustrate, 'premium'), 85);
+    expect(price(LongAssistKind.illustrate, 'balanced'), 70);
+    expect(price(LongAssistKind.illustrate, 'premium'), 130);
   });
 
   test('a chapter draft costs its estimated pages', () {

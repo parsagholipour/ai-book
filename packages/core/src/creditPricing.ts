@@ -57,9 +57,17 @@ export const DEFAULT_CREDIT_COSTS = {
   planGenerationPremium: 80,
   planGenerationUltra: 120,
   previewGeneration: 0,
-  fullBookBase: 350,
+  // A book's price follows what it costs to make (2026-10-17, migration
+  // 000116). Pictures are 80–99% of an illustrated book's provider spend and
+  // the text almost none of it — a 10-page Balanced story wrote for $0.012 —
+  // yet the base was 350 and a picture 45, which earned $0.096 on the Max plan
+  // against $0.039 a call and fell under cost once a book's unbilled reference
+  // sheets were counted ("The Last Table": 0.82×). So the base came down
+  // 350 → 250 and a picture went up 45 → 70: ×3.8 a call at the cheapest
+  // credit, with room for the sheets a short book still draws.
+  fullBookBase: 250,
   fullBookPerPage: 8,
-  imageGeneration: 45,
+  imageGeneration: 70,
   coverRegeneration: 120,
   premiumReview: 200,
   // Retired 2026-10-15: a finished book downloads free, so nothing charges
@@ -98,15 +106,19 @@ export const DEFAULT_CREDIT_COSTS = {
   // someone can burn 80,000 credits of writing on — so a rate that merely
   // tracked the provider-cost ratio (22 for premium, against $0.05 a page)
   // billed a long premium book at a loss. 30 clears it by ~25%.
-  fullBookBaseFast: 220,
+  fullBookBaseFast: 150,
   fullBookBasePremium: 500,
   fullBookPerPageFast: 5,
   fullBookPerPagePremium: 30,
   // Fast and balanced share an image model, so this deliberately equals the
   // balanced rate. It exists anyway so the resolver has no hole to special-case
   // and an operator can separate them later without a deploy.
-  imageGenerationFast: 45,
-  imageGenerationPremium: 85,
+  imageGenerationFast: 70,
+  // Premium and Ultra draw pages on gemini-3.1-flash-image ($0.067) and the
+  // cover on gemini-3-pro-image ($0.134); at 85 a cover earned $0.18 on Max
+  // and a cover-only book with two reference sheets cost $0.27 in pictures.
+  // 130 is ×4.1 a page and ×2.1 a cover at the cheapest credit.
+  imageGenerationPremium: 130,
   pageRegenerationPerPageFast: 40,
   pageRegenerationPerPagePremium: 220,
   bookTextEditPerPageFast: 5,
@@ -123,7 +135,7 @@ export const DEFAULT_CREDIT_COSTS = {
   // charges 3,370 (×1.20 of cost, not ×1.25); re-measure before switching
   // Ultra on.
   fullBookPerPageUltra: 130,
-  imageGenerationUltra: 85,
+  imageGenerationUltra: 130,
   pageRegenerationPerPageUltra: 280,
   bookTextEditPerPageUltra: 36,
   // Modelled at $0.57–2.60 per ten minutes and never measured; at 60 a busy
@@ -150,18 +162,19 @@ export const DEFAULT_CREDIT_COSTS = {
   // Enough for any free reader's first book on Balanced, with its plan and a
   // few chat messages, so no reader meets the paywall before their first book
   // exists. No book's price carries an export unlock, so the largest
-  // non-picture book, a 30-page illustrated workbook, is 905 plus its 40-credit
+  // non-picture book, a 30-page illustrated workbook, is 980 plus its 40-credit
   // plan, and the largest picture book — 30 pages, twelve pictures
-  // (`pictureBookIllustrationCap`), a drawn cover — is 1,175 plus its plan:
-  // 1,215. Under the picture-a-page rule before 2026-10-17, 1,150 left every
-  // picture book of 22 pages or more out (migration 000110 moves an
-  // installation still on it); `welcomeCredits.test.ts` in core walks every
-  // free length.
-  welcomeCredits: 1_250,
+  // (`pictureBookIllustrationCap`), a drawn cover — is 1,400 plus its plan:
+  // 1,440, leaving 60 for the creation chat. Raised from 1,250 when a picture
+  // went to 70 (migration 000116; 000110 had raised it from 1,150 for the
+  // picture-a-page rule). What a free account can cost us is the pictures it
+  // can buy, and that fell: 1,500 / 70 is 21 pictures where 1,250 / 45 was 27.
+  // `welcomeCredits.test.ts` in core walks every free length.
+  welcomeCredits: 1_500,
   welcomeCreditsEnabled: 1,
   welcomeCreditsRegionalEnabled: 0,
-  welcomeCreditsHighIncome: 1_250,
-  welcomeCreditsLowMiddleIncome: 1_250,
+  welcomeCreditsHighIncome: 1_500,
+  welcomeCreditsLowMiddleIncome: 1_500,
   // Accounts one address may be welcomed on in 30 days. A grant waits for a
   // verified email now, so the cap only has to stop a farm, not every second
   // sign-up: at one, a whole carrier NAT or a family on one router got nothing

@@ -22,23 +22,6 @@ double bookEditStripOffsetFor(int index) =>
 int bookEditWordCount(String text) =>
     text.trim().isEmpty ? 0 : text.trim().split(RegExp(r'\s+')).length;
 
-/// The opening of a page's text, as a quotation the chat can find the page by.
-///
-/// Edit Mode numbers pages by the book's own index, while the chat's "page 3" is
-/// the number printed on the sheet — the two differ in a book with a cover or
-/// front matter. A quotation names the page without either number.
-String bookEditExcerpt(String markdown, {int maxChars = 90}) {
-  final plain = markdown
-      .replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), ' ')
-      .replaceAll(RegExp(r'[#*_>`~]+'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-  if (plain.length <= maxChars) return plain;
-  final cut = plain.substring(0, maxChars);
-  final lastSpace = cut.lastIndexOf(' ');
-  return (lastSpace > maxChars ~/ 2 ? cut.substring(0, lastSpace) : cut).trim();
-}
-
 /// A horizontally scrolling strip of the book's pages: number, title and a dot
 /// on any page with unsaved edits.
 class BookEditPageStrip extends StatelessWidget {
@@ -186,7 +169,13 @@ class _StripItem extends StatelessWidget {
 /// composer. Nothing is sent: the reader reviews the message there, and any
 /// edit it leads to shows its price and waits for Apply like every other.
 class BookEditAskBar extends StatelessWidget {
-  const BookEditAskBar({required this.onPick, super.key});
+  const BookEditAskBar({
+    required this.project,
+    required this.onPick,
+    super.key,
+  });
+
+  final MobileProjectSummary? project;
 
   /// Called with the kind of request picked.
   final ValueChanged<BookEditAsk> onPick;
@@ -225,7 +214,7 @@ class BookEditAskBar extends StatelessWidget {
                 Wrap(
                   spacing: AppSpacing.xs,
                   children: [
-                    for (final ask in BookEditAsk.values)
+                    for (final ask in BookEditAsk.forBook(project))
                       ActionChip(
                         avatar: Icon(ask.icon, size: 18),
                         label: Text(ask.label),
@@ -245,6 +234,7 @@ class BookEditAskBar extends StatelessWidget {
 /// The requests Edit Mode offers to pass to the chat.
 enum BookEditAsk {
   warmer(Icons.favorite_border, 'Make it warmer'),
+  simpler(Icons.lightbulb_outline, 'Simplify it'),
   shorter(Icons.compress, 'Shorten it'),
   picture(Icons.add_photo_alternate_outlined, 'Add a picture');
 
@@ -253,19 +243,38 @@ enum BookEditAsk {
   final IconData icon;
   final String label;
 
-  /// The composer text for this request about [excerpt] of the open page.
-  String draft(String excerpt) {
-    if (excerpt.isEmpty) {
+  /// Use the category generation chose, including for Auto books. Only a
+  /// known story gets a tone suggestion; missing metadata stays generic.
+  static List<BookEditAsk> forBook(MobileProjectSummary? project) {
+    final story = switch (project?.bookShape) {
+      'story' || 'children_story' => true,
+      'book' =>
+        project?.bookType == 'short_story' ||
+            project?.bookTypeChoice == 'children_story',
+      _ => false,
+    };
+    return [story ? warmer : simpler, shorter, picture];
+  }
+
+  /// Quotes the whole page, or only the highlighted text when [isSelection].
+  /// Edit Mode and the chat number pages differently when there is front
+  /// matter, so the quotation identifies the page without a page number.
+  String draft(String text, {bool isSelection = false}) {
+    if (text.isEmpty) {
       return switch (this) {
         BookEditAsk.warmer => 'Make this page warmer.',
+        BookEditAsk.simpler => 'Simplify this page while keeping the meaning.',
         BookEditAsk.shorter => 'Shorten this page.',
         BookEditAsk.picture => 'Add a picture to this page.',
       };
     }
+    final scope = isSelection ? 'passage' : 'page';
     return switch (this) {
-      BookEditAsk.warmer => 'Rewrite this passage: "$excerpt". Make it warmer.',
-      BookEditAsk.shorter => 'Rewrite this passage: "$excerpt". Shorten it.',
-      BookEditAsk.picture => 'Add a picture for this passage: "$excerpt".',
+      BookEditAsk.warmer => 'Rewrite this $scope: "$text". Make it warmer.',
+      BookEditAsk.simpler =>
+        'Rewrite this $scope: "$text". Simplify it while keeping the meaning.',
+      BookEditAsk.shorter => 'Rewrite this $scope: "$text". Shorten it.',
+      BookEditAsk.picture => 'Add a picture for this $scope: "$text".',
     };
   }
 }

@@ -27,6 +27,7 @@ part 'character_editor_mentions.dart';
 Future<LibraryCharacter?> showCharacterEditorSheet(
   BuildContext context, {
   LibraryCharacter? character,
+  CharacterDraft? draft,
 }) {
   return showAppBottomSheet<LibraryCharacter>(
     context,
@@ -35,9 +36,23 @@ Future<LibraryCharacter?> showCharacterEditorSheet(
     // be saved or explicitly discarded; omit the handle for this form.
     enableDrag: false,
     showDragHandle: false,
-    builder: (_) => _CharacterEditorSheet(character: character),
+    builder: (_) => _CharacterEditorSheet(character: character, draft: draft),
   );
 }
+
+/// What a new character's form opens with when something the reader already
+/// has suggested it — a finished book's cast member, say. Only seeds the
+/// fields: nothing is saved until they tap Save, and it is ignored when
+/// editing an existing character.
+class CharacterDraft {
+  const CharacterDraft({this.name = '', this.description = ''});
+
+  final String name;
+  final String description;
+}
+
+String _seed(String text, int max) =>
+    text.length <= max ? text : text.substring(0, max).trimRight();
 
 // Mirrors apps/api/src/mobile/characterSchemas.ts.
 const _nameMax = 80;
@@ -50,9 +65,10 @@ const _mentionsMax = 10;
 const _suggestedFieldKeys = ['Age', 'Job', 'Languages', 'Personality', 'Likes'];
 
 class _CharacterEditorSheet extends ConsumerStatefulWidget {
-  const _CharacterEditorSheet({required this.character});
+  const _CharacterEditorSheet({required this.character, this.draft});
 
   final LibraryCharacter? character;
+  final CharacterDraft? draft;
 
   @override
   ConsumerState<_CharacterEditorSheet> createState() =>
@@ -62,11 +78,15 @@ class _CharacterEditorSheet extends ConsumerStatefulWidget {
 class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     with _CharacterEditorMentions {
   late final _nameController = TextEditingController(
-    text: widget.character?.name ?? '',
+    text: widget.character?.name ?? _seed(widget.draft?.name ?? '', _nameMax),
   );
   @override
   late final TextEditingController _descriptionController =
-      TextEditingController(text: widget.character?.description ?? '');
+      TextEditingController(
+        text:
+            widget.character?.description ??
+            _seed(widget.draft?.description ?? '', _descriptionMax),
+      );
   late final List<CharacterDetailRow> _fields = [
     for (final field in widget.character?.fields ?? const <CharacterField>[])
       CharacterDetailRow(key: field.key, value: field.value),
@@ -96,6 +116,10 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
 
   /// The character is made and its photo is on the way up.
   bool _uploadingPhoto = false;
+
+  /// What the last tap was refused or failed with; see
+  /// [CharacterEditorLayout.notice] for why it is not a snack bar.
+  ({String title, String message})? _notice;
 
   /// The detail rows a save refused, and which half of each is missing.
   final Map<CharacterDetailRow, ({bool key, bool value})> _rowErrors = {};
@@ -191,6 +215,15 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     return suggestion == _descriptionController.text.trim() ? null : suggestion;
   }
 
+  @override
+  void _showNotice(String title, String message) {
+    if (mounted) setState(() => _notice = (title: title, message: message));
+  }
+
+  String get _saveRefusedTitle => _saved == null
+      ? 'Could not create this character'
+      : 'Could not save your changes';
+
   bool _hasFieldKey(String key) {
     final lower = key.toLowerCase();
     return _fields.any((row) => row.key.text.trim().toLowerCase() == lower);
@@ -257,6 +290,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
 
   Future<void> _save() async {
     final messenger = ScaffoldMessenger.of(context);
+    if (_notice != null) setState(() => _notice = null);
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       setState(() => _nameError = 'Add a name so you can find them later.');
@@ -313,12 +347,9 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     // [description], the string the body carries, which is what the counter on
     // screen counts too: one measurement, or the two disagree in whitespace.
     if (sendsDescription && _overDescriptionLimit(description)) {
-      messenger.showAppSnackBar(
-        const SnackBar(
-          content: Text(
-            'The description is too long. Shorten it and save again.',
-          ),
-        ),
+      _showNotice(
+        _saveRefusedTitle,
+        'The description is too long. Shorten it and save again.',
       );
       return;
     }
@@ -326,13 +357,10 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
     // sending a set quietly cut down to the cap — which deletes a link the
     // reader can still see in their own prose.
     if (sendsDescription && mentionIds.length > _mentionsMax) {
-      messenger.showAppSnackBar(
-        SnackBar(
-          content: Text(
-            'A description can mention up to $_mentionsMax characters. '
-            'Remove a few @names and save again.',
-          ),
-        ),
+      _showNotice(
+        _saveRefusedTitle,
+        'A description can mention up to $_mentionsMax characters. '
+        'Remove a few @names and save again.',
       );
       return;
     }
@@ -413,20 +441,17 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
         _uploadingPhoto = false;
         if (error.code == 'CHARACTER_NAME_TAKEN') {
           _nameError = error.message;
+        } else {
+          _notice = (title: _saveRefusedTitle, message: error.message);
         }
       });
-      if (error.code != 'CHARACTER_NAME_TAKEN') {
-        messenger.showAppSnackBar(SnackBar(content: Text(error.message)));
-      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _saving = false;
         _uploadingPhoto = false;
+        _notice = (title: _saveRefusedTitle, message: userFacingError(error));
       });
-      messenger.showAppSnackBar(
-        SnackBar(content: Text(userFacingError(error))),
-      );
     }
   }
 
@@ -438,6 +463,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
       context,
       action: action,
       photoPicker: ref.read(photoPickerProvider),
+      onFailure: (message) => _showNotice('Could not add a photo', message),
     );
     if (cropped == null || !mounted) return;
     setState(() => _photo = cropped);
@@ -458,7 +484,6 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
   Future<void> _dismissSuggestion() async {
     final saved = _saved;
     if (saved == null || _busy) return;
-    final messenger = ScaffoldMessenger.of(context);
     setState(() {
       _suggestionTaken = true;
       _suggestionBusy = true;
@@ -478,9 +503,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
       // The card is already gone locally; putting it back to report a failed
       // dismissal would be the opposite of what was asked for.
       setState(() => _suggestionBusy = false);
-      messenger.showAppSnackBar(
-        SnackBar(content: Text(userFacingError(error))),
-      );
+      _showNotice('Could not dismiss the suggestion', userFacingError(error));
     }
   }
 
@@ -525,6 +548,8 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
         busy: _busy,
         saving: _saving,
         savingLabel: _uploadingPhoto ? 'Uploading photo…' : null,
+        notice: _notice,
+        onDismissNotice: () => setState(() => _notice = null),
         onClose: _requestClose,
         onSave: _save,
         children: [

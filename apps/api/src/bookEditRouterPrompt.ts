@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { type BookEditProjectStage } from "./bookEditIntent.js";
-import { CHAT_REPLY_MARKDOWN_PROMPT } from "./chatReplyMarkdownPrompt.js";
+import { CHAT_REPLY_MARKDOWN_PROMPT, CHAT_REPLY_TONE_PROMPT } from "./chatReplyMarkdownPrompt.js";
 import { allStoryPageDesigns, CONVERSATION_LANGUAGES, STORY_PAGE_DESIGN_IDS } from "@book-maker/core";
 
 /**
@@ -256,7 +256,7 @@ const imageRules = (readerPagesArePdf: boolean) => [
  */
 const READER_PAGE_RULES = [
   "Page numbers in the user's message are the PRINTED page numbers of the compiled book — the numbers the reader sees on the PDF pages, in its footer and in its table of contents. They are NOT the internal page index values. Each entry in pages carries readerPages: the printed pages that entry occupies. To act on \"page 12\", find the entries whose readerPages include 12 and put their index values into pageIndexes; never copy a printed number into pageIndexes directly.",
-  "readerPageContext names furniture that holds no book text: cover (true only when the PDF opens on an unnumbered cover sheet — omit it when printed page 1 is on the first sheet), frontMatter (the printed pages before the Contents and what each holds — the title page, the dedication and publication page), contentsStartPage, and backMatterStartPage — the first page after the book's text, with backMatter naming what is printed there when known. A request aimed at one of those is about the book's furniture rather than its prose — use editTarget book_matter for anything on a frontMatter page or the About the Author page (book_title for the book's title), back_matter for the Sources list, chapter_heading when it matches one, and otherwise action answer explaining what that printed page is. Never turn it into a page rewrite. When cover is true, that sheet has no printed page number."
+  "readerPageContext names furniture that holds no book text: cover (true only when the PDF opens on an unnumbered cover sheet — omit it when printed page 1 is on the first sheet), frontMatter (the printed pages before the Contents and what each holds — the title page with the publication lines at its foot, the dedication page), contentsStartPage, and backMatterStartPage — the first page after the book's text, with backMatter naming what is printed there when known. A request aimed at one of those is about the book's furniture rather than its prose — use editTarget book_matter for anything on a frontMatter page or the About the Author page (book_title for the book's title), back_matter for the Sources list, chapter_heading when it matches one, and otherwise action answer explaining what that printed page is. Never turn it into a page rewrite. When cover is true, that sheet has no printed page number."
 ];
 
 export function routerSystemPrompt(
@@ -320,6 +320,7 @@ export function routerSystemPrompt(
     "For change actions, write assistantMessage as a short confirmation of the specific change that will be proposed or made.",
     "For action answer, keep assistantMessage to two or three concise sentences: a separate grounded pass with the book's full context writes the final answer and only falls back to yours.",
     `assistantMessage is ${CHAT_REPLY_MARKDOWN_PROMPT} A list or a key term uses markup instead of hand-numbered "1) 2) 3)" prose.`,
+    `For assistantMessage: ${CHAT_REPLY_TONE_PROMPT}`,
     `Return responseLanguage on every decision, one of ${CONVERSATION_LANGUAGES.join(", ")}, and write assistantMessage in that language. Read the meaning of the user's instructions and recentConversation to choose it, independently of the book's language. An explicit request to reply in a language wins; otherwise follow the latest user instructions. Names, ISBNs, websites and quoted text to print are data, not a language switch. A bare value or terse follow-up keeps the established conversationLanguage or the language of earlier user instructions; use en when no language is established.`,
     "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
     "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."

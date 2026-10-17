@@ -13,6 +13,7 @@ import { targetLanguageGenerationGuidance } from "../prompting/language.js";
 import { kidsReadingGuidanceLines } from "../prompting/readingLevel.js";
 import { planLibraryCharacterGuidance } from "./planLibraryCharacters.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
+import { REAL_PEOPLE_KEEP_THEIR_NAMES_RULE } from "./realPeople.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
 import { generationPageCountBounds, requestedGenerationPages } from "./pageCountAllowance.js";
 
@@ -62,6 +63,7 @@ export function compactPictureBookPlanMessages(input: CreateProjectInput, storyF
     storyFirst
       ? `This story will later occupy ${input.targetPages}–${generationPageCountBounds(input).maximumPages} pages; the requested ${input.targetPages} is the minimum. Extra pages are optional, only for meaningful developments. Develop enough material for that length without allocating it yet. Preserve requested title, characters, age band and tone.`
       : `Chapter targetPages must sum to exactly ${input.targetPages}; preserve requested title, characters, age band and tone.`,
+    REAL_PEOPLE_KEEP_THEIR_NAMES_RULE,
     illustrationCadenceGuidance(input),
     "Set questions=[] for coherent requests; make ordinary creative choices yourself. Ask only if a missing subject or contradictory requirement prevents understanding. Keep researchQueries=[] for this fictional story.",
     "Seed promises with requested outcomes and distinct character changes. Page counts and media delivery are enforced by the application; do not restate them as prose promises. The configured story-page range overrides exact-count wording in the brief. Preserve narrative scope: do not append stricter deadlines or an immediate ending cutoff that the user did not request. Set openingHook to one concrete opening moment. Do not add extra named main characters unless requested.",

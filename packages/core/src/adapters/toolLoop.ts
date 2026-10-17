@@ -1,6 +1,6 @@
 import { parseJsonObject } from "./json.js";
 import { z } from "zod";
-import { streamedToolReply } from "./streamedToolReply.js";
+import { streamedToolReply, turnPreview } from "./streamedToolReply.js";
 import { isCancellationError } from "./retry.js";
 import {
   bindTextModelCall,
@@ -122,20 +122,31 @@ const DEFAULT_MAX_TOOL_RESULT_CHARS = 16_000;
 const plainAnswerTool = { name: "finish_evidence_answer", description: "Finish with the user-facing answer using the evidence already returned. State clearly when the requested detail was not found.", parameters: z.object({ answer: z.string() }) };
 
 export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFinish>): Promise<ToolLoopResult<TFinish>> {
-  const preview = options.onAssistantText
-    ? streamedToolReply(options.finishTool?.name ?? plainAnswerTool.name, options.onAssistantText, options.finishTool ? "assistantMessage" : "answer") : undefined;
+  const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));
+  const turn = options.onAssistantText ? turnPreview(options.onAssistantText) : undefined;
+  const preview = turn
+    ? streamedToolReply(options.finishTool?.name ?? plainAnswerTool.name, (text) => turn.text(text), options.finishTool ? "assistantMessage" : "answer") : undefined;
   let plainText = "";
+  // A finish beside a tool that is not pure waits for the next call, so the
+  // reply it carries is not the one the reader gets: it is not previewed.
+  let workCalled = false;
   let previewGeneration = 0;
-  const onToolCallProgress: GenerateWithToolsOptions["onToolCallProgress"] = preview
+  const onToolCallProgress: GenerateWithToolsOptions["onToolCallProgress"] = turn && preview
     ? async (event) => {
-      if (event.type === "start") { plainText = ""; await options.onAssistantText?.(""); }
-      await preview(event);
+      if (event.type === "start") {
+        plainText = "";
+        workCalled = false;
+        turn.restart();
+        await turn.text("");
+      } else if (toolsByName.has(event.name) && toolsByName.get(event.name)!.pure !== true) {
+        workCalled = true;
+      }
+      if (!workCalled) await preview(event);
     } : undefined;
   const maxModelCalls = Math.max(1, options.maxModelCalls ?? DEFAULT_MAX_MODEL_CALLS);
   const maxToolResultChars = Math.max(200, options.maxToolResultChars ?? DEFAULT_MAX_TOOL_RESULT_CHARS);
   // `??` would read an explicit `null` — "nothing escapes" — as no answer at all.
   const rethrowIf = options.rethrowIf === undefined ? isCancellationError : options.rethrowIf;
-  const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));
   const toolDefinitions: ToolDefinition[] = [
     ...options.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
     ...(options.finishTool ? [options.finishTool as ToolDefinition] : [])
@@ -170,10 +181,10 @@ export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFi
       try {
         return await bound.adapter.generateWithTools({
           ...(onToolCallProgress ? { onToolCallProgress: (event) => generation === previewGeneration ? onToolCallProgress(event) : undefined } : {}),
-          ...(!options.finishTool && options.onAssistantText ? { onOutputTextChunk: async (chunk: string) => {
+          ...(!options.finishTool && turn ? { onOutputTextChunk: async (chunk: string) => {
             if (generation !== previewGeneration) return;
             plainText += chunk;
-            await options.onAssistantText?.(plainText);
+            await turn.text(plainText);
           } } : {}),
           messages: callMessages,
           tools: finishing ? [options.finishTool ?? plainAnswerTool] : toolDefinitions,

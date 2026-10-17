@@ -289,6 +289,7 @@ code in that area, however obvious the rule looks.
 - **A credit-history line names what a charge bought, never the rate it was billed at.** → apps/api/src/mobile/CLAUDE.md
 - **A price key with no tier suffix is the *balanced* rate.** → packages/core/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md
 - **Credit prices are operator-editable, not constants.** → packages/core/CLAUDE.md
+- **A book's price follows what it costs to make: its pictures carry most of it, its text base little.** → packages/core/CLAUDE.md
 - **A subscription token is granted only for the plan its own line items name, and the server acknowledges what it records.** → apps/api/src/mobile/CLAUDE.md
 - **A deletion request is carried out a day after it is made, and the user row stays as a tombstone that keeps the financial records.** → apps/api/CLAUDE.md
 - **The Play purchase stream has one owner, and it lives as long as the session, not the paywall.** → apps/mobile/CLAUDE.md
@@ -414,6 +415,7 @@ code in that area, however obvious the rule looks.
 - **An Imagen score table says what the classifier scored, never what the filter blocked on, so it is diagnostics and the sentence is the verdict.** → packages/core/src/adapters/CLAUDE.md
 - **A native safety rating asserts only where it says `blocked`, and that flag is the one structured door the child-safety veto has.** → packages/core/src/adapters/CLAUDE.md
 - **A short book draws a sheet only for a character two of its pictures show, or one the reader saved with artwork, and that cast is decided once from its draft and stored on the plan version.** → apps/worker/src/generation/CLAUDE.md
+- **A cover-only book draws no reference sheet: its cover is its one picture.** → apps/worker/src/generation/CLAUDE.md
 - **A refused reference sheet is a settled fact about the plan, and the book finishes without it.** → apps/worker/src/generation/CLAUDE.md
 - **A drawing beats a refusal, whoever's commit got there first.** → apps/worker/src/generation/CLAUDE.md
 - **The refusal has to be written down, or tolerating it costs more than failing did.** → apps/worker/src/generation/CLAUDE.md
@@ -466,6 +468,7 @@ code in that area, however obvious the rule looks.
 
 - **The book is typeset against md-to-pdf's stylesheets, but nothing else of md-to-pdf's remains.** → packages/core/src/generation/CLAUDE.md
 - **Every book has a title page, and only the book's first sheet resets the page counter.** → packages/core/src/generation/CLAUDE.md
+- **A book's publication lines print at its title page's foot, and only a dedication earns a sheet of its own.** → packages/core/src/generation/CLAUDE.md
 - **Chrome reads the book off disk; nothing crosses CDP.** → packages/core/src/generation/CLAUDE.md
 - **One Chromium, many pages — and the reset paths are the point.** → packages/core/src/generation/CLAUDE.md
 - **A book's render waits as long as its length needs, and the one CDP bound is the longest wait any render may have.** → packages/core/src/generation/CLAUDE.md
@@ -525,6 +528,7 @@ code in that area, however obvious the rule looks.
 - **The description field refuses rather than truncates, so its bound is a ceiling well above the cap and a mention scan that stops at it.** → apps/mobile/lib/features/characters/CLAUDE.md
 - **The reader places the rendered page before it places the selection.** → apps/mobile/lib/features/reader/CLAUDE.md
 - **A failed book says which step failed, and says its credits came back only when the ledger does.** → apps/api/src/mobile/CLAUDE.md
+- **A reply that rebuilt the book carries the book, and it says "ready" only once that revision is published.** → apps/mobile/lib/features/projects/CLAUDE.md
 - **A status stream sends what changed, proves it is alive with a comment, and answers to the session it was opened with — three to an account.** → apps/api/src/mobile/CLAUDE.md
 - **A time-left estimate is seconds left, rounded so the stream does not churn, and null whenever a number would be a guess.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md
 - **An app update is a policy per store release, and only a build that already sends its build number can ever be retired.** → apps/api/CLAUDE.md

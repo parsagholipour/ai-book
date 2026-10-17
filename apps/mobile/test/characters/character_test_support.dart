@@ -137,6 +137,10 @@ class FakeCharactersRepository implements CharactersRepository {
   final List<String?> portraitRequests = [];
   final List<int> uploadedByteLengths = [];
 
+  /// When set, `create` throws it instead of answering: a server that refused,
+  /// or one that was not there.
+  Object? createFailure;
+
   /// Stands in for the 3-second poll picking up what another device did: the
   /// next `list()` answers with [character] in place of the row it replaces.
   void replaceLibraryCharacter(LibraryCharacter character) {
@@ -215,7 +219,11 @@ class FakeCharactersRepository implements CharactersRepository {
     String description = '',
     List<CharacterField> fields = const [],
     List<String> mentionedCharacterIds = const [],
-  }) async => _character;
+  }) async {
+    final failure = createFailure;
+    if (failure != null) throw failure;
+    return _character;
+  }
 
   @override
   Future<void> delete(String id) async {}

@@ -68,7 +68,7 @@ describe("chat image insertion", () => {
         kind: "add_image",
         scope: "explicit_pages",
         affectedPageIndexes: [2],
-        credits: 45,
+        credits: 70,
         summary: "Add an illustration of “a dragon” at the end of the book"
       }
     });
@@ -121,9 +121,9 @@ describe("chat image insertion", () => {
   // Spelled out rather than derived from the price table: the proposal card is
   // the quote the reader approves, so a tier change has to be typed out here.
   for (const [tier, credits] of [
-    ["fast", 45],
-    ["balanced", 45],
-    ["premium", 85]
+    ["fast", 70],
+    ["balanced", 70],
+    ["premium", 130]
   ] as const) {
     it(`quotes one ${tier} illustration at ${credits} credits`, async () => {
       mockAccessTokens({ "token-a": "user-a" });
@@ -144,7 +144,7 @@ describe("chat image insertion", () => {
 
     const response = await sendChat(app, "Add a photo of a dragon at the end of the book");
 
-    expect(response.json().reply.metadata.editProposal.credits).toBe(45);
+    expect(response.json().reply.metadata.editProposal.credits).toBe(70);
     await app.close();
   });
 
@@ -165,12 +165,12 @@ describe("chat image insertion", () => {
       kind: "add_image",
       status: "queued",
       affectedPageIndexes: [2],
-      creditsCharged: 45
+      creditsCharged: 70
     });
     expect(body.reply.content).not.toMatch(/credits/i);
-    expect(body.reply.metadata.creditsCharged).toBe(45);
+    expect(body.reply.metadata.creditsCharged).toBe(70);
     expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
-      expect.objectContaining({ operation: "IMAGE_GENERATION", amountCredits: 45 })
+      expect.objectContaining({ operation: "IMAGE_GENERATION", amountCredits: 70 })
     );
     expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -447,7 +447,7 @@ describe("chat image insertion", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.operation).toBeNull();
-    expect(body.reply.metadata.editProposal).toMatchObject({ kind: "add_image", credits: 45 });
+    expect(body.reply.metadata.editProposal).toMatchObject({ kind: "add_image", credits: 70 });
     expect(body.reply.metadata.editProposal.id).not.toBe("6f3f9a3e-8f6b-4a2e-9a3f-2b1c4d5e6f70");
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();

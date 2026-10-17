@@ -68,6 +68,44 @@ describe("the matter pages in the PDF", () => {
   }
 
   itIfPdfTools(
+    "prints the publication lines whole under a title the clip has to cut",
+    async () => {
+      // The © line, the rights line, the publisher, the ISBN and the credit sit at the
+      // title page's foot. The title stack clips its own tail, never the foot: a clipped
+      // © line is a book with no © line.
+      const dir = await scratch();
+      const outputPath = join(dir, "book.pdf");
+      const { markdown } = compileBookMarkdownWithPageAnchors({
+        plan: plan(Array.from({ length: 60 }, (_, index) => `Interminable Title Clause ${index + 1}`).join(", ")),
+        pages: [{ index: 1, title: "One", markdown: "First page of the story." }],
+        authorName: "Ada Lovelace",
+        matter: {
+          year: 2026,
+          madeWithCredit: true,
+          copyrightHolder: "The Estate of Ada Augusta King, Countess of Lovelace, and the Trustees of the Analytical Engine Society",
+          allRightsReserved: true,
+          imprint: "Lantern & Lathe Press, an imprint of the Society for the Diffusion of Useful Knowledge",
+          isbn: "978-0-306-40615-7"
+        }
+      });
+      expect(markdown).not.toContain("book-matter-sheet");
+      await generateBookPdf(markdown, { imageStorageDir: dir, publicApiUrl: "http://localhost:4001", outputPath });
+
+      const page = (n: number) => execFileSync("pdftotext", ["-f", String(n), "-l", String(n), outputPath, "-"], { encoding: "utf8" });
+      const titlePage = page(1).replace(/\s+/g, " ");
+      expect(titlePage).toContain("Interminable Title Clause 1,");
+      expect(titlePage).toContain("© 2026 The Estate of Ada Augusta King");
+      expect(titlePage).toContain("All rights reserved.");
+      expect(titlePage).toContain("ISBN 978-0-306-40615-7");
+      expect(titlePage).toContain("Made with Tomeza");
+      expect(titlePage).not.toMatch(/\bPage\s+\d+\b/);
+      expect(page(2)).toContain("First page of the story.");
+      expect(page(2)).toMatch(/\bPage\s+1\b/);
+    },
+    30_000
+  );
+
+  itIfPdfTools(
     "prints exactly the sheets bookMatterSheetCount counts, for a dedication of any length",
     async () => {
       const dir = await scratch();

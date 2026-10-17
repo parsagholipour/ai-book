@@ -4,10 +4,16 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/character_image_models.dart';
 import '../domain/character_models.dart';
+import 'character_photo_pick.dart';
 import 'character_reference_copy.dart';
 
-/// What a book will do with this character, and the one control that changes
-/// it.
+/// What a book will do with this character, and the controls that change it.
+///
+/// Every button here spans the card, one under the other, so their edges line
+/// up with the card's and with each other whatever the labels say. A character
+/// with no picture at all gets both ways to one here — a photo, or a drawing
+/// from their description — because the plate above them carries only a corner
+/// button.
 ///
 /// Sits above the description on the profile because it is the only thing on
 /// the page that decides what an illustrated book draws. Nothing here is
@@ -22,6 +28,7 @@ class CharacterReferenceCard extends StatelessWidget {
     required this.portraitBusy,
     required this.waitGaveUp,
     required this.onGeneratePortrait,
+    required this.onAddPhoto,
     required this.onPromote,
     required this.onCheckAgain,
     super.key,
@@ -40,6 +47,7 @@ class CharacterReferenceCard extends StatelessWidget {
   final bool waitGaveUp;
 
   final VoidCallback onGeneratePortrait;
+  final VoidCallback onAddPhoto;
   final void Function(CharacterImage image) onPromote;
   final VoidCallback onCheckAgain;
 
@@ -179,12 +187,19 @@ class CharacterReferenceCard extends StatelessWidget {
     // reader's own artwork sitting there promotable for free, or with a book
     // already drawing this character, a redraw is a secondary act.
     final leads = artwork == null && referenceWanted(character);
-    final pricedLabel = referenceCtaLabel(character, portraitCredits);
+    // The same branch as the "Add a photo or a drawing" status line: nothing
+    // uploaded and nothing a book draws from yet. A drawing of theirs still in
+    // the history is the free way out of that, so it goes first.
+    final offersPhoto =
+        artwork == null && !character.hasPhoto && !character.usedInBooks;
+    final pricedLabel = referenceCtaLabel(character);
+    final price = portraitPriceLabel(portraitCredits);
     final pricedIcon = const Icon(Icons.auto_awesome_outlined);
     final priced = leads
         ? AppButton.primary(
             key: const ValueKey('character-generate-portrait'),
             label: pricedLabel,
+            detail: price,
             leading: pricedIcon,
             loading: portraitBusy,
             expanded: true,
@@ -193,8 +208,10 @@ class CharacterReferenceCard extends StatelessWidget {
         : AppButton.outlined(
             key: const ValueKey('character-generate-portrait'),
             label: pricedLabel,
+            detail: price,
             leading: pricedIcon,
             loading: portraitBusy,
+            expanded: true,
             onPressed: busy ? null : onGeneratePortrait,
           );
 
@@ -207,21 +224,40 @@ class CharacterReferenceCard extends StatelessWidget {
             referenceStatusLine(character),
             style: theme.textTheme.bodyMedium,
           ),
+          const SizedBox(height: AppSpacing.md),
+          if (artwork != null) ...[
+            AppButton.primary(
+              key: const ValueKey('character-use-this-drawing'),
+              label: 'Use this drawing',
+              leading: const Icon(Icons.check_circle_outline),
+              expanded: true,
+              onPressed: busy ? null : () => onPromote(artwork),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ] else if (offersPhoto) ...[
+            AppButton.primary(
+              key: const ValueKey('character-add-photo'),
+              label: 'Add a photo',
+              leading: const Icon(Icons.add_a_photo_outlined),
+              expanded: true,
+              onPressed: busy ? null : onAddPhoto,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+          ],
+          priced,
           const SizedBox(height: AppSpacing.sm),
-          if (artwork != null)
-            AppActionGroup(
-              primary: AppButton.primary(
-                key: const ValueKey('character-use-this-drawing'),
-                label: 'Use this drawing',
-                leading: const Icon(Icons.check_circle_outline),
-                onPressed: busy ? null : () => onPromote(artwork),
-              ),
-              secondary: [priced],
-            )
-          else
-            Align(alignment: AlignmentDirectional.centerStart, child: priced),
-          const SizedBox(height: AppSpacing.xs),
-          Text(referenceExplainer(character), style: captionStyle),
+          // Next to the photo button, the line about whose photos may be added
+          // says more than a description of the drawing: the status line above
+          // has already said what either picture is for.
+          Text(
+            offersPhoto
+                ? characterPhotoConsentLine
+                : referenceExplainer(character),
+            key: offersPhoto
+                ? const ValueKey('character-reference-photo-consent')
+                : null,
+            style: captionStyle,
+          ),
         ],
       ),
     );

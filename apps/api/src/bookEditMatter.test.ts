@@ -493,8 +493,8 @@ describe("front matter in the chat", () => {
     });
     const context = JSON.parse(vi.mocked(model.generateWithTools).mock.calls[0]![0].messages.at(-1)!.content).readerPageContext;
     expect(context.frontMatter).toEqual([
-      { page: 1, holds: expect.stringMatching(/^front matter — the title page, or the dedication/) },
-      { page: 2, holds: expect.stringMatching(/^the dedication and publication page/) }
+      { page: 1, holds: expect.stringMatching(/^front matter — the title page .*, or the dedication page$/) },
+      { page: 2, holds: "the dedication page" }
     ]);
   });
 
@@ -608,7 +608,7 @@ describe("front matter in the chat", () => {
       })
     });
     expect(intent).toMatchObject({ kind: "answer" });
-    expect(intent.assistantMessage).toMatch(/^Printed page 2 holds the dedication and the publication details/);
+    expect(intent.assistantMessage).toMatch(/^Printed page 2 holds the dedication\./);
   });
 
   it("leaves an insert at the front of the book alone", async () => {
@@ -649,7 +649,7 @@ describe("front matter in the chat", () => {
       pages,
       pageNumbering: numberingForProject(row)
     });
-    expect(sheet.assistantMessage).toMatch(/^Printed page 2 holds the dedication and the publication details/);
+    expect(sheet.assistantMessage).toMatch(/^Printed page 2 holds the dedication\./);
   });
 
   it("reads a printed page number beside a matter word as the page it prints, with the router down", async () => {
@@ -666,10 +666,10 @@ describe("front matter in the chat", () => {
       kind: "page_rewrite",
       affectedPageIndexes: [1]
     });
-    // Printed page 2 is the matter sheet, and the furniture reader answers it first.
+    // Printed page 2 is the dedication's sheet, and the furniture reader answers it first.
     const sheet = await classify("Rewrite page 2 so the publisher sounds meaner");
     expect(sheet.kind).not.toBe("page_rewrite");
-    expect(sheet.assistantMessage).toMatch(/^Printed page 2 holds the dedication and the publication details/);
+    expect(sheet.assistantMessage).toMatch(/^Printed page 2 holds the dedication\./);
   });
 });
 

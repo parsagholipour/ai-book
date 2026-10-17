@@ -9,7 +9,9 @@ import 'package:go_router/go_router.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/characters/data/characters_repository.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
+import 'package:tomeza/features/projects/data/making_of_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
@@ -17,8 +19,12 @@ import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart'
 import 'package:tomeza/shared/api/api_error.dart';
 
 import 'chat_session_page_fixture.dart';
+import 'making_of_stub.dart';
 
-MobileProjectDetail generationDetail({String status = 'generating', MobilePlan? plan}) {
+MobileProjectDetail generationDetail({
+  String status = 'generating',
+  MobilePlan? plan,
+}) {
   return MobileProjectDetail(
     id: 'project-1',
     title: 'Launch Course Workbook',
@@ -59,10 +65,15 @@ Future<void> pumpGenerationChat(
   Stream<MobileProjectStatus>? statusStream,
   StubGenerationProjectsRepository? projects,
   StubGenerationBillingRepository? billing,
+  MakingOfRepository? makingOf,
+  CharactersRepository? characters,
 }) async {
   final repository =
       projects ??
-      StubGenerationProjectsRepository(status: status, statusStream: statusStream);
+      StubGenerationProjectsRepository(
+        status: status,
+        statusStream: statusStream,
+      );
   final router = GoRouter(
     initialLocation: '/books/chat/draft-done',
     routes: [
@@ -76,14 +87,28 @@ Future<void> pumpGenerationChat(
         builder: (context, state) =>
             Scaffold(body: Text('Book route ${state.pathParameters['id']}')),
       ),
+      GoRoute(
+        path: '/projects/:id/read',
+        builder: (context, state) => Scaffold(
+          body: Text('Reader at page ${state.uri.queryParameters['page']}'),
+        ),
+      ),
     ],
   );
 
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        creationRepositoryProvider.overrideWithValue(StubGenerationCreationRepository()),
+        creationRepositoryProvider.overrideWithValue(
+          StubGenerationCreationRepository(),
+        ),
         projectsRepositoryProvider.overrideWithValue(repository),
+        makingOfRepositoryProvider.overrideWithValue(
+          makingOf ?? StubMakingOfRepository(),
+        ),
+        charactersRepositoryProvider.overrideWithValue(
+          characters ?? LibraryOnlyCharactersRepository(),
+        ),
         billingRepositoryProvider.overrideWithValue(
           billing ?? StubGenerationBillingRepository(),
         ),
@@ -111,6 +136,7 @@ MobileProjectStatus generationStatus({
   DateTime? nextRetryAt,
   String? retryState,
   String? retryMessage,
+  int? planningDurationMs,
   int? bookGenerationDurationMs,
   MobileExportSet exports = generationExports,
 }) {
@@ -137,6 +163,7 @@ MobileProjectStatus generationStatus({
     pageProgress: const MobilePageProgress(completed: 3, target: 28),
     imageCount: 1,
     exports: exports,
+    planningDurationMs: planningDurationMs,
     bookGenerationDurationMs: bookGenerationDurationMs,
     coverEnabled: coverEnabled,
     illustrationsEnabled: illustrationsEnabled,
@@ -179,7 +206,11 @@ const readyGenerationExports = MobileExportSet(
 );
 
 class StubGenerationProjectsRepository implements ProjectsRepository {
-  StubGenerationProjectsRepository({this.status, this.statusStream, this.detailBuilder});
+  StubGenerationProjectsRepository({
+    this.status,
+    this.statusStream,
+    this.detailBuilder,
+  });
 
   final MobileProjectStatus? status;
   final Stream<MobileProjectStatus>? statusStream;

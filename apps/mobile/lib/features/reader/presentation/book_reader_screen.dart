@@ -28,6 +28,8 @@ class BookReaderScreen extends ConsumerStatefulWidget {
   const BookReaderScreen({
     required this.projectId,
     this.openAtBookPage,
+    this.openAtSheet,
+    this.openAtSheetDigest,
     super.key,
   });
 
@@ -37,6 +39,11 @@ class BookReaderScreen extends ConsumerStatefulWidget {
   /// a review of an applied edit, say. Resolved to a rendered page once the
   /// document is open, because the PDF carries no such index.
   final int? openAtBookPage;
+
+  /// Where that page starts in the PDF whose digest is [openAtSheetDigest],
+  /// for a caller the server told — see [ReaderView.openAtSheet].
+  final int? openAtSheet;
+  final String? openAtSheetDigest;
 
   @override
   ConsumerState<BookReaderScreen> createState() => _BookReaderScreenState();
@@ -225,6 +232,8 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       status: status,
       offline: offline,
       openAtBookPage: widget.openAtBookPage,
+      openAtSheet: widget.openAtSheet,
+      openAtSheetDigest: widget.openAtSheetDigest,
       onRefreshExport: _refreshExport,
     );
   }

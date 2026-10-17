@@ -1285,9 +1285,8 @@ holds the event loop open and vitest will never exit.
 - **Every book has a title page, and only the book's first sheet resets the page counter.**
   Until 2026-10-06 a cover *replaced* the title page, so a covered book never named its own title
   and author inside the file. `formatBookMatter` (`bookMatterPages.ts`) now prints one in every
-  book, then the matter sheet (dedication in the upper third, publication details at the foot —
-  one sheet so a twelve-page picture book grows by two at most), and About the Author as back
-  matter. Behind a cover the title page and the matter sheet are `@page pdf-front`: counted, footer
+  book, with the publication details at its foot (the bullet after this one), then a sheet for the
+  dedication when there is one, and About the Author as back matter. Behind a cover the title page and the matter sheet are `@page pdf-front`: counted, footer
   hidden, **no `counter-reset`**, so `printedPageOffset` stays the `1 : 0` the whole page map rests
   on and needed no version bump; `pdfPageZone` already calls those sheets `front_matter`. A
   coverless book's title page is still `pdf-title` and still the one reset. The first body page
@@ -1346,8 +1345,8 @@ holds the event loop open and vitest will never exit.
   The © year is `bookMatterYear`: an imported manuscript's own © year (`copyrightYear`) when it
   stated one, else the book's creation year — never the compile's, so a recompile stays
   byte-identical across New Year; the free tier's credit
-  is decided per compile (`bookMatterForExport`, `packages/db`) and sits on the matter sheet, or at
-  the title page's foot when there is no sheet. The Word export reads both sections back out of the
+  is decided per compile (`bookMatterForExport`, `packages/db`) and sits at the title page's foot
+  (on the matter sheet of a book compiled before 2026-10-17, or of one with a blank title). The Word export reads both sections back out of the
   HTML (`docxAssets.ts`), as it did the title page. Its generated credit carries the
   `TomezaMadeWithCredit` bookmark (`docxBookMatter.ts`); DOCX import removes only text inside that
   range, preserving page breaks and text added beside it. This lets the next compile decide the
@@ -1368,6 +1367,29 @@ holds the event loop open and vitest will never exit.
   of About the Author at every bio size, by class prefix and the last marker, as
   `bookMatterPages.ts` does. Corpus: the `matter-pages` fixture; the nine existing fixtures rendered
   pixel-identical across the stylesheet change.
+- **A book's publication lines print at its title page's foot, and only a dedication earns a sheet
+  of its own.** The © line, "All rights reserved.", the imprint, the ISBN and the free tier's credit
+  shared the matter sheet with the dedication, so a book with no dedication spent a whole sheet on
+  two © lines under a title page that stood mostly empty ("The Last Table", 2026-10-17: cover,
+  title page, a sheet reading "© 2026 Parsa Gholipour / All rights reserved.", then the text).
+  `formatBookMatter` writes them as `book-title-page__publication` at the title page's foot, and the
+  matter sheet holds the dedication alone; a plan with a blank title prints no title page, so that
+  book keeps the combined sheet. **The foot is outside the clip**: a title page with a foot wraps
+  the title, subtitle and byline in `book-title-page__stack`, which takes the height the foot
+  leaves and clips its own tail (`flex: 1 1 auto; min-height: 0; overflow: hidden`, the auto
+  margins inside it), so an overflowing title loses its last lines and never the © line, and the
+  fields are bounded (`BOOK_MATTER_LIMITS`), so the foot always fits; `bookMatterPdf.test.ts`
+  renders the 60-clause title over every field. A title page with no foot is written byte for byte as before.
+  Every reader of the old shape still reads it, because a book compiled before this keeps it until
+  it recompiles and a repair renders those bytes: `bookMatterSheetCount`, the credit readers, and
+  the `matter-pages-legacy` fixture, pixel-identical. The EPUB follows the markdown (the foot under
+  the byline, `epub.ts`), and its import splits the foot back out as a copyright page
+  (`epubMatterBlocks.ts`): without that, 56 of the 63 round-trip tests fail, because a title page
+  holding © lines is kept as book text. The Word file keeps its own layout (`wordFrontMatter` in
+  `docxAssets.ts`), since a DOCX import recognises our title page only when every line is the
+  title, subtitle, byline or publisher. The chat names a front-matter page by the same rule
+  (`frontMatterForProject`, `apps/api/src/bookPageNumbering.ts`). The matter fixtures are built by
+  each side's own `formatBookMatter`, so `--compare` sets the old book against the new one.
 - **Chrome reads the book off disk; nothing crosses CDP.** The assembled HTML is written to
   `.book-render-<uuid>.html` inside the renderer’s scoped temporary image directory and opened with `page.goto('file://…')`, so
   the book's relative asset paths (`projectId/filename`) resolve to the real illustrations exactly as

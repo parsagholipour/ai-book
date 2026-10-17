@@ -30,6 +30,9 @@ class _PlanWithGenerationProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         child,
+        // The book is its own moment, not a footnote to the plan: give it
+        // more room than the gap between two messages.
+        const SizedBox(height: AppSpacing.md),
         _GenerationProgressBubble(
           projectId: id,
           statusValue: status,
@@ -193,7 +196,7 @@ class _GenerationProgressBubbleState
     final steps = imageAwareGenerationSteps(rawSteps, status);
 
     if (status.isComplete && !isFailed && !waitingForRetry && !reviewRequired) {
-      return _buildFinished(status, steps, downloadExport);
+      return _buildFinished(status, downloadExport);
     }
 
     final title = reviewRequired
@@ -423,10 +426,9 @@ class _GenerationProgressBubbleState
   }
 
   /// A finished book, collapsed: cover, name, one line of facts, one primary
-  /// action. The step history is still there behind a disclosure.
+  /// action, and "Behind the book" folded away beneath them.
   Widget _buildFinished(
     MobileProjectStatus status,
-    List<MobileProjectStatusStep> steps,
     MobileExportAvailability? downloadExport,
   ) {
     final project = ref.watch(projectDetailProvider(widget.projectId)).value;
@@ -441,12 +443,11 @@ class _GenerationProgressBubbleState
           ? 'Your book'
           : projectTitle,
       coverImage: project?.coverImage,
-      summary: finishedBookSummary(
+      facts: finishedBookFacts(
         pages: pages,
         images: status.imageCount,
         durationMs: status.bookGenerationDurationMs,
       ),
-      steps: steps,
       onOpen: () => context.push('/projects/${widget.projectId}'),
       primaryAction: readable
           ? _ReadBookButton(projectId: widget.projectId, expanded: true)
@@ -471,6 +472,11 @@ class _GenerationProgressBubbleState
           ),
         _EditBookButton(projectId: widget.projectId),
       ],
+      footer: BehindTheBookSection(
+        projectId: widget.projectId,
+        planningMs: status.planningDurationMs,
+        bookMs: status.bookGenerationDurationMs,
+      ),
     );
   }
 }

@@ -405,7 +405,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         const intent = confirmedProposal?.intent
           ? confirmedProposal.intent
           : await classifyProjectChatMessage({
-              onAssistantText,
+              ...(onAssistantText ? { onRoutingStart: () => onAssistantText("") } : {}),
               message: resolvedMessage,
               stage,
               pages,

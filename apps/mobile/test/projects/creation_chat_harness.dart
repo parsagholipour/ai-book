@@ -8,6 +8,7 @@ import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/creation_prefs_store.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
+import 'package:tomeza/features/projects/data/making_of_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
@@ -15,6 +16,8 @@ import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart'
 import 'package:tomeza/features/projects/presentation/book_screen.dart';
 import 'package:tomeza/shared/api/api_client.dart';
 import 'package:tomeza/shared/media/photo_picker.dart';
+
+import 'making_of_stub.dart';
 
 // Shared scaffolding for the creation-chat suites: the widget under test,
 // its provider overrides, and the fixtures every case builds on.
@@ -62,6 +65,7 @@ Widget app({
   CreationPrefsStore? prefs,
   PhotoPicker? photoPicker,
   BillingRepository? billingRepository,
+  MakingOfRepository? makingOf,
   List<Override> overrides = const [],
 }) {
   return ProviderScope(
@@ -71,6 +75,9 @@ Widget app({
         (ref) async => const <String, String>{},
       ),
       creationRepositoryProvider.overrideWithValue(creation),
+      makingOfRepositoryProvider.overrideWithValue(
+        makingOf ?? StubMakingOfRepository(),
+      ),
       if (projects != null)
         projectsRepositoryProvider.overrideWithValue(projects),
       billingRepositoryProvider.overrideWithValue(
@@ -96,6 +103,7 @@ Widget routerApp({
   required ProjectsRepository projects,
   required String initialLocation,
   CreationPrefsStore? prefs,
+  MakingOfRepository? makingOf,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -133,6 +141,9 @@ Widget routerApp({
         (ref) async => const <String, String>{},
       ),
       creationRepositoryProvider.overrideWithValue(creation),
+      makingOfRepositoryProvider.overrideWithValue(
+        makingOf ?? StubMakingOfRepository(),
+      ),
       projectsRepositoryProvider.overrideWithValue(projects),
       billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
       creationPrefsStoreProvider.overrideWithValue(
@@ -522,9 +533,9 @@ MobileBilling billing() {
     entitlements: [],
     products: [],
     creditCosts: {
-      'fullBookBase': 350,
+      'fullBookBase': 250,
       'fullBookPerPage': 8,
-      'imageGeneration': 45,
+      'imageGeneration': 70,
       'premiumReview': 200,
       'exportUnlock': 150,
     },

@@ -132,7 +132,7 @@ describe("the welcome grant and the first book", () => {
   it("covers the largest free non-picture book and its plan, with room for a chat", () => {
     // The free page cap, illustrated, as the type billed for the most pictures.
     const total = firstBookCredits(firstBook("EDUCATION", "workbook", DEFAULT_CREDIT_COSTS.freeMaxBookPages));
-    expect(total).toBe(945);
+    expect(total).toBe(1_020);
     for (const amount of grants) expect(amount - total).toBeGreaterThanOrEqual(50);
   });
 
@@ -141,12 +141,15 @@ describe("the welcome grant and the first book", () => {
     // never falls as a book grows, so the price climbs with every page and the
     // free cap's 30 pages, twelve pictures, is the largest. Under
     // min(pages, 12), at 1,150 the grant left out every picture book of 22
-    // pages or more.
-    expect(DEFAULT_CREDIT_COSTS.welcomeCredits).toBe(1_250);
-    expect(firstBookCredits(firstBook("KIDS", "short_story", 12))).toBe(756);
-    expect(firstBookCredits(firstBook("KIDS", "short_story", 16))).toBe(833);
-    expect(firstBookCredits(firstBook("KIDS", "short_story", 24))).toBe(1_077);
-    expect(firstBookCredits(firstBook("KIDS", "short_story", DEFAULT_CREDIT_COSTS.freeMaxBookPages))).toBe(1_215);
+    // pages or more; when a picture went from 45 to 70 (migration 000116) the
+    // grant went from 1,250 to 1,500 so the largest still leaves a chat's room.
+    expect(DEFAULT_CREDIT_COSTS.welcomeCredits).toBe(1_500);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 12))).toBe(806);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 16))).toBe(908);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 24))).toBe(1_252);
+    const largest = firstBookCredits(firstBook("KIDS", "short_story", DEFAULT_CREDIT_COSTS.freeMaxBookPages));
+    expect(largest).toBe(1_440);
+    for (const amount of grants) expect(amount - largest).toBeGreaterThanOrEqual(50);
     let previous = 0;
     for (let pages = 1; pages <= DEFAULT_CREDIT_COSTS.freeMaxBookPages; pages++) {
       const total = firstBookCredits(firstBook("KIDS", "short_story", pages));

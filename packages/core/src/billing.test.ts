@@ -69,11 +69,11 @@ describe("billing credit assumptions", () => {
     const estimate = estimateFullBookCreditCost(input);
 
     // No export unlock: the finished book downloads free (2026-10-15).
-    expect(estimate.totalCredits).toBe(889);
+    expect(estimate.totalCredits).toBe(964);
     expect(estimate.lineItems).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: "FULL_BOOK_GENERATION", credits: 574 }),
-        expect.objectContaining({ code: "IMAGE_GENERATION", quantity: 6, credits: 270 }),
+        expect.objectContaining({ code: "FULL_BOOK_GENERATION", credits: 474 }),
+        expect.objectContaining({ code: "IMAGE_GENERATION", quantity: 6, credits: 420 }),
         expect.objectContaining({
           code: "IMAGE_GENERATION",
           label: "Cover image generation",
@@ -231,13 +231,13 @@ describe("billing credit assumptions", () => {
     // price table: the app mirrors this formula and there is no server quote
     // route to fall back on, so a change here has to be a visible change here.
     // No tier carries an export unlock: the finished book downloads free.
-    expect(estimateFullBookCreditCost(inputForTier("fast")).totalCredits).toBe(220 + 18 * 5 + 4 * 45);
-    expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(350 + 18 * 8 + 4 * 45);
+    expect(estimateFullBookCreditCost(inputForTier("fast")).totalCredits).toBe(150 + 18 * 5 + 4 * 70);
+    expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(250 + 18 * 8 + 4 * 70);
     expect(estimateFullBookCreditCost(inputForTier("premium")).totalCredits).toBe(
-      500 + 18 * 30 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview
+      500 + 18 * 30 + 4 * 130 + DEFAULT_CREDIT_COSTS.premiumReview
     );
     expect(estimateFullBookCreditCost(inputForTier("ultra")).totalCredits).toBe(
-      650 + 18 * 130 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview
+      650 + 18 * 130 + 4 * 130 + DEFAULT_CREDIT_COSTS.premiumReview
     );
 
     // A book from before tiers existed pays the balanced rates, because that

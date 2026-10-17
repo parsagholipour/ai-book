@@ -66,6 +66,8 @@ describe("mobile chapter heading edits", () => {
     // is regenerated - only the export preference changes.
     expect(body.operation).toBeNull();
     expect(body.reply.metadata).toMatchObject({ charged: false, chapterHeading: { style: "title_only" } });
+    // The reply carries the book it rebuilt, at the revision the recompile was committed at.
+    expect(body.reply.metadata.bookUpdate).toEqual({ contentRevision: 1 });
     expect(body.reply.metadata.editProposal).toBeUndefined();
     expect(body.reply.content).toMatch(/free/i);
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();

@@ -60,12 +60,12 @@ describe("a book's quote", () => {
 
   it.each([
     // pages, pictures, total (Balanced, drawn cover)
-    [5, 2, 350 + 5 * 8 + 2 * 45 + 45],
-    [10, 4, 350 + 10 * 8 + 4 * 45 + 45],
-    [12, 5, 350 + 12 * 8 + 5 * 45 + 45],
-    [16, 6, 350 + 16 * 8 + 6 * 45 + 45],
-    [24, 10, 350 + 24 * 8 + 10 * 45 + 45],
-    [30, 12, 350 + 30 * 8 + 12 * 45 + 45]
+    [5, 2, 250 + 5 * 8 + 2 * 70 + 70],
+    [10, 4, 250 + 10 * 8 + 4 * 70 + 70],
+    [12, 5, 250 + 12 * 8 + 5 * 70 + 70],
+    [16, 6, 250 + 16 * 8 + 6 * 70 + 70],
+    [24, 10, 250 + 24 * 8 + 10 * 70 + 70],
+    [30, 12, 250 + 30 * 8 + 12 * 70 + 70]
   ])("quotes a %i-page illustrated picture book with %i pictures", (pages, pictures, total) => {
     const input = kidsBook(pages);
     expect(estimateInteriorImageCount(input)).toBe(pictures);
@@ -74,10 +74,10 @@ describe("a book's quote", () => {
 
   it("quotes a 30-page story the same way", () => {
     // Text only, designed cover: base + pages and nothing else.
-    expect(estimateFullBookCreditCost(story(30, false), DEFAULT_CREDIT_COSTS).totalCredits).toBe(350 + 30 * 8);
+    expect(estimateFullBookCreditCost(story(30, false), DEFAULT_CREDIT_COSTS).totalCredits).toBe(250 + 30 * 8);
     // Illustrated: pages 1, 8, 16 and 24, and a drawn cover.
     expect(estimateFullBookCreditCost(story(30, true), DEFAULT_CREDIT_COSTS).totalCredits).toBe(
-      350 + 30 * 8 + 4 * 45 + 45
+      250 + 30 * 8 + 4 * 70 + 70
     );
   });
 
@@ -92,7 +92,7 @@ describe("a book's quote", () => {
     const stored = normalizeCreditPricing({ ...DEFAULT_CREDIT_COSTS, exportUnlock: 150 });
     expect(stored.exportUnlock).toBe(0);
     expect(creditCostForOperation("EXPORT_UNLOCK", stored)).toBe(0);
-    expect(estimateFullBookCreditCost(kidsBook(12), stored).totalCredits).toBe(350 + 12 * 8 + 5 * 45 + 45);
+    expect(estimateFullBookCreditCost(kidsBook(12), stored).totalCredits).toBe(250 + 12 * 8 + 5 * 70 + 70);
   });
 });
 

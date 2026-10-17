@@ -7,7 +7,6 @@ import '../domain/character_image_models.dart';
 import '../domain/character_models.dart';
 import 'character_identity.dart';
 import 'character_network_image.dart';
-import 'character_photo_pick.dart';
 import 'character_portrait_drawing.dart';
 
 /// The character's picture at the size it deserves, and every state that
@@ -17,8 +16,7 @@ import 'character_portrait_drawing.dart';
 /// illustration a reader paid for could never actually be looked at. Each state
 /// here is its own composition rather than a spinner laid over the last one:
 /// a picture (tap to zoom), a drawing in progress, an upload in flight, or — for
-/// a character with nothing yet — the initials plate with the two ways out of
-/// it.
+/// a character with nothing yet — the initials plate (tap to add a photo).
 class CharacterProfileHeader extends StatelessWidget {
   const CharacterProfileHeader({
     required this.character,
@@ -28,7 +26,6 @@ class CharacterProfileHeader extends StatelessWidget {
     required this.uploadProgress,
     required this.onTapPicture,
     required this.onAddPicture,
-    this.onDescribe,
     super.key,
   });
 
@@ -52,10 +49,6 @@ class CharacterProfileHeader extends StatelessWidget {
 
   final VoidCallback onTapPicture;
   final VoidCallback onAddPicture;
-
-  /// The second way out of an empty plate: write them down, then have them
-  /// drawn. Absent, the plate offers only the photo.
-  final VoidCallback? onDescribe;
 
   @override
   Widget build(BuildContext context) {
@@ -84,18 +77,24 @@ class CharacterProfileHeader extends StatelessWidget {
         character: character,
         drawing: drawing,
         onAdd: onAddPicture,
-        onDescribe: onDescribe,
       );
     }
 
     final canView = mainImage != null && pending == null;
+    // An empty plate is the photo button's target too: tapping a face that is
+    // not there yet is how most people try to add one.
+    final canAdd = !hasPicture && !drawing;
     return Stack(
       fit: StackFit.expand,
       children: [
         GestureDetector(
           key: const ValueKey('character-profile-picture'),
           behavior: HitTestBehavior.opaque,
-          onTap: canView ? onTapPicture : null,
+          onTap: canView
+              ? onTapPicture
+              : canAdd
+              ? onAddPicture
+              : null,
           child: Semantics(
             button: canView,
             label: hasPicture ? 'View ${character.name}' : 'No picture yet',
@@ -154,6 +153,7 @@ class _OverlayButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    super.key,
   });
 
   final IconData icon;
@@ -233,95 +233,41 @@ class _UploadOverlay extends StatelessWidget {
   }
 }
 
-/// What a character with no picture at all shows: their initials, and the two
-/// ways out — a photo, or a description to draw from.
+/// What a character with no picture at all shows: their initials, centred on
+/// the plate, and a corner button that adds a photo.
 ///
-/// One pair of buttons here, and none repeated further down the page: the
-/// reference card under it only prices the drawing.
+/// Nothing else is drawn over the plate. The photo and drawing buttons, with the
+/// line about whose photos may be added, are in the reference card under the
+/// name, so the empty plate has the same layout as one with a picture: the
+/// face in the middle and one control in the corner.
 class _EmptyPlate extends StatelessWidget {
   const _EmptyPlate({
     required this.character,
     required this.drawing,
     required this.onAdd,
-    required this.onDescribe,
   });
 
   final LibraryCharacter character;
   final bool drawing;
   final VoidCallback onAdd;
-  final VoidCallback? onDescribe;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = characterPalette(theme.colorScheme, character.id);
     return Stack(
       fit: StackFit.expand,
       children: [
-        CharacterIdentityArt(character: character, showInitials: false),
-        Align(
-          alignment: const Alignment(0, -0.36),
-          child: Text(
-            character.initials,
-            textScaler: TextScaler.noScaling,
-            style: TextStyle(
-              fontSize: 84,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -2,
-              color: palette.foreground,
+        CharacterIdentityArt(character: character),
+        if (!drawing)
+          PositionedDirectional(
+            bottom: AppSpacing.sm,
+            end: AppSpacing.sm,
+            child: _OverlayButton(
+              key: const ValueKey('character-header-add-picture'),
+              icon: Icons.add_a_photo_outlined,
+              tooltip: 'Add a photo',
+              onPressed: onAdd,
             ),
           ),
-        ),
-        if (!drawing) ...[
-          const PositionedDirectional(
-            top: AppSpacing.sm,
-            start: AppSpacing.sm,
-            child: AppStatusBadge(
-              label: 'No picture yet',
-              icon: Icons.add_photo_alternate_outlined,
-            ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AppButton.primary(
-                    key: const ValueKey('character-header-add-picture'),
-                    label: 'Add a photo',
-                    leading: const Icon(Icons.add_photo_alternate_outlined),
-                    expanded: true,
-                    onPressed: onAdd,
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    characterPhotoConsentLine,
-                    key: const ValueKey('character-header-photo-consent'),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: palette.foreground,
-                    ),
-                  ),
-                  if (onDescribe != null) ...[
-                    const SizedBox(height: AppSpacing.xxs),
-                    AppButton.text(
-                      key: const ValueKey('character-header-describe'),
-                      label: character.description.trim().isEmpty
-                          ? 'Describe them'
-                          : 'Edit their description',
-                      leading: const Icon(Icons.notes_outlined),
-                      expanded: true,
-                      onPressed: onDescribe,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }

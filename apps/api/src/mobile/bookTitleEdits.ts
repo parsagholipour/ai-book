@@ -12,6 +12,7 @@ import { startGenerationAttempt } from "@book-maker/db/billing";
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { bookTitleReply, type BookTitleNotice } from "./bookTitleChatCopy.js";
 import { matterChatLanguage, type MatterChatLanguage } from "./bookMatterChatLanguage.js";
+import { bookUpdateMetadata } from "./bookUpdateMetadata.js";
 import { commitCoverChange, dispatchCoverJobs, ManuscriptCoverRefusal, type CommittedCoverChange } from "./coverChange.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { type PendingEditState } from "./pendingEditState.js";
@@ -109,7 +110,7 @@ export async function applyBookTitleEdit(options: {
     await dispatchCoverJobs(project.id, committed);
     const rest: BookTitleNotice =
       cover === "design" || cover === "ai-kept" ? "retypeset" : cover === "upload" ? "uploaded" : "refreshing";
-    return reply(`${say("done")} ${say(rest)} ${say("free")}`, { bookTitle: title });
+    return reply(`${say("done")} ${say(rest)} ${say("free")}`, { bookTitle: title, ...bookUpdateMetadata(committed.contentRevision) });
   }
 
   const cost = creditPricing().coverRegeneration;

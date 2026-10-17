@@ -44,6 +44,10 @@ export class VoiceRelayConnection {
   private budgetAt = Date.now();
   private frameBudget = 100;
   private frameAt = Date.now();
+  private debugFrames: [number, number, number][] = []; // [DEBUG-vr7]
+  private debugTotalBytes = 0; // [DEBUG-vr7]
+  private debugFirstAt: number | undefined; // [DEBUG-vr7]
+  private debugDownAt: number[] = []; // [DEBUG-vr7]
   private readonly usage: VoiceUsageMeter;
   private usageFlushedAt = Date.now();
   /** Segment writes run one after another, and the stop waits for the last. */
@@ -96,6 +100,16 @@ export class VoiceRelayConnection {
     // synchronously, and shutdown/end callers must await the same settlement.
     this.stopping = new Promise<void>((resolve) => { completed = resolve; });
     this.stopped = true;
+    { // [DEBUG-vr7]
+      const f = this.debugFrames, t0 = this.debugFirstAt ?? Date.now(); // [DEBUG-vr7]
+      let maxGap = 0, maxGapAt = 0; // [DEBUG-vr7]
+      for (let i = 1; i < f.length; i++) { const g = f[i]![0] - f[i - 1]![0]; if (g > maxGap) { maxGap = g; maxGapAt = f[i]![0] - t0; } } // [DEBUG-vr7]
+      const span = (f.at(-1)?.[0] ?? t0) - t0; // [DEBUG-vr7]
+      console.log("[DEBUG-vr7]", JSON.stringify({ reason, callId: this.claim.lease.callId, frames: f.length, totalBytes: this.debugTotalBytes, spanMs: span, // [DEBUG-vr7]
+        avgBytesPerSec: span > 0 ? Math.round(this.debugTotalBytes / span * 1000) : null, maxGapMs: maxGap, maxGapAtMs: maxGapAt, // [DEBUG-vr7]
+        downFramesLast10s: this.debugDownAt.filter((d) => d > Date.now() - 10_000).length, // [DEBUG-vr7]
+        last60: f.slice(-60).map(([at, b, budget]) => `${at - t0}:${b}:${budget}`).join(" ") })); // [DEBUG-vr7]
+    } // [DEBUG-vr7]
     clearInterval(this.timer);
     clearInterval(this.heartbeat);
     this.upstream?.terminate();
@@ -197,6 +211,7 @@ export class VoiceRelayConnection {
       }
       // Session handles and provider diagnostics stay private to the relay.
       if (!frame.serverContent) return;
+      this.debugDownAt.push(Date.now()); if (this.debugDownAt.length > 2000) this.debugDownAt.shift(); // [DEBUG-vr7]
       const content = JSON.stringify({ serverContent: frame.serverContent });
       if (!this.ready) {
         pendingBytes += Buffer.byteLength(content);
@@ -250,6 +265,9 @@ export class VoiceRelayConnection {
       this.audioBudget = Math.min(64_000, this.audioBudget + (now - this.budgetAt) * 32);
       this.budgetAt = now;
       this.audioBudget -= bytes.length;
+      this.debugFrames.push([now, bytes.length, Math.round(this.audioBudget)]); // [DEBUG-vr7]
+      if (this.debugFrames.length > 400) this.debugFrames.shift(); // [DEBUG-vr7]
+      this.debugTotalBytes += bytes.length; this.debugFirstAt ??= now; // [DEBUG-vr7]
       if (this.audioBudget < 0) { void this.stop("audio_rate_limit"); return; }
       sanitized = { realtimeInput: { audio: { data: audio.data, mimeType: audio.mimeType } } };
     }

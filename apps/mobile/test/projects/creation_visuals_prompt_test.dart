@@ -67,7 +67,7 @@ void main() {
       coverEnabled: true,
       illustrationsEnabled: true,
     );
-    expect(coverOnly - base, 45);
+    expect(coverOnly - base, 70);
     expect(withImages, greaterThan(coverOnly));
 
     // Both generated-image lines are called out rather than folded into a total
@@ -294,7 +294,7 @@ void main() {
     await tester.tap(coverSwitch);
     await tester.pump();
 
-    expect(illustratedTotal - illustrationsOnly, 45);
+    expect(illustratedTotal - illustrationsOnly, 70);
     expect(find.text('≈ $illustrationsOnly credits'), findsOneWidget);
     // Off is a free designed cover, not the absence of one.
     expect(

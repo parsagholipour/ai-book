@@ -134,10 +134,10 @@ void main() {
       creditCosts: const {},
     );
 
-    expect(estimate('fast'), 220 + 12 * 5 + 3 * 45);
-    expect(estimate('balanced'), 350 + 12 * 8 + 3 * 45);
-    expect(estimate('premium'), 500 + 12 * 30 + 3 * 85 + 200);
-    expect(estimate('ultra'), 650 + 12 * 130 + 3 * 85 + 200);
+    expect(estimate('fast'), 150 + 12 * 5 + 3 * 70);
+    expect(estimate('balanced'), 250 + 12 * 8 + 3 * 70);
+    expect(estimate('premium'), 500 + 12 * 30 + 3 * 130 + 200);
+    expect(estimate('ultra'), 650 + 12 * 130 + 3 * 130 + 200);
 
     // "custom" is what the server sends for a book it has no preset for, and
     // it charges such a book the balanced rates.
@@ -250,8 +250,8 @@ void main() {
     );
     final both = estimate(coverEnabled: true, illustrationsEnabled: true);
 
-    expect(coverOnly - base, 45);
-    expect(both - illustrationsOnly, 45);
+    expect(coverOnly - base, 70);
+    expect(both - illustrationsOnly, 70);
     expect(both, coverOnly + illustrationsOnly - base);
     final customCover = estimateProjectCredits(
       bookType: 'lead_magnet',

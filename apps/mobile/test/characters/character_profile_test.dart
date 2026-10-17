@@ -70,12 +70,22 @@ void main() {
         find.textContaining('cannot draw from this image yet'),
         findsOneWidget,
       );
-      // The one action that changes that leads, and quotes its price.
+      // The one action that changes that leads, and quotes its price — on a
+      // line of its own, so the label does not wrap on a phone.
+      final cta = find.byKey(const ValueKey('character-generate-portrait'));
       expect(
-        find.widgetWithText(
-          FilledButton,
-          'Make illustrated version (45 credits)',
+        find.descendant(of: cta, matching: find.byType(FilledButton)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: cta,
+          matching: find.text('Make illustrated version'),
         ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: cta, matching: find.text('45 credits')),
         findsOneWidget,
       );
     });
@@ -140,10 +150,7 @@ void main() {
       expect(find.textContaining('cannot draw from it yet'), findsNothing);
       // Redrawing is offered, but demoted: nothing is owed.
       expect(
-        find.widgetWithText(
-          FilledButton,
-          'Make illustrated version (45 credits)',
-        ),
+        find.widgetWithText(FilledButton, 'Make illustrated version'),
         findsNothing,
       );
       expect(find.textContaining('Redraw illustration'), findsOneWidget);
@@ -261,26 +268,82 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('an empty history is the header\'s job, not a bare rail', (
+    testWidgets(
+      'an empty history is the reference card\'s job, not a bare rail',
+      (tester) async {
+        await pumpProfile(tester, testCharacter(hasPhoto: false));
+
+        // One way in, said once: the reference card's photo and drawing buttons,
+        // with the plate's corner button on the picture itself. A strip under
+        // them repeating "Add a picture" over nothing was the same ask again.
+        expect(find.text('Pictures'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('character-strip-add-tile')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('character-add-photo')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('character-generate-portrait')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('character-header-add-picture')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('the empty plate draws the initials clear of every control', (
       tester,
     ) async {
+      // The initials used to sit behind a full-width "Add a photo" button on a
+      // 360 dp phone, so only a stroke of the first letter showed above it.
       await pumpProfile(tester, testCharacter(hasPhoto: false));
 
-      // One way in, said once: the header's own two buttons. A strip under it
-      // repeating "Add a picture" over nothing was the same ask three times.
-      expect(find.text('Pictures'), findsNothing);
-      expect(
-        find.byKey(const ValueKey('character-strip-add-tile')),
-        findsNothing,
-      );
-      expect(
+      final initials = tester.getRect(find.text('MP'));
+      final corner = tester.getRect(
         find.byKey(const ValueKey('character-header-add-picture')),
-        findsOneWidget,
       );
+      expect(initials.overlaps(corner), isFalse);
+      expect(find.byKey(const ValueKey('character-add-photo')), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('character-header-describe')),
-        findsOneWidget,
+        tester.getTopLeft(find.byKey(const ValueKey('character-add-photo'))).dy,
+        greaterThan(initials.bottom),
       );
+    });
+
+    testWidgets('the card\'s buttons share both edges', (tester) async {
+      await pumpProfile(tester, testCharacter(hasPhoto: false));
+
+      final photo = tester.getRect(
+        find.byKey(const ValueKey('character-add-photo')),
+      );
+      final draw = tester.getRect(
+        find.byKey(const ValueKey('character-generate-portrait')),
+      );
+      expect(draw.left, photo.left);
+      expect(draw.right, photo.right);
+    });
+
+    testWidgets('the three actions are one row of equal tiles', (tester) async {
+      await pumpProfile(tester, testCharacter(hasPhoto: false));
+
+      final tiles = [
+        for (final key in [
+          'character-profile-call',
+          'character-profile-edit',
+          'character-profile-use',
+        ])
+          tester.getRect(find.byKey(ValueKey(key))),
+      ];
+      for (final tile in tiles.skip(1)) {
+        expect(tile.top, tiles.first.top);
+        expect(tile.height, tiles.first.height);
+        expect(tile.width, closeTo(tiles.first.width, 0.01));
+      }
     });
 
     testWidgets('adding a photo says whose photos may be added', (

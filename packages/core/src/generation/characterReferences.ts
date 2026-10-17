@@ -40,11 +40,10 @@ export function shouldGenerateCharacterReferences(input: CreateProjectInput, pla
 }
 
 /**
- * The most characters a cover-only book draws sheets for. A constant rather
- * than the image adapter's own reference budget, because every caller of the
- * sheet pass — the book pass, the cover job, a chat picture — has to compute
- * the same cast or the settled set reads as incomplete to one of them and the
- * cast is drawn again. Three is the smallest budget a supported model takes.
+ * The most characters a cover-only book's cover depicts, and so the most saved
+ * portraits it attaches. A constant rather than the image adapter's own
+ * reference budget, because the cover job and its reference selection have to
+ * compute the same cast. Three is the smallest budget a supported model takes.
  */
 export const COVER_CAST_MAX = 3;
 
@@ -66,24 +65,22 @@ export function coverCastCharacters(input: CreateProjectInput, plan: BookPlan): 
  * need anyone. (A short book whose draft decided who its pictures show draws
  * that cast instead — `characterReferenceCastFromDraft`, stored on the plan
  * version by the worker; this is the answer wherever nothing was decided.)
- * A cover-only book draws only who its cover depicts. It used to
- * draw everyone too — "Tiko and the Quiet Sea" (2026-10-01) rendered four
- * sheets, then attached three of them, to a cover whose concept showed one
- * tortoise: five image calls ($0.195) against the 45 credits the cover is
- * priced at. And a cover-cast character the reader saved with a portrait
- * draws no sheet at all — the cover attaches the portrait itself
- * (`coverPortraitCharacters`), one generation from the face the reader knows
- * instead of two.
+ * A cover-only book draws none. A sheet keeps a character looking like itself
+ * from one picture to the next (`CHARACTER_REFERENCE_MIN_PICTURES`), and the
+ * cover is the only picture: it drew everyone at first — "Tiko and the Quiet
+ * Sea" (2026-10-01) rendered four sheets for a cover of one tortoise — then
+ * only who the cover names, which still bought "The Last Table" (2026-10-17)
+ * two sheets for its one cover, $0.078 of its $0.129. A sheet is drawn from
+ * the same words the cover would be, so it gave the cover nothing to copy. A
+ * cover-cast character the reader saved with a portrait still reaches the
+ * cover: it attaches the portrait itself (`coverPortraitCharacters`), which
+ * never needed a sheet.
  */
 export function characterReferenceCast(input: CreateProjectInput, plan: BookPlan): Character[] {
-  if (!shouldGenerateCharacterReferences(input, plan)) {
+  if (!shouldGenerateCharacterReferences(input, plan) || !input.mediaSettings.fullIllustrations) {
     return [];
   }
-  if (input.mediaSettings.fullIllustrations) {
-    return plan.characters;
-  }
-  const portraits = new Set(coverPortraitCharacters(input, plan).map(({ character }) => character));
-  return coverCastCharacters(input, plan).filter((character) => !portraits.has(character));
+  return plan.characters;
 }
 
 /** How many of a book's drawn pictures have to name a character before a sheet is drawn for them. */

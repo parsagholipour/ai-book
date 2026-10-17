@@ -72,13 +72,13 @@ describe("loadPricingDrivers", () => {
         { kind: "LOCAL_PATCH", affectedPageIndexes: [3, 4], project: { mediaSettings: null } },
         // 3 × 40 per page at the fast rate.
         { kind: "PAGE_REWRITE", affectedPageIndexes: [1, 2, 3], project: { mediaSettings: { modelTier: "fast" } } },
-        // One image at 45, even though the operation names five pages.
+        // One image at 70, even though the operation names five pages.
         { kind: "ADD_IMAGE", affectedPageIndexes: [1, 2, 3, 4, 5], project: { mediaSettings: null } },
-        // One image at the premium rate, 85.
+        // One image at the premium rate, 130.
         { kind: "ADD_IMAGE", affectedPageIndexes: [7], project: { mediaSettings: { modelTier: "premium" } } }
       ],
-      // 45 + 120 + 45 + 85 — what the ledger charged for exactly these edits.
-      chargedCredits: 295
+      // 45 + 120 + 70 + 130 — what the ledger charged for exactly these edits.
+      chargedCredits: 365
     });
 
     const report = await loadPricingDrivers(resolveWindow(30), creditPricing());
@@ -90,22 +90,22 @@ describe("loadPricingDrivers", () => {
     expect(report.drivers.imageGenerationPremium).toBe(1);
     expect(report.drivers.imageGenerationFast).toBe(0);
     expect(report.edits).toBe(4);
-    // 1×25 + 2×10 + 3×40 + 1×45 + 1×85 at the default prices.
-    expect(report.coverage.modelledCredits).toBe(295);
-    expect(report.coverage.chargedCredits).toBe(295);
+    // 1×25 + 2×10 + 3×40 + 1×70 + 1×130 at the default prices.
+    expect(report.coverage.modelledCredits).toBe(365);
+    expect(report.coverage.chargedCredits).toBe(365);
     expect(report.coverage.accuracyPercent).toBe(100);
   });
 
   it("prices an ADD_IMAGE on a book with no tier recorded at the balanced rate", async () => {
     primeWindow({
       edits: [{ kind: "ADD_IMAGE", affectedPageIndexes: [12], project: null }],
-      chargedCredits: 45
+      chargedCredits: 70
     });
 
     const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
 
     expect(report.drivers.imageGeneration).toBe(1);
-    expect(report.coverage.modelledCredits).toBe(45);
+    expect(report.coverage.modelledCredits).toBe(70);
     expect(report.coverage.accuracyPercent).toBe(100);
   });
 

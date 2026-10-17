@@ -1,5 +1,5 @@
 import type { ManuscriptMatterHint } from "./manuscriptMatter.js";
-import { replaceMarkupElements, throughLastTag, type MarkupElementKind } from "./markupScan.js";
+import { markupElements, replaceMarkupElements, throughLastTag, type MarkupElementKind } from "./markupScan.js";
 
 type EpubMatterBlock = { html: string; hint?: ManuscriptMatterHint | undefined };
 type Boundary = { start: number; end: number; hint?: ManuscriptMatterHint | undefined };
@@ -63,6 +63,19 @@ const CREDIT_PARAGRAPH: readonly MarkupElementKind[] = [
   }
 ];
 
+/**
+ * The compiler's title-page foot, `<div class="book-title-page__publication">…</div>`
+ * (`bookMatterPages.ts`, since 2026-10-17): the © page's lines, printed under
+ * the title. Its paragraphs hold no `div`, so the first close is its own.
+ */
+const TITLE_PAGE_PUBLICATION: readonly MarkupElementKind[] = [
+  {
+    open: /<div\b[^>]*>/gi,
+    close: "</div>",
+    accepts: (tag) => /\bclass\s*=\s*(["'])book-title-page__publication\1/i.test(tag[0])
+  }
+];
+
 /** `<body\b[^>]*>([\s\S]*)<\/body>`: everything from the first body tag to the last close after it. */
 function bodyContent(document: string): string | undefined {
   const tag = /<body\b[^>]*>/i.exec(throughLastTag(document));
@@ -120,7 +133,16 @@ export function epubMatterBlocks(html: string): EpubMatterBlock[] {
     if (/\bclass\s*=\s*["'][^"']*\b(?:book-title-page|book-matter-sheet__publication)\b/.test(page)) {
       page = replaceMarkupElements(page, CREDIT_PARAGRAPH, () => " ");
     }
-    blocks.push({ html: page, hint: boundary.hint });
+    // A title page with publication lines at its foot is two pages to the
+    // import: the title page, whose every line the house title page reprints,
+    // and the © page, whose holder, rights line, imprint and ISBN are lifted.
+    const foot = boundary.hint === "title" ? markupElements(page, TITLE_PAGE_PUBLICATION).next().value : undefined;
+    if (foot) {
+      blocks.push({ html: page.slice(0, foot.start) + page.slice(foot.end), hint: "title" });
+      blocks.push({ html: page.slice(foot.start, foot.end), hint: "copyright" });
+    } else {
+      blocks.push({ html: page, hint: boundary.hint });
+    }
     offset = boundary.end;
   }
   if (offset < body.length) blocks.push({ html: body.slice(offset) });

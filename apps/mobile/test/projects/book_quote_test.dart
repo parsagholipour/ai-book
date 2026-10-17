@@ -34,12 +34,12 @@ void main() {
   test('a picture book is priced as its writing and pictures alone', () {
     // Balanced, drawn cover: base + pages, two pictures for every five pages,
     // at most 12. No export line, whoever approves it.
-    expect(kids(5), 350 + 5 * 8 + 2 * 45 + 45);
-    expect(kids(10), 350 + 10 * 8 + 4 * 45 + 45);
-    expect(kids(12), 350 + 12 * 8 + 5 * 45 + 45);
-    expect(kids(16), 350 + 16 * 8 + 6 * 45 + 45);
-    expect(kids(24), 350 + 24 * 8 + 10 * 45 + 45);
-    expect(kids(30), 350 + 30 * 8 + 12 * 45 + 45);
+    expect(kids(5), 250 + 5 * 8 + 2 * 70 + 70);
+    expect(kids(10), 250 + 10 * 8 + 4 * 70 + 70);
+    expect(kids(12), 250 + 12 * 8 + 5 * 70 + 70);
+    expect(kids(16), 250 + 16 * 8 + 6 * 70 + 70);
+    expect(kids(24), 250 + 24 * 8 + 10 * 70 + 70);
+    expect(kids(30), 250 + 30 * 8 + 12 * 70 + 70);
   });
 
   test('a 30-page story is priced the same way', () {
@@ -49,9 +49,9 @@ void main() {
       pages: 30,
       illustrated: illustrated,
     );
-    expect(story(illustrated: false), 350 + 30 * 8);
+    expect(story(illustrated: false), 250 + 30 * 8);
     // Pages 1, 8, 16 and 24, and a drawn cover.
-    expect(story(illustrated: true), 350 + 30 * 8 + 4 * 45 + 45);
+    expect(story(illustrated: true), 250 + 30 * 8 + 4 * 70 + 70);
   });
 
   test('a price list that still names the old unlock adds nothing', () {

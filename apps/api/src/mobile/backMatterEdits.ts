@@ -1,4 +1,5 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
+import { bookUpdateMetadata } from "./bookUpdateMetadata.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { applyPresentationPreference } from "./presentationEdits.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
@@ -20,12 +21,12 @@ export async function applyBackMatterEdit(
 ): Promise<MobileProjectChatMessageRecord> {
   const includeSources = intent.backMatter?.includeSources ?? false;
   const current = includeSourcesPreference(project.mediaSettings);
-  const reply = (content: string) =>
+  const reply = (content: string, rebuilt?: { contentRevision: number }) =>
     createAssistantChatMessage({
       projectId: project.id,
       parentId,
       content,
-      metadata: { intent, charged: false, backMatter: { includeSources } }
+      metadata: { intent, charged: false, backMatter: { includeSources }, ...bookUpdateMetadata(rebuilt?.contentRevision) }
     });
 
   // Both directions, because the compiler prints only sources that carry a URL:
@@ -51,11 +52,12 @@ export async function applyBackMatterEdit(
     return reply("I can change that once this book has finished generating.");
   }
 
-  await applyPresentationPreference({ ...project, currentPlanId: project.currentPlanId }, { includeSources });
+  const rebuilt = await applyPresentationPreference({ ...project, currentPlanId: project.currentPlanId }, { includeSources });
 
   return reply(
     includeSources
       ? "Done - the sources list is back at the end of your book and I’m refreshing the exports. This one’s free."
-      : "Done - I removed the sources list from the end of your book and I’m refreshing the exports. This one’s free."
+      : "Done - I removed the sources list from the end of your book and I’m refreshing the exports. This one’s free.",
+    rebuilt
   );
 }

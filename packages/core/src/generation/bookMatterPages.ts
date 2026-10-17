@@ -24,9 +24,9 @@ export type BookMatterForCompile = Omit<BookMatter, "copyrightYear"> & {
 };
 
 export type FormattedBookMatter = {
-  /** Every book's title page — after the cover when there is one. */
+  /** Every book's title page — after the cover when there is one — with the publication details at its foot. */
   titlePage: string;
-  /** The dedication and the publication details, on one sheet. `""` when it would be empty. */
+  /** The dedication, on a sheet of its own. `""` without one. */
   matterSheet: string;
   /** The About the Author back matter. `""` without a biography. */
   aboutAuthor: string;
@@ -41,14 +41,18 @@ export type FormattedBookMatter = {
  * `@page pdf-front`, which is counted but unnumbered, so only the book's first
  * sheet ever resets the page counter and `printedPageOffset` stays a `1 : 0`.
  *
- * **The dedication and the publication details share one sheet**, the
- * dedication in its upper third and the publication lines at its foot. Two
- * sheets is the print convention, but a twelve-page picture book should not
- * grow by four; one sheet is how many illustrated books set it.
+ * **The publication details sit at the title page's foot**, where a
+ * publisher's imprint goes: the © line, "All rights reserved.", the imprint,
+ * the ISBN and the free tier's credit. They used to share a sheet with the
+ * dedication, so a book with no dedication spent a whole sheet on two © lines
+ * ("The Last Table", 2026-10-17) while the title page above it stood mostly
+ * empty. The title stack clips its own tail when an absurd title overflows,
+ * never the foot (`book-title-page__stack` in `pdfCss.ts`).
  *
- * **The free tier's credit goes where it costs no page**: at the foot of the
- * matter sheet when there is one, or the foot of the title page — where a
- * publisher's imprint sits — when there is not.
+ * **A dedication keeps a sheet of its own**, in its upper third: it is the one
+ * personal page of the matter, and conventionally set alone. A plan with a
+ * blank title prints no title page, so its publication details stay on that
+ * sheet, at its foot, as every book's did before.
  *
  * Everything the reader typed is escaped here, as HTML in the front matter and
  * as markdown text in the back, so no field can open a tag, a link or a
@@ -71,18 +75,23 @@ export function formatBookMatter(input: {
   // `\r` is a line ending to marked, so a dedication written past the schema's
   // normalisation would end the block at "\r\r" exactly as "\n\n" would.
   const dedication = matter?.dedication?.replace(/\r\n?/g, "\n").trim();
-  const hasSheet = publication.length > 0 || Boolean(dedication);
   const credit = matter?.madeWithCredit ? labels.madeWithTomeza : undefined;
+  const title = singleLine(input.title) ?? "";
+  // A blank title prints no title page, so its foot has nowhere to stand: that
+  // book keeps the sheet the dedication and the details always shared.
+  const onSheet = title ? { publication: [], credit: undefined } : { publication, credit };
+  const hasSheet = Boolean(dedication) || onSheet.publication.length > 0;
   return {
     titlePage: formatTitlePage({
-      title: singleLine(input.title) ?? "",
+      title,
       subtitle: singleLine(input.subtitle),
       authorName,
       afterCover: input.afterCover,
-      foot: hasSheet ? undefined : credit,
+      publication,
+      credit,
       labels
     }),
-    matterSheet: hasSheet ? formatMatterSheet(dedication, publication, credit) : "",
+    matterSheet: hasSheet ? formatMatterSheet(dedication, onSheet.publication, onSheet.credit) : "",
     aboutAuthor: formatAboutAuthor(matter, labels)
   };
 }
@@ -136,34 +145,52 @@ function singleLine(text: string | undefined): string | undefined {
   return text?.replace(/[\t\n\v\f\r \u0085\u2028\u2029]+/g, " ").trim() || undefined;
 }
 
+/**
+ * One HTML block, like the matter sheet. A title page with a foot wraps its
+ * title, subtitle and byline in a stack, so an overflowing title clips inside
+ * the stack and the © line below it always prints; one without a foot is
+ * written exactly as it was before the foot existed.
+ */
 function formatTitlePage(input: {
   title: string;
   subtitle: string | undefined;
   authorName: string | undefined;
   afterCover: boolean;
-  foot: string | undefined;
+  publication: readonly string[];
+  credit: string | undefined;
   labels: MarkdownLabels;
 }): string {
   const { title, subtitle } = input;
   if (!title) return "";
   const modifier = input.afterCover ? " book-title-page--after-cover" : "";
-  return [
-    `<section class="book-title-page${modifier}">`,
-    `  <h1 class="book-title-page__title">${escapeHtml(title)}</h1>`,
-    ...(subtitle ? [`  <p class="book-title-page__subtitle">${escapeHtml(subtitle)}</p>`] : []),
-    ...(input.authorName
-      ? [`  <p class="book-title-page__byline">${escapeHtml(`${input.labels.by} ${input.authorName}`)}</p>`]
-      : []),
-    ...(input.foot ? [`  ${CREDIT_ON_TITLE_PAGE}${escapeHtml(input.foot)}</p>`] : []),
-    "</section>"
-  ].join("\n");
+  const stack = [
+    `<h1 class="book-title-page__title">${escapeHtml(title)}</h1>`,
+    ...(subtitle ? [`<p class="book-title-page__subtitle">${escapeHtml(subtitle)}</p>`] : []),
+    ...(input.authorName ? [`<p class="book-title-page__byline">${escapeHtml(`${input.labels.by} ${input.authorName}`)}</p>`] : [])
+  ];
+  const foot = [
+    ...input.publication.map((line) => `<p>${escapeHtml(line)}</p>`),
+    ...(input.credit ? [`${CREDIT_ON_TITLE_PAGE}${escapeHtml(input.credit)}</p>`] : [])
+  ];
+  const body =
+    foot.length === 0
+      ? stack.map((line) => `  ${line}`)
+      : [
+          `  ${TITLE_PAGE_STACK_OPEN}`,
+          ...stack.map((line) => `    ${line}`),
+          "  </div>",
+          `  ${TITLE_PAGE_PUBLICATION_OPEN}`,
+          ...foot.map((line) => `    ${line}`),
+          "  </div>"
+        ];
+  return [`<section class="book-title-page${modifier}">`, ...body, "</section>"].join("\n");
 }
 
 /**
  * One HTML block: no line inside it may be blank, or marked ends the block
  * there and reads the rest as markdown.
  */
-function formatMatterSheet(dedication: string | undefined, publication: string[], credit: string | undefined): string {
+function formatMatterSheet(dedication: string | undefined, publication: readonly string[], credit: string | undefined): string {
   const paragraphs = dedication ? dedication.split(/\n{2,}/).map((paragraph) => paragraph.split("\n")) : [];
   // A long dedication is set smaller, so the sheet the fitter counts is the one that prints.
   const { className } = matterSheetLayout({ dedication: paragraphs, publication, credit });
@@ -239,12 +266,20 @@ function biographyParagraphs(text: string): string[][] {
 const TITLE_PAGE_OPEN = '<section class="book-title-page';
 const TITLE_PAGE_AFTER_COVER_OPEN = '<section class="book-title-page book-title-page--after-cover">';
 const TITLE_PAGE_BYLINE = '<p class="book-title-page__byline">';
-/** Followed by a size modifier when the dedication is long (`matterSheetLayout`). */
+/** Around the title, subtitle and byline, only when the title page has a foot. */
+const TITLE_PAGE_STACK_OPEN = '<div class="book-title-page__stack">';
+/** The title page's foot: the publication lines and the credit. */
+const TITLE_PAGE_PUBLICATION_OPEN = '<div class="book-title-page__publication">';
+/**
+ * Followed by a size modifier when the dedication is long (`matterSheetLayout`).
+ * A book compiled before 2026-10-17 also carries its publication lines here,
+ * and every reader below still reads that shape.
+ */
 const MATTER_SHEET_OPEN = '<section class="book-matter-sheet';
 /** Followed by a size modifier when the biography is long (`aboutAuthorLayout`), then `"></div>`. */
 const ABOUT_AUTHOR_OPEN = '<div class="book-about-author';
 const ABOUT_AUTHOR_CLOSE = '"></div>';
-/** The free tier's credit, in each of the two places `formatBookMatter` sets it. */
+/** The free tier's credit: on the title page now, and on the matter sheet of a book compiled before 2026-10-17. */
 const CREDIT_ON_MATTER_SHEET = '<p class="book-matter-sheet__credit">';
 const CREDIT_ON_TITLE_PAGE = '<p class="book-title-page__imprint">';
 

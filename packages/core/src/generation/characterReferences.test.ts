@@ -197,8 +197,10 @@ describe("the cast a book draws reference sheets for", () => {
   const tiko = tikoPlan("A gentle cover showing Tiko, a small moss-green tortoise, looking at the calm sea at dusk.");
   const names = (characters: Array<{ name: string }>) => characters.map((entry) => entry.name);
 
-  it("draws only who a cover-only book's cover shows", () => {
-    expect(names(characterReferenceCast(coverOnly, tiko))).toEqual(["Tiko"]);
+  // "The Last Table" (2026-10-17): a cover-only story whose cover named its two
+  // leads drew two sheets for its one picture, $0.078 of the book's $0.129.
+  it("draws no sheet for a cover-only book, whoever its cover shows", () => {
+    expect(characterReferenceCast(coverOnly, tiko)).toEqual([]);
     expect(names(coverCastCharacters(coverOnly, tiko))).toEqual(["Tiko"]);
   });
 
@@ -215,8 +217,9 @@ describe("the cast a book draws reference sheets for", () => {
 
   it("holds the cover cast to a constant every caller agrees on", () => {
     const crowded = tikoPlan("Tiko, Pip, Nella and Gull together on the sand.");
-    expect(names(characterReferenceCast(coverOnly, crowded))).toHaveLength(COVER_CAST_MAX);
-    expect(names(characterReferenceCast(coverOnly, crowded))).toEqual(["Tiko", "Pip", "Nella"]);
+    expect(names(coverCastCharacters(coverOnly, crowded))).toHaveLength(COVER_CAST_MAX);
+    expect(names(coverCastCharacters(coverOnly, crowded))).toEqual(["Tiko", "Pip", "Nella"]);
+    expect(characterReferenceCast(coverOnly, crowded)).toEqual([]);
   });
 
   it("draws no sheet for a cover-cast character the reader saved with artwork", () => {

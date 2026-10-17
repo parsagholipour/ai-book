@@ -14,11 +14,12 @@ part of 'character_editor_sheet.dart';
 /// **The seam is the cluster's own.** It owns the four pieces of state nothing
 /// else writes ([_savedCharacterMentions], [_insertedMentionTextById],
 /// [_attachedMentions], [_mentionQuery]), plus the two derived from the
-/// description's cap, and borrows exactly three things back from the sheet: the
+/// description's cap, and borrows exactly four things back from the sheet: the
 /// controller whose text every answer here is about, the saved row (so a
-/// character cannot mention itself), and whether a save is in flight. Those are
-/// the abstract members below, and their small number is what says the split is
-/// along a real boundary rather than at a line count.
+/// character cannot mention itself), whether a save is in flight, and the place
+/// a refusal is said. Those are the abstract members below, and their small
+/// number is what says the split is along a real boundary rather than at a line
+/// count.
 mixin _CharacterEditorMentions on ConsumerState<_CharacterEditorSheet> {
   /// The description every answer in here is about. Declared by the sheet,
   /// because the name field, the save and the build read it too.
@@ -32,6 +33,10 @@ mixin _CharacterEditorMentions on ConsumerState<_CharacterEditorSheet> {
   /// Whether a save or a suggestion call is in flight, which is what greys the
   /// suggestion chips out.
   bool get _busy;
+
+  /// Says why something the reader did was refused, where the sheet does not
+  /// cover it.
+  void _showNotice(String title, String message);
 
   /// The stored links this sheet may treat as characters, and the one place it
   /// decides that.
@@ -288,13 +293,10 @@ mixin _CharacterEditorMentions on ConsumerState<_CharacterEditorSheet> {
     // Once per rename: the tokens are respelled above, so the next poll finds
     // nothing renamed and the field's own error carries it from here.
     if (!wasOver && _overDescriptionLimit(text)) {
-      ScaffoldMessenger.of(context).showAppSnackBar(
-        const SnackBar(
-          content: Text(
-            'A character you mentioned was renamed and the description is now '
+      _showNotice(
+        'The description is too long',
+        'A character you mentioned was renamed and the description is now '
             'too long. Shorten it to save.',
-          ),
-        ),
       );
     }
     return true;
@@ -391,9 +393,7 @@ mixin _CharacterEditorMentions on ConsumerState<_CharacterEditorSheet> {
   /// the half-typed `@token` are left exactly as the reader had them, so a
   /// silent refusal would look like a tap that missed.
   void _refuseMention(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showAppSnackBar(SnackBar(content: Text(message)));
+    _showNotice('Could not add that mention', message);
   }
 
   /// How far [text] is past the description's cap; 0 while it fits. The

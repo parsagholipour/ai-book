@@ -37,13 +37,13 @@ import { prisma } from "@book-maker/db";
 export async function applyPresentationPreference(
   project: ProjectForChat & { currentPlanId: string },
   patch: Record<string, unknown>
-): Promise<void> {
+): Promise<{ contentRevision: number }> {
   // The preference, EDITING transition, revision bump and durable outbox row
   // are one commit. A detached repair for the previous presentation therefore
   // either commits before this transaction or loses its publication claim;
   // there is never a committed EDITING revision with no policy source for the
   // stranded-generation reconciler to recover.
-  const generationJob = await prisma.$transaction(async (tx) => {
+  const { generationJob, contentRevision } = await prisma.$transaction(async (tx) => {
     // This UPDATE is the row lock and the intended revision bump. At
     // READ COMMITTED, PostgreSQL waits for a concurrent updater and applies
     // the increment to the row version that updater committed; RETURNING then
@@ -118,7 +118,7 @@ export async function applyPresentationPreference(
       contentRevision: claimed.contentRevision,
       ...compilePolicyPayload(policy, "EDITING")
     };
-    return enqueueGenerationJob({
+    const generationJob = await enqueueGenerationJob({
       projectId: project.id,
       type: "COMPILE_EXPORT",
       payload,
@@ -133,6 +133,8 @@ export async function applyPresentationPreference(
       transaction: tx,
       dispatch: false
     });
+    return { generationJob, contentRevision: claimed.contentRevision };
   });
   await dispatchGenerationJob(generationJob.id);
+  return { contentRevision };
 }

@@ -210,6 +210,23 @@ adds nothing. A children's story is a picture book, quoted `pictureBookIllustrat
   server rules on the request anyway (422 `QUALITY_TIER_UNAVAILABLE`). Build awaits billing rather
   than peeking, since nothing on that screen has to be watching it.
 
+## A free change's reply ends with the book
+
+- **A reply that rebuilt the book carries the book, and it says "ready" only once that revision is
+  published.** A free change — the author name, the title, the Sources list, the chapter headings,
+  a page design, the Tomeza credit — has no operation card, so its "Done" reply used to be the last
+  thing in the chat while the reprint ran, and the progress, if anywhere, was on the plan bubble
+  scrolled far above (Parsa, 2026-10-17: "so the user understands the new book is ready"). The
+  server stamps such a reply `bookUpdate: { contentRevision }` (`apps/api/src/mobile/bookUpdateMetadata.ts`),
+  the revision the rebuild was committed at, and both chats draw `ChatBookUpdateRow` at the foot of
+  that reply: "Updating your book…" with a moving bar, then "Your book is ready with this change."
+  and Open book. Ready means a settled status whose PDF is available at that revision or later
+  (`chatBookUpdateState`), so a status read before the change never offers the old file; a failed
+  book draws no row. Only the transcript's last reply carries it (`chatBookUpdateMessage`): an
+  older one would sit above what the chat said since, and a later paid edit's card owns the book
+  from then on. While it is updating the book chat leaves out its live progress card, one busy
+  signal at a time. `chat_book_update_test.dart`, `creation_chat_book_update_test.dart`.
+
 ## Chat bubbles are light markdown
 
 **A chat reply is light markdown on both sides of the wire, and neither side may forget the other.**

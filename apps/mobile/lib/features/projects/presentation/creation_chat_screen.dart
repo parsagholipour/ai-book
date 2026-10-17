@@ -49,6 +49,7 @@ import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
 import 'ai_content_report.dart';
+import 'behind_the_book.dart';
 import 'branch_navigator.dart';
 import 'chat_assistant_avatar.dart';
 import 'chat_composer_field.dart';

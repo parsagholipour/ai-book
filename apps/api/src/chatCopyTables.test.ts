@@ -178,7 +178,7 @@ describe("composed chat replies carry English's specifics", () => {
   });
 
   it("English quotes the screen's and the write's own sentences", () => {
-    expect(english.restricted).toBe("I can’t print that dedication and About the Author text. ZQXREASON");
+    expect(english.restricted).toBe("Sorry, I can’t print that dedication and About the Author text. ZQXREASON");
     expect(english.busy).toBe("ZQXREASON");
     expect(english.isbnRefused).toBe("ZQXREASON");
     expect(Object.values(english).join(" ")).not.toMatch(/\{\w+\}|undefined/);

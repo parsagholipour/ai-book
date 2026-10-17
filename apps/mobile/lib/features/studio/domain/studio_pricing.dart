@@ -41,10 +41,10 @@ int estimateStudioAssistCredits({
   switch (kind) {
     case LongAssistKind.illustrate:
       return tierCreditRate(creditCosts, 'imageGeneration', qualityPreset, {
-        'fast': 45,
-        'balanced': 45,
-        'premium': 85,
-        'ultra': 85,
+        'fast': 70,
+        'balanced': 70,
+        'premium': 130,
+        'ultra': 130,
       });
     case LongAssistKind.draftChapter:
       return studioDraftPages(targetWords) *

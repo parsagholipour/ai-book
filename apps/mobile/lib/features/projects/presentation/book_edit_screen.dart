@@ -384,7 +384,7 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
                 message: 'This book has no generated pages.',
                 icon: Icons.edit_off_outlined,
               )
-            : _buildEditor(context, book),
+            : _buildEditor(context, book, detail),
       ),
     );
   }
@@ -398,10 +398,15 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
   /// Hands the open page to the chat as a draft the reader reviews and sends.
   /// Unsaved edits stay here, under the chat, until the reader comes back.
   void _askChat(BookEditAsk ask, MobileEditableBookPage page) {
-    final excerpt = bookEditExcerpt(_markdownControllers[page.id]!.text);
+    final value = _markdownControllers[page.id]!.value;
+    final selection = value.selection;
+    final hasSelection = selection.isValid && !selection.isCollapsed;
+    final text = hasSelection ? selection.textInside(value.text) : value.text;
     context.push(
       '/projects/${widget.projectId}/chat',
-      extra: ProjectChatLaunch(draft: ask.draft(excerpt)),
+      extra: ProjectChatLaunch(
+        draft: ask.draft(text, isSelection: hasSelection),
+      ),
     );
   }
 
@@ -420,7 +425,11 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
     return status ?? detail;
   }
 
-  Widget _buildEditor(BuildContext context, MobileEditableBook book) {
+  Widget _buildEditor(
+    BuildContext context,
+    MobileEditableBook book,
+    MobileProjectDetail? detail,
+  ) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final selectedPage = book.pages.firstWhere(
@@ -511,7 +520,10 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
         // chips are for the moment the reader stops and wonders what else is
         // possible.
         if (!keyboardOpen)
-          BookEditAskBar(onPick: (ask) => _askChat(ask, selectedPage)),
+          BookEditAskBar(
+            project: detail,
+            onPick: (ask) => _askChat(ask, selectedPage),
+          ),
       ],
     );
   }

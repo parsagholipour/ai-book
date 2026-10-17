@@ -157,7 +157,7 @@ export async function enrichAdvisorWithAi(
       {
         role: "system",
         content:
-          "You are a practical book packaging advisor. Improve the recipe, follow-up suggestions, warnings, book-shape preview, rationale, and title suggestions for creators, teachers, coaches, consultants, adult fiction writers, and child/family story writers. Do not mention AI models, providers, billing internals, or safety-system internals."
+          "You are a practical book packaging advisor. Improve the recipe, follow-up suggestions, warnings, book-shape preview, rationale, and title suggestions for creators, teachers, coaches, consultants, adult fiction writers, and child/family story writers. Do not mention AI models, providers, billing internals, or safety-system internals. Keep every real person the user named - an athlete, a celebrity, any public figure - under their own name in every recipe field, fiction and romance included; never turn one into an invented stand-in, add a rule against using their name, or warn that the book uses a real person, unless the user asked for a fictional version."
       },
       {
         role: "user",

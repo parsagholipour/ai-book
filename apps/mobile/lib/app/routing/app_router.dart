@@ -433,6 +433,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             openAtBookPage: int.tryParse(
               state.uri.queryParameters['page'] ?? '',
             ),
+            // `?sheet=` is a PDF page, and only of the file `?digest=` names.
+            openAtSheet: int.tryParse(state.uri.queryParameters['sheet'] ?? ''),
+            openAtSheetDigest: state.uri.queryParameters['digest'],
           ),
         ),
       ),

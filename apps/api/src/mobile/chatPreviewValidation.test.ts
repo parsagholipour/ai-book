@@ -66,12 +66,21 @@ describe("citation previews", () => {
           saved = (await enrichCreationTurnWithSearch({ textModel: model, research: { search: async () => { throw new Error("Unexpected web search"); } } }, request, deterministicCreationTurn(request))).assistantMessage;
         } else if (kind === "router") {
           saved = (await classifyProjectChatMessage({ message: "What is the archive code?", stage: "complete", pages: [],
-            textModel: model, sourceService: sources, ...observer })).assistantMessage;
+            textModel: model, sourceService: sources,
+            ...(streaming ? { onRoutingStart: () => { previews.push(""); } } : {}) })).assistantMessage;
         } else {
           saved = await generateGroundedProjectAnswer(project(), "What is the archive code?", "Unavailable", model, undefined, [], sources, observer.onAssistantText);
         }
         expect(saved).toBe(validated);
-        if (streaming) {
+        if (kind === "router") {
+          // The router's reply is a draft the saved reply replaces, so it only
+          // opens the stream and never previews a word, citations included.
+          expect(previews).toEqual(streaming ? [""] : []);
+          for (const call of calls) {
+            expect(call).not.toHaveProperty("onToolCallProgress");
+            expect(call).not.toHaveProperty("onOutputTextChunk");
+          }
+        } else if (streaming) {
           expect(previews).toContain(validated);
           expect(previews.some((text) => text.includes(stale))).toBe(false);
         } else {
@@ -130,6 +139,7 @@ describe("grounded answer preview lifetime", () => {
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(500);
     expect(await response).toBe("Replacement");
-    expect(previews).toEqual(["", "Abandoned", "", "Replacement"]);
+    // The replacement takes over the abandoned text without blanking it first.
+    expect(previews).toEqual(["", "Abandoned", "Replacement"]);
   });
 });

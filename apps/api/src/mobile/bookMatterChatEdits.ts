@@ -18,6 +18,7 @@ import {
   withRecoverableNetworkRetry,
   type BookMatterChatCurrent,
   type BookMatterChatContext,
+  type BookMatterChatProfile,
   type BookMatterChatDecision,
   type BookMatterChatField,
   type ConversationLanguage,
@@ -42,6 +43,8 @@ import {
   type BookMatterProject,
   type BookMatterReprint
 } from "./bookMatterEdits.js";
+import { authorDefaultsForNewBook } from "./authorProfile.js";
+import { bookUpdateMetadata } from "./bookUpdateMetadata.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { screenMatterFields } from "./matterContentScreen.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
@@ -88,6 +91,13 @@ import { localizedMatterChatReplies } from "./bookMatterChatReplies.js";
  *
  * An author's book takes its byline and dedication from the Writing Studio, so
  * those two are left out of the patch and the reply says where they are set.
+ *
+ * The composer is also shown the reader's saved author profile, as a new book
+ * would copy it (`savedAuthorProfile`): a book copies the profile only when it
+ * is created, so one made before the profile was filled in asked the reader to
+ * type the profile out again ("Whatever I added in my profile" → "I didn't find
+ * a change…", 2026-10-17). Its values ground a change like the reader's words,
+ * and a message pointing at the profile asks for exactly what it holds.
  */
 
 /** Per-attempt budget, the router's (`CLASSIFIER_CALL_BUDGET_MS`). */
@@ -147,7 +157,10 @@ export async function applyBookMatterChatEdit(options: {
     const leftOver = remainderOf(bookMatterMessageHasSeparateRequest(message) ? { unhandledUnquoted: true } : {}, replies);
     return reply(`${replies.titleAnswer}${leftOver.sentence}`, leftOver.metadata);
   }
-  const matterProject = await ownedBookMatterProject(options.userId, project.id);
+  const [matterProject, authorProfile] = await Promise.all([
+    ownedBookMatterProject(options.userId, project.id),
+    savedAuthorProfile(options.userId)
+  ]);
   if (!matterProject) {
     return reply(replies.text("notFound"));
   }
@@ -177,6 +190,7 @@ export async function applyBookMatterChatEdit(options: {
       alreadyAskedOnce: questionSpent,
       printedFrontMatter: frontMatterForPrompt(numberingForProject(project)),
       lastTurnFields: matterFieldsOfLastReply(options.activeMessages),
+      ...(authorProfile ? { authorProfile } : {}),
       // The turn that spends the one question: the request it was about names
       // the field its answer ("978…", "Lantern") does not.
       ...(questionSpent && options.pendingRequest.trim() !== message.trim()
@@ -235,7 +249,7 @@ export async function applyBookMatterChatEdit(options: {
     return reply(replies.text("failed"));
   }
 
-  let outcome: { reprint: BookMatterReprint; cover: BookMatterCover };
+  let outcome: { reprint: BookMatterReprint; cover: BookMatterCover; contentRevision?: number };
   try {
     outcome = await applyBookMatterPatch(matterProject, parsed.data);
   } catch (error) {
@@ -252,6 +266,7 @@ export async function applyBookMatterChatEdit(options: {
   const studio = leftToStudio ? ` ${replies.text("studio")}` : "";
   return reply(`${replies.change(after, current, year, outcome)}${studio}${remainder}`, {
     bookMatterEdit: { before, after },
+    ...bookUpdateMetadata(outcome.contentRevision),
     ...remainderMetadata
   });
 }
@@ -304,7 +319,8 @@ export async function composeBookMatterEdit(
     current: input.current,
     bookLanguage: input.bookLanguage,
     ...(originalRequest ? { originalRequest } : {}),
-    ...(lastTurnFields?.length ? { lastTurnFields } : {})
+    ...(lastTurnFields?.length ? { lastTurnFields } : {}),
+    ...(input.authorProfile ? { profile: input.authorProfile } : {})
   };
   const candidates = bookMatterProseReviewCandidates(result.data, context);
   if (candidates.length) {
@@ -382,6 +398,29 @@ function remainderOf(
   return leftOver.unhandledUnquoted
     ? { sentence: ` ${replies.leftOver()}`, metadata: { unhandledRequestUnquoted: true } }
     : { sentence: "", metadata: {} };
+}
+
+/**
+ * What the reader's profile would put on a new book, keyed by the field each
+ * value prints in — the same reading a new book's creation takes, so About the
+ * Author is left out when the profile says new books skip it. A profile that
+ * cannot be read is no profile: the composer then asks, as it always did.
+ */
+async function savedAuthorProfile(userId: string): Promise<BookMatterChatProfile | undefined> {
+  try {
+    const { authorName, bookMatter } = await authorDefaultsForNewBook(userId);
+    const profile: BookMatterChatProfile = {
+      ...(authorName ? { authorName } : {}),
+      ...(bookMatter?.aboutAuthor ? { aboutAuthor: bookMatter.aboutAuthor } : {}),
+      ...(bookMatter?.authorWebsite ? { authorWebsite: bookMatter.authorWebsite } : {}),
+      ...(bookMatter?.copyrightHolder ? { copyrightHolder: bookMatter.copyrightHolder } : {}),
+      ...(bookMatter?.imprint ? { imprint: bookMatter.imprint } : {}),
+      ...(bookMatter?.allRightsReserved ? { allRightsReserved: true as const } : {})
+    };
+    return Object.keys(profile).length > 0 ? profile : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function currentMatter(project: BookMatterProject): BookMatterChatCurrent {

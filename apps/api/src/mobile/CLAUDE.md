@@ -1173,7 +1173,15 @@ of the same manuscript can have fixed.
   (`authorDefaultsForNewBook`), and the creation route asks nothing. A book made from a share remix
   is the remixer's own new book and takes the remixer's profile; nothing of the shared book's matter
   crosses. Editing the profile
-  never reprints a published book. `PATCH /api/mobile/projects/:id/book-matter`
+  never reprints a published book. **The chat reads the profile, though, because a book made before
+  it was filled in has none of it**: "include my info in the cover pages" on such a book was asked
+  for the name again, and "Whatever I added in my profile" was told no matter change was found
+  (2026-10-17, "The Last Table"). The matter composer is shown the profile as a new book would copy
+  it (`savedAuthorProfile` in `bookMatterChatEdits.ts`), its values ground a change like the
+  reader's own words, and a message pointing at it ("use my profile", "add my author info") asks for
+  the fields a change copies from it exactly — sets only, "All rights reserved" included — through
+  the profile door in core `authoring/bookMatterProfile.ts`. An unreadable profile is no profile.
+  `PATCH /api/mobile/projects/:id/book-matter`
   (`bookMatterEdits.ts`) changes one book: on a finished book through `commitCoverChange`, the
   title edit's transaction, with a free reprint and a free re-set of a design or `ai-kept` cover
   (an older drawn cover answers `keeps_old_name` rather than a price nobody asked for); on a book

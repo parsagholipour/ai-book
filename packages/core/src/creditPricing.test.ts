@@ -213,7 +213,7 @@ describe("the live snapshot", () => {
     const before = estimateFullBookCreditCost(sampleInput).totalCredits;
     setCreditPricing({ ...DEFAULT_CREDIT_COSTS, coverRegeneration: 400, fullBookBase: 700 });
     expect(creditCostForOperation("COVER_REGENERATION")).toBe(400);
-    expect(estimateFullBookCreditCost(sampleInput).totalCredits).toBe(before + 350);
+    expect(estimateFullBookCreditCost(sampleInput).totalCredits).toBe(before + 700 - DEFAULT_CREDIT_COSTS.fullBookBase);
   });
 
   it("is frozen, so nobody can reprice the product by mutating it in place", () => {

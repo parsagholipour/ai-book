@@ -1,5 +1,6 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { type ChapterHeadingEdit } from "../bookEditChapterHeading.js";
+import { bookUpdateMetadata } from "./bookUpdateMetadata.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { applyPresentationPreference } from "./presentationEdits.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
@@ -26,12 +27,12 @@ export async function applyChapterHeadingEdit(
   parentId: string
 ): Promise<MobileProjectChatMessageRecord> {
   const edit: ChapterHeadingEdit = intent.chapterHeading ?? { style: "title_only" };
-  const reply = (content: string) =>
+  const reply = (content: string, rebuilt?: { contentRevision: number }) =>
     createAssistantChatMessage({
       projectId: project.id,
       parentId,
       content,
-      metadata: { intent, charged: false, chapterHeading: edit }
+      metadata: { intent, charged: false, chapterHeading: edit, ...bookUpdateMetadata(rebuilt?.contentRevision) }
     });
 
   const currentStyle = chapterHeadingStylePreference(project.mediaSettings) ?? DEFAULT_CHAPTER_HEADING_STYLE;
@@ -47,7 +48,7 @@ export async function applyChapterHeadingEdit(
     return reply("I can change that once this book has finished generating.");
   }
 
-  await applyPresentationPreference(
+  const rebuilt = await applyPresentationPreference(
     { ...project, currentPlanId: project.currentPlanId },
     {
       chapterHeadingStyle: edit.style,
@@ -57,7 +58,7 @@ export async function applyChapterHeadingEdit(
     }
   );
 
-  return reply(`${describeChange(edit)} This one’s free.`);
+  return reply(`${describeChange(edit)} This one’s free.`, rebuilt);
 }
 
 function describeChange(edit: ChapterHeadingEdit): string {

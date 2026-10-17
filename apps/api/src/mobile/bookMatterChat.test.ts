@@ -189,7 +189,7 @@ describe("a matter change sent to the book chat", () => {
     const app = await buildMobileApp({ routingTextModel: model });
     const response = await send(app, "dedicate it to my mom");
 
-    expect(response.json().reply.content).toMatch(/^I couldn’t change that right now\./);
+    expect(response.json().reply.content).toMatch(/^Sorry, I couldn’t make that change right now\./);
     expect(response.json().operation).toBeNull();
     expect(mockPrisma.project.update).not.toHaveBeenCalled();
     expectNothingBought();
@@ -236,7 +236,7 @@ describe("a matter change sent to the book chat", () => {
     const answered = await send(app, "978-0-306-40615-8");
     expect(shown(1)).toMatchObject({ alreadyAskedOnce: true });
     const content: string = answered.json().reply.content;
-    expect(content).toMatch(/^That isn’t a valid ISBN/);
+    expect(content).toMatch(/^That doesn’t look like a valid ISBN/);
     expect(content).not.toContain("?");
     expect(content).toMatch(/Title & credits to type it in yourself\.$/);
     expect(answered.json().reply.metadata.pendingEdit).toBeUndefined();

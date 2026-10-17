@@ -93,6 +93,10 @@ void main() {
       await tester.pump();
       projects.emitAssistantText!('A partial answer');
       await tester.pump();
+      // The transcript follows the reply with a short glide; let it land
+      // before looking for the bubble at the bottom.
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('A partial answer'), findsOneWidget);
 
       final read = Completer<void>();

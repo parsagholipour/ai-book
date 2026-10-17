@@ -20,6 +20,7 @@ function sources(context: BookMatterChatContext) {
     readerMessage: context.message,
     readerTurns: context.readerTurns ?? [],
     currentMatter: context.current,
+    ...(context.profile && Object.keys(context.profile).length > 0 ? { authorProfile: context.profile } : {}),
     bookLanguage: context.bookLanguage ?? null
   };
 }
@@ -28,7 +29,7 @@ function sources(context: BookMatterChatContext) {
 export function bookMatterGroundingMessages(candidates: readonly BookMatterProseCandidate[], context: BookMatterChatContext): ChatMessage[] {
   return [
     { role: "system", content: [
-      "Check the factual grounding of each candidate dedication or author biography against the supplied readerMessage, readerTurns and currentMatter.",
+      "Check the factual grounding of each candidate dedication or author biography against the supplied readerMessage, readerTurns and currentMatter, and authorProfile when present (the author details the reader saved in their profile, which count as the reader's own words).",
       "Return JSON {verdicts:[{id:0,supported:true}]} with exactly one verdict per candidate id. supported is true only if ALL named people, organizations, places, biographical claims, dates, numbers, addresses and other concrete facts in its COMPLETE text are supported by those sources. When uncertain return false.",
       "Read meaning in every language and script: names do not need capital letters. Check names even at the beginning of a sentence, inside unspaced Chinese/Japanese/Korean text, or in a German sentence where ordinary nouns also have capitals.",
       "A relationship alone never supplies a person's name: 'my mother' does not support مریم احمدی, فاطمة أحمد, 王丽, 山田花子 or Maria Schneider. Only an explicitly supplied name or current matter can ground a name.",

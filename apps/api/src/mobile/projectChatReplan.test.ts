@@ -59,7 +59,7 @@ describe("mobile project chat book replan", () => {
       expect(card.kind).toBe("book_replan");
       // 12 pages, 2 interior illustrations and a cover at balanced, plus the
       // 120 rebuild base, whoever asks.
-      expect(card.credits).toBe(120 + 350 + 12 * 8 + 3 * 45);
+      expect(card.credits).toBe(120 + 250 + 12 * 8 + 3 * 70);
 
       const apply = () => app.inject({
         method: "POST", url: "/api/mobile/projects/project-1/chat/proposals/apply", headers: bearer("token-a"),
@@ -312,9 +312,9 @@ describe("mobile project chat book replan", () => {
       kind: "book_replan",
       summary:
         "Rebuild as a new 3-page copy without illustrations: It's too much talking. I think we should make it 3 pages without illustrations",
-      // The 12-page illustrated book quotes 701 to a free reader; this is the
+      // The 12-page illustrated book quotes 676 to a free reader; this is the
       // book asked for, without the export unlock a free reader's price leaves out.
-      credits: 539
+      credits: 464
     });
 
     const confirm = await app.inject({
@@ -327,7 +327,7 @@ describe("mobile project chat book replan", () => {
     expect(confirm.statusCode).toBe(200);
     // Charged what was quoted: the settings have to survive the round trip
     // through the stored proposal, or Apply prices the old book again.
-    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 539 }));
+    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 464 }));
     expect(mockPrisma.project.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

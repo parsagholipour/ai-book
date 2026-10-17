@@ -33,8 +33,8 @@ import { TOMEZA_CREDIT_CHAT_COPY } from "./tomezaCreditChatCopy.js";
  */
 
 export type TomezaCreditRemoval =
-  /** A free presentation reprint is committed and dispatched. */
-  | { kind: "reprinted" }
+  /** A free presentation reprint is committed and dispatched, at this revision. */
+  | { kind: "reprinted"; contentRevision: number }
   /** The published book does not print the line, so there is nothing to reprint. */
   | { kind: "not_printed" }
   /** A free account: the line comes off with a plan. Nothing was read or written. */
@@ -134,5 +134,5 @@ export async function removeTomezaCredit(project: {
     throw error;
   }
   await dispatchCoverJobs(project.id, committed);
-  return { kind: "reprinted" };
+  return { kind: "reprinted", contentRevision: committed.contentRevision };
 }

@@ -95,6 +95,10 @@ class CharacterProfileActions extends StatelessWidget {
   }
 }
 
+/// The icon over one line of label, with the tile's 16 dp inset above and
+/// below.
+const double _tileHeight = 80;
+
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
     required this.icon,
@@ -131,12 +135,19 @@ class _ActionTile extends StatelessWidget {
             ),
           )
         : Icon(icon, color: iconColor);
+    // A tile is a third of a 360 dp phone, about 100 dp. At the label size
+    // ordinary buttons use, "Use in a book" broke onto a second line and its
+    // tile no longer matched its neighbours, so a tile's label is a step
+    // smaller and the tile's side padding is narrow.
     final text = Text(
       label,
       textAlign: stacked ? TextAlign.start : TextAlign.center,
+      maxLines: stacked ? null : 2,
       style: theme.textTheme.labelLarge?.copyWith(
         color: foreground,
         fontWeight: FontWeight.w700,
+        fontSize: stacked ? null : 13,
+        height: 1.25,
       ),
     );
 
@@ -169,14 +180,18 @@ class _ActionTile extends StatelessWidget {
             child: InkWell(
               onTap: tap,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  minHeight: AppSizes.minimumTouchTarget + AppSpacing.md,
+                constraints: BoxConstraints(
+                  minHeight: stacked
+                      ? AppSizes.minimumTouchTarget + AppSpacing.md
+                      : _tileHeight,
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.sm,
-                  ),
+                  padding: stacked
+                      ? const EdgeInsets.all(AppSpacing.sm)
+                      : const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
+                          vertical: AppSpacing.md,
+                        ),
                   child: stacked
                       ? Row(
                           children: [
@@ -185,13 +200,15 @@ class _ActionTile extends StatelessWidget {
                             Expanded(child: text),
                           ],
                         )
-                      // Top-aligned so the three icons share a line when one
-                      // label wraps and its neighbours do not.
+                      // Top-aligned under an even inset, so a one-line tile
+                      // looks centred and, when a larger text size wraps one
+                      // label, the three icons still share a line while the
+                      // row stretches every tile to the tallest.
                       : Column(
                           mainAxisAlignment: MainAxisAlignment.start,
                           children: [
                             glyph,
-                            const SizedBox(height: AppSpacing.xxs),
+                            const SizedBox(height: AppSpacing.xs),
                             text,
                           ],
                         ),

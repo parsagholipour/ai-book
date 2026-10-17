@@ -55,7 +55,19 @@ function pageGeometryProjection(css: string): string {
 // 2,523 renders of biographies and 20 of emoji dedications printed exactly the
 // sheets `bookMatterSheetCount` counts, but one 3,700-character Chinese
 // biography (over the 1,500 limit) counted one more.
-const PAGE_GEOMETRY_SHA256 = "69f34b091f87bd0b018a9574cac80d868a5b3acf52bda983d26992a145bcc985";
+// Then the publication lines at the title page's foot (2026-10-17): the
+// `__stack` that clips its own tail and the `__publication` foot outside it.
+// The matter fixtures are now built by each side's own `formatBookMatter`, so
+// the comparison is the old book against the new one. Against HEAD: the eleven
+// fixtures with unchanged markup pixel-identical, title-page-en included, and so
+// is the new matter-pages-legacy (the shape a book compiled before this keeps
+// until it recompiles); the-last-table 4 -> 3 pages, title-foot-longest 4 -> 3,
+// title-foot-longest-cover 5 -> 4 and title-foot-fa 3 -> 2, each the sheet that
+// held only the publication lines; matter-pages, long-dedication and
+// matter-pages-fa keep their counts, the lines moved off the dedication's sheet.
+// The longest title, subtitle and byline over every publication field at its
+// limit and the credit print whole, with and without a cover and in Persian.
+const PAGE_GEOMETRY_SHA256 = "429723a2d587c9009bf28af2b5b3aad2947649bdda0243e495e198079b2eae04";
 
 describe("bookPdfCss", () => {
   it("still lays every book out on the same page boxes", () => {

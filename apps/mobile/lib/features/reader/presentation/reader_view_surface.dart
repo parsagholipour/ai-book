@@ -134,7 +134,7 @@ extension _ReaderViewSurface on _ReaderViewState {
           readerDocumentRef(document),
           _controller,
           _viewerParams(_annotations.viewerMode),
-          _state.lastPage,
+          _requestedSheet ?? _state.lastPage,
         ),
         if (_backgroundTapEnabled)
           // Covers the gap between sheets and the blank paper at either end —

@@ -228,4 +228,17 @@ describe("creation chat clarification policy", () => {
       summary: "A three-step consulting framework."
     });
   });
+
+  // "A 10 page book about Neymar and a poor girl" came back as "a fictional
+  // star inspired by that world", and the planner named him Rafael Vale.
+  it("keeps a real person the user names under that name, without asking", () => {
+    const request: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "10 page enemies-to-lovers book about Neymar and a waitress" }]
+    };
+    const systemPrompt = creationTurnMessages(request, deterministicCreationTurn(request))[0]?.content ?? "";
+
+    expect(systemPrompt).toContain("stays that person under that exact name in every brief field");
+    expect(systemPrompt).toContain("Never turn them into an invented stand-in");
+    expect(systemPrompt).toContain("do not announce, explain or ask about this");
+  });
 });

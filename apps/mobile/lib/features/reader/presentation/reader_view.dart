@@ -60,6 +60,8 @@ class ReaderView extends ConsumerStatefulWidget {
     required this.status,
     this.onRefreshExport,
     this.openAtBookPage,
+    this.openAtSheet,
+    this.openAtSheetDigest,
     this.offline = false,
     super.key,
   });
@@ -79,6 +81,14 @@ class ReaderView extends ConsumerStatefulWidget {
 
   /// A `Page.index` the caller wants opened, resolved once the document is up.
   final int? openAtBookPage;
+
+  /// The sheet [openAtBookPage] starts on, measured in the PDF whose digest is
+  /// [openAtSheetDigest]. Used only while the file on screen is that file —
+  /// a sheet number belongs to one file — and then the book opens there
+  /// directly, with no text to match; otherwise [openAtBookPage] is found by
+  /// its text as before.
+  final int? openAtSheet;
+  final String? openAtSheetDigest;
 
   /// The server is out of reach and [status] is the phone's copy of the last
   /// one (`BookReaderScreen`). The book reads as normal; nothing that needs
@@ -156,6 +166,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// for when the reader is opened, and a reload after an edit would otherwise
   /// drag them back to it from wherever they had read on to.
   bool _seekedRequestedPage = false;
+
+  /// The sheet the book was opened at for the caller, which the stored
+  /// position must not take back when it arrives late.
+  int? _openedAtSheet;
 
   /// Where the reader was when a reload started, as a `Page.index`.
   ///
@@ -315,8 +329,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   Future<void> _restoreState() async {
     final state = await _repository.loadState(widget.projectId);
     if (!mounted || _stateLoaded) return;
+    final openedAt = _openedAtSheet;
     setState(() {
-      _state = state;
+      _state = openedAt == null ? state : state.copyWith(lastPage: openedAt);
       _stateLoaded = true;
     });
   }
@@ -446,18 +461,29 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     // reader back on page 1 with no bookmarks, durably, because the next page
     // turn saves that.
     final pageCount = document.pages.length;
+    // A caller that named a sheet of this very file is where the book opens,
+    // instead of where it was left: going to the stored position first and
+    // then on to the sheet is a scroll the reader watches, and the stored
+    // position arriving after the jump would carry them back.
+    final requested = _requestedSheet?.clamp(1, pageCount);
+    if (requested != null) _openedAtSheet = requested;
     _afterFrame(() {
       _pageCount = pageCount;
-      _state = _state.clampedTo(pageCount);
+      final clampedState = _state.clampedTo(pageCount);
+      _state = requested == null
+          ? clampedState
+          : clampedState.copyWith(lastPage: requested);
     });
     final clamped = _state.clampedTo(pageCount);
     // pdfrx has already gone to `initialPageNumber` with no animation, so this
     // is only for the case where the position arrived after that was read.
-    if (clamped.lastPage > 1 && _controller.pageNumber != clamped.lastPage) {
+    if (requested == null &&
+        clamped.lastPage > 1 &&
+        _controller.pageNumber != clamped.lastPage) {
       unawaited(_controller.goToPage(pageNumber: clamped.lastPage));
     }
     // The page the book opens on gets no `onPageChanged` of its own.
-    unawaited(_links.forPage(clamped.lastPage));
+    unawaited(_links.forPage(requested ?? clamped.lastPage));
     unawaited(_loadOutline(document));
     unawaited(_reanchorMarkup(document));
     unawaited(_seekToRequestedBookPage(document));
@@ -471,6 +497,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// page wins over "where you left off" — and if the page cannot be placed,
   /// the reader is simply left where it already was.
   Future<void> _seekToRequestedBookPage(PdfDocument document) async {
+    final sheet = _requestedSheet;
+    if (sheet != null) {
+      _seekedRequestedPage = true;
+      if (_controller.pageNumber != sheet) await _goToPage(sheet);
+      return;
+    }
     final target = widget.openAtBookPage;
     final revision = _mappingRevision;
     if (target == null || revision == null || _seekedRequestedPage) {
@@ -523,6 +555,15 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
   String? get _renderedDigest =>
       widget.loader.digestForProject(widget.projectId);
+
+  /// [ReaderView.openAtSheet], until it has been gone to, and only while the
+  /// open file is the one it was measured in.
+  int? get _requestedSheet {
+    final sheet = widget.openAtSheet;
+    final digest = widget.openAtSheetDigest;
+    if (sheet == null || digest == null || _seekedRequestedPage) return null;
+    return digest == _renderedDigest ? sheet : null;
+  }
 
   int? get _mappingRevision => widget.loader.mappingRevisionFor(
     expectedProjectId: widget.projectId,

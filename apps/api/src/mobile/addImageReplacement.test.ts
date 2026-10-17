@@ -60,7 +60,7 @@ describe("chat image replacement", () => {
       expect(body.reply.metadata.editProposal).toMatchObject({
         kind: "add_image",
         affectedPageIndexes: [2],
-        credits: 45,
+        credits: 70,
         summary: "Replace the illustration of “a dragon” with “a castle”"
       });
       expect(body.reply.metadata.pendingEdit.intent.imageEdit).toEqual({
@@ -125,7 +125,7 @@ describe("chat image replacement", () => {
       expect(body.reply.metadata.editProposal).toMatchObject({
         kind: "add_image",
         affectedPageIndexes: [1],
-        credits: 45,
+        credits: 70,
         summary: "Replace the illustration on page 1 with one of “a more aggressive fox”"
       });
       expect(body.reply.metadata.pendingEdit.intent.imageEdit).toEqual({

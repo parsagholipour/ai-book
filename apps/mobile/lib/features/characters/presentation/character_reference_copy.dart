@@ -57,19 +57,24 @@ String referenceExplainer(LibraryCharacter character) {
       : 'Your books illustrate every picture of this character from it.';
 }
 
-/// The priced call to action.
-///
-/// The price is never written into a literal: it is operator-editable, ships
-/// with the character list, and a hardcoded number would be wrong the day it
-/// changes. Zero means the deployment is not charging for portraits at all, and
-/// the label says nothing about credits rather than saying "(0 credits)".
-String referenceCtaLabel(LibraryCharacter character, int credits) {
-  final label = referenceWanted(character)
+/// The priced call to action's label. The price goes on its own line under it
+/// ([portraitPriceLabel]), so the label stays one short line on a phone.
+String referenceCtaLabel(LibraryCharacter character) {
+  return referenceWanted(character)
       ? 'Make illustrated version'
       : referenceIsRedraw(character)
       ? 'Redraw illustration'
       : 'Generate portrait';
-  return credits > 0 ? '$label ($credits credits)' : label;
+}
+
+/// The price under the call to action.
+///
+/// The price is never written into a literal: it is operator-editable, ships
+/// with the character list, and a hardcoded number would be wrong the day it
+/// changes. Zero means the deployment is not charging for portraits at all, and
+/// there is no price line rather than one saying "0 credits".
+String? portraitPriceLabel(int credits) {
+  return credits > 0 ? '$credits credits' : null;
 }
 
 /// Whether the priced draw would *replace* the illustration a book already

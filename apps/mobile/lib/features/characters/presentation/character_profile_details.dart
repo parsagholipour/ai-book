@@ -209,7 +209,10 @@ class _DetailsCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: colors.outlineVariant),
       ),
+      // Stretched, or a stacked row is only as wide as its text and sits in
+      // the middle of the card.
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < fields.length; i++) ...[
             if (i > 0) Divider(height: 1, color: colors.outlineVariant),

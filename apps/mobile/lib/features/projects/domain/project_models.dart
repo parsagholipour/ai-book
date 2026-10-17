@@ -3,6 +3,7 @@
 // project_status_models.dart, the edit diff in edit_changes_models.dart and the
 // image model in project_image_models.dart; all are re-exported so the many
 // screens that import project_models.dart keep seeing them.
+export 'chat_book_update.dart';
 export 'edit_changes_models.dart';
 export 'export_models.dart';
 export 'project_chat_models.dart';
@@ -753,7 +754,7 @@ int estimateProjectCredits({
     creditCosts,
     'fullBookBase',
     qualityPreset,
-    {'fast': 220, 'balanced': 350, 'premium': 500, 'ultra': 650},
+    {'fast': 150, 'balanced': 250, 'premium': 500, 'ultra': 650},
   );
   final fullBookPerPage = tierCreditRate(
     creditCosts,
@@ -765,7 +766,7 @@ int estimateProjectCredits({
     creditCosts,
     'imageGeneration',
     qualityPreset,
-    {'fast': 45, 'balanced': 45, 'premium': 85, 'ultra': 85},
+    {'fast': 70, 'balanced': 70, 'premium': 130, 'ultra': 130},
   );
   final premiumReview = flatCreditRate(creditCosts, 'premiumReview', 200);
   final imageCount = estimatedInteriorImageCount(

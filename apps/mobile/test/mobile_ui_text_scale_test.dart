@@ -716,9 +716,9 @@ MobileBilling _fakeBilling() {
       ),
     ],
     creditCosts: {
-      'fullBookBase': 350,
+      'fullBookBase': 250,
       'fullBookPerPage': 8,
-      'imageGeneration': 45,
+      'imageGeneration': 70,
       'premiumReview': 200,
       'exportUnlock': 150,
     },

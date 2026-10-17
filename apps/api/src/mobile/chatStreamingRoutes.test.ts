@@ -53,6 +53,11 @@ it("book chat streams its grounded answer and completes with the saved transcrip
   expect(frames).toContainEqual({ event: "text", data: { text: "The grounded" } });
   expect(frames.at(-1)).toMatchObject({ event: "done", data: { reply: { content: "The grounded answer" } } });
   expect(response.body).not.toContain("private routing");
+  // The router's draft reply is replaced by the grounded one, so it is never
+  // shown, and nothing blanks the answer once it has started.
+  expect(response.body).not.toContain("Draft");
+  const texts = frames.filter((frame) => frame.event === "text").map((frame) => frame.data.text as string);
+  expect(texts.slice(texts.findIndex((text) => text !== ""))).not.toContain("");
   const replay = await app.inject({ method: "POST", url: "/api/mobile/projects/project-1/chat/messages", headers: { ...bearer("token-a"), accept: "text/event-stream" }, payload: { message: "What is this story about?", requestId: "stream-book" } });
   expect(replay.json().reply.content).toBe("The grounded answer");
   expect(replay.json().messages).toHaveLength(2);

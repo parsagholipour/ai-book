@@ -20,6 +20,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.showCreditCost = true,
     this.onApplyProposal,
     this.onCancelProposal,
+    this.bookUpdate,
     super.key,
   });
 
@@ -50,6 +51,10 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   final bool proposalsBusy;
   final VoidCallback? onApplyProposal;
   final VoidCallback? onCancelProposal;
+
+  /// The book this reply rebuilt, at the foot of the reply
+  /// (`ChatBookUpdateRow`). Null on every other message.
+  final Widget? bookUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +170,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
               onPressed: () => onOpenReplanCopy!(replanCopyTargetProjectId),
             ),
           ],
+          ?bookUpdate,
         ],
       ),
     );

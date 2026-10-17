@@ -34,12 +34,12 @@ class _BillingRepository extends FakeBillingRepository {
   );
 }
 
-/// The harness reader is on the free tier: 528 buys a 6-page book and its
-/// plan, 544 the whole 8 pages the chat settled on.
+/// The harness reader is on the free tier: 478 buys a 6-page book and its
+/// plan, 494 the whole 8 pages the chat settled on.
 Future<void> _start(
   WidgetTester tester,
   ScriptedCreationRepository creation, {
-  int credits = 528,
+  int credits = 478,
   MemoryCreationPrefsStore? prefs,
   _BillingRepository? repository,
 }) async {
@@ -110,7 +110,7 @@ void main() {
     await _start(
       tester,
       creation,
-      repository: _BillingRepository(528, awaitingVerification: true),
+      repository: _BillingRepository(478, awaitingVerification: true),
     );
     await _build(tester);
 
@@ -153,7 +153,7 @@ void main() {
     tester,
   ) async {
     final creation = ScriptedCreationRepository();
-    await _start(tester, creation, credits: 544);
+    await _start(tester, creation, credits: 494);
     await _build(tester);
     expect(find.text('Reduce the page count?'), findsNothing);
     expect(creation.buildCount, 1);
@@ -166,7 +166,7 @@ void main() {
     final creation = ScriptedCreationRepository();
     final repository = _BillingRepository(1200);
     await _start(tester, creation, repository: repository);
-    repository.available = 528;
+    repository.available = 478;
     await _build(tester);
     expect(find.textContaining('you can make up to 6 pages'), findsOneWidget);
     expect(creation.buildCount, 0);

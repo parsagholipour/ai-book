@@ -28,6 +28,7 @@ import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { planLibraryCharacterGuidance, reconcilePlanLibraryCharacters } from "./planLibraryCharacters.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
+import { REAL_PEOPLE_KEEP_THEIR_NAMES_RULE } from "./realPeople.js";
 import { maxComposedChapterPages } from "./composedChapter.js";
 import { composesByChapter } from "./compositionUnit.js";
 import { modelTierForInput } from "../adapters/modelTiers.js";
@@ -156,6 +157,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Treat researchContext as input-only evidence. Use it to ground the plan, but do not include a researchNotes field or reproduce its source records in your response; the server attaches them after planning.",
             "Preserve concrete user intent. Treat the request as complete once the requested book and its subject are understandable, and make sensible creative decisions yourself.",
             BYLINE_IS_TYPESET_RULE,
+            REAL_PEOPLE_KEEP_THEIR_NAMES_RULE,
             "Set questions to [] for every coherent request. Ask at most one question only when a missing subject, unclear reference, contradictory instruction, or unavailable required source makes the user's request impossible to understand.",
             "Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other choices you can make while drafting the plan.",
             "Any necessary question must be plain, self-contained, tied directly to words the user supplied, and must not mention an unexplained character or detail invented by the plan.",
@@ -310,6 +312,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               "Any question you keep needs 2-4 premade answers only when a few complete answers really cover it, and every option must be a full answer usable as-is. When the answer is a value only the reader can supply - a name, a title, a place, a number, a date - set options to [] and let them type it. Never write an option that only describes how the reader will answer.",
               'Declare how many answers you accept in answerKind: "choice" when exactly one option can be true, "multi" (up to 6 options) when the reader can honestly combine several and you can honour every pick, "open" with no options otherwise. The app draws the picker from answerKind, so never say "choose one or more" in the prompt and never list the options inside the prompt text. A multi question can come back with several answers in one line; bake all of them into the plan.',
               BYLINE_IS_TYPESET_RULE,
+              REAL_PEOPLE_KEEP_THEIR_NAMES_RULE,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               "Preserve or improve openingHook: one or two sentences committing to the concrete scene, claim, image, or question page 1 opens with - never meta framing like 'This book will...'.",
               ...(options.currentPlan.storyTreatment ? ["storyTreatment is the complete causal story used by later page allocation. Revise it coherently whenever the request changes events, characters, setting, tone or ending; do not update only chapter summaries while leaving an obsolete treatment. Keep it unpaginated and preserve unchanged story decisions."] : []),

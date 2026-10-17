@@ -86,6 +86,71 @@ async function loadCore(): Promise<FixtureCore> {
   return (await import("../packages/core/src/index.js")) as unknown as FixtureCore;
 }
 
+/**
+ * The compiler's front and back matter, as the checkout being rendered writes
+ * it. The matter fixtures are built by `formatBookMatter` on each side rather
+ * than copied out of it, so a change to where the matter prints (2026-10-17:
+ * the publication lines moved from their own sheet to the title page's foot)
+ * is compared as the old book against the new one, not as new markup under an
+ * old stylesheet. A pure stylesheet change still sees identical markup on both
+ * sides. Imported by module path, typed by hand, for the reason `loadCore` is.
+ */
+type FixtureMatterInput = {
+  title: string;
+  subtitle?: string;
+  authorName?: string;
+  afterCover: boolean;
+  language: string;
+  matter: {
+    year: number;
+    madeWithCredit: boolean;
+    dedication?: string;
+    aboutAuthor?: string;
+    authorWebsite?: string;
+    copyrightHolder?: string;
+    imprint?: string;
+    isbn?: string;
+    allRightsReserved?: boolean;
+  };
+};
+type FixtureMatter = (input: FixtureMatterInput) => { titlePage: string; matterSheet: string; aboutAuthor: string };
+
+async function loadMatter(): Promise<FixtureMatter> {
+  const pages = (await import("../packages/core/src/generation/bookMatterPages.js")) as unknown as {
+    formatBookMatter: (input: FixtureMatterInput & { labels: unknown }) => ReturnType<FixtureMatter>;
+  };
+  const markdown = (await import("../packages/core/src/generation/markdown.js")) as unknown as {
+    markdownLabels: (language?: string) => unknown;
+  };
+  return (input) => pages.formatBookMatter({ ...input, labels: markdown.markdownLabels(input.language) });
+}
+
+/** A book as the compiler lays it out: cover, title page, matter sheet, text, About the Author. */
+function matterBook(matter: FixtureMatter, input: FixtureMatterInput, body: string): string {
+  const { titlePage, matterSheet, aboutAuthor } = matter(input);
+  return [input.afterCover ? `![Book cover](${image("cover.svg")})` : "", titlePage, matterSheet, body, aboutAuthor]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Every publication field at its limit (`BOOK_MATTER_LIMITS`), the credit, a long title and subtitle. */
+const LONGEST_FOOT: Omit<FixtureMatterInput, "afterCover" | "language"> = {
+  title: "The Quiet Engine and Its Several Discontents: A Field Guide to Machines That Would Rather Not Be Built",
+  subtitle: "Being a study of the stubborn, the reluctant and the merely tired among the great inventions of the age",
+  authorName: "Ada Augusta King, Countess of Lovelace, with Charles Babbage and the Analytical Society",
+  matter: {
+    year: 2026,
+    madeWithCredit: true,
+    copyrightHolder:
+      "The Estate of Ada Augusta King, Countess of Lovelace, and the Trustees of the Analytical Engine Preservation Society of London",
+    allRightsReserved: true,
+    imprint: "Lantern & Lathe Press, an imprint of the Society for the Diffusion of Useful and Mechanical Knowledge",
+    isbn: "978-0-306-40615-7",
+    aboutAuthor: "Ada Lovelace writes about engines, and the people who would rather they stayed quiet.",
+    authorWebsite: "ada.example/engines-and-the-people-who-would-rather-they-stayed-quiet"
+  }
+};
+
 const PUBLIC_API_URL = "http://localhost:4001";
 const FIXTURE_PROJECT = "fixture";
 
@@ -118,7 +183,7 @@ function figureFence(spec: Record<string, unknown>): string {
   return "```figure\n" + JSON.stringify(spec) + "\n```";
 }
 
-const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string }> = [
+const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string | ((matter: FixtureMatter) => string) }> = [
   {
     name: "text-only-en",
     language: "en",
@@ -217,9 +282,37 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
   {
     // Every page of book matter, as `formatBookMatter` writes it: the title page
     // *behind* a cover (`pdf-front`: counted, unnumbered, no second counter
-    // reset), the dedication and publication details sharing one sheet, and
-    // About the Author opening a fresh sheet off its marker.
+    // reset) with the publication lines at its foot, the dedication on a sheet
+    // of its own, and About the Author opening a fresh sheet off its marker.
     name: "matter-pages",
+    language: "en",
+    markdown: (matter) =>
+      matterBook(
+        matter,
+        {
+          title: "The Quiet Engine",
+          subtitle: "A study of machines that would rather not",
+          authorName: "Ada Lovelace",
+          afterCover: true,
+          language: "en",
+          matter: {
+            year: 2026,
+            madeWithCredit: true,
+            dedication: "For Sara,\nwho asked for a dragon.",
+            allRightsReserved: true,
+            isbn: "978-0-00-000000-0",
+            aboutAuthor: "Ada Lovelace writes about engines, and the people who would rather they stayed quiet.",
+            authorWebsite: "ada.example"
+          }
+        },
+        paragraphs(3, "Chapter")
+      )
+  },
+  {
+    // The same matter as a book compiled before 2026-10-17 carries it: the
+    // dedication and the publication lines sharing one sheet. A repair can
+    // still render published bytes like these, so they must print as they did.
+    name: "matter-pages-legacy",
     language: "en",
     markdown: [
       `![Book cover](${image("cover.svg")})`,
@@ -240,16 +333,40 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
       "  </div>",
       "</section>",
       "",
-      paragraphs(3, "Chapter"),
-      "",
-      "## About the Author",
-      "",
-      '<div class="book-about-author"></div>',
-      "",
-      "Ada Lovelace writes about engines, and the people who would rather they stayed quiet\\.",
-      "",
-      "ada\\.example"
+      paragraphs(3, "Chapter")
     ].join("\n")
+  },
+  {
+    // "The Last Table" (2026-10-17): a cover, a byline and the two © lines, no
+    // dedication. The book that printed a whole sheet for those two lines.
+    name: "the-last-table",
+    language: "en",
+    markdown: (matter) =>
+      matterBook(
+        matter,
+        {
+          title: "The Last Table",
+          subtitle: "A Short Story",
+          authorName: "Parsa Gholipour",
+          afterCover: true,
+          language: "en",
+          matter: { year: 2026, madeWithCredit: false, allRightsReserved: true }
+        },
+        paragraphs(3, "Chapter")
+      )
+  },
+  {
+    // The title page's worst case: a long title and subtitle, a long byline and
+    // every publication field at its limit, coverless (`pdf-title`, the clipped
+    // fixed-height sheet). The foot must print whole under the stack.
+    name: "title-foot-longest",
+    language: "en",
+    markdown: (matter) => matterBook(matter, { ...LONGEST_FOOT, afterCover: false, language: "en" }, paragraphs(2, "Chapter"))
+  },
+  {
+    name: "title-foot-longest-cover",
+    language: "en",
+    markdown: (matter) => matterBook(matter, { ...LONGEST_FOOT, afterCover: true, language: "en" }, paragraphs(2, "Chapter"))
   },
   {
     // A dedication too long for the house 13pt, set one size down exactly as
@@ -257,26 +374,24 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
     // keeps to the one sheet `bookMatterSheetCount` counts for it.
     name: "long-dedication",
     language: "en",
-    markdown: [
-      '<section class="book-title-page">',
-      '  <h1 class="book-title-page__title">The Quiet Engine</h1>',
-      '  <p class="book-title-page__byline">by Ada Lovelace</p>',
-      "</section>",
-      "",
-      '<section class="book-matter-sheet book-matter-sheet--long">',
-      '  <div class="book-matter-sheet__dedication">',
-      "    <p>For Sara, who asked for a dragon.</p>",
-      `    <p>${LOREM.repeat(15).trim()}</p>`,
-      "  </div>",
-      '  <div class="book-matter-sheet__publication">',
-      "    <p>© 2026 Ada Lovelace</p>",
-      "    <p>All rights reserved.</p>",
-      "    <p>ISBN 978-0-00-000000-0</p>",
-      "  </div>",
-      "</section>",
-      "",
-      paragraphs(2, "Chapter")
-    ].join("\n")
+    markdown: (matter) =>
+      matterBook(
+        matter,
+        {
+          title: "The Quiet Engine",
+          authorName: "Ada Lovelace",
+          afterCover: false,
+          language: "en",
+          matter: {
+            year: 2026,
+            madeWithCredit: false,
+            dedication: `For Sara, who asked for a dragon.\n\n${LOREM.repeat(15).trim()}`,
+            allRightsReserved: true,
+            isbn: "978-0-00-000000-0"
+          }
+        },
+        paragraphs(2, "Chapter")
+      )
   },
   {
     // About the Author too long for its house size, as `formatBookMatter`
@@ -309,34 +424,52 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
     // credit in its language, and its About the Author at the house size.
     name: "matter-pages-fa",
     language: "fa",
-    markdown: [
-      '<section class="book-title-page">',
-      '  <h1 class="book-title-page__title">ساعت‌ساز</h1>',
-      '  <p class="book-title-page__subtitle">پیشه‌ای صبور</p>',
-      '  <p class="book-title-page__byline">نوشتهٔ آدا لاولیس</p>',
-      "</section>",
-      "",
-      '<section class="book-matter-sheet">',
-      '  <div class="book-matter-sheet__dedication">',
-      "    <p>برای سارا،<br />که اژدها خواست.</p>",
-      "  </div>",
-      '  <div class="book-matter-sheet__publication">',
-      "    <p>© ۲۰۲۶ آدا لاولیس</p>",
-      "    <p>همهٔ حقوق محفوظ است.</p>",
-      '    <p class="book-matter-sheet__credit">ساخته‌شده با Tomeza</p>',
-      "  </div>",
-      "</section>",
-      "",
-      `## فصل ۱\n\n${"این متن آزمایشی برای بررسی چیدمان راست‌به‌چپ است و باید در چند خط بشکند. ".repeat(12)}`,
-      "",
-      "## دربارهٔ نویسنده",
-      "",
-      '<div class="book-about-author"></div>',
-      "",
-      "آدا لاولیس دربارهٔ ماشین‌ها می‌نویسد و با دو گربه در لندن زندگی می‌کند\\.",
-      "",
-      "ada\\.example"
-    ].join("\n")
+    markdown: (matter) =>
+      matterBook(
+        matter,
+        {
+          title: "ساعت‌ساز",
+          subtitle: "پیشه‌ای صبور",
+          authorName: "آدا لاولیس",
+          afterCover: false,
+          language: "fa",
+          matter: {
+            year: 2026,
+            madeWithCredit: true,
+            dedication: "برای سارا،\nکه اژدها خواست.",
+            allRightsReserved: true,
+            aboutAuthor: "آدا لاولیس دربارهٔ ماشین‌ها می‌نویسد و با دو گربه در لندن زندگی می‌کند.",
+            authorWebsite: "ada.example"
+          }
+        },
+        `## فصل ۱\n\n${"این متن آزمایشی برای بررسی چیدمان راست‌به‌چپ است و باید در چند خط بشکند. ".repeat(12)}`
+      )
+  },
+  {
+    // The longest title page in a right-to-left book: every publication field
+    // and the credit in Persian, coverless.
+    name: "title-foot-fa",
+    language: "fa",
+    markdown: (matter) =>
+      matterBook(
+        matter,
+        {
+          title: "ساعت‌ساز و چند نارضایتی دیگرش: راهنمای میدانی ماشین‌هایی که ترجیح می‌دادند ساخته نشوند",
+          subtitle: "پژوهشی دربارهٔ لجوج‌ها، بی‌میل‌ها و صرفاً خسته‌ها در میان اختراع‌های بزرگ روزگار",
+          authorName: "آدا آگوستا کینگ، کنتس لاولیس، همراه با چارلز ببیج",
+          afterCover: false,
+          language: "fa",
+          matter: {
+            year: 2026,
+            madeWithCredit: true,
+            copyrightHolder: "بنیاد آدا آگوستا کینگ، کنتس لاولیس، و امنای انجمن نگهداری ماشین تحلیلی لندن و همهٔ وارثان قانونی ایشان",
+            allRightsReserved: true,
+            imprint: "نشر فانوس و تراش، از انتشارات انجمن گسترش دانش سودمند و مکانیکی در سراسر جهان",
+            isbn: "978-0-306-40615-7"
+          }
+        },
+        `## فصل ۱\n\n${"این متن آزمایشی برای بررسی چیدمان راست‌به‌چپ است و باید در چند خط بشکند. ".repeat(12)}`
+      )
   },
   {
     name: "fifteen-chapters",
@@ -587,6 +720,7 @@ async function writeFixtureImages(directory: string): Promise<void> {
 
 async function renderAll(outputDir: string, options: { docx?: boolean } = {}): Promise<void> {
   const core = await loadCore();
+  const matter = await loadMatter();
   if (options.docx && !core.generateBookDocx) {
     throw new Error("this checkout of packages/core has no Word export to render");
   }
@@ -597,7 +731,8 @@ async function renderAll(outputDir: string, options: { docx?: boolean } = {}): P
     await writeFixtureImages(imageStorageDir);
     for (const fixture of FIXTURES) {
       const startedAt = Date.now();
-      await core.generateBookPdf(fixture.markdown, {
+      const markdown = typeof fixture.markdown === "string" ? fixture.markdown : fixture.markdown(matter);
+      await core.generateBookPdf(markdown, {
         imageStorageDir,
         publicApiUrl: PUBLIC_API_URL,
         outputPath: join(outputDir, `${fixture.name}.pdf`),
@@ -605,7 +740,7 @@ async function renderAll(outputDir: string, options: { docx?: boolean } = {}): P
         projectId: FIXTURE_PROJECT
       });
       if (options.docx) {
-        await core.generateBookDocx!(fixture.markdown, {
+        await core.generateBookDocx!(markdown, {
           title: fixture.name,
           imageStorageDir,
           publicApiUrl: PUBLIC_API_URL,
@@ -614,7 +749,7 @@ async function renderAll(outputDir: string, options: { docx?: boolean } = {}): P
           projectId: FIXTURE_PROJECT
         });
       }
-      console.log(`${fixture.name.padEnd(18)} ${Date.now() - startedAt} ms`);
+      console.log(`${fixture.name.padEnd(24)} ${Date.now() - startedAt} ms`);
     }
     console.log(`\n${FIXTURES.length} fixtures → ${outputDir}`);
   } finally {

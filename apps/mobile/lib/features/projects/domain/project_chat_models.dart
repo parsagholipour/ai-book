@@ -102,6 +102,15 @@ class MobileProjectChatMessage {
   bool get queuedRebuildAfterUndoRedo =>
       metadata['undo'] is Map || metadata['redo'] is Map;
 
+  /// The revision of the free rebuild this reply queued (`bookUpdate`), or
+  /// null for a reply that did not rebuild the book. See `chat_book_update.dart`.
+  int? get bookUpdateRevision {
+    final raw = metadata['bookUpdate'];
+    if (raw is! Map) return null;
+    final revision = raw['contentRevision'];
+    return revision is int && revision >= 0 ? revision : null;
+  }
+
   /// The operation this Undo/Redo reply is about, from metadata. The wire
   /// [operationId] is preferred at call sites; this is what a reply written
   /// before that column was stamped still carries.

@@ -2,6 +2,7 @@ import { type ConversationLanguage } from "@book-maker/core";
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { chatCopy } from "../chatReplyCopy.js";
 import { matterChatLanguage } from "./bookMatterChatLanguage.js";
+import { bookUpdateMetadata } from "./bookUpdateMetadata.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
 import { removeTomezaCredit, type TomezaCreditRemoval } from "./tomezaCredit.js";
@@ -43,12 +44,13 @@ export async function applyTomezaCreditEdit(options: {
       intent,
       charged: false,
       replyLanguage,
-      ...(outcome.kind === "subscription_required" ? { insufficientCredits: {} } : {})
+      ...(outcome.kind === "subscription_required" ? { insufficientCredits: {} } : {}),
+      ...bookUpdateMetadata(outcome.kind === "reprinted" ? outcome.contentRevision : undefined)
     }
   });
 }
 
 /** What the chat says, by what the shared decision did. Never names a price. */
-export function tomezaCreditReply(outcome: TomezaCreditRemoval, language?: ConversationLanguage): string {
+export function tomezaCreditReply(outcome: Pick<TomezaCreditRemoval, "kind">, language?: ConversationLanguage): string {
   return chatCopy(TOMEZA_CREDIT_CHAT_COPY, language)[outcome.kind];
 }

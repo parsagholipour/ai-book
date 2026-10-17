@@ -33,6 +33,7 @@ export * from "./prompting/readingLevel.js";
 export * from "./generation/generateJsonWithRetry.js";
 export * from "./adapters/types.js";
 export * from "./adapters/toolLoop.js";
+export { turnPreview, type TurnPreview } from "./adapters/streamedToolReply.js";
 export * from "./adapters/openaiToolCalling.js";
 export * from "./adapters/openAiChatCompletionsText.js";
 export * from "./adapters/alibabaModels.js";
@@ -169,6 +170,7 @@ export * from "./generation/copyrightSafeImagePrompt.js";
 export * from "./generation/imageProvenance.js";
 export * from "./generation/imageOptimization.js";
 export * from "./generation/markdown.js";
+export { readerFacingResearchSources, type ReaderFacingResearchSource } from "./generation/researchCitations.js";
 export {
   bookCarriesTomezaCredit,
   TOMEZA_CREDIT_HEAD_BYTES,

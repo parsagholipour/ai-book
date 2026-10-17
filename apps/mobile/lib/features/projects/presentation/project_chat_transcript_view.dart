@@ -51,6 +51,20 @@ mixin _ProjectChatTranscriptView
   }) {
     final messages = _visibleMessages(chat);
     final fresh = messages.isEmpty && _pendingEcho == null;
+    // A free change's reply ends with the book it rebuilt (`chat_book_update.dart`).
+    final status = ref
+        .watch(projectStatusProvider(widget.projectId))
+        .asData
+        ?.value;
+    final updateMessage = chatBookUpdateMessage(messages);
+    final updateState = updateMessage == null
+        ? null
+        : chatBookUpdateState(
+            revision: updateMessage.bookUpdateRevision!,
+            status: status,
+          );
+    final updatingInReply =
+        updateState == ChatBookUpdateState.updating && !operations.hasRunning;
     final finished = project?.status == 'complete';
     return [
       // A finished book gets an invitation with things to tap, once, while
@@ -146,6 +160,15 @@ mixin _ProjectChatTranscriptView
           onCancelProposal: message.editProposal == null
               ? null
               : () => unawaited(_cancelProposal(message.editProposal!.id)),
+          bookUpdate: message.id != updateMessage?.id || updateState == null
+              ? null
+              : ChatBookUpdateRow(
+                  state: updateState,
+                  status: status,
+                  foreground: Theme.of(context).colorScheme.onSurface,
+                  onOpen: () =>
+                      context.push('/projects/${message.projectId}/read'),
+                ),
         ),
         const SizedBox(height: 12),
         for (final operation in operations.anchoredTo(message.id)) ...[
@@ -195,7 +218,8 @@ mixin _ProjectChatTranscriptView
           ),
         ),
       if (liveStatus != null &&
-          !(rebuild.inFlight && !operations.hasRunning)) ...[
+          !(rebuild.inFlight && !operations.hasRunning) &&
+          !updatingInReply) ...[
         const SizedBox(height: AppSpacing.xxs),
         ChatOperationProgressCard(status: liveStatus),
         const SizedBox(height: AppSpacing.xs),

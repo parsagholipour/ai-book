@@ -468,12 +468,12 @@ void main() {
       findsOneWidget,
     );
     expect(_inDetails(find.text('Total')), findsOneWidget);
-    // 350 base + 12·8 pages + 45 cover + 2·45 interiors, from the harness
+    // 250 base + 12·8 pages + 70 cover + 2·70 interiors, from the harness
     // billing costs — a free reader's book carries no export unlock — plus the
     // separate 40-credit Balanced plan.
     expect(_inDetails(find.text('40')), findsOneWidget);
-    expect(_inDetails(find.text('581')), findsOneWidget);
-    expect(_inDetails(find.text('621')), findsOneWidget);
+    expect(_inDetails(find.text('556')), findsOneWidget);
+    expect(_inDetails(find.text('596')), findsOneWidget);
 
     await tester.teardownScreen();
   });

@@ -2,10 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/characters/domain/character_models.dart';
+import 'package:tomeza/features/projects/domain/making_of_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/features/voice/domain/voice_models.dart';
 import 'package:tomeza/shared/ui/motion.dart';
 
 import 'creation_chat_generation_harness.dart';
+import 'making_of_stub.dart';
 
 /// The live writing progress the chat shows after a plan is approved. Planning
 /// already reports itself this way; these pin that a book does too.
@@ -183,7 +187,10 @@ void main() {
 
     // A finished book is a still summary, not a progress bubble: no percent,
     // no reassurance, no checklist unless asked for.
-    expect(find.text('Ready · 3 pages · 1 image'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp(r'Ready · 3 pages · 1 image$')),
+      findsOneWidget,
+    );
     expect(find.text('100%'), findsNothing);
     expect(find.text('Preparing your chapters'), findsNothing);
     expect(
@@ -192,16 +199,62 @@ void main() {
     );
   });
 
-  testWidgets('a finished book has one primary action and folds its history', (
-    tester,
-  ) async {
+  testWidgets('a finished book has one primary action and folds what is '
+      'behind it', (tester) async {
+    // A 360dp phone: the card's inside is just under 300dp there, which is
+    // where the old layout stacked every button.
+    tester.view.physicalSize = const Size(1080, 2376);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final makingOf = StubMakingOfRepository(
+      MobileMakingOf(
+        cast: [
+          _castMember('voice-1', 'Neymar', 'Male lead'),
+          _castMember('voice-2', 'The Waitress', 'Female lead'),
+        ],
+        chapters: const [
+          MakingOfChapter(
+            index: 1,
+            title: 'The Table by the Window',
+            summary: 'They meet over a late order.',
+            firstPageIndex: 1,
+          ),
+          MakingOfChapter(
+            index: 2,
+            title: 'The Camera at the Door',
+            summary: 'Phones come out.',
+            firstPageIndex: 3,
+          ),
+        ],
+        sources: [
+          for (var i = 1; i <= 6; i++)
+            MakingOfSource(
+              title: 'Source $i',
+              uri: Uri.parse('https://example.com/$i'),
+              host: 'example.com',
+            ),
+        ],
+        sourceCount: 7,
+      ),
+    );
     await pumpGenerationChat(
       tester,
+      makingOf: makingOf,
+      characters: LibraryOnlyCharactersRepository([
+        LibraryCharacter(
+          id: 'library-neymar',
+          name: 'neymar',
+          description: '',
+          createdAt: DateTime.utc(2026, 10, 1),
+          updatedAt: DateTime.utc(2026, 10, 1),
+        ),
+      ]),
       status: generationStatus(
         status: 'complete',
         statusLabel: 'Ready to export',
         progressPercent: 100,
         currentAction: 'Ready to download.',
+        planningDurationMs: 72000,
         bookGenerationDurationMs: 473000,
         exports: readyGenerationExports,
         generationProgress: const MobileGenerationProgress(
@@ -223,8 +276,13 @@ void main() {
       ),
     );
 
+    // The facts sit apart, so a line never breaks inside "made in 7m 53s";
+    // a screen reader still hears them as one sentence.
+    expect(find.text('made in 7m 53s'), findsOneWidget);
     expect(
-      find.text('Ready · 3 pages · 1 image · made in 7m 53s'),
+      find.bySemanticsLabel(
+        RegExp(r'Ready · 3 pages · 1 image · made in 7m 53s$'),
+      ),
       findsOneWidget,
     );
     expect(find.widgetWithText(FilledButton, 'Read book'), findsOneWidget);
@@ -233,16 +291,121 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Open PDF'), findsNothing);
     expect(find.widgetWithText(OutlinedButton, 'Open PDF'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Edit book'), findsOneWidget);
+    // On a 360dp phone the two quieter actions share a row instead of
+    // stacking under Read book.
+    expect(
+      tester.getTopLeft(find.widgetWithText(OutlinedButton, 'Open PDF')).dy,
+      tester.getTopLeft(find.widgetWithText(OutlinedButton, 'Edit book')).dy,
+    );
     expect(find.text('View progress'), findsNothing);
-    expect(find.text('Preparing your chapters'), findsNothing);
 
-    await tester.ensureVisible(find.text('See how it was made'));
+    // The job's steps only said again what the facts and the buttons say, so
+    // they are gone; the folded row names what is behind it instead, once
+    // its own read has answered (the card arrives on the last frame above).
+    await settleEnough(tester);
+    expect(makingOf.reads, ['project-1']);
+    expect(find.text('See how it was made'), findsNothing);
+    expect(find.text('Behind the book'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(
+        'Behind the book. 2 characters · 2 chapters · 7 sources',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Neymar'), findsNothing);
+
+    await tester.ensureVisible(find.text('Behind the book'));
     await tester.pump();
-    await tester.tap(find.text('See how it was made'));
+    await tester.tap(find.text('Behind the book'));
     await settleEnough(tester);
 
-    expect(find.text('Preparing your chapters'), findsOneWidget);
-    expect(find.text('6 chapters'), findsOneWidget);
+    expect(find.text('Preparing your chapters'), findsNothing);
+    expect(find.text('Neymar'), findsOneWidget);
+    expect(find.text('The Waitress'), findsOneWidget);
+    // Saved under the same name already: a door to it, not a second copy.
+    expect(find.byKey(const ValueKey('behind-open-voice-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('behind-save-voice-1')), findsNothing);
+    expect(find.byKey(const ValueKey('behind-save-voice-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('behind-call-voice-2')), findsOneWidget);
+    expect(find.text('The Camera at the Door'), findsOneWidget);
+    expect(find.text('Source 4'), findsOneWidget);
+    expect(find.text('Source 5'), findsNothing);
+    expect(find.text('Planned in 1m 12s, written in 7m 53s.'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Show all 7'));
+    await tester.pump();
+    await tester.tap(find.text('Show all 7'));
+    await settleEnough(tester);
+    expect(find.text('Source 6'), findsOneWidget);
+    expect(find.text('And 1 more.'), findsOneWidget);
+
+    // A chapter is a door into the reader, at the page it opens on.
+    await tester.ensureVisible(find.byKey(const ValueKey('behind-chapter-2')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('behind-chapter-2')));
+    await settleEnough(tester);
+    expect(find.text('Reader at page 3'), findsOneWidget);
+  });
+
+  testWidgets('saving a cast member opens the character editor with them '
+      'already in it', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2376);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pumpGenerationChat(
+      tester,
+      makingOf: StubMakingOfRepository(
+        MobileMakingOf(
+          cast: [_castMember('voice-2', 'The Waitress', 'Female lead')],
+        ),
+      ),
+      status: generationStatus(
+        status: 'complete',
+        statusLabel: 'Ready to export',
+        progressPercent: 100,
+        bookGenerationDurationMs: 473000,
+        exports: readyGenerationExports,
+      ),
+    );
+    await settleEnough(tester);
+    await tester.ensureVisible(find.text('Behind the book'));
+    await tester.pump();
+    await tester.tap(find.text('Behind the book'));
+    await settleEnough(tester);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('behind-save-voice-2')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('behind-save-voice-2')));
+    await settleEnough(tester);
+
+    // Nothing is saved until the reader taps Save in the editor.
+    Finder field(String text) => find.byWidgetPredicate(
+      (widget) => widget is EditableText && widget.controller.text == text,
+    );
+    expect(find.text('New character'), findsOneWidget);
+    expect(field('The Waitress'), findsOneWidget);
+    expect(field('Female lead'), findsOneWidget);
+  });
+
+  testWidgets('a finished book with nothing behind it draws no empty row', (
+    tester,
+  ) async {
+    await pumpGenerationChat(
+      tester,
+      status: generationStatus(
+        status: 'complete',
+        statusLabel: 'Ready to export',
+        progressPercent: 100,
+        bookGenerationDurationMs: 473000,
+        exports: readyGenerationExports,
+      ),
+    );
+    await settleEnough(tester);
+
+    expect(find.widgetWithText(FilledButton, 'Read book'), findsOneWidget);
+    expect(find.text('Behind the book'), findsNothing);
   });
 
   testWidgets('a finished book with no file yet says so instead of going '
@@ -494,7 +657,9 @@ void main() {
     );
     await pumpGenerationChat(tester, projects: projects);
 
-    controller.add(generationStatus(status: 'editing', currentAction: 'Rewriting.'));
+    controller.add(
+      generationStatus(status: 'editing', currentAction: 'Rewriting.'),
+    );
     await settleEnough(tester);
     final fetchesWhileLive = projects.detailFetches;
 
@@ -507,3 +672,16 @@ void main() {
 }
 
 /// The book the screen reads, at whatever stage a test needs it.
+
+VoiceCharacter _castMember(String id, String name, String role) {
+  return VoiceCharacter(
+    id: id,
+    projectId: 'project-1',
+    name: name,
+    role: role,
+    description: '',
+    traits: const [],
+    status: VoiceCharacterStatus.ready,
+    needsPreparation: true,
+  );
+}

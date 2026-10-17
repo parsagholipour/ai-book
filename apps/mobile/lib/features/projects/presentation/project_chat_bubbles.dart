@@ -18,6 +18,7 @@ import 'saved_export_card.dart';
 
 // The operation card and the live progress card moved to their own files; the
 // creation chat imports them through here, so they stay reachable from this one.
+export 'chat_book_update_row.dart';
 export 'project_chat_operation_card.dart';
 export 'project_chat_progress.dart';
 
@@ -278,6 +279,7 @@ class ProjectMessageBubble extends StatelessWidget {
     this.onOpenReplanCopy,
     this.onApplyProposal,
     this.onCancelProposal,
+    this.bookUpdate,
     super.key,
   });
 
@@ -314,6 +316,10 @@ class ProjectMessageBubble extends StatelessWidget {
   final VoidCallback? onOpenReplanCopy;
   final VoidCallback? onApplyProposal;
   final VoidCallback? onCancelProposal;
+
+  /// The book this reply rebuilt, drawn at the foot of the reply
+  /// (`ChatBookUpdateRow`). Null on every other message.
+  final Widget? bookUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -447,6 +453,7 @@ class ProjectMessageBubble extends StatelessWidget {
                       onPressed: onOpenReplanCopy,
                     ),
                   ],
+                  if (bookUpdate != null && !editing) bookUpdate!,
                 ],
               ),
             ),

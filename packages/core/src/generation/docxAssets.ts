@@ -79,7 +79,10 @@ function unescapeHtml(text: string): string {
     .trim();
 }
 
-function titlePageFrom(section: string): DocxTitlePage | undefined {
+/** A title page as read, with the publication lines its foot carries (`bookMatterPages.ts`). */
+type ReadTitlePage = { page: DocxTitlePage; publication: string[] };
+
+function titlePageFrom(section: string): ReadTitlePage | undefined {
   const title = section.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
   if (title === undefined) {
     return undefined;
@@ -87,17 +90,26 @@ function titlePageFrom(section: string): DocxTitlePage | undefined {
   const subtitle = section.match(/<p\b[^>]*\bbook-title-page__subtitle\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
   const byline = section.match(/<p\b[^>]*\bbook-title-page__byline\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
   const imprint = section.match(/<p\b[^>]*\bbook-title-page__imprint\b[^>]*>([\s\S]*?)<\/p>/i)?.[1];
-  return {
+  const page: DocxTitlePage = {
     title: unescapeHtml(title),
     subtitle: subtitle === undefined ? undefined : unescapeHtml(subtitle) || undefined,
     byline: byline === undefined ? undefined : unescapeHtml(byline) || undefined,
     ...(imprint === undefined ? {} : { imprint: unescapeHtml(imprint) || undefined })
   };
+  const publication = blockParagraphs(section, "book-title-page__publication")
+    .filter((paragraph) => !paragraph.className.includes("book-title-page__imprint"))
+    .map((paragraph) => paragraph.text);
+  return { page, publication };
 }
 
 /** The `<p>`s of one `<div class="…__name">` inside the matter sheet, each with its class. */
 function matterParagraphs(section: string, name: string): Array<{ text: string; className: string }> {
-  const block = section.match(new RegExp(`<div\\b[^>]*\\bbook-matter-sheet__${name}\\b[^>]*>([\\s\\S]*?)<\\/div>`, "i"))?.[1];
+  return blockParagraphs(section, `book-matter-sheet__${name}`);
+}
+
+/** The `<p>`s of the compiler's `<div class="className">`, each with its class; its `<p>`s hold no `<div>`. */
+function blockParagraphs(section: string, className: string): Array<{ text: string; className: string }> {
+  const block = section.match(new RegExp(`<div\\b[^>]*\\b${className}\\b[^>]*>([\\s\\S]*?)<\\/div>`, "i"))?.[1];
   if (block === undefined) return [];
   return [...block.matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi)]
     .map((match) => ({ text: unescapeHtml(match[2] ?? ""), className: match[1] ?? "" }))
@@ -128,7 +140,7 @@ function stripFurniture(markdown: string): {
 } {
   const lines = markdown.split("\n");
   const kept: string[] = [];
-  let titlePage: DocxTitlePage | undefined;
+  let titlePage: ReadTitlePage | undefined;
   let matterSheet: DocxMatterSheet | undefined;
   let contents = false;
   let inFence = false;
@@ -168,7 +180,33 @@ function stripFurniture(markdown: string): {
     }
     kept.push(line);
   }
-  return { text: kept.join("\n"), titlePage, matterSheet, contents };
+  return { text: kept.join("\n"), ...wordFrontMatter(titlePage, matterSheet), contents };
+}
+
+/**
+ * The Word file's front matter, which kept its own layout when the PDF moved
+ * the publication lines to the title page's foot (2026-10-17): the title page
+ * holds the title, subtitle and byline, and a page of its own the dedication
+ * and the publication lines, the credit with them — or at the title page's
+ * foot when that page would be empty. A DOCX import recognises our title page
+ * only when every line on it is the title, subtitle, byline or publisher
+ * (`manuscriptMatter.ts`), so © lines there would come back as book text. A
+ * book compiled before the move carries the old sections and reads the same.
+ */
+function wordFrontMatter(
+  read: ReadTitlePage | undefined,
+  sheet: DocxMatterSheet | undefined
+): { titlePage: DocxTitlePage | undefined; matterSheet: DocxMatterSheet | undefined } {
+  if (!read) return { titlePage: undefined, matterSheet: sheet };
+  const dedication = sheet?.dedication ?? [];
+  const publication = [...read.publication, ...(sheet?.publication ?? [])];
+  const credit = sheet?.credit ?? (dedication.length + publication.length > 0 ? read.page.imprint : undefined);
+  if (dedication.length + publication.length === 0 && !credit) return { titlePage: read.page, matterSheet: undefined };
+  const { title, subtitle, byline } = read.page;
+  return {
+    titlePage: credit === read.page.imprint ? { title, subtitle, byline } : read.page,
+    matterSheet: { dedication, publication, credit }
+  };
 }
 
 /** The manuscript cut around its figures, with the front matter read off. */

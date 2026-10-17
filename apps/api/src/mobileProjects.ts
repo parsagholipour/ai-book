@@ -21,6 +21,7 @@ import { registerMobileManuscriptAssistRoutes } from "./mobile/routes/manuscript
 import { registerMobileManuscriptCoverRoutes } from "./mobile/routes/manuscriptCover.js";
 import { registerMobileManuscriptTakeoverRoutes } from "./mobile/routes/manuscriptTakeover.js";
 import { registerMobileBookNoteRoutes } from "./mobile/routes/notes.js";
+import { registerMobileMakingOfRoutes } from "./mobile/routes/makingOf.js";
 import { registerMobileBookMatterRoutes } from "./mobile/routes/bookMatter.js";
 import { registerMobileShareRoutes } from "./mobile/routes/shares.js";
 import { registerMobilePushDeviceRoutes } from "./mobile/routes/pushDevice.js";
@@ -75,6 +76,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   await registerMobileManuscriptCoverRoutes(fastify, context);
   await registerMobileManuscriptTakeoverRoutes(fastify, context);
   await registerMobileBookNoteRoutes(fastify, context);
+  await registerMobileMakingOfRoutes(fastify);
   await registerMobileBookMatterRoutes(fastify, context);
   await registerMobileShareRoutes(fastify, context);
   await registerMobilePushDeviceRoutes(fastify, context);

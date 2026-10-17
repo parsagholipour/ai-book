@@ -28,6 +28,16 @@ function statementsOf(text: string): string[] {
     .filter((statement) => statement.length > 0);
 }
 
+/**
+ * Keys a later migration has since moved again, with the default they read now:
+ * the welcome grant went to 1,500 when a picture went to 70 (000116).
+ */
+const SUPERSEDED: Partial<Record<CreditPricingKey, number>> = {
+  welcomeCredits: 1500,
+  welcomeCreditsHighIncome: 1500,
+  welcomeCreditsLowMiddleIncome: 1500
+};
+
 /** Every key the migration moves, with the default it moves from and the one it moves to. */
 const MOVED: Array<[CreditPricingKey, number, number]> = [
   ["welcomeCreditsAccountsPerIpHighIncome", 2, 3],
@@ -51,7 +61,7 @@ describe("migration 000110_welcome_ip_caps", () => {
   });
 
   it.each(MOVED)("moves %s from its old default %i to core's compiled default %i, and only from it", (key, from, to) => {
-    expect(DEFAULT_CREDIT_COSTS[key]).toBe(to);
+    expect(DEFAULT_CREDIT_COSTS[key]).toBe(SUPERSEDED[key] ?? to);
     expect(sql).toContain(`COALESCE(("values" ->> '${key}')::numeric, ${from}) = ${from}`);
     expect(sql).toContain(`jsonb_build_object('${key}', ${to})`);
     expect(sql).toContain(`'${key}', CASE WHEN`);

@@ -325,19 +325,19 @@ describe("bookEditCreditCost", () => {
   });
 
   it("quotes a replan against the book being asked for, not the one being replaced", () => {
-    // A 12-page illustrated lead magnet: 120 replan base + 350 book base
-    // + 12x8 pages + 2x45 interior images + 1x45 cover. No export line: a
+    // A 12-page illustrated lead magnet: 120 replan base + 250 book base
+    // + 12x8 pages + 2x70 interior images + 1x70 cover. No export line: a
     // book's price carries no export unlock since 2026-10-15.
     const project = projectRecord({ id: "project-1" }) as never;
-    expect(bookEditCreditCost("book_replan", 0, project)).toBe(701);
+    expect(bookEditCreditCost("book_replan", 0, project)).toBe(676);
 
-    // "make it 3 pages without illustrations" — 120 + 350 + 3x8 + 1x45 cover.
-    // Quoted off the project row alone this stayed 701, so the reader paid for
+    // "make it 3 pages without illustrations" — 120 + 250 + 3x8 + 1x70 cover.
+    // Quoted off the project row alone this stayed 676, so the reader paid for
     // nine pages and two illustrations the rebuilt book was never going to have.
     expect(
       bookEditCreditCost("book_replan", 0, project, {
         replanSettings: { targetPages: 3, fullIllustrations: false }
       })
-    ).toBe(539);
+    ).toBe(464);
   });
 });

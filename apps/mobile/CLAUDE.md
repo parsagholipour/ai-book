@@ -459,6 +459,11 @@ at once:
   comment filter. A heartbeat that resends an unchanged status is dropped by the watch
   (`MobileProjectStatus` compares by its payload). See "The status watch" in
   `lib/features/projects/CLAUDE.md`.
+- **The book-update wire.** `MobileProjectChatMessage.bookUpdateRevision` reads a reply's
+  `bookUpdate.contentRevision` as `apps/api/src/mobile/bookUpdateMetadata.ts` writes it, and
+  compares it with the status's `exports.pdf.revision` (the project's revision at that read). A
+  missing key is a reply that rebuilt nothing, so an older server simply draws no book row. See
+  "A free change's reply ends with the book" in `lib/features/projects/CLAUDE.md`.
 - **The app-update wire.** `AppBuild.headers` and the 426 `APP_UPDATE_REQUIRED` body are read by
   `apps/api/src/appUpdates.ts`. Every installed build keeps the spelling it shipped with, so the
   server keeps answering the old one — see "App updates" in `apps/api/CLAUDE.md`.

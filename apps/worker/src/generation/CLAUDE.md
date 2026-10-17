@@ -1448,9 +1448,14 @@ heartbeat-protected scratch directories. S3 copies and uploads preserve the publ
   check, because the cover may draw on another model than the pages. It only ever moves NULL → an
   answer, once, and every `read` of the pass takes its cast from the row it read, so the render
   draws the cast the claim's read found. NULL means no decision: composed books, per-page books,
-  cover-only books, books off the short-book path, and every replan, continuation and revision —
-  each a new `PlanVersion` row — keep the whole cast exactly as before. Chat `add_image` reads the
-  sheets that exist, as it always did. **A cover concept that is only the brief shows the lead.**
+  books off the short-book path, and every replan, continuation and revision — each a new
+  `PlanVersion` row — keep the whole cast exactly as before. **A cover-only book draws no reference
+  sheet: its cover is its one picture.** `characterReferenceCast` answers `[]` without pages to
+  illustrate, since by this rule nobody is in two pictures, and "The Last Table" (2026-10-17) spent
+  $0.078 of its $0.129 on two sheets for the one cover. A saved library portrait still reaches that cover, which
+  attaches it directly (`coverPortraitCharacters`, `selectCoverReferenceImagePaths`). Chat
+  `add_image` reads the sheets that exist, as it always did, so a picture added to a cover-only book
+  is drawn from its prose and is not held to the cover's look. **A cover concept that is only the brief shows the lead.**
   145 of 172 plans with characters in those 45 days (21 of 25 illustrated KIDS plans) carry the
   planner's fallback cover prompt, `Cover illustration for <title>: <the whole brief>`
   (`makeFallbackPlan`), and a brief names everyone the story has: read as a picture of each of
@@ -1482,9 +1487,8 @@ heartbeat-protected scratch directories. S3 copies and uploads preserve the publ
   sheets exist to provide. `PlanVersion.characterReferenceRefusals` is that record and
   `characterReferenceSetIsSettled` is the gate that reads it — a sheet or a refusal for every
   character of the cast (`characterReferenceCast`: the whole plan cast for a book with illustrated
-  pages — or the cast a short book's draft decided, above — only the characters the cover concept
-  names for a cover-only AI book, and no sheet for one whose saved artwork the cover attaches
-  instead). It is written in the same transaction as the `ImageAsset` rows, because a settlement
+  pages — or the cast a short book's draft decided, above — and nobody for a cover-only AI book).
+  It is written in the same transaction as the `ImageAsset` rows, because a settlement
   without them re-renders nothing and sheets without it rebuild per page. The pass that runs owns
   the whole answer: it attempted every character of the cast, so a name it does not refuse this time is one it
   drew, and a later pass that draws everyone clears the column.

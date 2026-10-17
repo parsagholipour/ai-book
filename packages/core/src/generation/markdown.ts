@@ -6,6 +6,7 @@ import { joinMarkdownPageBlocks } from "./markdownPageBoundaries.js";
 import { assertBookLikeMarkdown } from "./bookLikeMarkdown.js";
 import { storyPageDesignField, type StoryPageDesignId } from "./storyPageDesigns.js";
 import { escapeHtml, formatBookMatter, type BookMatterForCompile } from "./bookMatterPages.js";
+import { PROMPT_LEAK_PATTERNS, readerFacingResearchSources } from "./researchCitations.js";
 
 // Re-exported because `markdownLabels` was always part of this module's surface
 // — `epub.ts` and the exporters import it from here. The leak checks moved out
@@ -761,30 +762,6 @@ function sanitizeCoverAlt(alt: string | undefined, labels: MarkdownLabels): stri
   return alt.trim() || labels.bookCover;
 }
 
-function formatResearchCitation(source: { title: string; url?: string | undefined }): string | undefined {
-  const url = source.url?.trim();
-  if (!url) {
-    return undefined;
-  }
-  return `- [${escapeMarkdownLinkText(sanitizeResearchTitle(source.title, url))}](${url})`;
-}
-
-function sanitizeResearchTitle(title: string, url: string): string {
-  const clean = title.trim().replace(/\s+/g, " ");
-  if (!clean || clean.length > 120 || PROMPT_LEAK_PATTERNS.some((pattern) => pattern.test(clean))) {
-    return hostnameFromUrl(url);
-  }
-  return clean;
-}
-
-function hostnameFromUrl(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "") || "Source";
-  } catch {
-    return "Source";
-  }
-}
-
 function escapeMarkdownLinkText(text: string): string {
   return text.replace(/[\\[\]]/g, "\\$&");
 }
@@ -839,45 +816,7 @@ function formatReaderFacingSources(input: CompileMarkdownInput): string {
 function uniqueResearchCitations(
   sources: Array<{ title: string; url?: string | undefined; summary: string }>
 ): string[] {
-  const seen = new Set<string>();
-  const citations: string[] = [];
-
-  for (const source of sources) {
-    const url = source.url?.trim();
-    if (!url || seen.has(normalizeSourceUrl(url))) {
-      continue;
-    }
-    const citation = formatResearchCitation(source);
-    if (!citation) {
-      continue;
-    }
-    seen.add(normalizeSourceUrl(url));
-    citations.push(citation);
-  }
-
-  return citations;
+  return readerFacingResearchSources(sources).map(
+    (source) => `- [${escapeMarkdownLinkText(source.title)}](${source.url})`
+  );
 }
-
-function normalizeSourceUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.hash = "";
-    return parsed.toString().replace(/\/$/, "");
-  } catch {
-    return url.trim().replace(/#.*$/, "").replace(/\/$/, "");
-  }
-}
-
-const PROMPT_LEAK_PATTERNS = [
-  /global visual style/i,
-  /continuity rules:/i,
-  /image prompt/i,
-  /avoid text inside images/i,
-  /return json/i,
-  /pageinstruction/i,
-  /production instructions/i,
-  /for an ai book/i,
-  /research this for/i,
-  /book generation/i,
-  /generation plan/i
-];

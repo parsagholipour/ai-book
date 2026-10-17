@@ -38,6 +38,9 @@ async function buildApp(options: { rescreener?: ShareRescreener } = {}): Promise
 
 beforeEach(async () => {
   resetMobileHarness();
+  // The route reads loadConfig(), which fills only unset keys from the developer's .env — a
+  // phone on the LAN needs PUBLIC_API_URL to be the machine's address, not localhost.
+  vi.stubEnv("PUBLIC_API_URL", "http://localhost:4001");
   store = installShareStore();
   const published = await publishSharedBook("project-1", 12, 2);
   project = {
@@ -59,7 +62,10 @@ beforeEach(async () => {
   mockPrisma.imageAsset.findFirst.mockResolvedValue(null);
 });
 
-afterEach(teardownMobileHarness);
+afterEach(() => {
+  vi.unstubAllEnvs();
+  teardownMobileHarness();
+});
 
 describe("the auth surface", () => {
   it("leaves /s/ public while /api/* answers exactly as before", async () => {

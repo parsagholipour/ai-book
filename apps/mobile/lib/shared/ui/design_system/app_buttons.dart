@@ -20,6 +20,7 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.leading,
+    this.detail,
     this.loading = false,
     this.loadingLabel,
     this.expanded = false,
@@ -34,6 +35,7 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.leading,
+    this.detail,
     this.loading = false,
     this.loadingLabel,
     this.expanded = false,
@@ -48,6 +50,7 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.leading,
+    this.detail,
     this.loading = false,
     this.loadingLabel,
     this.expanded = false,
@@ -62,6 +65,7 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.leading,
+    this.detail,
     this.loading = false,
     this.loadingLabel,
     this.expanded = false,
@@ -76,6 +80,7 @@ class AppButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.leading,
+    this.detail,
     this.loading = false,
     this.loadingLabel,
     this.expanded = false,
@@ -89,6 +94,12 @@ class AppButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final Widget? leading;
+
+  /// A smaller second line under [label], such as a price. A price inside the
+  /// label ("Make illustrated version (45 credits)") broke a full-width button
+  /// onto two ragged lines on a 360 dp phone; under it, both lines stay short
+  /// and centred.
+  final String? detail;
   final bool loading;
   final String? loadingLabel;
   final bool expanded;
@@ -106,11 +117,45 @@ class AppButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final announcedLabel = loading ? loadingLabel ?? label : label;
-    final labelWidget = Text(
+    final detailText = detail;
+    // A label that wraps is centred like the button's content, not left on the
+    // start edge under a centred icon.
+    final textAlign = alignStart ? TextAlign.start : TextAlign.center;
+    final title = Text(
       announcedLabel,
       maxLines: maxLines,
       overflow: overflow,
+      textAlign: textAlign,
     );
+    final Widget labelWidget = detailText == null
+        ? title
+        : Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: alignStart
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.center,
+              children: [
+                title,
+                Opacity(
+                  opacity: 0.8,
+                  child: Text(
+                    detailText,
+                    textAlign: textAlign,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+    final spokenLabel = detailText == null
+        ? announcedLabel
+        : '$announcedLabel, $detailText';
     final icon = loading
         ? SizedBox.square(
             dimension: AppSizes.buttonProgressIndicator,
@@ -203,7 +248,7 @@ class AppButton extends StatelessWidget {
       button: true,
       enabled: enabled,
       liveRegion: loading,
-      label: announcedLabel,
+      label: spokenLabel,
       onTap: callback,
       child: ExcludeSemantics(
         child: AppPressScale(

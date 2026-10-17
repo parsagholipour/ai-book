@@ -566,7 +566,7 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
     final role = _roleOf(character);
     final pictureStatus = characterPictureStatus(character);
     // The strip is for pictures. A character with none, and nothing on its way,
-    // has the header's own two ways in instead of a bare rail under it.
+    // has the reference card's two ways in instead of a bare rail under it.
     final showStrip =
         images.isNotEmpty ||
         _pendingUpload != null ||
@@ -667,7 +667,6 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                         mainImage == null ? 0 : images.indexOf(mainImage),
                       ),
                       onAddPicture: _addPicture,
-                      onDescribe: _busy ? null : () => _editDetails(character),
                     ),
                   ),
                 ),
@@ -728,6 +727,7 @@ class _CharacterProfileScreenState extends ConsumerState<CharacterProfileScreen>
                   portraitBusy: _portraitBusy,
                   waitGaveUp: portraitWaitGaveUp,
                   onGeneratePortrait: () => _generatePortrait(character),
+                  onAddPhoto: _addPicture,
                   onPromote: (image) => _promote(image, name: character.name),
                   onCheckAgain: resumePortraitPolling,
                 ),

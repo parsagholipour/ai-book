@@ -1,3 +1,4 @@
+import { namesAuthorProfile, type BookMatterChatProfile } from "../authoring/bookMatterProfile.js";
 import type { GenerateJsonOptions } from "./types.js";
 
 /**
@@ -20,7 +21,10 @@ import type { GenerateJsonOptions } from "./types.js";
  *   into the current text ("too", "instead") — on an English book only, since
  *   the short form "For …" is English;
  * - "remove the dedication" with nothing qualifying it;
- * - "the ISBN is <digits>" (the normalizer checks the digits).
+ * - "the ISBN is <digits>" (the normalizer checks the digits);
+ * - a message pointing at the reader's saved profile ("use my profile"), when
+ *   the prompt carries one: every field it holds, copied, the whole message as
+ *   the request.
  *
  * Each may be preceded by a polite lead-in ("please", "can you") and nothing
  * else. After the quoted dedication, the removal or the ISBN, anything joined
@@ -32,8 +36,12 @@ import type { GenerateJsonOptions } from "./types.js";
  * on a real reply. Nothing here runs outside `FakeTextModelAdapter`.
  */
 export function fakeBookMatterChatEdit(options: GenerateJsonOptions<unknown>): unknown {
-  const { message, englishBook } = readerPayload(options);
+  const { message, englishBook, profile } = readerPayload(options);
   const text = message.trim();
+  const fromProfile = text.length <= 4000 ? profileChanges(text, profile) : [];
+  if (fromProfile.length > 0) {
+    return { outcome: "change", changes: fromProfile, question: null, noneReason: null, unhandled: null };
+  }
   // The schema bounds `requestedBy` and `unhandled` at 4000; a longer message
   // would fail the parse and read as an outage instead of a question.
   const found =
@@ -163,16 +171,33 @@ function typedIsbn(message: string): FakeChange | null {
   return { field: "isbn", action: "set", text: match[2], requestedBy: match[1], unhandled: rest.unhandled };
 }
 
-function readerPayload(options: GenerateJsonOptions<unknown>): { message: string; englishBook: boolean } {
+function profileChanges(message: string, profile: BookMatterChatProfile | undefined) {
+  if (!profile || !namesAuthorProfile(message)) return [];
+  return Object.entries(profile).map(([field, value]) => ({
+    field,
+    action: "set",
+    text: typeof value === "string" ? value : null,
+    requestedBy: message
+  }));
+}
+
+function readerPayload(options: GenerateJsonOptions<unknown>): {
+  message: string;
+  englishBook: boolean;
+  profile: BookMatterChatProfile | undefined;
+} {
   const user = [...options.messages].reverse().find((entry) => entry.role === "user");
   try {
-    const payload = JSON.parse(String(user?.content ?? "{}")) as { readerMessage?: unknown; bookLanguage?: unknown };
+    const payload = JSON.parse(String(user?.content ?? "{}")) as { readerMessage?: unknown; bookLanguage?: unknown; authorProfile?: unknown };
+    const profile = payload.authorProfile;
     return {
       message: typeof payload.readerMessage === "string" ? payload.readerMessage : "",
       // `languageLabel` sends English as "en" and every other language by name.
-      englishBook: payload.bookLanguage === undefined || payload.bookLanguage === "en"
+      englishBook: payload.bookLanguage === undefined || payload.bookLanguage === "en",
+      // The prompt builder's own object; the normalizer checks every value against it again.
+      profile: profile !== null && typeof profile === "object" ? (profile as BookMatterChatProfile) : undefined
     };
   } catch {
-    return { message: "", englishBook: false };
+    return { message: "", englishBook: false, profile: undefined };
   }
 }

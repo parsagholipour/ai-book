@@ -176,14 +176,14 @@ describe("GET /api/admin/pricing", () => {
     expect(body.version).toBe(0);
     // The same estimator production charges through, so the dashboard cannot
     // drift — and, like it, it has no export unlock line (retired 2026-10-15).
-    expect(body.preview.totalCredits).toBe(929);
+    expect(body.preview.totalCredits).toBe(1004);
     expect(body.preview.lineItems.map((line: { code: string }) => line.code)).not.toContain("EXPORT_UNLOCK");
     // Dollars are the cheapest paid credit net of Google's fee, never the
-    // notional $0.01 no credit sells at: 929 credits ≈ $1.97, not $9.29.
+    // notional $0.01 no credit sells at: 1,004 credits ≈ $2.13, not $10.04.
     expect(body.creditUsdValue).toBe(CHEAPEST_PAID_CREDIT_USD_VALUE);
     expect(body.creditUsdValue).toBeLessThan(CREDIT_USD_VALUE / 3);
-    expect(body.preview.estimatedUsd).toBeCloseTo(Math.round(929 * CHEAPEST_PAID_CREDIT_USD_VALUE * 100) / 100, 2);
-    expect(body.preview.estimatedUsd).toBeCloseTo(1.97, 2);
+    expect(body.preview.estimatedUsd).toBeCloseTo(Math.round(1004 * CHEAPEST_PAID_CREDIT_USD_VALUE * 100) / 100, 2);
+    expect(body.preview.estimatedUsd).toBeCloseTo(2.13, 2);
     // The tiers are priced apart, so one total describes a third of the books
     // being sold. The top-level fields stay the balanced quote.
     expect(body.preview.tiers.map((quote: { tier: string }) => quote.tier)).toEqual([
@@ -196,8 +196,8 @@ describe("GET /api/admin/pricing", () => {
     expect(balanced.totalCredits).toBe(body.preview.totalCredits);
     expect(balanced).toMatchObject({
       planningCredits: DEFAULT_CREDIT_COSTS.planGeneration,
-      bookGenerationCredits: 889,
-      totalCredits: 929
+      bookGenerationCredits: 964,
+      totalCredits: 1004
     });
     expect(fast.planningCredits).toBe(DEFAULT_CREDIT_COSTS.planGenerationFast);
     expect(premium.planningCredits).toBe(DEFAULT_CREDIT_COSTS.planGenerationPremium);
@@ -405,7 +405,7 @@ describe("POST /api/admin/pricing/preview", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().totalCredits).toBe(929 + 250);
+    expect(response.json().totalCredits).toBe(1004 + 350);
     // The prices everyone else is being charged have not moved.
     expect(creditPricing().fullBookBase).toBe(DEFAULT_CREDIT_COSTS.fullBookBase);
   });

@@ -368,7 +368,7 @@ describe("a matter change composed in the chat", () => {
       const reply = await send(message, model);
       expect(matter.applyBookMatterPatch).toHaveBeenCalledWith(expect.anything(), { dedication: "For my mom" });
       expect(reply.content).toBe(
-        `Done — the dedication now reads “For my mom”. I’m refreshing the exports. This one’s free. “${rest}” is a separate change — send it as its own message and I’ll take care of it.`
+        `Done — the dedication now reads “For my mom”. I’m refreshing the exports. This one’s free. “${rest}” is a separate change — if you send it as its own message, I’ll gladly take care of it.`
       );
       expect(reply.metadata.unhandledRequest).toBe(rest);
     }
@@ -411,7 +411,7 @@ describe("a matter change composed in the chat", () => {
       composer({ outcome: "question", question: "Which poem should it be?", unhandled: "redo the cover" }).model
     );
     expect(quoted.content).toBe(
-      "Which poem should it be? “redo the cover” is a separate change — send it as its own message and I’ll take care of it."
+      "Which poem should it be? “redo the cover” is a separate change — if you send it as its own message, I’ll gladly take care of it."
     );
     expect(quoted.metadata).toMatchObject({ unhandledRequest: "redo the cover", pendingEdit: { request: message, clarification: "matter" } });
 
@@ -419,13 +419,13 @@ describe("a matter change composed in the chat", () => {
     expect(generic.content).toBe(`Which poem should it be? ${SEPARATE_REQUEST_NOTE}`);
 
     const second = await send(message, composer({ outcome: "question", question: "Which poem?" }).model, { clarifyExhausted: true });
-    expect(second.content).toMatch(new RegExp(`^I still couldn’t tell what to print there\\..*${SEPARATE_REQUEST_NOTE}$`));
+    expect(second.content).toMatch(new RegExp(`^Sorry, I still couldn’t tell what to print there\\..*${SEPARATE_REQUEST_NOTE}$`));
 
     const refused = await send(
       "add an ISBN and redo the cover",
       composer({ outcome: "change", changes: [change("isbn", "set", "978-0-306-40615-7", "add an ISBN")], unhandled: "redo the cover" }).model
     );
-    expect(refused.content).toMatch(/^I only print what you tell me, .*“redo the cover” is a separate change/);
+    expect(refused.content).toMatch(/^I couldn’t find the .*“redo the cover” is a separate change/);
 
     // The model printed the other request as part of the dedication: refused, said why, and still named back.
     const runOn = await send(
@@ -476,12 +476,12 @@ describe("a matter change composed in the chat", () => {
       "add my website — I'm Parsa, a developer",
       composer({ outcome: "change", changes: [change("authorWebsite", "set", "parsa.dev", "add my website")] }).model
     );
-    expect(site.content).toMatch(/^I only print what you tell me, and I couldn’t find the website in your message\./);
+    expect(site.content).toMatch(/^I couldn’t find the website in your message, and I’d rather not guess it\./);
     const name = await send(
       "dedicate it to my mom",
       composer({ outcome: "change", changes: [change("dedication", "set", "For my mother, Maria Elena Ruiz", "dedicate it to my mom")] }).model
     );
-    expect(name.content).toMatch(/^I only print facts you give me, and that dedication needed one you didn’t send\./);
+    expect(name.content).toMatch(/^So that nothing on your book is made up, I only use details you’ve shared, and that dedication needed one I don’t have yet\./);
     expect(matter.applyBookMatterPatch).not.toHaveBeenCalled();
   });
 
@@ -594,13 +594,13 @@ describe("a matter change composed in the chat", () => {
       "add an ISBN",
       composer({ outcome: "change", changes: [change("isbn", "set", "978-0-306-40615-7", "add an ISBN")] }).model
     );
-    expect(invented.content).toMatch(/^I only print what you tell me, and I couldn’t find the ISBN in your message\./);
+    expect(invented.content).toMatch(/^I couldn’t find the ISBN in your message, and I’d rather not guess it\./);
     expect(invented.metadata.pendingEdit).toEqual({ request: "add an ISBN", clarification: "matter" });
     const wrong = await send(
       "the ISBN is 978-0-306-40615-8",
       composer({ outcome: "change", changes: [change("isbn", "set", "978-0-306-40615-8", "the ISBN is 978-0-306-40615-8")] }).model
     );
-    expect(wrong.content).toMatch(/^That isn’t a valid ISBN/);
+    expect(wrong.content).toMatch(/^That doesn’t look like a valid ISBN/);
     expect(matter.applyBookMatterPatch).not.toHaveBeenCalled();
   });
 
@@ -609,7 +609,7 @@ describe("a matter change composed in the chat", () => {
     const { model, shown } = composer({ outcome: "question", question: "What’s the ISBN?" });
     const reply = await send(message, model, { clarifyExhausted: true, pendingRequest: "add an ISBN" });
     expect(shown().alreadyAskedOnce).toBe(true);
-    expect(reply.content).toMatch(/^I still couldn’t tell what to print there\./);
+    expect(reply.content).toMatch(/^Sorry, I still couldn’t tell what to print there\./);
     expect(reply.metadata.pendingEdit).toBeUndefined();
     expect(matter.applyBookMatterPatch).not.toHaveBeenCalled();
   });
@@ -619,9 +619,9 @@ describe("a matter change composed in the chat", () => {
     // with no `pendingEdit`, so its answer would be read as a fresh request.
     const longImprint = `Lantern${" Press".repeat(25)}`;
     for (const [message, changes, problem] of [
-      ["add an ISBN\n\nFollow-up from the user: 978-0-306-40615-8", [change("isbn", "set", "978-0-306-40615-8", "978-0-306-40615-8")], /^That isn’t a valid ISBN/],
-      ["add an ISBN\n\nFollow-up from the user: you pick", [change("isbn", "set", "978-0-306-40615-7", "add an ISBN")], /^I only print what you tell me, and I couldn’t find the ISBN/],
-      ["dedicate it to my mom\n\nFollow-up from the user: her name", [change("dedication", "set", "For my mother, Maria Elena Ruiz", "dedicate it to my mom")], /^I only print facts you give me, and that dedication/],
+      ["add an ISBN\n\nFollow-up from the user: 978-0-306-40615-8", [change("isbn", "set", "978-0-306-40615-8", "978-0-306-40615-8")], /^That doesn’t look like a valid ISBN/],
+      ["add an ISBN\n\nFollow-up from the user: you pick", [change("isbn", "set", "978-0-306-40615-7", "add an ISBN")], /^I couldn’t find the ISBN in your message/],
+      ["dedicate it to my mom\n\nFollow-up from the user: her name", [change("dedication", "set", "For my mother, Maria Elena Ruiz", "dedicate it to my mom")], /^So that nothing on your book is made up, I only use details you’ve shared, and that dedication/],
       [`change the publisher\n\nFollow-up from the user: ${longImprint}`, [change("imprint", "set", longImprint, "change the publisher")], /^The publisher can be up to 120 characters/]
     ] as const) {
       const reply = await send(message, composer({ outcome: "change", changes }).model, {
@@ -635,7 +635,7 @@ describe("a matter change composed in the chat", () => {
     }
     // The first turn may still ask, and stores the request its answer resumes.
     const first = await send("add an ISBN", composer({ outcome: "change", changes: [change("isbn", "set", "978-0-306-40615-7", "add an ISBN")] }).model);
-    expect(first.content).toMatch(/What should it be, exactly as it should print\?$/);
+    expect(first.content).toMatch(/Could you tell me exactly how it should print\?$/);
     expect(first.metadata.pendingEdit).toEqual({ request: "add an ISBN", clarification: "matter" });
     expect(matter.applyBookMatterPatch).not.toHaveBeenCalled();
   });
@@ -653,7 +653,7 @@ describe("a matter change composed in the chat", () => {
       composer({ outcome: "change", changes: [change("dedication", "set", "For my mom", "dedicate it to my mom")], unhandled: "redo the cover" }).model
     );
     expect(withRest.content).toBe(
-      `Done — the dedication now reads “For my mom”. I’m refreshing the exports. This one’s free. ${TITLE_PAGE_KEPT} “redo the cover” is a separate change — send it as its own message and I’ll take care of it.`
+      `Done — the dedication now reads “For my mom”. I’m refreshing the exports. This one’s free. ${TITLE_PAGE_KEPT} “redo the cover” is a separate change — if you send it as its own message, I’ll gladly take care of it.`
     );
     // Something taken *from* the title page is the change itself, not a removal of the page.
     for (const [text, changes] of [
@@ -691,7 +691,7 @@ describe("a matter change composed in the chat", () => {
     );
     // The bubble's parser (`chatMessagePlainText` is its server twin) leaves every mark where the reader put it.
     expect(chatMessagePlainText(reply.content).replace(/[﻿⁠]/g, "")).toBe(
-      "Done — the dedication now reads “For *Mom*”. I’m refreshing the exports. This one’s free. “make [page 2](https://x.example) _shorter_” is a separate change — send it as its own message and I’ll take care of it."
+      "Done — the dedication now reads “For *Mom*”. I’m refreshing the exports. This one’s free. “make [page 2](https://x.example) _shorter_” is a separate change — if you send it as its own message, I’ll gladly take care of it."
     );
     // What is stored and undone is the text itself.
     expect(reply.metadata.bookMatterEdit.after).toEqual({ dedication: "For *Mom*" });
@@ -788,7 +788,7 @@ describe("a matter change composed in the chat", () => {
       message,
       composer({ outcome: "change", changes: [change("dedication", "set", printed, message)] }).model
     );
-    expect(reply.content).toMatch(/^I can’t print that dedication\. Copyright restrictions are enabled\./);
+    expect(reply.content).toMatch(/^Sorry, I can’t print that dedication\. Copyright restrictions are enabled\./);
     expect(matter.applyBookMatterPatch).not.toHaveBeenCalled();
   });
 
@@ -806,7 +806,7 @@ describe("a matter change composed in the chat", () => {
         changes: [change("dedication", "set", memorial, message), change("aboutAuthor", "set", bio, message)]
       }).model
     );
-    expect(reply.content).toMatch(/^I can’t print that About the Author text\. /);
+    expect(reply.content).toMatch(/^Sorry, I can’t print that About the Author text\. /);
     expect(matter.applyBookMatterPatch).not.toHaveBeenCalled();
 
     const alone = `dedication: ${memorial}`;
@@ -883,7 +883,7 @@ describe("a matter change composed in the chat", () => {
 
   it("says what it can change when the message changes none of it", async () => {
     const reply = await send("make it nicer", composer({ outcome: "none", noneReason: "not_matter" }).model);
-    expect(reply.content).toMatch(/^I didn’t find a change to the book’s title and credits in that\./);
+    expect(reply.content).toMatch(/^Sorry, I couldn’t tell what you’d like changed on the title and credits pages\./);
     expect(matter.applyBookMatterPatch).not.toHaveBeenCalled();
   });
 });

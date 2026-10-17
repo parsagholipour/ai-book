@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:tomeza/features/characters/data/characters_repository.dart';
 import 'package:tomeza/features/characters/presentation/character_crop_screen.dart';
 import 'package:tomeza/features/characters/presentation/character_editor_sheet.dart';
+import 'package:tomeza/shared/api/api_error.dart';
 import 'package:tomeza/shared/media/photo_picker.dart';
 
 import 'character_test_support.dart';
@@ -115,6 +116,33 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'Value'), 'Bold');
     await tester.pumpAndSettle();
     expect(find.text('Add what your stories should remember.'), findsNothing);
+  });
+
+  testWidgets('a create that fails says so where the reader can see it', (
+    tester,
+  ) async {
+    // A snack bar from inside the sheet opens on the page's Scaffold, which
+    // the sheet covers: the button spun, stopped, and nothing else happened.
+    final repository = await pumpCreate(tester);
+    repository.createFailure = const ApiException(
+      code: 'NETWORK_ERROR',
+      message: 'Could not reach Tomeza. Check your connection.',
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Mina');
+    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New character'), findsOneWidget);
+    expect(
+      find.text('Could not reach Tomeza. Check your connection.').hitTestable(),
+      findsOneWidget,
+    );
+
+    // The next try clears it, and a create that works closes the sheet.
+    repository.createFailure = null;
+    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('New character'), findsNothing);
   });
 
   testWidgets('the length counter waits until the cap is in sight', (

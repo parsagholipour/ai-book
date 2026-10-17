@@ -282,7 +282,10 @@ type BookMatterOutcome = { reprint: BookMatterReprint; cover: BookMatterCover };
  * files already out, a row written behind them, and a reply promising
  * `next_compile` — a compile that never comes.
  */
-export async function applyBookMatterPatch(project: BookMatterProject, patch: BookMatterPatch): Promise<BookMatterOutcome> {
+export async function applyBookMatterPatch(
+  project: BookMatterProject,
+  patch: BookMatterPatch
+): Promise<BookMatterOutcome & { contentRevision?: number }> {
   // Asked of the value alone, so before any lock. `null` and `""` (already
   // `null` here) clear the ISBN and are never refused.
   if (patch.isbn && !normalizeIsbn(patch.isbn)) {
@@ -297,10 +300,10 @@ export async function applyBookMatterPatch(project: BookMatterProject, patch: Bo
     }
     throw error;
   }
-  if (decided.committed) {
-    await dispatchCoverJobs(project.id, decided.committed);
-  }
-  return decided.outcome;
+  if (!decided.committed) return decided.outcome;
+  await dispatchCoverJobs(project.id, decided.committed);
+  // The revision the reprint was committed at, for the chat's book row (`bookUpdateMetadata`).
+  return { ...decided.outcome, contentRevision: decided.committed.contentRevision };
 }
 
 async function applyUnderLock(

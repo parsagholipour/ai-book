@@ -48,8 +48,8 @@ describe("long assist prices", () => {
   // Spelled out rather than derived from the price table, like the app's own
   // `studio_pricing.dart` tests, so one shared bug cannot hide in both.
   it("computes exactly what the app quotes", () => {
-    expect(longAssistCredits("illustrate", { tier: "balanced" })).toBe(45);
-    expect(longAssistCredits("illustrate", { tier: "premium" })).toBe(85);
+    expect(longAssistCredits("illustrate", { tier: "balanced" })).toBe(70);
+    expect(longAssistCredits("illustrate", { tier: "premium" })).toBe(130);
     expect(longAssistCredits("draft_chapter", { tier: "balanced" })).toBe(400);
     expect(longAssistCredits("draft_chapter", { tier: "balanced", targetWords: 300 })).toBe(80);
     expect(longAssistCredits("draft_chapter", { tier: "balanced", targetWords: 4000 })).toBe(960);
@@ -66,7 +66,7 @@ describe("POST /manuscript/assists", () => {
     const app = await buildMobileApp();
     const { projectId, chapterId } = await book(app);
     const cases = [
-      { payload: { kind: "illustrate", chapterId, prompt: "The keeper on the stairs" }, operation: "IMAGE_GENERATION", credits: 45, row: "ILLUSTRATE" },
+      { payload: { kind: "illustrate", chapterId, prompt: "The keeper on the stairs" }, operation: "IMAGE_GENERATION", credits: 70, row: "ILLUSTRATE" },
       { payload: { kind: "draft_chapter", chapterId, notes: "She finds the logbook." }, operation: "PAGE_REGENERATION", credits: 400, row: "DRAFT_CHAPTER" },
       { payload: { kind: "chapter_feedback", chapterId }, operation: "BOOK_TEXT_EDIT", credits: 45, row: "CHAPTER_FEEDBACK" },
       { payload: { kind: "consistency" }, operation: "PREMIUM_REVIEW", credits: 200, row: "CONSISTENCY" },
@@ -113,8 +113,8 @@ describe("POST /manuscript/assists", () => {
 
     const response = await longAssist(app, projectId, { kind: "illustrate", chapterId, passage: "The stairs", requestId: "request-tier-0001" });
 
-    expect(response.json().assist.creditsCharged).toBe(85);
-    expect(reserved()).toEqual([expect.objectContaining({ operation: "IMAGE_GENERATION", amountCredits: 85 })]);
+    expect(response.json().assist.creditsCharged).toBe(130);
+    expect(reserved()).toEqual([expect.objectContaining({ operation: "IMAGE_GENERATION", amountCredits: 130 })]);
   });
 
   it("answers a replayed requestId with the assist it already made, charging once", async () => {

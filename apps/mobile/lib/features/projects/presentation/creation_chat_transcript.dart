@@ -142,6 +142,16 @@ class _Transcript extends StatelessWidget {
       projectChat,
       projectOperations,
     );
+    // A free change's reply ends with the book it rebuilt (`chat_book_update.dart`).
+    final bookUpdateMessage = chatBookUpdateMessage(
+      projectChat?.messages ?? const <MobileProjectChatMessage>[],
+    );
+    final bookUpdateState = bookUpdateMessage == null
+        ? null
+        : chatBookUpdateState(
+            revision: bookUpdateMessage.bookUpdateRevision!,
+            status: generationStatus,
+          );
     // Who spoke when, in list order, so each bubble knows the run it sits in.
     // The two halves are one conversation as far as grouping and day labels go.
     final runEntries = <_RunEntry>[
@@ -195,6 +205,9 @@ class _Transcript extends StatelessWidget {
           hasProjectEcho: hasProjectEcho,
           hasCreditsReady: creditsReady,
           hasOutputThinking: hasOutputThinking,
+          bookUpdateMessageId: bookUpdateMessage?.id,
+          bookUpdateState: bookUpdateState,
+          bookStatus: generationStatus,
         );
         // Only the newest entry animates in. Wrapping every row would replay
         // the entrance whenever an old row scrolled back into view, which
@@ -228,6 +241,9 @@ class _Transcript extends StatelessWidget {
     required bool hasProjectEcho,
     required bool hasCreditsReady,
     required bool hasOutputThinking,
+    required String? bookUpdateMessageId,
+    required ChatBookUpdateState? bookUpdateState,
+    required MobileProjectStatus? bookStatus,
   }) {
     var cursor = state.messages.length;
     if (index >= cursor && index < cursor + projectItems.length) {
@@ -308,6 +324,16 @@ class _Transcript extends StatelessWidget {
             onCancelEditProposal == null || item.message!.editProposal == null
             ? null
             : () => onCancelEditProposal!(item.message!.editProposal!.id),
+        bookUpdate:
+            item.message!.id != bookUpdateMessageId || bookUpdateState == null
+            ? null
+            : ChatBookUpdateRow(
+                state: bookUpdateState,
+                status: bookStatus,
+                foreground: Theme.of(context).colorScheme.onSurface,
+                onOpen: () =>
+                    context.push('/projects/${item.message!.projectId}/read'),
+              ),
       );
     }
     cursor += projectItems.length;

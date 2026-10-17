@@ -402,6 +402,9 @@ export const mockPrisma = ({
   planVersion: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   chapter: { findMany: vi.fn(noRows), create: vi.fn(), update: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
   character: { findMany: vi.fn(noRows) },
+  // The research a book read; only the "Behind the book" read asks
+  // (`makingOf.ts`), and `makingOf.test.ts` backs it with rows.
+  researchSource: { findMany: vi.fn(noRows) },
   // The Writing Studio's working copy; `testing/manuscriptFakeDb.ts` backs
   // these with rows for the suites that exercise it.
   manuscript: { findUnique: vi.fn(noRow), create: vi.fn(), update: vi.fn() },

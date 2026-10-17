@@ -120,7 +120,7 @@ describe("chat streaming", () => {
     expect(previews).toEqual(acceptedPreviews);
   });
 
-  it("resets the preview before a retry instead of joining two answers", async () => {
+  it("replaces the preview on a retry, never joining two answers or blanking the first", async () => {
     const adapter = new DeepSeekAdapter({ apiKey: "test" });
     const previews: string[] = [];
     let attempt = 0;
@@ -134,8 +134,81 @@ describe("chat streaming", () => {
       onAssistantText: (text) => { previews.push(text); },
       onModelCall: async (invoke) => { try { return await invoke(); } catch { return invoke(); } }
     });
-    expect(previews.slice(previews.indexOf("Abandoned") + 1)).toContain("");
-    expect(previews.at(-1)).toBe("Correct");
+    expect(previews).toEqual(["", "Abandoned", "Correct"]);
     expect(result.finish).toEqual({ assistantMessage: "Correct" });
+  });
+
+  // One scripted model call: the tool calls it streams, then what it returns.
+  type ScriptedCall = { calls: Array<{ name: string; arguments: Record<string, unknown> }> };
+  function scriptedModel(script: ScriptedCall[]) {
+    const adapter = new DeepSeekAdapter({ apiKey: "test" });
+    let call = 0;
+    Object.assign(adapter, { generateWithTools: async (options: GenerateWithToolsOptions): Promise<ToolCallsResult> => {
+      const { calls } = script[call++]!;
+      await options.onToolCallProgress?.({ type: "start" });
+      for (const [index, tool] of calls.entries()) {
+        const json = JSON.stringify(tool.arguments);
+        // Stream each call's arguments in a few slices, as a provider does.
+        for (const end of [Math.ceil(json.length / 3), Math.ceil((2 * json.length) / 3), json.length]) {
+          await options.onToolCallProgress?.({ type: "arguments", index, name: tool.name, argumentsText: json.slice(0, end) });
+        }
+      }
+      return { text: "", model: "test", provider: "test", toolCalls: calls.map((tool, index) => ({ id: `c${index}`, ...tool })) };
+    } });
+    return adapter;
+  }
+  const strictFinish = { ...finishTool, parameters: z.object({ assistantMessage: z.string(), done: z.literal(true) }) };
+
+  it("does not redraw a reply a second call sends again, and never blanks it in between", async () => {
+    const previews: string[] = [];
+    const reply = "Here is a calm story about a lighthouse keeper and the gulls she feeds.";
+    // The first finish fails its schema, so the loop asks again and the model resends the same reply.
+    const result = await runToolLoop({ textModel: scriptedModel([
+      { calls: [{ name: "finish_turn", arguments: { assistantMessage: reply } }] },
+      { calls: [{ name: "finish_turn", arguments: { assistantMessage: reply, done: true } }] }
+    ]), messages: [], tools: [], finishTool: strictFinish, onAssistantText: (text) => { previews.push(text); } });
+    expect(result.finish).toEqual({ assistantMessage: reply, done: true });
+    expect(previews[0]).toBe("");
+    expect(previews.at(-1)).toBe(reply);
+    expect(previews.slice(1)).not.toContain("");
+    // Everything after the first full reply is nothing: the second call drew no frame.
+    expect(previews.slice(previews.indexOf(reply) + 1)).toEqual([]);
+  });
+
+  it("lets a second call that says something else take over the preview without blanking it", async () => {
+    const previews: string[] = [];
+    await runToolLoop({ textModel: scriptedModel([
+      { calls: [{ name: "finish_turn", arguments: { assistantMessage: "A mystery set in Lisbon." } }] },
+      { calls: [{ name: "finish_turn", arguments: { assistantMessage: "A mystery set in Porto, then.", done: true } }] }
+    ]), messages: [], tools: [], finishTool: strictFinish, onAssistantText: (text) => { previews.push(text); } });
+    expect(previews.slice(1)).not.toContain("");
+    expect(previews.at(-1)).toBe("A mystery set in Porto, then.");
+  });
+
+  it("does not preview a finish called beside a tool whose result it has not seen", async () => {
+    const previews: string[] = [];
+    const search = { name: "web_search", description: "Search", parameters: z.object({ query: z.string() }), execute: () => ({ found: "Porto" }) };
+    const result = await runToolLoop({ textModel: scriptedModel([
+      { calls: [
+        { name: "web_search", arguments: { query: "harbour towns" } },
+        { name: "finish_turn", arguments: { assistantMessage: "Before searching, I think Lisbon." } }
+      ] },
+      { calls: [{ name: "finish_turn", arguments: { assistantMessage: "Porto it is." } }] }
+    ]), messages: [], tools: [search], finishTool, onAssistantText: (text) => { previews.push(text); } });
+    expect(result.finish).toEqual({ assistantMessage: "Porto it is." });
+    expect(previews.some((text) => text.includes("Lisbon"))).toBe(false);
+    expect(previews.at(-1)).toBe("Porto it is.");
+  });
+
+  it("previews a finish beside a pure tool, because that finish is the answer", async () => {
+    const previews: string[] = [];
+    const settings = { name: "update_settings", description: "Settings", parameters: z.object({ pages: z.number() }), pure: true, execute: () => ({ applied: true }) };
+    await runToolLoop({ textModel: scriptedModel([
+      { calls: [
+        { name: "update_settings", arguments: { pages: 12 } },
+        { name: "finish_turn", arguments: { assistantMessage: "Twelve pages it is." } }
+      ] }
+    ]), messages: [], tools: [settings], finishTool, onAssistantText: (text) => { previews.push(text); } });
+    expect(previews.at(-1)).toBe("Twelve pages it is.");
   });
 });

@@ -281,6 +281,43 @@ void main() {
     expect(find.text(pdfAt(17)), findsOneWidget);
   });
 
+  testWidgets('opens at the sheet it was asked for when the file on screen is '
+      'the one that sheet was measured in', (tester) async {
+    final repository = FakeReaderRepository()
+      ..state = const ReaderState(revision: 1, lastPage: 17);
+
+    await pumpReader(
+      tester,
+      repository: repository,
+      export: pdfExport(),
+      openAtSheet: 5,
+      openAtSheetDigest: 'pdf-digest-1',
+    );
+    await tester.pumpAndSettle();
+
+    // Straight there: not to page 17 first and then on, which is a scroll to
+    // the end of the book the reader watches before anything else happens.
+    expect(find.text(pdfAt(5)), findsOneWidget);
+  });
+
+  testWidgets('leaves a sheet of another file alone', (tester) async {
+    final repository = FakeReaderRepository()
+      ..state = const ReaderState(revision: 1, lastPage: 17);
+
+    await pumpReader(
+      tester,
+      repository: repository,
+      export: pdfExport(),
+      openAtSheet: 5,
+      openAtSheetDigest: 'pdf-digest-of-another-compile',
+    );
+    await tester.pumpAndSettle();
+
+    // Sheet 5 of that file is not sheet 5 of this one; the book page is
+    // found by its text instead, from where the reader left off.
+    expect(find.text(pdfAt(17)), findsOneWidget);
+  });
+
   testWidgets('keeps a position that arrives after the book does', (
     tester,
   ) async {

@@ -53,6 +53,8 @@ pre, code { text-align: left; }
 .book-title-page { margin-top: 20%; }
 .book-matter-sheet__dedication { margin: 15% 0; font-style: ${profile.hasItalic ? "italic" : "normal"}; }
 .book-matter-sheet__publication { font-size: 0.8em; }
+.book-title-page__publication { margin-top: 4em; font-size: 0.8em; }
+.book-title-page__publication p { margin: 0.2em 0; }
 ${profile.hasItalic ? "" : "em, i, cite, blockquote { font-style: normal; }\nem, i { font-weight: 600; }\n"}`;
 }
 

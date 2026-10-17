@@ -1,5 +1,5 @@
 export 'generation_finished_card.dart'
-    show GenerationFinishedCard, finishedBookSummary;
+    show GenerationFinishedCard, finishedBookFacts, finishedBookSummary;
 
 /// Short, readable elapsed time for completed planning and writing attempts.
 String? formatGenerationDuration(int? milliseconds) {

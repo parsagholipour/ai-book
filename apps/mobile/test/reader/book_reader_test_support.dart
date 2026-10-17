@@ -295,6 +295,8 @@ Future<void> pumpReader(
   required FakeReaderRepository repository,
   required MobileExportAvailability export,
   ReaderDocumentLoader? loader,
+  int? openAtSheet,
+  String? openAtSheetDigest,
 }) async {
   final documentLoader = loader;
   if (documentLoader == null) {
@@ -305,9 +307,23 @@ Future<void> pumpReader(
       projectId: 'project-1',
     );
     addTearDown(owned.dispose);
-    return _pump(tester, repository, export, owned);
+    return _pump(
+      tester,
+      repository,
+      export,
+      owned,
+      openAtSheet,
+      openAtSheetDigest,
+    );
   }
-  return _pump(tester, repository, export, documentLoader);
+  return _pump(
+    tester,
+    repository,
+    export,
+    documentLoader,
+    openAtSheet,
+    openAtSheetDigest,
+  );
 }
 
 Future<void> _pump(
@@ -315,6 +331,8 @@ Future<void> _pump(
   FakeReaderRepository repository,
   MobileExportAvailability export,
   ReaderDocumentLoader documentLoader,
+  int? openAtSheet,
+  String? openAtSheetDigest,
 ) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -328,6 +346,8 @@ Future<void> _pump(
           export: export,
           loader: documentLoader,
           status: statusWith(export),
+          openAtSheet: openAtSheet,
+          openAtSheetDigest: openAtSheetDigest,
         ),
       ),
     ),

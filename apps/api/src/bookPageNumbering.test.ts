@@ -52,7 +52,7 @@ describe("front-matter page identity", () => {
     ]);
     expect(frontMatterForPrompt(numbering)?.[0]).toEqual({
       page: 1,
-      holds: "front matter — the title page, or the dedication and publication page"
+      holds: "front matter — the title page (title, subtitle, author name, © line, publisher and ISBN), or the dedication page"
     });
     const answer = furniturePageIntentFromMessage("delete page 1", pages, numbering)?.assistantMessage;
     expect(answer).toContain("is the book’s front matter");

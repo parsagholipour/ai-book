@@ -2528,8 +2528,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Planning took 1m 12s'), findsOneWidget);
+    expect(find.text('made in 8m'), findsOneWidget);
     expect(
-      find.text('Ready · 28 pages · 1 image · made in 8m'),
+      find.bySemanticsLabel(
+        RegExp(r'Ready · 28 pages · 1 image · made in 8m$'),
+      ),
       findsOneWidget,
     );
     expect(find.text('Open PDF'), findsOneWidget);
