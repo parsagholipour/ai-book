@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
   persistKeeperStoryDelta: vi.fn(),
   storeEmbedding: vi.fn(),
   updateEntityStateFromPage: vi.fn(),
-  groupReview: vi.fn(),
+  // The grouped picture-book review no generation path calls since 2026-10-16 (E4); kept as a sentinel.
   assertJobNotStopped: vi.fn(),
   qualityEnabled: vi.fn((_feature?: string): boolean => false),
   styleExcerptsForPage: vi.fn(
@@ -40,7 +40,6 @@ const mocks = vi.hoisted(() => ({
   )
 }));
 
-vi.mock("@book-maker/core", async (original) => ({ ...await original<object>(), reviewPictureBookManuscript: mocks.groupReview }));
 vi.mock("@book-maker/db", async () => ({
   prisma: mocks.prisma,
   Prisma: {},
@@ -100,8 +99,12 @@ vi.mock("./embeddingWrites.js", () => ({
     strategy?.executionMode === "sequential-pages"
 }));
 vi.mock("./entityState.js", () => ({ updateEntityStateFromPage: mocks.updateEntityStateFromPage }));
+const draftIllustrations = vi.hoisted(() => ({ enqueue: vi.fn() }));
+vi.mock("./draftIllustrations.js", () => ({ enqueueDraftPageIllustrations: draftIllustrations.enqueue }));
+const storyDeltas = vi.hoisted(() => ({ persist: vi.fn(), rows: vi.fn(async () => [] as unknown[]) }));
+vi.mock("./bookStoryDeltas.js", () => ({ persistBookStoryDeltas: storyDeltas.persist, storyDeltaPagesFromRows: storyDeltas.rows }));
 
-import { generateBookDraftThenPolish } from "./bookPasses.js";
+import { generateBookDraftThenPolish } from "./draftThenPolish.js";
 
 function chapterSetup(index: number, startPage: number, endPage: number): ChapterSetup {
   return {
@@ -128,7 +131,6 @@ type TestStrategy = {
   generateChapterDraft: ReturnType<typeof vi.fn>;
   generateBatchDraft: ReturnType<typeof vi.fn>;
   generateWholeBookDraft: ReturnType<typeof vi.fn>;
-  polishPageDraft: ReturnType<typeof vi.fn>;
   generatePageDraft: ReturnType<typeof vi.fn>;
   batchSize?: number;
   createChapterBriefs?: undefined;
@@ -140,7 +142,6 @@ const baseStrategy = (): TestStrategy => ({
   generateChapterDraft: vi.fn(),
   generateBatchDraft: vi.fn(),
   generateWholeBookDraft: vi.fn(),
-  polishPageDraft: vi.fn(),
   generatePageDraft: vi.fn()
 });
 
@@ -149,10 +150,7 @@ function baseOptions(strategy: ReturnType<typeof baseStrategy>) {
     projectId: "project-1",
     planId: "plan-1",
     // `temperature` is required on CreateProjectInput and defaulted to 0.8 by the
-    // schema, so every input a handler builds carries one. Omitting it here made
-    // this fixture NaN its way through the best-of ladder, whose zero-width-band
-    // guard then read the duplicate rungs as "this book asked for temperature 0"
-    // and skipped page 1's second polish — silently, and only in this suite.
+    // schema, so every input a handler builds carries one.
     input: { targetPages: 4, temperature: 0.8, mediaSettings: {} },
     plan: { title: "Book", chapters: [] },
     providers: { text: {}, embedding: {} },
@@ -163,7 +161,6 @@ function baseOptions(strategy: ReturnType<typeof baseStrategy>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.groupReview.mockReset();
   mocks.qualityEnabled.mockReturnValue(false);
   mocks.assertJobNotStopped.mockResolvedValue(undefined);
   mocks.prisma.generationJob.findUnique.mockResolvedValue({ payload: {} });
@@ -201,9 +198,6 @@ describe("generateBookDraftThenPolish", () => {
     strategy.generateWholeBookDraft.mockResolvedValue({
       pages: [pageDraft(1), pageDraft(2), pageDraft(3), pageDraft(4)]
     });
-    strategy.polishPageDraft.mockImplementation(
-      async ({ draft }: { draft: { index: number } }) => ({ ...pageDraft(draft.index), title: `Polished ${draft.index}` })
-    );
     return strategy;
   }
 
@@ -222,30 +216,51 @@ describe("generateBookDraftThenPolish", () => {
       fullIllustrations: true, finalReview: true, generationStrategy: "auto", modelTier: "balanced"
     } });
     mocks.qualityEnabled.mockReturnValue(true);
-    mocks.groupReview.mockImplementation(async ({ pages, checks }: { pages: ReturnType<typeof pageDraft>[]; checks: object }) => pages.map((page) => ({
-      pageIndex: page.index, draftMarkdown: page.markdown,
-      report: { approved: true, score: 95, issues: [], requiredRevisions: [], notes: "" },
-      storyExtract: { storyDelta: {}, contradictions: [] }, styleAudit: { styleOk: true, styleIssues: [] }, completedChecks: checks
-    })));
     return { options, strategy };
   }
 
-  it("reviews a clean 30-page picture-book manuscript once with every configured check and no unconditional polish", async () => {
-    const { options, strategy } = pictureBookOptions();
+  it.each(["balanced", "premium"])("saves a %s picture book's pages as drafted with local checks only: no grouped call and no model page review", async (modelTier) => {
+    // E4 (2026-10-16): the grouped review, its repairs and the compile's final review against the draft went
+    // 7 / 19 / 2 with three blind readers per order; no generated page is read by a model since then (E5 took the
+    // rest), which `reviewAndSaveGeneratedPage` holds for every caller.
+    const { options } = pictureBookOptions();
+    Object.assign((options as unknown as { input: { mediaSettings: object } }).input.mediaSettings, { modelTier });
     const snapshots: unknown[] = [];
     mocks.reviewAndSaveGeneratedPage.mockImplementation(async (value) => {
-      snapshots.push(structuredClone({ draft: value.draft, previousPages: value.previousPages, nextPages: value.nextPages, deferRepairsUntilFinalization: value.deferRepairsUntilFinalization, precomputedReview: value.precomputedReview }));
+      snapshots.push(structuredClone({ draft: value.draft, previousPages: value.previousPages, nextPages: value.nextPages }));
       return { page: value.draft };
     });
     await generateBookDraftThenPolish(options);
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.groupReview).toHaveBeenCalledTimes(1);
-    expect(mocks.groupReview.mock.calls[0]![0]).toMatchObject({ checks: { pageModelReview: true, storyExtractAudit: true, styleAuditor: true } });
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(30);
-    expect(snapshots[0]).toMatchObject({ nextPages: [{ index: 2, markdown: "Page 2 text." }, ...Array.from({ length: 28 }, (_, i) => expect.objectContaining({ index: i + 3 }))],
-      deferRepairsUntilFinalization: true, precomputedReview: { completedChecks: { pageModelReview: true, storyExtractAudit: true, styleAuditor: true } } });
+    for (const [request] of mocks.reviewAndSaveGeneratedPage.mock.calls) {
+      expect(request).not.toHaveProperty("precomputedReview");
+    }
+    expect(snapshots[0]).toMatchObject({ draft: { index: 1, markdown: pageDraft(1).markdown },
+      nextPages: [{ index: 2, markdown: "Page 2 text." }, ...Array.from({ length: 28 }, (_, i) => expect.objectContaining({ index: i + 3 }))] });
     expect(snapshots[29]).toMatchObject({ draft: pageDraft(30), previousPages: Array.from({ length: 29 }, (_, i) => expect.objectContaining({ index: i + 1, markdown: pageDraft(i + 1).markdown })), nextPages: [] });
+    expect(draftIllustrations.enqueue).toHaveBeenCalledTimes(1);
+    expect(draftIllustrations.enqueue.mock.calls[0]![0]).not.toHaveProperty("reviews");
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+  });
+
+  it("saves a Quick Draft picture book's pages as drafted with no grouped call: the compile's screen is its one review", async () => {
+    const { options } = pictureBookOptions();
+    Object.assign((options as unknown as { input: { mediaSettings: object } }).input.mediaSettings, { finalReview: false, modelTier: "fast" });
+    await generateBookDraftThenPolish(options);
+    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(30);
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+  });
+
+  it("prints a Quick Draft picture book as drafted when the operator has its compile screen switched off", async () => {
+    // The per-page polish this used to fall back to lost to the unpolished draft
+    // (E4, 2026-10-16), so "no review" is the measured outcome, not a gap.
+    const { options } = pictureBookOptions();
+    Object.assign((options as unknown as { input: { mediaSettings: object } }).input.mediaSettings, { finalReview: false, modelTier: "fast" });
+    mocks.qualityEnabled.mockReturnValue(false);
+    await generateBookDraftThenPolish(options);
+    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(30);
+    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[0]![0].draft).toMatchObject({ index: 1, markdown: pageDraft(1).markdown });
+    expect(draftIllustrations.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it("drafts and persists the map's chapter allocation before reviewing the manuscript", async () => {
@@ -265,7 +280,7 @@ describe("generateBookDraftThenPolish", () => {
     expect(strategy.generateWholeBookDraft.mock.calls[0]![0].plan.chapters.map((chapter: { targetPages: number }) => chapter.targetPages)).toEqual([20, 10]);
     expect(mocks.persistAcceptedWholeBookTarget.mock.calls[0]![0]).toMatchObject({ chapterAllocationChanged: true,
       plan: { chapters: [{ targetPages: 20 }, { targetPages: 10 }] } });
-    expect(mocks.persistAcceptedWholeBookTarget.mock.invocationCallOrder[0]).toBeLessThan(mocks.groupReview.mock.invocationCallOrder[0]!);
+    expect(mocks.persistAcceptedWholeBookTarget.mock.invocationCallOrder[0]).toBeLessThan(mocks.reviewAndSaveGeneratedPage.mock.invocationCallOrder[0]!);
     expect(options.plan.chapters.map(chapter => chapter.targetPages)).toEqual([12, 18]);
   });
 
@@ -285,77 +300,21 @@ describe("generateBookDraftThenPolish", () => {
     expect(mocks.persistAcceptedWholeBookTarget.mock.calls[0]![0]).toMatchObject({ originalTargetPages: 30,
       input: { targetPages: 33 }, plan: { chapters: [{ targetPages: 33 }] } });
     expect(mocks.checkpointWholeBookDraftPages.mock.calls[0]![0].pages).toHaveLength(33);
-    expect(mocks.groupReview.mock.calls[0]![0].pages).toHaveLength(33);
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(33);
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
   });
 
-  it("preserves a concrete failed page and its full frozen neighbors for finalization repair", async () => {
-    const { options, strategy } = pictureBookOptions();
-    const original = mocks.groupReview.getMockImplementation()!;
-    mocks.groupReview.mockImplementation(async (value) => {
-      const reviews = await original(value);
-      reviews[14].report = { approved: false, score: 45, issues: ["The lantern recovery repeats page 12."], requiredRevisions: ["Count the already recovered lantern and advance to the second."], notes: "" };
-      return reviews;
-    });
-    await generateBookDraftThenPolish(options);
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[14]![0]).toMatchObject({ draft: pageDraft(15), deferRepairsUntilFinalization: true,
-      precomputedReview: { report: { approved: false, requiredRevisions: ["Count the already recovered lantern and advance to the second."] },
-        manuscriptPages: Array.from({ length: 30 }, (_, i) => expect.objectContaining({ index: i + 1, markdown: pageDraft(i + 1).markdown })) } });
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[15]![0].draft.markdown).toBe(pageDraft(16).markdown);
-  });
-
-  it.each(["balanced", "premium"] as const)("uses one complete prose review for a %s text-only story and retains genuine defects", async (modelTier) => {
+  it.each(["balanced", "premium"] as const)("saves a %s text-only children's story as drafted, with no model review of the whole or of a page", async (modelTier) => {
     const { options, strategy } = pictureBookOptions();
     Object.assign(options.input.mediaSettings, { modelTier, fullIllustrations: false, illustrationCadence: "manual", includeCover: false, coverArtSource: "none" });
     strategy.shouldIllustratePage.mockImplementation(shouldIllustratePage);
-    const original = mocks.groupReview.getMockImplementation()!;
-    mocks.groupReview.mockImplementation(async (value) => {
-      const reviews = await original(value);
-      reviews[29].report = { approved: false, score: 45, issues: ["Turtle's requested growth is missing."], requiredRevisions: ["Give Turtle a consequential changed choice."], notes: "" };
-      return reviews;
-    });
     await generateBookDraftThenPolish(options);
     expect(strategy.generateWholeBookDraft).toHaveBeenCalledTimes(1);
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.groupReview).toHaveBeenCalledTimes(1);
-    expect(mocks.groupReview.mock.calls[0]![0]).toMatchObject({
-      pages: Array.from({ length: 30 }, (_, i) => expect.objectContaining({ index: i + 1, markdown: pageDraft(i + 1).markdown })),
-      checks: { pageModelReview: true, storyExtractAudit: true, styleAuditor: true }
-    });
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(30);
-    for (const [request] of mocks.reviewAndSaveGeneratedPage.mock.calls) expect(request.precomputedReview).toBeDefined();
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[29]![0]).toMatchObject({ deferRepairsUntilFinalization: true,
-      precomputedReview: { report: { approved: false, requiredRevisions: ["Give Turtle a consequential changed choice."] } } });
     expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
-  it("reviews all thirty text pages once with ten illustration slots and retains an unillustrated page's defect", async () => {
-    const { options, strategy } = pictureBookOptions();
-    options.input.mediaSettings.illustrationCadence = "every-third-page";
-    strategy.shouldIllustratePage.mockImplementation(shouldIllustratePage);
-    const original = mocks.groupReview.getMockImplementation()!;
-    mocks.groupReview.mockImplementation(async (value) => {
-      const reviews = await original(value);
-      reviews[1].report = { approved: false, score: 45, issues: ["The search repeats an already recovered lantern."], requiredRevisions: ["Preserve the recovered count."], notes: "" };
-      return reviews;
-    });
-    await generateBookDraftThenPolish(options);
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.groupReview).toHaveBeenCalledTimes(1);
-    expect(mocks.groupReview.mock.calls[0]![0].pages).toHaveLength(30);
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls.map(([value]) => value.draft.index)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
-    expect(mocks.reviewAndSaveGeneratedPage.mock.calls[1]![0]).toMatchObject({
-      draft: pageDraft(2), deferRepairsUntilFinalization: true,
-      precomputedReview: { report: { approved: false, requiredRevisions: ["Preserve the recovered count."] } }
-    });
-    expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
-  });
-
-  it("resumes only pending pages against the same complete saved manuscript", async () => {
+  it("resumes only pending pages without repeating the draft", async () => {
     const { options, strategy } = pictureBookOptions();
     mocks.directResumeStateForContext.mockReturnValue({ kind: "resume", firstMissingPageIndex: 16 });
     const pages = Array.from({ length: 30 }, (_, i) => ({ ...pageDraft(i + 1), status: i < 15 ? "COMPLETED" : "PENDING" }));
@@ -363,114 +322,11 @@ describe("generateBookDraftThenPolish", () => {
     mocks.priorPageContextsFromStored.mockReturnValue(pages.slice(0, 15));
     await generateBookDraftThenPolish(options);
     expect(strategy.generateWholeBookDraft).not.toHaveBeenCalled();
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
     expect(mocks.resetBookForDirectGeneration).not.toHaveBeenCalled();
-    expect(mocks.groupReview.mock.calls[0]![0].pages).toHaveLength(30);
     expect(mocks.reviewAndSaveGeneratedPage.mock.calls.map(([value]) => value.draft.index)).toEqual(Array.from({ length: 15 }, (_, i) => i + 16));
   });
 
-  it("does not publish or queue export when cancellation happens during the grouped review", async () => {
-    const { options } = pictureBookOptions();
-    mocks.groupReview.mockRejectedValueOnce(Object.assign(new Error("stopped"), { name: "AbortError" }));
-    await expect(generateBookDraftThenPolish(options)).rejects.toMatchObject({ name: "AbortError" });
-    expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-  });
-
-  it("publishes no pages until the real grouped reviewer has completed its one-page recovery", async () => {
-    const { options, strategy } = pictureBookOptions();
-    const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-    const snapshots: number[][] = [];
-    let calls = 0;
-    const textModel = { generateJson: async <T,>(request: import("@book-maker/core").GenerateJsonOptions<T>) => {
-      core.consumeTextAttempt(request);
-      const context = JSON.parse(request.messages.find((message) => message.role === "user")!.content);
-      snapshots.push(context.reviewPageIndexes);
-      expect(context.pages).toHaveLength(30);
-      expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
-      calls += 1;
-      const rows = context.reviewPageIndexes.map((index: number) => ({ pageIndex: index, score: 94,
-        findings: calls === 1 && index === 18 ? [{ domain: "prose", basis: "missing_requirement", requirementQuote: "Internal plan beat only.", category: "brief", message: "Missing beat", guidance: "Change page.", quote: "Not actual manuscript prose", relatedEvidence: [] }] : [],
-        storyExtract: "no_changes", styleAudit: "clean" }));
-      return { data: request.schema.parse({ pages: rows }), text: "", model: "fixture", provider: "fixture" };
-    } } as unknown as import("@book-maker/core").TextModelAdapter;
-    options.input.prompt = "A lantern story.";
-    mocks.groupReview.mockImplementation((request) => core.reviewPictureBookManuscript({ ...request, textModel, continuityReview: false }));
-    await generateBookDraftThenPolish(options);
-    expect(snapshots).toEqual([Array.from({ length: 30 }, (_, i) => i + 1), [18]]);
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(30);
-    for (const [request] of mocks.reviewAndSaveGeneratedPage.mock.calls) {
-      expect(request.precomputedReview).toBeDefined();
-      expect(request.deferRepairsUntilFinalization).toBe(true);
-    }
-  });
-
-  it("preserves all thirty captured Quick pages and defers their model review to compile", async () => {
-    const captured = (await import("./testing/quickReviewFailure0338.json", { with: { type: "json" } })).default;
-    const { options, strategy } = pictureBookOptions();
-    const core = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-    options.input = core.createProjectSchema.parse(captured.input);
-    options.plan = core.bookPlanSchema.parse(captured.plan);
-    const drafts = captured.pages.map(page => ({ ...page, continuityNotes: [] }));
-    strategy.generateWholeBookDraft.mockResolvedValue({ pages: drafts });
-    strategy.shouldIllustratePage.mockReturnValue(false);
-    mocks.qualityEnabled.mockImplementation(feature => feature === "pageModelReview" || feature === "storyExtractAudit");
-    let calls = 0;
-    const textModel = new core.FakeTextModelAdapter();
-    textModel.generateJson = async request => {
-      core.consumeTextAttempt(request);
-      const response = captured.responses[calls++];
-      if (!response) throw new Error("Unexpected extra provider call");
-      return { data: request.schema.parse(response), text: "", model: "captured", provider: "captured" };
-    };
-    mocks.groupReview.mockImplementation(request => core.reviewPictureBookManuscript({ ...request, textModel, continuityReview: false }));
-    await generateBookDraftThenPolish(options);
-    expect(calls).toBe(0);
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(30);
-    for (const [index, [request]] of mocks.reviewAndSaveGeneratedPage.mock.calls.entries()) {
-      expect(request.draft.markdown).toBe(captured.pages[index]!.markdown);
-      expect(request.precomputedReview).toBeUndefined();
-    }
-    expect(mocks.groupReview).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
-  });
-
-  it.each([true, false])("propagates unexpected implementation errors with fullIllustrations=%s", async (fullIllustrations) => {
-    const { options, strategy } = pictureBookOptions();
-    options.input.mediaSettings.fullIllustrations = fullIllustrations;
-    strategy.shouldIllustratePage.mockImplementation(shouldIllustratePage);
-    mocks.groupReview.mockRejectedValueOnce(Object.assign(new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" }));
-    await expect(generateBookDraftThenPolish(options)).rejects.toMatchObject({ name: "OpenAIResponseError" });
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
-    expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-  });
-
-  it("overlaps reference setup with group review only after checkpoint, and drains failures before publishing", async () => {
-    const { options } = pictureBookOptions();
-    let releaseReferences!: () => void;
-    const references = new Promise<void>((resolve) => { releaseReferences = resolve; });
-    let reviewStarted!: () => void;
-    const started = new Promise<void>((resolve) => { reviewStarted = resolve; });
-    mocks.ensureCharacterReferenceAssets.mockImplementationOnce(async () => { await references; return []; });
-    const failure = new Error("reference storage unavailable");
-    mocks.groupReview.mockImplementationOnce(async () => { reviewStarted(); throw failure; });
-    const run = generateBookDraftThenPolish(options);
-    let settled = false;
-    const checked = expect(run).rejects.toBe(failure).finally(() => { settled = true; });
-    await started;
-    expect(mocks.checkpointWholeBookDraftPages).toHaveBeenCalled();
-    expect(mocks.ensureCharacterReferenceAssets).toHaveBeenCalled();
-    expect(settled).toBe(false);
-    releaseReferences();
-    await checked;
-    expect(mocks.reviewAndSaveGeneratedPage).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-  });
-
-  it("drafts once, checkpoints before polishing, then polishes every page", async () => {
+  it("drafts once, checkpoints before the page loop, then saves every page as drafted", async () => {
     const strategy = draftThenPolishStrategy();
     const order: string[] = [];
     mocks.checkpointWholeBookDraftPages.mockImplementation(async () => {
@@ -479,31 +335,28 @@ describe("generateBookDraftThenPolish", () => {
     mocks.persistAcceptedWholeBookTarget.mockImplementation(async () => {
       order.push("persist-target");
     });
-    strategy.polishPageDraft.mockImplementation(async ({ draft }: { draft: { index: number } }) => {
-      order.push(`polish-${draft.index}`);
-      return pageDraft(draft.index);
+    mocks.reviewAndSaveGeneratedPage.mockImplementation(async ({ draft }: { draft: { index: number; title: string; markdown: string; summary: string } }) => {
+      order.push(`save-${draft.index}`);
+      return { page: draft };
     });
 
     await generateBookDraftThenPolish(baseOptions(strategy));
 
     expect(strategy.generateWholeBookDraft).toHaveBeenCalledTimes(1);
     // The checkpoint and the accepted-target write both land before the first
-    // polish, so a failure mid-polish resumes instead of redrafting the book.
-    expect(order.slice(0, 2)).toEqual(["checkpoint", "persist-target"]);
-    expect(order.filter((step) => step.startsWith("polish-"))).toEqual([
-      // Page 1 polishes twice: this harness leaves the tier unset (balanced),
-      // and the first page best-ofs by tier (`firstPageCandidateCount`).
-      "polish-1",
-      "polish-1",
-      "polish-2",
-      "polish-3",
-      "polish-4"
-    ]);
+    // save, so a failure mid-loop resumes instead of redrafting the book.
+    expect(order).toEqual(["checkpoint", "persist-target", "save-1", "save-2", "save-3", "save-4"]);
+    // No page is polished (E4, 2026-10-16): each save gets the whole-book draft's page.
+    expect(mocks.reviewAndSaveGeneratedPage.mock.calls.map(([saved]) => saved.draft)).toEqual([1, 2, 3, 4].map((index) => expect.objectContaining({ index, markdown: pageDraft(index).markdown })));
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(4);
     expect(mocks.reviewAndSaveGeneratedPage.mock.calls[0]![0].nextPages).toHaveLength(3);
+    // No story pass: a generated book pays for no story memory (E6, 2026-10-16).
+    expect(storyDeltas.persist).not.toHaveBeenCalled();
   });
 
-  it("defers every illustrated page to the requested final manuscript review", async () => {
+  it("publishes every page's picture with the page, whatever the retired final-review flag says", async () => {
+    // 2026-10-16: no compile review rewrites these pages off Quick Draft, and Quick Draft's
+    // screen redraws a page it repairs at finalization, so no picture waits for the compile.
     const strategy = draftThenPolishStrategy();
     const options: Parameters<typeof generateBookDraftThenPolish>[0] = baseOptions(strategy);
     options.input.mediaSettings.finalReview = true;
@@ -512,12 +365,12 @@ describe("generateBookDraftThenPolish", () => {
 
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(4);
     for (const [saved] of mocks.reviewAndSaveGeneratedPage.mock.calls) {
-      expect(saved).toMatchObject({ deferIllustrations: true });
+      expect(saved).not.toHaveProperty("deferIllustrations");
     }
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
-  it("resumes polishing only the PENDING pages without repeating the draft call", async () => {
+  it("resumes saving only the PENDING pages without repeating the draft call", async () => {
     mocks.directResumeStateForContext.mockReturnValue({ kind: "resume", firstMissingPageIndex: 3 });
     mocks.loadDirectResumeContext.mockResolvedValue({
       chapters: [],
@@ -534,18 +387,68 @@ describe("generateBookDraftThenPolish", () => {
 
     expect(strategy.generateWholeBookDraft).not.toHaveBeenCalled();
     expect(mocks.resetBookForDirectGeneration).not.toHaveBeenCalled();
-    expect(strategy.polishPageDraft).toHaveBeenCalledTimes(2);
-    expect(strategy.polishPageDraft.mock.calls.map((call) => (call[0] as { pageIndex: number }).pageIndex)).toEqual([3, 4]);
+    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(2);
+    expect(mocks.reviewAndSaveGeneratedPage.mock.calls.map(([saved]) => saved.draft.index)).toEqual([3, 4]);
   });
 
-  it("skips everything when the book is already polished", async () => {
+  it("skips everything when the book is already saved", async () => {
     mocks.directResumeStateForContext.mockReturnValue({ kind: "already-complete" });
     const strategy = draftThenPolishStrategy();
 
     await generateBookDraftThenPolish(baseOptions(strategy));
 
     expect(strategy.generateWholeBookDraft).not.toHaveBeenCalled();
-    expect(strategy.polishPageDraft).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+    expect(storyDeltas.persist).not.toHaveBeenCalled();
+  });
+
+  it("starts a picture book's pictures once its sheets are committed, before it saves a page", async () => {
+    const { options } = pictureBookOptions();
+    const order: string[] = [];
+    mocks.ensureCharacterReferenceAssets.mockImplementationOnce(async () => { order.push("sheets"); return []; });
+    draftIllustrations.enqueue.mockImplementationOnce(async () => { order.push("pictures"); return 30; });
+    mocks.reviewAndSaveGeneratedPage.mockImplementation(async ({ draft }) => { order.push(`save-${draft.index}`); return { page: draft }; });
+    await generateBookDraftThenPolish(options);
+    expect(order.slice(0, 3)).toEqual(["sheets", "pictures", "save-1"]);
+    const request = draftIllustrations.enqueue.mock.calls[0]![0];
+    expect(request).toMatchObject({ projectId: "project-1", planId: "plan-1", strategy: options.strategy, input: options.input });
+    expect(request.pages.map((page: { index: number }) => page.index)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
+    expect(request).not.toHaveProperty("reviews");
+  });
+
+  it("draws no early picture for a book off the picture-book path: its pages are drawn at publication", async () => {
+    const strategy = draftThenPolishStrategy();
+    strategy.shouldIllustratePage.mockReturnValue(true);
+    await generateBookDraftThenPolish(baseOptions(strategy));
+    expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(4);
+    expect(draftIllustrations.enqueue).not.toHaveBeenCalled();
+    // And decides no sheet cast: off the path every page job draws against the whole cast, as before.
+    expect(mocks.ensureCharacterReferenceAssets.mock.calls[0]![0]).not.toHaveProperty("decideCastFromDraft");
+  });
+
+  it("hands a picture book's whole draft to the sheet pass, so its cast is decided from every picture", async () => {
+    const { options } = pictureBookOptions();
+    const prompted = Array.from({ length: 30 }, (_, i) => ({ ...pageDraft(i + 1), imagePrompt: `Scene ${i + 1}` }));
+    (options.strategy as unknown as TestStrategy).generateWholeBookDraft.mockResolvedValue({ pages: prompted });
+    await generateBookDraftThenPolish(options);
+    const request = mocks.ensureCharacterReferenceAssets.mock.calls[0]![0];
+    expect(request.decideCastFromDraft.map((page: { index: number; imagePrompt: string }) => [page.index, page.imagePrompt]))
+      .toEqual(prompted.map((page) => [page.index, page.imagePrompt]));
+  });
+
+  it("decides a resumed picture book's cast from every checkpointed row, the saved ones included", async () => {
+    const { options } = pictureBookOptions();
+    mocks.directResumeStateForContext.mockReturnValue({ kind: "resume", firstMissingPageIndex: 16 });
+    const pages = Array.from({ length: 30 }, (_, i) => ({ ...pageDraft(i + 1), imagePrompt: `Scene ${i + 1}`,
+      status: i < 15 ? "COMPLETED" : "PENDING" }));
+    mocks.loadDirectResumeContext.mockResolvedValue({ chapters: [], pages });
+    mocks.priorPageContextsFromStored.mockReturnValue(pages.slice(0, 15));
+    await generateBookDraftThenPolish(options);
+    const request = mocks.ensureCharacterReferenceAssets.mock.calls[0]![0];
+    expect(request.decideCastFromDraft.map((page: { index: number }) => page.index)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
+    expect(request.decideCastFromDraft[0]).toMatchObject({ imagePrompt: "Scene 1" });
+    // The pictures still queue from the rows left to save, each carrying its prompt.
+    expect(draftIllustrations.enqueue.mock.calls[0]![0].pages.map((page: { imagePrompt: string }) => page.imagePrompt))
+      .toEqual(Array.from({ length: 15 }, (_, i) => `Scene ${i + 16}`));
   });
 });

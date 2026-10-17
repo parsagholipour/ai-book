@@ -143,6 +143,14 @@ export type GenerateTextOptions = {
    * draft ran to completion — and was billed — after the stop landed.
    */
   signal?: AbortSignal;
+  /**
+   * Set by the fallback pair on its one fresh primary request after a stall
+   * deadline ended the first (`textStallDeadline.ts`). An adapter that keeps a
+   * deadline spares this request the pace rule, keeps the idle rule, and routes
+   * it away from the machine that trickled: a slow stream from the tier's own
+   * writer beats another family's prose, and a silent one is still ended.
+   */
+  afterStall?: boolean;
 };
 
 export type GenerateJsonOptions<T> = GenerateTextOptions & {
@@ -271,6 +279,11 @@ export type ResearchResult = {
 
 export interface ResearchAdapter {
   search(query: ResearchQuery): Promise<ResearchResult>;
+  /**
+   * Who a search is sent to. A result names its own provider and model; this
+   * is for the cost row of a search that failed before it answered.
+   */
+  readonly identity?: { provider: string; model: string } | undefined;
 }
 
 export type ImageRequest = {

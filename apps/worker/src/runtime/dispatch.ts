@@ -83,7 +83,8 @@ const WORKER_FANOUT_JOB_TYPES = [
   "COMPILE_EXPORT",
   "PREPARE_CHARACTER_CANDIDATES",
   "BUILD_CHARACTER_PERSONA",
-  "GENERATE_AUDIOBOOK"
+  "GENERATE_AUDIOBOOK",
+  "PREPARE_COMPOSITION"
 ] as const satisfies readonly GenerationJobType[];
 
 export type WorkerFanoutJobType = (typeof WORKER_FANOUT_JOB_TYPES)[number];
@@ -612,6 +613,13 @@ export async function maybeEnqueueCompile(
       ) === policyIdentity
   );
   if (!matchingCompileIsOpen) {
+    // A book run still QUEUED or ACTIVE owns what its compile reads — the story
+    // deltas and brief inventory it writes after its last page, the grouped
+    // review it publishes on completion — and its own completion fans in here
+    // after its COMPLETED write (`maybeCompileAfterCompletedJob`), so waiting
+    // for it is never the last answer. The run's own in-handler call counts
+    // itself on purpose: the compile is never queued while its run can still write.
+    if (await bookRunOpen(projectId)) return "waiting";
     const contentFingerprint = createHash("sha256")
       .update(pages.map((page) => `${page.id}:${page.revision}`).sort().join("|"))
       .digest("hex")
@@ -651,6 +659,14 @@ export async function maybeEnqueueCompile(
     });
   }
   return "compile";
+}
+
+/** Whether a `generate-book` row is still open on the project; see `maybeEnqueueCompile`. */
+async function bookRunOpen(projectId: string): Promise<boolean> {
+  const open = await prisma.generationJob.count({
+    where: { projectId, type: "GENERATE_BOOK", status: { in: ["QUEUED", "ACTIVE"] } }
+  });
+  return open > 0;
 }
 
 const STRANDED_GENERATION_GRACE_MS = 60_000;
@@ -797,8 +813,16 @@ export async function reconcileStrandedGeneration(limit = 20): Promise<number> {
   return projects.length;
 }
 
+/**
+ * The fan-in every unit of a generation runs after its COMPLETED write. The
+ * book run is one of them because `maybeEnqueueCompile` waits while it is open:
+ * a picture or page that lands while the run still writes its tail answers
+ * "waiting", and this call, made once the run's own row is terminal, is the
+ * one that sees both. A staged replan never reaches it (`processJob` hands its
+ * row to the replan tail, which queues its own compile).
+ */
 export async function maybeCompileAfterCompletedJob(job: WorkerRuntimeJob) {
-  if (job.name !== "generate-page" && job.name !== "generate-image") {
+  if (job.name !== "generate-page" && job.name !== "generate-image" && job.name !== "generate-book") {
     return;
   }
   const { projectId, planId } = job.data;

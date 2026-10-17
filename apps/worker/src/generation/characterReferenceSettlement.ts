@@ -51,7 +51,10 @@ export type CharacterReferenceRefusal = {
 export function characterReferenceSetIsSettled(
   assets: Array<{ metadata: unknown }>,
   refusals: readonly CharacterReferenceRefusal[],
-  /** `characterReferenceCast` — the whole plan cast only for an illustrated book. */
+  /**
+   * `characterReferenceCast` — the whole plan cast only for an illustrated book —
+   * narrowed to a short book's stored decision (`characterReferenceCastDecision.ts`).
+   */
   cast: ReadonlyArray<{ name: string }>
 ): boolean {
   const stored = [

@@ -183,6 +183,9 @@ describe("whole-book structural slop warnings", () => {
     expect(cross?.affectedPageIndexes).toEqual(expect.arrayContaining([3, 11]));
     expect(cross?.evidence?.some((entry) => entry.pageIndex === 3 && entry.excerpt.length > 0)).toBe(true);
     expect(cross?.metrics?.clusterCount).toBe(1);
+    // A story is spared the sweep: on stories it read adjacent scenes as overlapping modules (4 of 15 false, 2026-10-15).
+    expect(runDeterministicManuscriptChecks({ pages, expectedPageCount: pages.length, narrative: true }).map((issue) => issue.code))
+      .not.toContain("CROSS_CHAPTER_CONCEPT_REPETITION");
   });
 
   it("protects chapters that share a topic but make different claims", () => {
@@ -222,7 +225,9 @@ describe("whole-book structural slop warnings", () => {
         "STRUCTURAL_SLOP_SATURATION"
       ])
     );
-    expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: false }).state).toBe("blocked");
+    // The saturation error is a console error and the repair pass's target; no reader is blocked on it.
+    expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: false }).state).toBe("passed");
+    expect(issues.find((issue) => issue.code === "STRUCTURAL_SLOP_SATURATION")?.severity).toBe("error");
   });
 
   it("keeps one recurring structural signal advisory", () => {

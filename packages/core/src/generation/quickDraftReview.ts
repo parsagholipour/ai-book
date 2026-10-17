@@ -76,6 +76,7 @@ export async function reviewQuickDraftManuscript(options: {
     requiredFixes: findings.flatMap(({ finding, targets }) => targets.map(index => `Page ${index}: ${finding.fix}`)),
     notes: "Focused concrete-defect screen; this is not a full editorial quality rating.",
     focusedReview: { rejectedFindings, repairGroups: findings.map(({ targets }) => targets),
+      findings: findings.map(({ finding, targets }) => ({ targets, kind: finding.kind, problem: finding.problem, fix: finding.fix, evidence: finding.evidence })),
       ...(unverifiedRepairPageIndexes.size ? { unverifiedRepairPageIndexes: [...unverifiedRepairPageIndexes] } : {}) }
   };
 }

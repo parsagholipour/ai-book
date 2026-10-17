@@ -1,6 +1,5 @@
 import { type ExportPageForRepair } from "../runtime/jobTypes.js";
 import { cleanOptionalText } from "../runtime/serialization.js";
-import { finalQaMessagesForPage } from "./finalQaPageTargets.js";
 import {
   chapterBriefSchema,
   exportProvenancePaths,
@@ -18,7 +17,6 @@ import {
   type ChapterBrief,
   type ChapterPlan,
   type CreateProjectInput,
-  type FinalBookQa,
   type GeneratedImageBytes,
   type OptimizedImage,
   type PageQualityReport,
@@ -133,7 +131,7 @@ export async function loadPagesForExport(projectId: string): Promise<ExportPageF
  * status and summary columns.
  *
  * It lives beside the shared loader rather than replacing it, because the two
- * other callers need what it drops: `repairPagesFromFinalQa` returns
+ * other callers need what it drops: the compile's repair returns
  * `loadPagesForExport`'s answer as the manuscript the render is built from, and
  * `markdownPages` reads `page.images[0]` off every row of it. Narrowing the
  * shared one would take the pictures out of the book.
@@ -212,40 +210,6 @@ export async function styleExcerptsForPage(options: {
     pagesForStyleExcerpts(options.recencyPages, styleLockPages),
     sampleExcerptsFromInput(options.input)
   );
-}
-
-export function toFinalQaPage(page: { index: number; title: string; markdown: string; summary: string }) {
-  return {
-    index: page.index,
-    title: page.title,
-    markdown: page.markdown,
-    summary: page.summary
-  };
-}
-
-export function pageReportFromFinalQa(finalQa: FinalBookQa, pageIndex: number, lastPage: number): PageQualityReport {
-  const scopedMessages = finalQaMessagesForPage(finalQa, pageIndex, lastPage);
-  const issueText = scopedMessages.join(" ");
-  const repetitionOk = !/(repeat|overlap|same|redundan|duplicate)/i.test(issueText);
-  const progressionOk = !/(progress|restat|vague|ending|resolution|incomplete|commitment|decision)/i.test(issueText);
-
-  return {
-    approved: false,
-    score: Math.min(finalQa.score, 60),
-    issues: [...scopedMessages],
-    requiredRevisions: [...scopedMessages],
-    notes: finalQa.notes || "Final QA requested a targeted page repair.",
-    groundedOk: true,
-    unsupportedClaims: [],
-    checks: {
-      placeholderFree: true,
-      promptLeakFree: true,
-      titleClean: true,
-      repetitionOk,
-      progressionOk,
-      styleNatural: true
-    }
-  };
 }
 
 export function parseChapterBrief(value: unknown): ChapterBrief | undefined {

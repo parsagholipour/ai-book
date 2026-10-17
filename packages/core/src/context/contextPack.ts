@@ -23,9 +23,9 @@ import { localStyleInstructions } from "../generation/styleContract.js";
 export const CONTINUITY_NOTE_PROMPT_LIMITS = {
   /** {@link buildContextPack}, the single-page draft prompt. Matches the producer's own budget. */
   draft: 28,
-  /** `generateChapterDraft`, `generateBatchDraft` and `polishPageDraft`. */
+  /** `generateChapterDraft` and `generateBatchDraft`. */
   bulkDraft: 24,
-  /** `reviewPageDraft` and `repairPageBrief`. */
+  /** `reviewPageDraft` (the chat page rewrite's reviewer). */
   review: 20
 } as const;
 

@@ -126,7 +126,6 @@ describe("POST /manuscript/from-plan", () => {
     const project = db.projects[0]!;
     expect(project).toMatchObject({ status: "DRAFT", currentPlanId: null, targetPages: 1, prompt: "Author-written manuscript: The Lighthouse" });
     expect(project.mediaSettings).toMatchObject({
-      finalReview: false,
       fullIllustrations: false,
       coverArtSource: "design",
       includeCover: false,

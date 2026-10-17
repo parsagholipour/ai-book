@@ -1,7 +1,10 @@
 import { Queue, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import {
+  BACKGROUND_JOB_QUEUE,
+  COMPILE_JOB_QUEUE,
   GENERATION_JOB_RETENTION,
+  IMAGE_JOB_QUEUE,
   INTERACTIVE_JOB_QUEUE,
   LONG_JOB_QUEUE,
   STOPPED_JOB_ERROR,
@@ -24,6 +27,7 @@ import {
   parseStructuralApplication,
   preEditProjectStatus,
   retryJobOptions,
+  type GenerationJobQueueName,
   type GenerationJobType
 } from "@book-maker/core";
 import { classifyStoppedContinuationsTx } from "./continuationStopPolicy.js";
@@ -70,12 +74,24 @@ export const interactiveQueue = new Queue(INTERACTIVE_JOB_QUEUE, {
   defaultJobOptions
 });
 
+export const imageQueue = new Queue(IMAGE_JOB_QUEUE, { connection: redisConnection, defaultJobOptions });
+export const compileQueue = new Queue(COMPILE_JOB_QUEUE, { connection: redisConnection, defaultJobOptions });
+export const backgroundQueue = new Queue(BACKGROUND_JOB_QUEUE, { connection: redisConnection, defaultJobOptions });
+
+const QUEUES_BY_NAME: Readonly<Record<GenerationJobQueueName, Queue>> = {
+  [LONG_JOB_QUEUE]: bookQueue,
+  [INTERACTIVE_JOB_QUEUE]: interactiveQueue,
+  [IMAGE_JOB_QUEUE]: imageQueue,
+  [COMPILE_JOB_QUEUE]: compileQueue,
+  [BACKGROUND_JOB_QUEUE]: backgroundQueue
+};
+
 /**
- * Both lanes, for every lookup of a job by id: a row's job lives in the lane
+ * Every lane, for every lookup of a job by id: a row's job lives in the lane
  * its type and payload name, and a requeue — or a row the previous release
- * queued in `book-maker` — can leave a copy in the other one.
+ * queued in `book-maker` — can leave a copy in another one.
  */
-export const generationQueues = [bookQueue, interactiveQueue] as const;
+export const generationQueues = [bookQueue, interactiveQueue, imageQueue, compileQueue, backgroundQueue] as const;
 
 type RequeueableGenerationJob = {
   id: string;
@@ -245,7 +261,7 @@ export async function dispatchGenerationJob(generationJobId: string) {
     return generationJob;
   }
   try {
-    // Never add over a copy still live in either lane, and clear a finished
+    // Never add over a copy still live in any lane, and clear a finished
     // one first — an add over a finished id in its own lane is a silent no-op.
     if (!(await clearLaneJobIdForAdd(generationQueues, generationJob.id))) {
       return deferDispatch(generationJob);
@@ -253,8 +269,7 @@ export async function dispatchGenerationJob(generationJobId: string) {
     // The lane is the row's (type, payload), so the worker's re-push of the
     // same row lands in the same queue and BullMQ's job-id dedupe still holds.
     const placement = generationJobPlacement(generationJob.type, payload);
-    const laneQueue = placement.lane === "interactive" ? interactiveQueue : bookQueue;
-    const bullJob = await laneQueue.add(
+    const bullJob = await QUEUES_BY_NAME[placement.queueName].add(
       jobName,
       {
         ...payload,
@@ -526,6 +541,9 @@ export async function stopProjectGenerationJobs(projectId: string) {
         where: { id: projectId, status: "EDITING" },
         data: { status: restoredStatus }
       });
+    } else if (stopped.length > 0 && stopped.every((job) => job.type === "PREPARE_COMPOSITION") && project.status === "PLAN_READY") {
+      // Only the speculative composition prep was running, on a plan still waiting for its reader: stopping it
+      // stops spend and changes nothing about the book (an account suspension, the console's Stop).
     } else {
       await tx.project.updateMany({
         where: { id: projectId, status: { notIn: [...SETTLED_PROJECT_STATUSES] } },

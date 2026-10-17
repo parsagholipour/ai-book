@@ -1,0 +1,14 @@
+-- A short book's reference sheets are decided once, from its whole-book draft:
+-- a sheet exists so a character looks the same from one picture to the next,
+-- and a character drawn in one picture has nothing to be consistent with. Every
+-- illustrated book used to draw a sheet for its whole plan cast — a 10-page
+-- children's book with four pictures drew four sheets for a heron, a frog and a
+-- beaver who were each in one of them. The pass that drafts the book writes the
+-- cast here, where still NULL, before it draws a sheet, so every page job, the
+-- cover job and a resumed run compute the identical cast
+-- (apps/worker/src/generation/characterReferenceCastDecision.ts).
+--
+-- Per plan version, beside `characterReferenceRefusals`, because a replan, a
+-- continuation or a revision is a new row whose draft decided nothing. NULL
+-- means "no decision" and keeps the whole cast; `[]` is a decision to draw none.
+ALTER TABLE "PlanVersion" ADD COLUMN "characterReferenceCast" JSONB;

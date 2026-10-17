@@ -73,3 +73,17 @@ it.each(["sync", "async"])("does not let a %s trace failure interrupt retrieval"
   await expect(retrieveChapterSources({ ...options(), runLog: { append } })).resolves.toEqual({ excerpts: [], documents: [] });
   expect(append).toHaveBeenCalledWith("generation.composed_chapters.dossier.coverage", expect.objectContaining({ rounds: 2 }));
 });
+
+it("tells a lead search which lead each round's query was searched for, in place of the plain search", async () => {
+  const leads = [...episodes, chapterEpisodeSchema.parse({ title: "Diffie-Hellman", searchQueries: [] })];
+  const searchSources = vi.fn(async () => [source]);
+  const leadSearch = vi.fn(async (_query: string, _lead: string | undefined) => [] as Array<{ title: string; url: string }>);
+  await retrieveChapterSources({ ...options(), episodes: leads, searchSources, leadSearch });
+  expect(searchSources).not.toHaveBeenCalled();
+  expect(leadSearch.mock.calls).toEqual(expect.arrayContaining([
+    ["RSA original paper", "RSA"],
+    [`Diffie-Hellman ${chapter.title} original source documentation`, "Diffie-Hellman"],
+    ["RSA technical documentation", "RSA"]
+  ]));
+  expect(leadSearch).toHaveBeenCalledTimes(4);
+});

@@ -481,6 +481,8 @@ describe("mobile project status DTO", () => {
     expect(status.currentAction).toBe("Shaping the chapters and flow");
     expect(status.planningProgress).toEqual({
       percent: 55,
+      // The job carries no start time, so there is no clock to read.
+      estimatedSecondsLeft: null,
       steps: [
         { key: "understand", label: "Understanding your idea", status: "done" },
         { key: "shape", label: "Shaping the chapters and flow", status: "active" },
@@ -691,6 +693,7 @@ describe("mobile project status DTO", () => {
     expect(status.currentAction).toBe("Ready for review.");
     expect(status.planningProgress).toEqual({
       percent: 100,
+      estimatedSecondsLeft: null,
       steps: [
         { key: "understand", label: "Understanding your idea", status: "done" },
         { key: "shape", label: "Shaping the chapters and flow", status: "done" },
@@ -741,6 +744,8 @@ describe("mobile project status DTO", () => {
     expect(status.currentAction).toBe("Improving your plan");
     expect(status.planningProgress).toEqual({
       percent: 0,
+      // Queued is not started.
+      estimatedSecondsLeft: null,
       steps: [
         { key: "understand", label: "Understanding your changes", status: "done" },
         { key: "shape", label: "Improving your plan", status: "active" },

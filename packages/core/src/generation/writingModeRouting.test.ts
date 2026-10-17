@@ -73,7 +73,7 @@ describe("generation follows the saved writing mode", () => {
     const textModel = new FakeTextModelAdapter(input);
     const calls = vi.spyOn(textModel, "generateJson");
     const chapter = plan.chapters[0]!;
-    await planChapterForms({ input, plan, textModel, repair: false,
+    await planChapterForms({ input, plan, textModel,
       ranges: [{ chapter, startPage: 1, endPage: chapter.targetPages }] });
     const payload = JSON.parse(calls.mock.calls[0]![0].messages.find((message) => message.role === "user")!.content);
     expect(payload.book.writingMode).toBe("analytical-history");

@@ -205,14 +205,17 @@ scratch database on every release, so the restore is rehearsed against the real 
 **The worker's healthcheck counts only its own container's heartbeat, because a lane's key outlives the worker that wrote it.**
 The compose healthcheck was a `node -e` that imported bullmq and asked each queue for consumers:
 about 0.55 s of CPU and 76 MB every 15 s, some 8% of a t3 vCPU. `worker-healthcheck.sh` asks
-Redis over bash's `/dev/tcp` for both lanes' heartbeat keys (`packages/core/src/workerHeartbeat.ts`)
-and passes only if each was last written by this container's hostname, which the worker records
+Redis over bash's `/dev/tcp` for every lane's heartbeat key (`packages/core/src/workerHeartbeat.ts`;
+five since the background lane, 2026-10-17, which is listed although `/api/ready` leaves it out) and passes only if each was last written by
+this container's hostname, which the worker records
 as `os.hostname()` and Docker changes with every recreate. The host test is the point: a key lives
 90 s after its worker stops, and the new worker often starts sooner than that after the old one
 drained, so without it `up --wait` passed on the old worker's beat. It also sees a wedged event
 loop, which BullMQ's consumer list never could. It reads `REDIS_URL` and understands only
 `redis://host[:port]`; a password or TLS needs AUTH and TLS added to it first. The queue names
-are copied from `jobLanes.ts`, and `test_worker_healthcheck.py` fails if they drift.
+are copied from `jobLanes.ts`, and `test_worker_healthcheck.py` fails if they drift — a lane added
+to `GENERATION_JOB_QUEUES` without a key here is a worker reported healthy with a lane nothing
+consumes.
 
 **A deleted or overwritten object stays recoverable for 30 days, and no longer.** The assets
 bucket had no versioning, and books are promised forever, so one wrong `deletePrefix` lost them for

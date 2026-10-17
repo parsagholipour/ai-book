@@ -54,7 +54,9 @@ const FAILURE_PHASE = {
   CONTINUE_BOOK: "writing new chapters",
   GENERATE_AUDIOBOOK: "narrating your book",
   GENERATE_CHARACTER_PORTRAIT: "drawing a character portrait",
-  WRITING_ASSIST: "working on your writing request"
+  WRITING_ASSIST: "working on your writing request",
+  // Never reported as a book's failure (it is derivative), so a reader never reads this; the table is exhaustive.
+  PREPARE_COMPOSITION: "preparing to write your book"
 } satisfies Record<GenerationJobType, string>;
 
 /** The raw error when it is reader copy, otherwise nothing. */

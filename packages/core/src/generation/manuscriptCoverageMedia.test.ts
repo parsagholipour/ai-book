@@ -114,3 +114,13 @@ it("does not prove a media prohibition without its scope", async () => {
   const result = await reviewManuscriptCoverage({ brief, promises: [], pages: [], textModel: model, evidenceContext: context });
   expect(result.requirements[0]?.status).toBe("unverified");
 });
+
+it("never counts a typeset figure as story-page artwork a reader turned off", async () => {
+  // cmv9lngxm (2026-10-15): "no in-book illustrations; the reader turned them off" was reported
+  // missing on a book whose only pictures were its bar and flow charts.
+  const { buildCoverageMediaInventory, mediaAbsenceVerdict } = await import("./manuscriptCoverageMedia.js");
+  const figure = '```figure\n{"kind":"bar","title":"Votes","categories":["Yes","No"],"series":[{"name":"Count","values":[3,2]}],"source":"Minutes"}\n```';
+  const inventory = buildCoverageMediaInventory([{ index: 1, markdown: `Prose.\n\n${figure}`, images: [] }], 1);
+  expect(inventory.storyPagesWithArtwork).toEqual([]);
+  expect(mediaAbsenceVerdict("story_pages", inventory).status).toBe("fulfilled");
+});

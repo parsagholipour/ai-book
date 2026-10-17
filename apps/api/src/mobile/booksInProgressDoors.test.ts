@@ -91,6 +91,16 @@ describe("the books-in-progress limit", () => {
     await expect(booksInProgressRefusal("user-a")).resolves.toEqual({ limit: 1, inProgress: 1 });
   });
 
+  it("still counts a book whose pictures or compile are all it has left, though they left the long lane", async () => {
+    openLongLaneWork([{ projectId: "project-drawing", type: "GENERATE_IMAGE", payload: { planId: "plan-x", pageId: "page-1" } }]);
+    await expect(booksInProgressRefusal("user-a")).resolves.toEqual({ limit: 1, inProgress: 1 });
+    openLongLaneWork([
+      { projectId: "project-typesetting", type: "COMPILE_EXPORT", payload: { exportPublicationProjectStatus: "GENERATING" } }
+    ]);
+    await expect(booksInProgressRefusal("user-a")).resolves.toEqual({ limit: 1, inProgress: 1 });
+    expect(startsLongLaneWork([{ type: "GENERATE_IMAGE", payload: { planId: "plan-x", pageId: "page-1" } }])).toBe(true);
+  });
+
   it("gives a paid plan three books, and counts an unreadable plan as paid", async () => {
     const books = ["a", "b", "c"].map((id) => ({ projectId: `project-${id}`, type: "GENERATE_AUDIOBOOK", payload: {} }));
     vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);

@@ -43,17 +43,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-// One export of one module, over the real rest of it: which pages the final-QA
-// repair redrafts is a test hook, while the per-message extractor behind the
-// reader's quality card and the page bound both questions are asked in stay
-// real, so the card assertions below measure the actual mapping.
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -200,14 +189,22 @@ describe("compileExport for an author's book", () => {
   });
 
   it("holds an author's chapter to no composed length budget, whatever strategy auto resolved to", async () => {
+    // The shortfall is a console diagnostic on a generated book; an author's book never measures it.
+    const lastReportCodes = () => {
+      const calls = mocks.prisma.generationJob.update.mock.calls as Array<[{ data?: { qualityReport?: { issues?: Array<{ code: string }> } } }]>;
+      const report = calls.map((call) => call[0].data?.qualityReport).filter((value) => value && typeof value === "object").at(-1);
+      return (report?.issues ?? []).map((issue) => issue.code);
+    };
     mocks.strategy.executionMode = "composed-chapters";
     try {
       await compileExport(publishJob());
       expect(mocks.publishCompiledExports).toHaveBeenLastCalledWith(expect.objectContaining({ status: "COMPLETE" }));
+      expect(lastReportCodes()).not.toContain("CHAPTER_LENGTH_SHORTFALL");
 
       stage({ finalReview: false });
       await compileExport(publishJob());
-      expect(mocks.publishCompiledExports).toHaveBeenLastCalledWith(expect.objectContaining({ status: "REVIEW_REQUIRED" }));
+      expect(lastReportCodes()).toContain("CHAPTER_LENGTH_SHORTFALL");
+      expect(mocks.publishCompiledExports).toHaveBeenLastCalledWith(expect.objectContaining({ status: "COMPLETE" }));
     } finally {
       mocks.strategy.executionMode = "whole-book";
     }

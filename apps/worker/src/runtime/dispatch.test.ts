@@ -883,7 +883,7 @@ describe("maybeEnqueueCompile", () => {
 });
 
 describe("maybeCompileAfterCompletedJob", () => {
-  it("only reacts to page and image completions that carry both ids", async () => {
+  it("only reacts to page, image and book-run completions that carry both ids", async () => {
     await maybeCompileAfterCompletedJob({ name: "plan-book", data: { projectId: "p", planId: "pl" } } as unknown as Job);
     await maybeCompileAfterCompletedJob({ name: "generate-page", data: { projectId: "p" } } as unknown as Job);
     expect(mocks.prisma.project.findUnique).not.toHaveBeenCalled();

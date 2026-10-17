@@ -4010,3 +4010,27 @@ figcaption {
   flex: none;
   margin-top: 3px;
 }
+
+.quality-findings {
+  margin: 6px 0 12px;
+  padding-left: 18px;
+}
+
+.quality-findings li {
+  margin-bottom: 8px;
+}
+
+.quality-findings p {
+  margin: 2px 0;
+}
+
+.quality-findings blockquote {
+  margin: 2px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid #e2dbcf;
+  color: #5c5346;
+}
+
+.quality-severity.is-error {
+  color: #b42318;
+}

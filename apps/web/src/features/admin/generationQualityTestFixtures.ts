@@ -8,7 +8,7 @@ import type { GenerationQuality } from "./GenerationQualityScreen.js";
 export function generationQualityResponse(...undescribedIds: string[]): GenerationQuality {
   const settings = {} as GenerationQuality["settings"];
   for (const id of QUALITY_FEATURE_IDS) settings[id] = [];
-  settings.planCritic = ["ultra", "premium"];
+  settings.writerTools = ["ultra", "premium"];
   for (const id of undescribedIds) settings[id] = [];
   const fast = { provider: "deepseek" as const, model: "deepseek-fast", thinkingEnabled: false };
   const fallback = { provider: "gemini" as const, model: "gemini-2.5-flash", thinkingBudget: 0 };
@@ -59,7 +59,7 @@ export function generationQualityResponse(...undescribedIds: string[]): Generati
       { provider: "gemini", model: "gemini-2.5-flash", label: "Gemini Flash", thinkingBudget: 0 }
     ],
     usingCompiledDefaults: false,
-    features: [{ id: "planCritic", label: "Plan critic", summary: "One cheap call per book." }],
+    features: [{ id: "writerTools", label: "Writer tools", summary: "One cheap call per book." }],
     note: null,
     updatedBy: null,
     updatedAt: null

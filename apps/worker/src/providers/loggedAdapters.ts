@@ -1,6 +1,5 @@
 import { withProjectSources } from "./sourceContext.js";
 import { createLoggedDecisions } from "./loggedDecisions.js";
-import { createProviders as createCoreProviders } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
 import {
   AlibabaImageAdapter,
@@ -22,7 +21,6 @@ import {
   withTextAttemptBudget,
   isRecoverableNetworkError,
   type CreateProjectInput,
-  type EmbeddingAdapter,
   type GenerateJsonOptions,
   type GenerateTextOptions,
   type GenerateWithToolsOptions,
@@ -35,6 +33,7 @@ import {
   type ResearchQuery,
   type SpeechAdapter,
   type SpeechRequest,
+  type TextFallbackEvent,
   type TextModelAdapter
 } from "@book-maker/core";
 import { config } from "../runtime/config.js";
@@ -60,6 +59,7 @@ import {
   optionalProviderCallMetadata,
   recordProviderAudioCost,
   recordProviderImageCost,
+  recordProviderQuotaRefusal,
   recordProviderUsage,
   withLiveOutputTracking
 } from "./usageAccounting.js";
@@ -67,6 +67,7 @@ import type { WorkerRuntimeJob } from "../runtime/jobPayloads.js";
 import { CopyrightSafeRetryImageAdapter } from "./copyrightSafeImageRetry.js";
 import { loadLiveGenerationTextRouting } from "./generationTextRouting.js";
 import { TextFallbackCallAccounting } from "./textFallbackAccounting.js";
+import { LoggingEmbeddingAdapter } from "./loggedEmbeddingAdapter.js";
 import { withContentSafetyRule } from "./contentSafetyRule.js";
 
 /**
@@ -93,7 +94,7 @@ export function createLoggedProviders(
   const { generationJobId, projectId } = job.data;
   const textModel = loggedTextModel(input);
   const liveTextModel = liveGenerationTextModel(providers.text, input, logger);
-  const embedding = new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId);
+  const embedding = new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId, projectId);
   const text = withProjectSources(new LoggingTextModelAdapter(liveTextModel, logger, generationJobId, projectId, textModel), input, projectId, embedding);
   return {
     text,
@@ -152,8 +153,19 @@ export function liveGenerationTextModel(
   return createLiveGenerationTextModel(config, {
     tier: modelTierForInput(input),
     loadRouting: loadLiveGenerationTextRouting(logger),
-    onFallbackEvent: (event) => logger.append(`text.routing.${event.event}`, event).then(() => undefined)
+    onFallbackEvent: textRoutingRunLog(logger)
   });
+}
+
+/**
+ * Writes a text pair's routing events as `text.routing.<event>`. The event's own
+ * `event` field stays out of the payload, as the image path's does: spread into
+ * the entry it overwrote the prefixed name, so the run log said `fallback.start`.
+ */
+export function textRoutingRunLog(logger: RunLogger): (event: TextFallbackEvent) => Promise<void> {
+  return async ({ event, ...payload }) => {
+    await logger.append(`text.routing.${event}`, payload);
+  };
 }
 
 function createLoggedImageAdapter(
@@ -665,7 +677,7 @@ export class LoggingResearchAdapter implements ResearchAdapter {
     try {
       await assertJobNotStopped(this.generationJobId);
       const result = await withRecoverableNetworkRetry(
-        () => this.delegate.search(query),
+        () => this.searchOnce(query, callId),
         providerRetryOptions(this.logger, this.generationJobId, "research.search", query.purpose)
       );
       const responseAt = await this.logger.append("research.search.response", { callId, result });
@@ -689,6 +701,38 @@ export class LoggingResearchAdapter implements ResearchAdapter {
     } catch (error) {
       await this.logger.append("research.search.error", { callId, error: serializeError(error) });
       await assertJobNotStopped(this.generationJobId);
+      throw error;
+    }
+  }
+
+  /**
+   * One physical request. A failed one still writes its cost row: Google may
+   * have grounded the prompt, and billed it, before the deadline or the error,
+   * so the row is a failed call of unknown usage whose grounding is unknown —
+   * no fee, no place claimed in the free allowance (apps/api/src/admin/CLAUDE.md).
+   * A result names its own provider and model; for an error, the adapter's.
+   */
+  private async searchOnce(query: ResearchQuery, callId: string) {
+    const startedAt = Date.now();
+    try {
+      return await this.delegate.search(query);
+    } catch (error) {
+      if (!isStopRequestedError(error)) {
+        await recordProviderUsage({
+          projectId: query.projectId ?? this.projectId,
+          generationJobId: this.generationJobId,
+          provider: this.delegate.identity?.provider ?? "unknown",
+          model: this.delegate.identity?.model ?? "unknown",
+          purpose: query.purpose ?? "research.search",
+          operation: "research.search",
+          callId,
+          durationMs: Date.now() - startedAt,
+          usage: undefined,
+          usageUnavailableReason: "provider_error",
+          providerCallError: error,
+          searchGrounding: "unknown"
+        });
+      }
       throw error;
     }
   }
@@ -747,11 +791,15 @@ class LoggingImageAdapter implements ImageAdapter {
       return result;
     } catch (error) {
       attachProviderLogContext(error, { callId, attempt: this.attempt });
-      await this.logger.append("image.generate.error", {
+      const errorAt = await this.logger.append("image.generate.error", {
         callId,
         error: serializeError(error),
         ...this.attemptLog()
       });
+      // A failed render writes no row, except one an empty account refused: the quota alert reads it.
+      if (this.attempt) await recordProviderQuotaRefusal({ projectId: request.projectId, generationJobId: this.generationJobId,
+        provider: this.attempt.provider, model: this.attempt.model, operation: "image.generate", callId,
+        durationMs: durationBetweenTimestamps(requestAt, errorAt), error });
       await assertJobNotStopped(this.generationJobId);
       throw error;
     }
@@ -831,53 +879,3 @@ class LoggingSpeechAdapter implements SpeechAdapter {
   }
 }
 
-class LoggingEmbeddingAdapter implements EmbeddingAdapter {
-  constructor(
-    private readonly delegate: EmbeddingAdapter,
-    private readonly logger: RunLogger,
-    private readonly generationJobId: string | undefined
-  ) {}
-
-  async embed(text: string) {
-    const callId = randomUUID();
-    await this.logger.append("embedding.embed.request", {
-      callId,
-      textLength: text.length,
-      textPreview: text.slice(0, 500)
-    });
-    try {
-      await assertJobNotStopped(this.generationJobId);
-      const vector = await withRecoverableNetworkRetry(
-        () => this.delegate.embed(text),
-        providerRetryOptions(this.logger, this.generationJobId, "embedding.embed")
-      );
-      await this.logger.append("embedding.embed.response", { callId, vectorLength: vector.length });
-      await assertJobNotStopped(this.generationJobId);
-      return vector;
-    } catch (error) {
-      await this.logger.append("embedding.embed.error", { callId, error: serializeError(error) });
-      await assertJobNotStopped(this.generationJobId);
-      throw error;
-    }
-  }
-}
-
-/**
- * The judge for best-of-two chapter drafts: the Quality tab's fast-judgment
- * route, which is a different model family from the tier's writer, logged and
- * costed like every other call of the job. The writer judging its own drafts
- * favours its own text; a second family does not.
- */
-export function createLoggedJudgeTextModel(job: WorkerRuntimeJob, input: CreateProjectInput): TextModelAdapter {
-  const logger = createRunLogger(job);
-  const { generationJobId, projectId } = job.data;
-  const delegate = config.MOCK_AI
-    ? createCoreProviders(config, input).text
-    : createLiveGenerationTextModel(config, {
-        tier: modelTierForInput(input),
-        fastJudgments: true,
-        loadRouting: loadLiveGenerationTextRouting(logger),
-        onFallbackEvent: (event) => logger.append(`text.routing.${event.event}`, event).then(() => undefined)
-      });
-  return withProjectSources(new LoggingTextModelAdapter(delegate, logger, generationJobId, projectId, loggedTextModel(input)), input, projectId);
-}

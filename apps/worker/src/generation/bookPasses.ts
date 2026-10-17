@@ -1,6 +1,5 @@
 import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
 import {
-  checkpointWholeBookDraftPages,
   directResumeStateForContext,
   effectiveWholeBookDraftContext,
   loadDirectResumeContext,
@@ -12,17 +11,15 @@ import {
   resetBookForDirectGeneration,
   type StoredResumePage
 } from "./bookState.js";
-import { prepareShortPictureBookReview, usesShortPictureBookReview } from "./shortPictureBook.js";
 import { ensureCharacterReferenceAssets } from "./characterReferences.js";
 import { maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
-import { advanceJobStep, assertJobNotStopped, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup, type IndexedPageDraft } from "../runtime/jobTypes.js";
-import { chapterSetupsForPlan, styleExcerptsForPage } from "./bookHelpers.js";
+import { styleExcerptsForPage } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
-import { reviewAndSaveGeneratedPage, type SavedGeneratedPage } from "./pageReview.js";
-import { persistKeeperStoryDelta, type QualityGateContext } from "./qualityEnrichment.js";
+import { reviewAndSaveGeneratedPage } from "./pageReview.js";
+import { type QualityGateContext } from "./qualityEnrichment.js";
 import { loadQualityContext } from "./qualitySettings.js";
-import { polishPageWithQualityGates } from "./qualityDrafting.js";
 import { reviewWholeBookDraftPages } from "./wholeBookPageReview.js";
 import {
   GeneratedPagePublicationClaimLostError,
@@ -36,14 +33,11 @@ import { updateEntityStateFromPage } from "./entityState.js";
 import type { DirectResumeState } from "./directGenerationResume.js";
 import {
   type BookGenerationStrategy,
-  compactPictureBookPlanForBriefs,
-  inputWithSelectedPageCount,
   type BookPlan,
   type CreateProjectInput,
   range,
   type PriorPageContext,
   type ProviderSet,
-  type WholeBookPageDraft,
   seedStoryStateFromPromises
 } from "@book-maker/core";
 import { pageScope, Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
@@ -52,28 +46,6 @@ import { pageScope, Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
  * The book-level generation passes (chapter-whole, batch window, draft-then-polish,
  * whole-book) that produce page drafts for a plan.
  */
-
-/**
- * Take a page's *accepted* brief repair onto the setup every other page of that
- * chapter is briefed from.
- *
- * All three passes here hand one `ChapterSetup.brief` to every page of a
- * chapter, which is why this matters at all: a page that reaches quality
- * recovery buys a re-planned beat, and the chapter's remaining pages have to be
- * told what that page now covers or they are briefed to write around an
- * assignment nothing delivered. `reviewAndSaveGeneratedPage` answers with the
- * merged brief only for a page that kept a draft the repair briefed — the same
- * condition `Chapter.productionBrief` moves on — so this rebinding cannot claim
- * a repair the row refused. The repair used to arrive by the brief object being
- * mutated underneath these passes, which said nothing about acceptance and
- * happened at the moment the planner call returned; see
- * `repairPageBriefForRecovery`.
- */
-function adoptRepairedChapterBrief(setup: ChapterSetup | undefined, saved: SavedGeneratedPage): void {
-  if (setup && saved.repairedChapterBrief) {
-    setup.brief = saved.repairedChapterBrief;
-  }
-}
 
 function settledPageToReplaceForResume(
   resumeState: DirectResumeState,
@@ -209,7 +181,6 @@ export async function generateBookChapterWholePass(options: {
         providers: options.providers,
         strategy: options.strategy,
         draft: pageDraft,
-        deferIllustrations: options.input.mediaSettings.finalReview === true,
         chapterId: chapterIds.get(setup.chapter.index) ?? null,
         chapter: setup.chapter,
         chapterBrief: setup.brief,
@@ -220,7 +191,6 @@ export async function generateBookChapterWholePass(options: {
         ...(settledPageToReplace ? { settledPageToReplace } : {})
       });
       previousPages.push(saved.page);
-      adoptRepairedChapterBrief(setup, saved);
     }
   }
 
@@ -374,7 +344,6 @@ export async function generateBookBatchWindow(options: {
         providers: options.providers,
         strategy: options.strategy,
         draft: pageDraft,
-        deferIllustrations: options.input.mediaSettings.finalReview === true,
         chapterId: setup ? chapterIds.get(setup.chapter.index) ?? null : null,
         chapter: setup?.chapter,
         chapterBrief: setup?.brief,
@@ -385,7 +354,6 @@ export async function generateBookBatchWindow(options: {
         ...(settledPageToReplace ? { settledPageToReplace } : {})
       });
       previousPages.push(saved.page);
-      adoptRepairedChapterBrief(setup, saved);
     }
   }
 
@@ -440,216 +408,6 @@ export function isRecoverableBatchDraftRangeError(error: unknown): boolean {
   );
 }
 
-export async function generateBookDraftThenPolish(options: {
-  projectId: string;
-  planId: string;
-  input: CreateProjectInput;
-  plan: BookPlan;
-  providers: ProviderSet;
-  strategy: BookGenerationStrategy;
-  generationJobId?: string | undefined;
-}) {
-  const generateWholeBookDraft = options.strategy.generateWholeBookDraft;
-  const polishPageDraft = options.strategy.polishPageDraft;
-  if (!generateWholeBookDraft || !polishPageDraft) {
-    throw new Error(`Strategy ${options.strategy.id} does not support draft-then-polish generation.`);
-  }
-
-  // The accepted whole-book draft is checkpointed as PENDING rows before the
-  // polish loop, so a re-run resumes polishing instead of repeating the draft
-  // call. requiresBriefs is false because effectiveWholeBookDraftContext drops
-  // briefs when the accepted draft was renumbered — polish tolerates both.
-  const resumeContext = await loadDirectResumeContext(options.projectId);
-  const resumeState = directResumeStateForContext({
-    targetPages: options.input.targetPages,
-    plan: options.plan,
-    context: resumeContext,
-    requiresBriefs: false,
-    requireAllPagesPresent: true
-  });
-  if (resumeState.kind === "already-complete") {
-    await advanceJobStep(options.generationJobId, "enqueue", 90, "All pages already polished; queueing export");
-    await maybeEnqueueCompile(options.projectId, options.planId);
-    return;
-  }
-
-  let effectiveInput: CreateProjectInput;
-  let effectivePlan: BookPlan;
-  let chapterSetups: ChapterSetup[];
-  let chapterIds: Map<number, string>;
-  let rawPages: PriorPageContext[];
-  let pagesToPolish: WholeBookPageDraft[];
-  const previousPages: PriorPageContext[] = [];
-
-  if (resumeState.kind === "resume") {
-    // persistAcceptedWholeBookTarget already ran before the first polish, so
-    // options.input/options.plan reflect the accepted draft on this re-run.
-    effectiveInput = options.input;
-    effectivePlan = options.plan;
-    ({ chapterSetups, chapterIds } = rebuildChapterSetupsFromStored(
-      options.plan,
-      options.input.targetPages,
-      resumeContext.chapters
-    ));
-    rawPages = resumeContext.pages.map((page) => ({
-      index: page.index,
-      title: page.title,
-      markdown: page.markdown,
-      summary: page.summary
-    }));
-    pagesToPolish = resumeContext.pages
-      .filter((page) => page.status === "PENDING")
-      .map((page) => ({
-        index: page.index,
-        title: page.title,
-        markdown: page.markdown,
-        summary: page.summary,
-        continuityNotes: [],
-        ...(page.imagePrompt ? { imagePrompt: page.imagePrompt } : {})
-      }));
-    previousPages.push(...priorPageContextsFromStored(resumeContext.pages, resumeState.firstMissingPageIndex));
-    await advanceJobStep(
-      options.generationJobId,
-      "setup",
-      35,
-      `Resuming polish with ${previousPages.length} finished pages; the saved draft is reused`
-    );
-    await prisma.project.update({ where: { id: options.projectId }, data: { status: "GENERATING" } });
-  } else {
-    const draftChapterSetups: ChapterSetup[] = options.strategy.createChapterBriefs
-      ? await prepareChapterSetups(options)
-      : chapterSetupsForPlan(options.plan, options.input.targetPages);
-    const chapterBriefs = draftChapterSetups.flatMap((setup) => (setup.brief ? [setup.brief] : []));
-    const draftPlan = compactPictureBookPlanForBriefs(options.input, options.plan, chapterBriefs);
-    const draftInput = draftPlan === options.plan ? options.input : inputWithSelectedPageCount(options.input,
-      draftPlan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0));
-    const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy);
-    await advanceJobStep(options.generationJobId, "briefs", chapterBriefs.length > 0 ? 30 : 20, "Drafting whole book");
-    const draft = await generateWholeBookDraft({
-      input: draftInput,
-      plan: draftPlan,
-      chapterBriefs: chapterBriefs.length > 0 ? chapterBriefs : undefined,
-      researchNotes,
-      textModel: options.providers.text
-    });
-    const acceptanceMessage = await reportAcceptedWholeBookDraft(options.generationJobId, draft);
-    const effective = effectiveWholeBookDraftContext(options.input, draftPlan, draft, draftChapterSetups);
-
-    await advanceJobStep(
-      options.generationJobId,
-      "setup",
-      35,
-      acceptanceMessage ? `${acceptanceMessage} Preparing polish records.` : "Preparing polish records"
-    );
-    effectiveInput = effective.input;
-    effectivePlan = effective.plan;
-    chapterSetups = effective.chapterSetups;
-    chapterIds = await resetBookForDirectGeneration(options.projectId, effective.chapterSetups, effective.plan.promises ?? []);
-    await checkpointWholeBookDraftPages({
-      projectId: options.projectId,
-      chapterSetups: effective.chapterSetups,
-      chapterIds,
-      pages: draft.pages
-    });
-    // Persisted before polishing (not after) so a resumed run loads the
-    // accepted page target and matches the checkpointed structure.
-    await persistAcceptedWholeBookTarget({
-      projectId: options.projectId,
-      planId: options.planId,
-      input: effective.input,
-      plan: effective.plan,
-      ...(draftPlan !== options.plan ? { chapterAllocationChanged: true } : {}),
-      originalTargetPages: options.input.targetPages,
-      draft
-    });
-    rawPages = draft.pages.map((page) => ({
-      index: page.index,
-      title: page.title,
-      markdown: page.markdown,
-      summary: page.summary
-    }));
-    pagesToPolish = draft.pages;
-  }
-  const pictureBook = usesShortPictureBookReview({ input: effectiveInput, plan: effectivePlan, strategy: options.strategy, pages: rawPages });
-  // Both read the checkpointed manuscript; references only write their own assets.
-  // Drain both preparations before propagating failure, so no work outlives this delivery.
-  const [references, review] = await Promise.allSettled([
-    ensureCharacterReferenceAssets({ projectId: options.projectId, planId: options.planId, input: effectiveInput,
-      plan: effectivePlan, providers: options.providers, strategy: options.strategy, generationJobId: options.generationJobId }),
-    (async () => pictureBook ? prepareShortPictureBookReview({
-      projectId: options.projectId, ...(options.generationJobId ? { generationJobId: options.generationJobId } : {}),
-      input: effectiveInput, plan: effectivePlan, pages: rawPages,
-      chapterBriefs: chapterSetups.flatMap((setup) => setup.brief ? [setup.brief] : []),
-      quality: await loadQualityContext(effectiveInput), textModel: options.providers.text
-    }) : null)()
-  ]);
-  await assertJobNotStopped(options.generationJobId);
-  if (review.status === "rejected") throw review.reason;
-  if (references.status === "rejected") throw references.reason;
-  const groupedReviews = review.value;
-  await maybeEnqueueCover(options.projectId, options.planId, effectiveInput);
-
-  for (const [pageOffset, pageDraft] of pagesToPolish.entries()) {
-    await updateJobProgress(options.generationJobId, {
-      progress: 35 + Math.round((pageOffset / Math.max(pagesToPolish.length, 1)) * 45),
-      message: pictureBook ? `Checking and saving page ${pageDraft.index}` : `Polishing page ${pageDraft.index}`
-    });
-    const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
-    const setup = chapterSetupForPage(chapterSetups, pageDraft.index);
-    const chapterBrief = setup?.brief;
-    const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === pageDraft.index);
-    const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup?.chapter);
-    const nextPages = rawPages.filter((page) => page.index > pageDraft.index);
-    const polished = pictureBook ? pageDraft : await polishPageWithQualityGates({
-      polishPageDraft,
-      polishOptions: {
-        input: effectiveInput,
-        plan: effectivePlan,
-        chapter: setup?.chapter,
-        chapterBrief,
-        pageBrief,
-        pageIndex: pageDraft.index,
-        draft: pageDraft,
-        previousPages,
-        nextPages: nextPages.slice(0, 3),
-        continuityNotes,
-        researchNotes,
-        textModel: options.providers.text
-      },
-      providers: options.providers,
-      input: effectiveInput
-    });
-    const saved = await reviewAndSaveGeneratedPage({
-      projectId: options.projectId,
-      planId: options.planId,
-      input: effectiveInput,
-      plan: effectivePlan,
-      providers: options.providers,
-      strategy: options.strategy,
-      draft: { ...polished, index: pageDraft.index },
-      deferIllustrations: effectiveInput.mediaSettings.finalReview === true,
-      chapterId: setup ? chapterIds.get(setup.chapter.index) ?? null : null,
-      chapter: setup?.chapter,
-      chapterBrief,
-      chapterPageStart: setup?.startPage,
-      chapterPageEnd: setup?.endPage,
-      previousPages,
-      nextPages,
-      // Keep the reviewed snapshot intact; finalization repairs concrete failed pages
-      // after every page has been saved and then reviews the complete revised book.
-      ...(groupedReviews?.get(pageDraft.index) ? { deferRepairsUntilFinalization: true, precomputedReview: {
-        ...groupedReviews.get(pageDraft.index)!, manuscriptPages: rawPages
-      } } : {}),
-      generationJobId: options.generationJobId
-    });
-    previousPages.push(saved.page);
-    adoptRepairedChapterBrief(setup, saved);
-  }
-
-  await advanceJobStep(options.generationJobId, "enqueue", 90, "Queueing export");
-  await maybeEnqueueCompile(options.projectId, options.planId);
-}
-
 /**
  * Intentionally restart-only: the entire book comes from a single LLM call and
  * pages are saved in one transaction, so there is no mid-run checkpoint to
@@ -689,7 +447,6 @@ export async function generateBookWholePass(options: {
     acceptanceMessage ? `${acceptanceMessage} Reviewing ${draft.pages.length} generated pages.` : `Reviewing ${draft.pages.length} generated pages`
   );
   const reviewedPages = await reviewWholeBookDraftPages({
-    decisions: options.providers.decisions,
     input: effective.input,
     plan: effective.plan,
     strategy: options.strategy,
@@ -771,7 +528,6 @@ export async function generateBookWholePass(options: {
       const approved = reviewedPage.qualityReport.approved;
       const willIllustrate =
         approved &&
-        effective.input.mediaSettings.finalReview !== true &&
         Boolean(pageDraft.imagePrompt) &&
         options.strategy.shouldIllustratePage(effective.input, effective.plan, pageDraft.index);
       const stagedPage = await stageGeneratedPageWithClient(tx, {
@@ -847,26 +603,6 @@ export async function generateBookWholePass(options: {
       // The whole-book job must retry against that new ordering instead of
       // becoming terminal while its staged stable page remains GENERATING.
       throw new GeneratedPagePublicationClaimLostError(page.index);
-    }
-  }
-
-  const saveQuality = quickDraftPageQuality(effective.input, await loadQualityContext(effective.input));
-  let currentState = seedStoryStateFromPromises(effective.plan.promises ?? []);
-  for (const reviewedPage of reviewedPages) {
-    const nextState = await persistKeeperStoryDelta({
-      projectId: options.projectId,
-      pageIndex: reviewedPage.draft.index,
-      draft: reviewedPage.draft,
-      textModel: options.providers.text,
-      plan: effective.plan,
-      input: effective.input,
-      previousExtract: null,
-      keeperWasRevised: true,
-      quality: saveQuality,
-      currentState
-    });
-    if (nextState) {
-      currentState = nextState;
     }
   }
 

@@ -68,6 +68,8 @@ const mocks = vi.hoisted(() => {
       })
     },
     project: { update: vi.fn(async () => ({})) },
+    // No speculative composition prep on these plans (`composedPrepHandoff.ts`).
+    generationJob: { findUnique: vi.fn(async () => null), updateMany: vi.fn(async () => ({ count: 0 })) },
     planVersion: {
       findUnique: vi.fn(async () => ({ planningPackage: store.planningPackage })),
       updateMany: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
@@ -262,7 +264,7 @@ beforeEach(() => {
 });
 
 describe("the continuity ledger in the composed pass", () => {
-  it("hands chapter N's compose and edit the facts of every chapter below N, waiting for N-1's read", async () => {
+  it("hands chapter N's compose the facts of every chapter below N, waiting for N-1's read", async () => {
     const plan = fiveChapterPlan();
     const chapters = plan.chapters.map((chapter) => chapter.index);
     // A read slower than nothing: without the wait, a compose would go ahead without its neighbour's facts.
@@ -271,7 +273,8 @@ describe("the continuity ledger in the composed pass", () => {
 
     for (const index of chapters) {
       const below = chapters.filter((other) => other < index);
-      for (const purpose of ["compose-chapter", "edit-chapter"]) {
+      // A repair edit reads the same `composeOptionsFor`; the line edit that also did is gone (2026-10-16).
+      for (const purpose of ["compose-chapter"]) {
         const calls = seen.filter((call) => call.purpose === purpose && call.chapterIndex === index);
         expect(calls.length).toBeGreaterThan(0);
         for (const call of calls) expect(witnessesIn(call.establishedFacts)).toEqual(below);

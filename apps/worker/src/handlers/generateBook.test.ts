@@ -36,7 +36,7 @@ vi.mock("../runtime/jobLifecycle.js", () => ({
   updateJobProgress: mocks.updateJobProgress
 }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
-vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: mocks.text }), createLoggedJudgeTextModel: () => ({}) }));
+vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: mocks.text }) }));
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: mocks.getProjectOrThrow,
   strategyForInput: mocks.strategyForInput
@@ -44,9 +44,9 @@ vi.mock("../generation/bookHelpers.js", () => ({
 vi.mock("../generation/bookPasses.js", () => ({
   generateBookBatchWindow: vi.fn(),
   generateBookChapterWholePass: vi.fn(),
-  generateBookDraftThenPolish: vi.fn(),
   generateBookWholePass: vi.fn()
 }));
+vi.mock("../generation/draftThenPolish.js", () => ({ generateBookDraftThenPolish: vi.fn() }));
 vi.mock("../generation/composedChaptersPass.js", () => ({ generateBookComposedChapters: mocks.composed }));
 vi.mock("../generation/bookState.js", () => ({ prepareChapterSetups: vi.fn() }));
 vi.mock("../generation/characterReferences.js", () => ({ ensureCharacterReferenceAssets: vi.fn() }));
@@ -170,6 +170,20 @@ describe("the composed pass's research expansion", () => {
     expect(mocks.expandChapterResearch).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.researchSource.createMany).toHaveBeenCalledTimes(1);
     expect(vi.mocked(advanceJobStep)).not.toHaveBeenCalledWith(expect.anything(), "briefs", 15, "Expanding chapter research", expect.anything());
+  });
+
+  it("searches only the chapters and plan queries the pass's scope still owes", async () => {
+    // H3b: a chapter whose leads answered has its notes already (core `leadResearch.ts`).
+    mocks.expandChapterResearch.mockResolvedValue([]);
+    mocks.composed.mockImplementation(async ({ research }: { research: { start: (scope?: { chapterIndexes: number[]; researchQueries: string[] }) => void; ready: () => Promise<void> } }) => {
+      research.start({ chapterIndexes: [2], researchQueries: ["An open question"] });
+      await research.ready();
+    });
+    await generateBook(composedBook());
+    const searched = mocks.expandChapterResearch.mock.calls[0]![0].plan as { chapters: Array<{ index: number }>; researchQueries: string[]; researchNotes: unknown[] };
+    expect(searched.chapters.map((chapter) => chapter.index)).toEqual([2]);
+    expect(searched.researchQueries).toEqual(["An open question"]);
+    expect(searched.researchNotes).toEqual([]);
   });
 
   it("searches nothing for a book whose pass never starts it", async () => {

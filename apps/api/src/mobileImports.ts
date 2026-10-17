@@ -248,7 +248,6 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
         // An imported manuscript brings no artwork, so it gets a designed one.
         coverArtSource: "design",
         coverTemplate: "auto",
-        finalReview: false,
         toneProfile: "neutral",
         mobile: {
           bookType: "custom",

@@ -59,7 +59,11 @@ import { DEFAULT_AI_SPEND_CONTROLS, readAiSpendControls, type AiSpendControls } 
  * is a backstop, not a meter.
  */
 
-export type AiWorkKind = "standard" | "ultra" | "voice" | "audiobook";
+/**
+ * `speculative` is work nobody has asked or paid for yet: the composition prep a plan door queues for its plan
+ * (harness redesign H4). A free account past the soft cap is refused it, like Ultra.
+ */
+export type AiWorkKind = "standard" | "ultra" | "voice" | "audiobook" | "speculative";
 
 /** Where free accounts stand. */
 export type SpendState = "normal" | "soft" | "hard" | "monthly" | "paused";
@@ -68,7 +72,7 @@ export type SpendState = "normal" | "soft" | "hard" | "monthly" | "paused";
 export type PaidSpendState = "normal" | "capped" | "paused";
 
 /** The kinds a free account may not start while the day is past the soft cap. */
-const SOFT_RESTRICTED_KINDS: ReadonlySet<AiWorkKind> = new Set<AiWorkKind>(["ultra", "voice", "audiobook"]);
+const SOFT_RESTRICTED_KINDS: ReadonlySet<AiWorkKind> = new Set<AiWorkKind>(["ultra", "voice", "audiobook", "speculative"]);
 
 export type AiAccessDecision =
   | { allowed: true }

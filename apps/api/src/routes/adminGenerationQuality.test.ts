@@ -160,7 +160,7 @@ describe("admin generation quality settings", () => {
       label: "Smart unslop",
       summary: expect.any(String),
       pipelines: ["per-page", "composed"],
-      stage: "Page checks"
+      stage: "Chat page rewrite"
     });
     expect(body.features).toContainEqual({
       id: "compactPageDraftContext",
@@ -341,11 +341,11 @@ describe("admin generation quality settings", () => {
   it("keeps a feature the body never named at its stored value", async () => {
     mockStoredRevision({
       version: 7,
-      settings: { ...QUALITY_FEATURE_DEFAULTS, beatDedup: [], claimRetrieve: ["ultra", "premium"] }
+      settings: { ...QUALITY_FEATURE_DEFAULTS, writerTools: [], styleExcerpts: ["ultra", "premium"] }
     });
     const app = await defaultApp();
 
-    const { beatDedup: _unknownToThisClient, ...knownToThisClient } = QUALITY_FEATURE_DEFAULTS;
+    const { writerTools: _unknownToThisClient, ...knownToThisClient } = QUALITY_FEATURE_DEFAULTS;
     const response = await app.inject({
       method: "PATCH",
       url: "/api/admin/generation-quality",
@@ -353,12 +353,12 @@ describe("admin generation quality settings", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(settingsOf(response).beatDedup).toEqual([]);
+    expect(settingsOf(response).writerTools).toEqual([]);
     expect(settingsOf(response).styleAuditor).toEqual(["ultra"]);
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         version: 8,
-        settings: expect.objectContaining({ beatDedup: [], styleAuditor: ["ultra"] })
+        settings: expect.objectContaining({ writerTools: [], styleAuditor: ["ultra"] })
       })
     });
   });
@@ -370,14 +370,14 @@ describe("admin generation quality settings", () => {
     const response = await app.inject({
       method: "PATCH",
       url: "/api/admin/generation-quality",
-      payload: { pageMapCritic: ["ultra"], note: "Page-map critic to Ultra only" }
+      payload: { figures: ["ultra"], note: "Figures to Ultra only" }
     });
 
     expect(response.statusCode).toBe(200);
     expect(settingsOf(response)).toEqual({
       ...QUALITY_FEATURE_DEFAULTS,
       writerTools: [],
-      pageMapCritic: ["ultra"]
+      figures: ["ultra"]
     });
   });
 
@@ -404,11 +404,31 @@ describe("admin generation quality settings", () => {
     });
   });
 
+  it("serves a stored revision that still carries a deleted gate, and the next revision drops it", async () => {
+    // Revision 73 on dev stored `coupletRewrite`, deleted from the table since.
+    const stored = { ...QUALITY_FEATURE_DEFAULTS, coupletRewrite: ["balanced", "premium", "ultra"] };
+    mockStoredRevision({ version: 73, settings: stored });
+    mockPrisma.generationQualityRevision.findFirst.mockResolvedValue({
+      version: 73, settings: stored, note: null, updatedBy: "operator-console", createdAt: new Date("2026-10-03T06:04:13.062Z")
+    });
+    const app = await defaultApp();
+
+    const read = await app.inject({ method: "GET", url: "/api/admin/generation-quality" });
+    expect(read.statusCode).toBe(200);
+    expect(settingsOf(read)).toEqual({ ...QUALITY_FEATURE_DEFAULTS });
+
+    const response = await app.inject({ method: "PATCH", url: "/api/admin/generation-quality", payload: { styleAuditor: [] } });
+    expect(response.statusCode).toBe(200);
+    const written = mockPrisma.generationQualityRevision.create.mock.calls[0]![0] as { data: { settings: Record<string, unknown> } };
+    expect(written.data.settings).not.toHaveProperty("coupletRewrite");
+    expect(settingsOf(response)).toEqual({ ...QUALITY_FEATURE_DEFAULTS, styleAuditor: [] });
+  });
+
   it("preserves future tiers on an untouched known feature", async () => {
     const futureTiers = ["ultra", "glacial", "premium"];
     mockStoredRevision({
       version: 8,
-      settings: { ...QUALITY_FEATURE_DEFAULTS, planCritic: futureTiers }
+      settings: { ...QUALITY_FEATURE_DEFAULTS, figures: futureTiers }
     });
     const app = await defaultApp();
 
@@ -419,10 +439,10 @@ describe("admin generation quality settings", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(settingsOf(response).planCritic).toEqual(futureTiers);
+    expect(settingsOf(response).figures).toEqual(futureTiers);
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        settings: expect.objectContaining({ planCritic: futureTiers, styleAuditor: [] })
+        settings: expect.objectContaining({ figures: futureTiers, styleAuditor: [] })
       })
     });
   });
@@ -689,7 +709,7 @@ describe("admin generation quality settings", () => {
    * merges onto *that*: both changes are in version 9.
    */
   it("re-merges onto the winner's revision when the version number is lost", async () => {
-    const winner = { ...QUALITY_FEATURE_DEFAULTS, planCritic: [] };
+    const winner = { ...QUALITY_FEATURE_DEFAULTS, figures: [] };
     mockPrisma.generationQualityRevision.findFirst
       .mockResolvedValueOnce({ version: 7, settings: { ...QUALITY_FEATURE_DEFAULTS } })
       .mockResolvedValueOnce({ version: 8, settings: winner });
@@ -714,7 +734,7 @@ describe("admin generation quality settings", () => {
     expect(response.json()).toMatchObject({ version: 9 });
     // The loser's own change, and the winner's — neither save was lost.
     expect(settingsOf(response).styleExcerpts).toEqual([]);
-    expect(settingsOf(response).planCritic).toEqual([]);
+    expect(settingsOf(response).figures).toEqual([]);
     expect(settingsOf(response).styleAuditor).toEqual(QUALITY_FEATURE_DEFAULTS.styleAuditor);
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenCalledTimes(2);
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenNthCalledWith(1, {
@@ -723,7 +743,7 @@ describe("admin generation quality settings", () => {
     expect(mockPrisma.generationQualityRevision.create).toHaveBeenNthCalledWith(2, {
       data: expect.objectContaining({
         version: 9,
-        settings: expect.objectContaining({ styleExcerpts: [], planCritic: [] })
+        settings: expect.objectContaining({ styleExcerpts: [], figures: [] })
       })
     });
   });

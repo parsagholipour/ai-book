@@ -29,21 +29,18 @@ export type QualityGateRevision = {
 const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>>> = {
   pageModelReview: new Set(["review-page"]),
   pageQaRewrite: new Set(["revise-page", "repair-page-brief"]),
+  // The defect screen and its verification (`final-book-qa`) and its scoped repair (`patch-page`, which a chat
+  // edit's patch tier shares). The chapter-transition sweep and the per-page rewrites stay for older books' rows.
   finalBookQa: new Set([
     "final-book-qa",
+    "patch-page",
     "book.final_qa.chapter_transitions",
     "revise-page",
     "repair-page-brief"
   ]),
-  storyExtractAudit: new Set(["extract-story-state"]),
   chapterFactLedger: new Set(["extract-chapter-facts"]),
-  planCritic: new Set(["critique-plan"]),
-  claimVerifier: new Set(["verify-page-claims"]),
   styleAuditor: new Set(["audit-page-style"]),
-  pageMapCritic: new Set(["critique-page-map"]),
   writerTools: new Set(["write-page-with-tools"]),
-  bestOfPolish: new Set(["polish-page", "judge-page-drafts"]),
-  chapterEditorPass: new Set(["edit-chapter"]),
   // The two `accept-chapter-edit-*` purposes were the decision-model screen ahead of the review,
   // removed 2026-09-19; they stay here so books generated before that keep their rows attributed.
   chapterEditAcceptance: new Set(["accept-chapter-edit-meaning", "accept-chapter-edit-intent", "review-chapter-edit-acceptance"]),
@@ -51,11 +48,10 @@ const DIRECT_COST_PURPOSES: Partial<Record<QualityFeatureId, ReadonlySet<string>
 };
 
 const NON_SEPARATE_COST_NOTES: Partial<Record<QualityFeatureId, string>> = {
+  // Its purpose is shared with the chapter repairs, which outlived it, so the spend sits under one composed row.
+  chapterEditorPass: "Removed 2026-10-16. Its edit-chapter calls, and the repair edits' since, are listed under Chapter edits and repairs.",
   smartUnslop: "Detection is free; any resulting rewrite is included under Page QA rewrites.",
-  planThinkingBoost: "Incremental reasoning spend is included in the planning calls it modifies.",
-  claimRetrieve: "Embedding retrieval spend is not separately metered in provider call logs.",
-  beatDedup:
-    "Optional polish row only. Map-integrity rewrite spend is listed under Page-map integrity rewrite, which always runs."
+  planThinkingBoost: "Incremental reasoning spend is included in the planning calls it modifies."
 };
 
 const FREE_GATE_NOTES: Partial<Record<QualityFeatureId, string>> = {
@@ -90,9 +86,11 @@ const INTEGRITY_COST_GATES = [
 /**
  * The composed-chapters stages that are not a checkbox: shown whenever a book
  * spent under one of their purposes, so an operator sees what a composed book
- * cost by stage rather than under a single "generation" total. The two stages
- * that are checkboxes (`chapterEditorPass`, `manuscriptReadPass`) attribute
- * through `DIRECT_COST_PURPOSES` like every other gate.
+ * cost by stage rather than under a single "generation" total. The read, a
+ * checkbox (`manuscriptReadPass`), attributes through `DIRECT_COST_PURPOSES`
+ * like every other gate. `edit-chapter` is a stage row: the line edit it named
+ * was removed on 2026-10-16 and the arithmetic and evidence repairs spend under
+ * the same purpose, so a gate row could not say which a call was.
  */
 const COMPOSED_STAGE_COST_GATES = [
   {
@@ -112,6 +110,12 @@ const COMPOSED_STAGE_COST_GATES = [
     label: "Compose chapters (composed chapters)",
     purposes: new Set(["compose-chapter", "judge-chapter-drafts"]),
     emptyNote: "No chapter was composed in this window."
+  },
+  {
+    id: "composed.edit-chapter",
+    label: "Chapter edits and repairs (composed chapters)",
+    purposes: new Set(["edit-chapter"]),
+    emptyNote: "No chapter needed a repair in this window, and no line edit runs since 2026-10-16."
   },
   {
     id: "composed.describe-pages",
@@ -215,10 +219,11 @@ function gateCost(id: QualityFeatureId, label: string, rows: ProviderCostRow[]):
   };
 }
 
-/** Final-QA repair calls share raw purposes with ordinary page QA. */
+/** Final-QA repair calls share raw purposes with ordinary page QA and with a chat edit's patch tier. */
+const COMPILE_REPAIR_SHARED_PURPOSES = new Set(["revise-page", "repair-page-brief", "patch-page"]);
 function belongsToGate(id: QualityFeatureId, row: ProviderCostRow): boolean {
   const purpose = row.purpose?.trim();
-  if (purpose !== "revise-page" && purpose !== "repair-page-brief") {
+  if (!purpose || !COMPILE_REPAIR_SHARED_PURPOSES.has(purpose)) {
     return true;
   }
   const compileRepair = row.generation_job_type === "COMPILE_EXPORT";

@@ -23,6 +23,27 @@ const REPETITION_MIN_PAGE_FRACTION = 0.15;
 const NEAR_DUPLICATE_MIN_WORDS = 80;
 const NEAR_DUPLICATE_JACCARD = 0.9;
 
+/** The small words a name or title keeps in lower case: "Book of First Flight", "the Supreme Federal Court". */
+const NAME_CONNECTIVES = new Set([
+  "a", "an", "the", "of", "and", "or", "in", "on", "at", "to", "for", "by", "with", "from", "de", "del", "la", "le",
+  "les", "du", "des", "van", "von", "der", "den", "da", "di", "y", "e"
+]);
+
+/**
+ * Whether a repeated phrase is a name or a title rather than a turn of phrase:
+ * every word but the connectives is capitalised. A story's artifact ("the Book
+ * of First Flight") or an institution ("the Supreme Federal Court") recurs
+ * because it is what the book is about, and one was labelled false of the 15
+ * sampled (2026-10-15). "Lena, a freelance illustrator" and "Nana Jo turned
+ * the" keep a lower-case content word, so they are still phrases; a script
+ * with no case never reads as a name, so it is never skipped.
+ */
+export function isNameOrTitle(phrase: string): boolean {
+  const words = phrase.split(/[^\p{L}\p{M}\p{N}'’-]+/u).filter(Boolean);
+  const content = words.filter((word) => !NAME_CONNECTIVES.has(word.toLowerCase()));
+  return content.length > 0 && content.every((word) => /^\p{Lu}/u.test(word));
+}
+
 export function repetitionMinPages(pageCount: number, floor: number): number {
   return Math.max(floor, Math.ceil(pageCount * REPETITION_MIN_PAGE_FRACTION));
 }
@@ -105,7 +126,7 @@ export function repeatedPhraseIssues(
   }
 
   const flagged = [...pagesByShingle.values()]
-    .filter((entry) => entry.owners.size >= minPages)
+    .filter((entry) => entry.owners.size >= minPages && !isNameOrTitle(entry.quote))
     .sort((left, right) => right.owners.size - left.owners.size);
   const issues: ManuscriptQualityIssue[] = [];
   const reportedPageSets = new Set<string>();

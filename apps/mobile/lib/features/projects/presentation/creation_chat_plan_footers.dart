@@ -245,6 +245,13 @@ class _PlanBuildingFooter extends StatelessWidget {
                   value: progress == null ? null : progress / 100,
                   semanticLabel: 'Book plan progress',
                 ),
+                if (!allStepsDone &&
+                    planningProgress?.estimatedSecondsLeft != null) ...[
+                  const SizedBox(height: 8),
+                  TimeLeftNote(
+                    secondsLeft: planningProgress?.estimatedSecondsLeft,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 AnimatedSize(
                   duration: AppMotion.reducedMotion(context)

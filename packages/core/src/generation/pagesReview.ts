@@ -1,12 +1,10 @@
 import { writerArtworkContext } from "./writerArtworkContext.js";
-import { reviseSentenceLength, sentenceLengthRepairFor, type SentenceLengthRepair } from "./pageSentenceRepair.js";
 import { buildPageReviewPrompt } from "./pageReviewPrompt.js";
 import type { GenerateJsonOptions, TextModelAdapter } from "../adapters/types.js";
 import type { PageReviewPromptMode } from "./qualityGates.js";
 import {
   targetLanguageGenerationGuidance,
-  targetLanguagePayload,
-  targetLanguageReviewGuidance
+  targetLanguagePayload
 } from "../prompting/language.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type {
@@ -14,22 +12,18 @@ import type {
   ChapterBrief,
   ChapterPlan,
   CreateProjectInput,
-  FinalBookQa,
   PageDraft,
   PageProductionBeat,
   PageQualityReport
 } from "../schemas/book.js";
-import { finalBookQaSchema, pageDraftSchema, pageQualityReportSchema } from "../schemas/book.js";
+import { pageDraftSchema, pageQualityReportSchema } from "../schemas/book.js";
 import { codeBlockRules } from "./codeBlockRules.js";
-import { figureFreeDraft, figureFreeProse, figureStandInMarkdown } from "./figures/figureBlocks.js";
+import { figureFreeDraft, figureFreeProse } from "./figures/figureBlocks.js";
 import { finalizePageDraft } from "./figures/figureDraftSummary.js";
 import {
-  compactPageMap,
-  compactSummaryForQa,
   reviewRequiredPageQualityChecks,
   runLocalPageQualityChecks
 } from "./pagesLocalQa.js";
-import { runLocalFinalQa, runRequiredFinalQa } from "./pagesFinalLocalQa.js";
 import { isSourceIdentityOnlyIssue } from "./citationRepairPolicy.js";
 import { hasSmartUnslopCandidates } from "./smartUnslop.js";
 import { pageQaProviderCallMetadata, withPageQaTriggerReasons } from "./pageQaRewriteTelemetry.js";
@@ -37,7 +31,6 @@ import {
   GROUNDED_FACTUALITY_RULE,
   IMAGE_PROMPT_CHARACTER_RULE,
   INTERNAL_PAGE_TITLE_RULE,
-  OPENING_QUALITY_RULE_MARKER,
   READER_FACING_PAGE_BRIEF_RULES,
   buildPageInstruction,
   chapterBriefPayloadForPageScope,
@@ -45,9 +38,7 @@ import {
   sanitizePageBriefForCitationContract,
   compactFollowingPages,
   compactPriorPages,
-  openingContractForRange,
   pageScopePayload,
-  reviewerStyleRules,
   styleGuidancePayload,
   writerToneRules,
   PRIOR_PAGE_ENDING_RULE,
@@ -81,16 +72,12 @@ export type ReviewPageOptions = {
   continuityNotes: string[];
   textModel: TextModelAdapter;
   userRequest?: string | undefined;
-  /** Concrete manuscript repair goals that must survive review against older page briefs. */
-  repairInstruction?: string | undefined;
   /** Original reader prose, fixed across repair attempts so planning aliases cannot become canon. */
   repairOriginalMarkdown?: string | undefined;
-  sentenceRepair?: SentenceLengthRepair | undefined;
   signal?: AbortSignal | undefined;
   styleExcerpts?: string[] | undefined;
   /** Citeable generation notes loaded by the worker. */
   researchNotes?: string[] | undefined;
-  retrievedResearch?: string[] | undefined;
   /** Keep the model review but bypass configurable local checks; required invariants remain. */
   skipLocalChecks?: boolean | undefined;
   /** Operator-selected context size for the model page reviewer. Defaults to the legacy full prompt. */
@@ -101,8 +88,6 @@ export type RevisePageOptions = ReviewPageOptions & {
   report: PageQualityReport;
   /** Candidate produced by this rewrite; the original draft is candidate 1. */
   qaCandidateNumber?: number | undefined;
-  /** The recovery planner repaired the assignment before this rewrite. */
-  qaBriefRepaired?: boolean | undefined;
   /** Approved edit instruction; authoritative over a stale page brief. */
   editInstruction?: string | undefined;
   /**
@@ -137,16 +122,6 @@ export type FinalQaPage = {
   summary: string;
 };
 
-export type FinalBookQaOptions = {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  pages: FinalQaPage[];
-  researchNotes?: string[] | undefined;
-  textModel: TextModelAdapter;
-  /** Keep the model review but bypass configurable local whole-book checks; required invariants remain. */
-  skipLocalChecks?: boolean | undefined;
-};
-
 export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQualityReport> {
   options.signal?.throwIfAborted();
   const localReport = options.skipLocalChecks
@@ -167,7 +142,7 @@ async function diagnosePageReview(options: ReviewPageOptions, localReport: PageQ
     options.signal?.throwIfAborted();
   } catch (error) {
     options.signal?.throwIfAborted();
-    if ((options.sentenceRepair && !options.userRequest) || !shouldUseLocalReviewFallback(error)) {
+    if (!shouldUseLocalReviewFallback(error)) {
       throw error;
     }
     return {
@@ -181,14 +156,6 @@ async function diagnosePageReview(options: ReviewPageOptions, localReport: PageQ
   // with the next page's brief; measured over 1,200 shipped pages it fired on
   // 76 the reviewer had approved at 88-94, so it was removed (2026-09-02).
   const modelReport = pageQualityReportSchema.parse(result.data);
-  // A syntax repair needs affirmative semantic verification. Generic feedback
-  // normalization must not turn an explicit preservation failure into approval.
-  if (options.sentenceRepair && !options.userRequest) {
-    const approved = modelReport.approved && modelReport.score >= 75 && modelReport.groundedOk &&
-      modelReport.unsupportedClaims.length === 0 && Object.values(modelReport.checks).every(Boolean);
-    const report = { ...modelReport, approved, scoreBasis: "reviewer" as const };
-    return approved ? report : withPageQaTriggerReasons(report, ["model_review"]);
-  }
   const filteredReport = filterIgnoredReviewerComplaints(modelReport);
   const remainingFeedback = [...filteredReport.issues, ...filteredReport.requiredRevisions];
   const notesEndorseApproval =
@@ -327,23 +294,16 @@ function shouldUseLocalReviewFallback(error: unknown): boolean {
 
 export async function revisePageDraft(options: RevisePageOptions): Promise<PageDraft> {
   const finishedProseEdit = Boolean(options.editInstruction) && !options.draftedForEdit;
-  if (options.sentenceRepair && !options.editInstruction) {
-    return sentenceLengthRepairFor(options.input, options.draft, options.report)
-      ? reviseSentenceLength(options) : options.draft;
-  }
   const pageInstruction = buildPageInstruction(options, "rewrite");
   const conditionalUnslop = hasSmartUnslopCandidates(options.report);
-  const citation = citationContractFields(
-    options.retrievedResearch ?? options.researchNotes ?? options.plan.researchNotes
-  );
+  const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "revise-page",
     ...(options.qaCandidateNumber !== undefined
       ? {
           providerCallMetadata: pageQaProviderCallMetadata({
             report: options.report,
-            candidateNumber: options.qaCandidateNumber,
-            ...(options.qaBriefRepaired ? { additionalReasons: ["brief_repair"] } : {})
+            candidateNumber: options.qaCandidateNumber
           })
         }
       : {}),
@@ -444,7 +404,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             pageBrief: options.pageBrief
               ? sanitizePageBriefForCitationContract(
                   options.pageBrief,
-                  options.retrievedResearch ?? options.researchNotes ?? options.plan.researchNotes
+                  options.researchNotes ?? options.plan.researchNotes
                 )
               : options.pageBrief,
             ...pageInstruction.payload,
@@ -478,172 +438,6 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
     return markdown === draft.markdown ? draft : { ...draft, markdown };
   }
   return figureFreeDraft(draft);
-}
-
-/**
- * Per-page ceiling on the opening prose final QA is judged on.
- *
- * This reviewer is told openingPages is how the book opens and rejects the
- * whole book on it, so a page cut mid-sentence reads as an unfinished opening
- * and fails a manuscript with nothing wrong with it — and an issue phrased
- * "the opening stops mid-sentence" names no page number, which is the shape the
- * repair pass has the hardest time targeting. The widest fuse any page writer
- * runs under is polishPageDraft's 3,400 tokens, so ~13,600 characters at the
- * loosest tokenization: a page that fits its own output budget fits here whole.
- * Only page 1 is ever sent, so the ceiling costs less than the pageMap already
- * in this prompt. What still overruns is cut with the pageMap's own ellipsis
- * marker, and both prompts say that marker is a shortening rather than a
- * defect.
- */
-const FINAL_QA_OPENING_PAGE_CHARS = 14_000;
-
-/**
- * The opening this reviewer judges is page 1, and nothing else.
- *
- * It used to be handed pages 1 and 2, and page 1 is the only page an opening
- * verdict can be repaired on: an issue like "the second page repeats the first
- * page's opening image" carries no digit, so `extractRepairPageIndexesFromText`
- * (`apps/worker/src/generation/bookHelpers.ts`) finds no page number and the
- * opening heuristic beside it adds index 1. Page 2 was never redrafted, so if
- * page 1 was fine the repair changed nothing, the second `runFinalBookQa`
- * rejected the book on the same complaint, and it exported permanently flagged
- * with no path back — a rejection the pipeline cannot act on.
- *
- * The alternative was to keep both pages and instruct the reviewer to attribute
- * every opening issue to a page number so the digit match places it. That is a
- * wider first impression bought with the model's compliance: "the second page"
- * is the phrasing this failed on, and it maps to page 1 whatever the prompt
- * asks for. Narrowing the payload is the deterministic half, and it costs
- * little — page 2 is still in this prompt as a `pageMap` row, which carries its
- * own index, so a complaint drawn from it names a page the repair can find.
- */
-function finalQaOpeningPages(pages: FinalQaPage[]) {
-  // The one place this reviewer is shown page prose; the pageMap rows are
-  // summaries. A post-compose call reads a figure block as its stand-in line,
-  // so a chart on the first page is "where it sits", never JSON to judge.
-  return pages
-    .filter((page) => page.index === 1)
-    .map((page) => ({
-      index: page.index,
-      title: page.title,
-      markdown: compactSummaryForQa(figureStandInMarkdown(page.markdown), FINAL_QA_OPENING_PAGE_CHARS)
-    }));
-}
-
-export async function runFinalBookQa(options: FinalBookQaOptions): Promise<FinalBookQa> {
-  const localIssues = options.skipLocalChecks
-    ? runRequiredFinalQa(options.input, options.pages)
-    : runLocalFinalQa(options.input, options.pages);
-  if (localIssues.length > 0) {
-    return {
-      approved: false,
-      score: Math.max(0, 100 - localIssues.length * 15),
-      issues: localIssues,
-      requiredFixes: localIssues,
-      notes: "Local final QA rejected the book before export."
-    };
-  }
-
-  /*
-   * The imported-manuscript exemption, carried the rest of the way — and asked
-   * of the same contract every page prompt asks (`openingContractForRange`,
-   * pagesShared.ts). This reviewer is handed actual opening prose (when it
-   * judges opening) and a compact pageMap of summaries, not the compiled book,
-   * so the range test is settled and `statesOpeningQuality` is exactly the exemption.
-   *
-   * The deterministic gate skips page 1's opening check for an import — which
-   * means it returns no issues, the early return above does not fire, and this
-   * model call runs. Stating the opening rule here therefore made the exemption
-   * *worse* than having none: before it, the local rejection was where the path
-   * stopped; after it, the reviewer was asked to reject the author's own first
-   * sentence, the verdict came back naming no page, `extractRepairPageIndexes`
-   * (`apps/worker/src/generation/bookHelpers.ts`) files a pageless opening
-   * complaint against page 1, and the repair pass model-rewrote that line.
-   *
-   * The rule and the page it is judged from go together. Keeping the payload
-   * while dropping the sentence would leave an unlabelled excerpt of the
-   * author's prose beside the pageMap for the model to draw its own conclusion
-   * from, which is the same mistake in a quieter form. A book whose page set
-   * carries no index 1 leaves both out anyway, which is why the flag is read
-   * off the pages this call actually kept.
-   */
-  const openingPages = openingContractForRange(options, 1, options.input.targetPages).statesOpeningQuality
-    ? finalQaOpeningPages(options.pages)
-    : [];
-  const judgesOpening = openingPages.length > 0;
-  const citation = citationContractFields(options.researchNotes ?? options.plan.researchNotes);
-
-  const result = await generateJsonWithRetry(options.textModel, {
-    purpose: "final-book-qa",
-    temperature: 0.1,
-    maxTokens: 2200,
-    schema: finalBookQaSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You are the final quality editor for a book export.",
-          "Reject the book if the supplied payload shows placeholders, prompt leakage, broken continuity, or no progression.",
-          "Reject the book if factual or research-grounded passages contain invented studies, journals, institutes, statistics, experts, citations, or claims described as fictional/fabricated/invented.",
-          ...citation.rules,
-          "pageMap is abbreviated planning and progression context, not the book and not complete manuscript prose.",
-          "This is a text review that may run before illustrations are generated. The supplied book.title is export metadata; do not report missing title, cover or illustrations because they do not appear in page prose or summaries.",
-          "Character intentions, boasts and mistaken beliefs are not guarantees of literal success. A character learning to cooperate may resolve an earlier boast about working alone. Flag missing character growth only when supported by the supplied actual prose; abbreviated summaries alone cannot prove its absence.",
-          "Do not decide full-book repeated-page quality from pageMap summaries; those rows are not the compiled manuscript.",
-          ...(judgesOpening
-            ? [
-                "Do not reject because a pageMap summary or an openingPages excerpt ends with an ellipsis or looks cut off.",
-                `openingPages carries the book's first page as written: reject the book when the opening is meta, ${OPENING_QUALITY_RULE_MARKER}, or generic, or fails to commit to the book's subject.`,
-                "An opening verdict is about that first page; give any other page's issue the page number pageMap records for it."
-              ]
-            : [
-                "Do not reject because a pageMap summary ends with an ellipsis or looks cut off.",
-                "Give every issue the page number pageMap records for it."
-              ]),
-          ...targetLanguageReviewGuidance(options.input.language),
-          ...reviewerStyleRules(options.input),
-          "Return one JSON object with approved (boolean), score (integer 0-100), issues (string array), requiredFixes (string array), and notes (string).",
-          "Do not use reasons or feedback as the only root field."
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            language: targetLanguagePayload(options.input.language),
-            book: {
-              title: options.plan.title,
-              premise: options.plan.premise,
-              targetPages: options.input.targetPages,
-              audience: options.plan.audience,
-              category: options.input.category,
-              subcategory: options.input.subcategory,
-              styleGuidance: styleGuidancePayload(options.input)
-            },
-            pageMap: compactPageMap(options.pages),
-            ...(judgesOpening ? { openingPages } : {}),
-            ...citation.payload,
-            instruction: judgesOpening
-              ? "Approve only if the supplied payload — abbreviated pageMap planning context and actual openingPages prose — can be shown without obvious generation artifacts. This call did not receive the complete compiled Markdown. pageMap summaries and openingPages excerpts may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. openingPages is the book's first page as written and the only page an opening verdict is about; judge the reader's first impression from it, and give any other page's issue the page number pageMap records for it."
-              : "Approve only if the supplied payload — abbreviated pageMap planning context — can be shown without obvious generation artifacts. This call did not receive the complete compiled Markdown. pageMap summaries may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. Give every issue the page number pageMap records for it."
-          },
-          null,
-          2
-        )
-      }
-    ]
-  });
-
-  const report = finalBookQaSchema.parse(result.data);
-  return {
-    ...report,
-    approved: report.approved && report.score >= 80,
-    issues: report.approved && report.score >= 80 ? report.issues : normalizeIssueList(report.issues, "Final QA rejected the book."),
-    requiredFixes:
-      report.approved || report.requiredFixes.length > 0
-        ? report.requiredFixes
-        : ["Repair failed pages and rerun final QA before export."]
-  };
 }
 
 function normalizeIssueList(issues: string[], fallback: string): string[] {

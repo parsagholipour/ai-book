@@ -7,22 +7,7 @@ import { type MobileProjectStatusDto, type ProjectStatusResult } from "./dto.js"
  */
 
 export function serializePlanningProgress(status: ProjectStatusResult): MobileProjectStatusDto["planningProgress"] {
-  if (status.project.status !== "PLANNING" && status.project.status !== "PLAN_READY") {
-    return null;
-  }
-  const job =
-    status.project.jobs.find(
-      (candidate) =>
-        (candidate.type === "PLAN_BOOK" || candidate.type === "REVISE_PLAN") &&
-        (candidate.status === "QUEUED" || candidate.status === "ACTIVE")
-    ) ??
-    (status.project.status === "PLAN_READY"
-      ? status.project.jobs.find(
-          (candidate) =>
-            (candidate.type === "PLAN_BOOK" || candidate.type === "REVISE_PLAN") &&
-            candidate.status === "COMPLETED"
-        )
-      : undefined);
+  const job = planningJobFor(status);
   if (!job) {
     return null;
   }
@@ -54,8 +39,31 @@ export function serializePlanningProgress(status: ProjectStatusResult): MobilePr
 
   return {
     percent: planningProgressPercent(job, status.project.targetPages, isRevision),
+    // Filled in by the status serializer, which holds the clock and the history.
+    estimatedSecondsLeft: null,
     steps
   };
+}
+
+/**
+ * The planning job the progress describes: the open plan or revision job, or —
+ * once the plan is ready — the one that wrote it. Shared with the time-left
+ * estimate, so the clock it reads is the job these milestones are about.
+ */
+export function planningJobFor(status: ProjectStatusResult): ProjectStatusResult["project"]["jobs"][number] | undefined {
+  const projectStatus = status.project.status;
+  if (projectStatus !== "PLANNING" && projectStatus !== "PLAN_READY") {
+    return undefined;
+  }
+  const planning = (candidate: { type: string }) => candidate.type === "PLAN_BOOK" || candidate.type === "REVISE_PLAN";
+  return (
+    status.project.jobs.find(
+      (candidate) => planning(candidate) && (candidate.status === "QUEUED" || candidate.status === "ACTIVE")
+    ) ??
+    (projectStatus === "PLAN_READY"
+      ? status.project.jobs.find((candidate) => planning(candidate) && candidate.status === "COMPLETED")
+      : undefined)
+  );
 }
 
 export function planningProgressPercent(

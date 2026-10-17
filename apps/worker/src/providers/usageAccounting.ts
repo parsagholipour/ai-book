@@ -22,7 +22,9 @@ import {
   isChapterBriefProviderCallMetadata,
   isPageQaProviderCallMetadata,
   isProductionMapRepairProviderCallMetadata,
+  isProviderQuotaExhaustedError,
   MAX_BEAT_DEDUP_FINDINGS,
+  PROVIDER_QUOTA_EXHAUSTED_ERROR_CLASS,
   PRODUCTION_MAP_REPAIR_CYCLE_LIMIT,
   pageMapResponseViolationCodesFromError
 } from "@book-maker/core";
@@ -63,7 +65,8 @@ export async function recordProviderUsage(options: {
   callId: string;
   durationMs: number | null;
   usage: Usage | undefined;
-  usageUnavailableReason?: "whitespace_runaway" | undefined;
+  /** Why the row has no exact usage: a blank-line early stop, or a request that failed before it answered. */
+  usageUnavailableReason?: "whitespace_runaway" | "provider_error" | undefined;
   liveUsageId?: string | undefined;
   fallbackPromptTokens?: number | null | undefined;
   fallbackOutputTokens?: number | null | undefined;
@@ -73,9 +76,12 @@ export async function recordProviderUsage(options: {
   /**
    * A grounded search's own report. Its fee joins `costHint` — nothing for a
    * unit inside its pool's free allowance, list price past it — after the row
-   * claims its place in that allowance (searchGroundingCost.ts).
+   * claims its place in that allowance (searchGroundingCost.ts). `"unknown"`
+   * for a search that failed before it answered: Google may have grounded it,
+   * so the row says `groundedPrompt: "unknown"` and carries no fee and no
+   * allowance claim — it reads as a failed call, never an unpriced grounded one.
    */
-  searchGrounding?: SearchGroundingUsage | undefined;
+  searchGrounding?: SearchGroundingUsage | "unknown" | undefined;
   /** The deployment's allowance settings; Google's published numbers where absent. */
   searchGroundingAllowances?: SearchGroundingAllowanceConfig | undefined;
 }) {
@@ -100,8 +106,9 @@ export async function recordProviderUsage(options: {
         cacheHitTokens,
         cacheWriteTokens
       });
-  const groundingFee = options.searchGrounding
-    ? calculateSearchGroundingFee({ provider: options.provider, model: options.model, grounding: options.searchGrounding })
+  const grounding = options.searchGrounding === "unknown" ? undefined : options.searchGrounding;
+  const groundingFee = grounding
+    ? calculateSearchGroundingFee({ provider: options.provider, model: options.model, grounding })
     : undefined;
   const groundingClaim = groundingFee
     ? searchGroundingClaim(groundingFee, { at: new Date(), allowances: options.searchGroundingAllowances })
@@ -115,6 +122,7 @@ export async function recordProviderUsage(options: {
     promptTokensEstimated,
     outputTokensEstimated,
     ...(options.providerCallError !== undefined ? { error: jsonInputValue(serializeError(options.providerCallError)) } : {}),
+    ...providerErrorClassMetadata(options.providerCallError),
     ...boundedProviderCallMetadata(
       options.providerCallMetadata,
       options.providerCallError === undefined ? "success" : { error: options.providerCallError }
@@ -129,7 +137,8 @@ export async function recordProviderUsage(options: {
     const costHint = fee ? searchCallCostHint(tokenCost, fee) : tokenCost;
     return { costHint, metadata: {
       ...metadata,
-      ...(options.searchGrounding && fee ? searchGroundingMetadata(options.searchGrounding, fee) : {}),
+      ...(grounding && fee ? searchGroundingMetadata(grounding, fee) : {}),
+      ...(options.searchGrounding === "unknown" ? { groundedPrompt: "unknown" } : {}),
       costStatus: costHint !== null ? "priced" : provisional ? "unknown_usage" : fee?.usd === null ? "unknown_grounding" : "unknown_rate",
       ...(provisional ? { usageUnavailableReason: options.usageUnavailableReason ?? "provider_omitted_usage" } : {})
     } };
@@ -476,12 +485,66 @@ export async function markLiveTextUsageFailed(
             options.providerCallMetadata,
             options.error === undefined ? "pending" : { error: options.error }
           ),
-          ...(options.error ? { error: serializeError(options.error) } : {})
+          ...(options.error ? { error: serializeError(options.error) } : {}),
+          ...providerErrorClassMetadata(options.error)
         })
       }
     });
   } catch (error) {
     console.error("Failed to fail live provider token usage", error);
+  }
+}
+
+/**
+ * The stable mark the operator alert reads off a failed call's row
+ * (`apps/api/src/monitoring/providerQuota.ts`): the provider refused it because
+ * its account is out of credit or quota (`isProviderQuotaExhaustedError`). The
+ * row's own `provider` column says whose account. Any other failure carries
+ * none, so the mark can never mean anything else.
+ */
+export function providerErrorClassMetadata(error: unknown): { errorClass?: typeof PROVIDER_QUOTA_EXHAUSTED_ERROR_CLASS } {
+  return error !== undefined && isProviderQuotaExhaustedError(error)
+    ? { errorClass: PROVIDER_QUOTA_EXHAUSTED_ERROR_CLASS }
+    : {};
+}
+
+/**
+ * A failed row for a call an empty account refused, on the paths that write no
+ * row for a failure — an image render, an embedding. Text, decision and search
+ * calls already settle a failed row, which carries the same mark. Without this
+ * the alert would see Gemini's account run dry only on a book that searched or
+ * wrote with Gemini, though the 2026-09-02 outage was 724 embedding calls.
+ * The row is the research failure's shape: no tokens, a null `costHint`,
+ * `liveStatus: "failed"`, so the Costs tab counts it as a failed call. It is a
+ * diagnostic write, so nothing it does can fail the call it describes.
+ */
+export async function recordProviderQuotaRefusal(options: {
+  projectId: string | undefined;
+  generationJobId: string | undefined;
+  provider: string;
+  model: string;
+  operation: string;
+  callId: string;
+  durationMs: number | null;
+  error: unknown;
+}): Promise<void> {
+  try {
+    if (!isProviderQuotaExhaustedError(options.error)) return;
+    await recordProviderUsage({
+      projectId: options.projectId,
+      generationJobId: options.generationJobId,
+      provider: options.provider,
+      model: options.model,
+      purpose: options.operation,
+      operation: options.operation,
+      callId: options.callId,
+      durationMs: options.durationMs,
+      usage: undefined,
+      usageUnavailableReason: "provider_error",
+      providerCallError: options.error
+    });
+  } catch (error) {
+    console.error("Failed to record a provider quota refusal", error);
   }
 }
 

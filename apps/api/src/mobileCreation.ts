@@ -116,11 +116,12 @@ export function greetingCreationTurn(): MobileCreationTurn {
       "Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.",
     // Parent-voiced, like the app's own list (`creation_chat_helpers.dart`):
     // the reader is the adult making the book, never the child it is for.
+    // One kind of book each, specific enough to plan from without a question.
     quickReplies: [
-      "A bedtime story for my 5-year-old",
-      "Lead magnet about pricing",
-      "Workbook for new coaches",
-      "Short story about a garden mystery"
+      "A bedtime story where my 5-year-old is the hero",
+      "A cozy mystery set in a seaside bakery",
+      "A beginner's guide to growing vegetables on a balcony",
+      "A 30-day workbook to stop overthinking"
     ],
     question: null,
     readiness: { score: 0, canBuild: false, missing: [] }

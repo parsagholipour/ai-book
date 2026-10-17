@@ -3,8 +3,8 @@ import {
   createProjectSchema, FakeTextModelAdapter, makeFallbackPlan, JEV_SELECTION, pageQualityReportSchema,
   type BookGenerationStrategy, type DecisionRequest, type PageDraft, type PageQualityReport
 } from "@book-maker/core";
-import { report, qualityGates, mocks } from "./testing/pageReviewHarness.js";
-import { runPageQualityLoop, reviewAndSaveGeneratedPage } from "./pageReview.js";
+import { report, qualityGates } from "./testing/pageReviewHarness.js";
+import { runPageQualityLoop } from "./pageReview.js";
 import { changedCandidateGrounding } from "./changedCandidateGrounding.js";
 
 const input = createProjectSchema.parse({ title: "Trials", prompt: "Explain scientific evidence", category: "SCIENCE", targetPages: 8 });
@@ -143,39 +143,5 @@ describe("page candidate grounding gate", () => {
     const story = { ...input, category: "STORY" as const, prompt: "An imaginary dragon" };
     expect(await runPageQualityLoop({ ...test.options, input: story })).toMatchObject({ report: { groundingStatus: "not_applicable" } });
     expect(test.choose).not.toHaveBeenCalled();
-  });
-
-  it("re-evaluates identical prose against changed evidence and supplies retrieved notes to the reviewer", async () => {
-    const test = fixture(["94% recovered.", "94% recovered."]);
-    const extra = "Follow-up trial passage: recovery was measured at 94%.";
-    const retrieveResearch = vi.fn(async () => [extra]);
-    await runPageQualityLoop({ ...test.options, retrieveResearch });
-    expect(retrieveResearch).toHaveBeenCalledOnce();
-    expect(test.choose).toHaveBeenCalledTimes(2);
-    const last = test.choose.mock.calls[1]![0];
-    expect(last.context).toContain(extra);
-    expect(test.review).toHaveBeenLastCalledWith(expect.objectContaining({ researchNotes: [...notes, extra] }));
-  });
-
-  it("preserves cancellation during claim retrieval", async () => {
-    const test = fixture(["94% recovered."]);
-    const stop = Object.assign(new Error("Stopped"), { name: "StopRequestedError" });
-    await expect(runPageQualityLoop({ ...test.options, retrieveResearch: async () => { throw stop; } })).rejects.toBe(stop);
-    expect(test.revise).toHaveBeenCalledOnce();
-  });
-
-  it("returns the failed keeper and its findings together to staged publication callers", async () => {
-    const test = fixture(["94% recovered."]);
-    test.review.mockResolvedValueOnce(report(50)).mockResolvedValue(report(95, { approved: true }));
-    mocks.loadResearchNotesForGeneration.mockResolvedValue(notes);
-    mocks.qualityEnabled.mockImplementation((id) => id === "changedCandidateGrounding");
-    mocks.prisma.page.findUnique.mockResolvedValue(null);
-    const saved = await reviewAndSaveGeneratedPage({
-      ...test.options, planId: "plan-1", draft: { ...page(original), index: 4 }, chapterId: null,
-      providers: { text: test.options.textModel, decisions: test.options.decisions } as never,
-      maxCandidates: 2, deferPublication: true
-    });
-    expect(saved.candidate).toMatchObject({ draft: { markdown: "94% recovered." }, qualityReport: { approved: false, groundingStatus: "failed", groundedOk: false } });
-    expect(saved.candidate?.qualityReport.requiredRevisions.join(" ")).toContain("retain the North trial");
   });
 });

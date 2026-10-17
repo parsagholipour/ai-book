@@ -1,8 +1,11 @@
 import {
-  LONG_LANE_CAPABLE_JOB_TYPES,
+  BOOK_WORK_JOB_TYPES,
   PAYLOAD_LANED_JOB_TYPES,
   booksAheadInLongLane,
   jobLaneClass,
+  laneOfClass,
+  loadConfig,
+  workerLaneConcurrency,
   type LongLaneRow
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -22,23 +25,32 @@ import { prisma } from "@book-maker/db";
  * Every waiting book's poll would read the same global set, so it is read once
  * per few seconds per process and shared; only the asking book's own rows are
  * taken fresh, from the status read that already loaded them. The read is two
- * small queries over open rows of the long-capable types — payload only for
- * the two types whose lane depends on it — and the status index's leading
- * `status` column serves both.
+ * small queries over open rows of the book-work types — payload only for the
+ * types whose lane depends on it — and the status index's leading `status`
+ * column serves both. Only the long lane's rows are kept: a generation's
+ * pictures and compile run in lanes of their own beside it, so they put no book
+ * in this line and hold none back.
  */
 
 const SNAPSHOT_TTL_MS = 3_000;
 
+/** How many long-lane jobs the worker runs at once: the API reads the same settings the worker does. */
+let longLaneSlots: number | undefined;
+function configuredLongLaneSlots(): number {
+  longLaneSlots ??= workerLaneConcurrency(loadConfig()).long;
+  return longLaneSlots;
+}
+
 let snapshot: { at: number; rows: Promise<LongLaneRow[]> } | null = null;
 
 const payloadLaned = new Set<string>(PAYLOAD_LANED_JOB_TYPES);
-const plainLongTypes = LONG_LANE_CAPABLE_JOB_TYPES.filter((type) => !payloadLaned.has(type));
+const plainLongTypes = BOOK_WORK_JOB_TYPES.filter((type) => !payloadLaned.has(type));
 
 type OpenJobRow = { projectId: string | null; type: string; status: string; createdAt: Date; payload?: unknown };
 
 function longLaneRow(row: OpenJobRow): LongLaneRow | null {
   const laneClass = jobLaneClass(row.type, row.payload ?? null);
-  if (!laneClass || laneClass === "interactive") return null;
+  if (!laneClass || laneOfClass(laneClass) !== "long") return null;
   return { projectId: row.projectId, status: row.status, laneClass, createdAt: row.createdAt };
 }
 
@@ -78,7 +90,8 @@ async function longLaneSnapshot(now: number): Promise<LongLaneRow[]> {
 export async function longLaneQueuePosition(
   projectId: string,
   ownJobs: ReadonlyArray<OpenJobRow>,
-  now = Date.now()
+  now = Date.now(),
+  slots = configuredLongLaneSlots()
 ): Promise<{ booksAhead: number } | null> {
   const own = ownJobs.flatMap((job) =>
     job.status === "QUEUED" || job.status === "ACTIVE" ? (longLaneRow({ ...job, projectId }) ?? []) : []
@@ -91,10 +104,11 @@ export async function longLaneQueuePosition(
     console.error("Could not read the long lane for a queue position", error);
     return null;
   }
-  const booksAhead = booksAheadInLongLane([...others, ...own], projectId);
+  const booksAhead = booksAheadInLongLane([...others, ...own], projectId, slots);
   return booksAhead === null ? null : { booksAhead };
 }
 
 export function resetLongLaneSnapshotForTests(): void {
   snapshot = null;
+  longLaneSlots = undefined;
 }

@@ -22,7 +22,7 @@ describe("buildAntiSlopQualityRevisionPatch", () => {
     expect(patch.settings.futureGate).toEqual(["ultra", "secret-tier"]);
     expect(patch.settings.pageReviewPromptModes).toEqual({ balanced: "compact" });
     expect(patch.settings.models).toEqual({ ultra: { writer: "kept-model" } });
-    expect(patch.settings.bestOfPolish).toEqual([...QUALITY_FEATURE_DEFAULTS.bestOfPolish]);
+    expect(patch.settings.writerTools).toEqual([...QUALITY_FEATURE_DEFAULTS.writerTools]);
     expect(qualityRevisionEncodesMandatoryIntegrity(patch.settings)).toBe(false);
   });
 

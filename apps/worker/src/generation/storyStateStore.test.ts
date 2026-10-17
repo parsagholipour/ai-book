@@ -18,23 +18,11 @@ vi.mock("@book-maker/db", () => ({
 }));
 
 import {
-  persistPageStoryDelta,
+  loadProjectStoryState,
   rebuildProjectStoryState,
   rebuildRolledBackProjectStoryState
 } from "./storyStateStore.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
-import type { StoryDelta } from "@book-maker/core";
-
-const emptyDelta = (overrides: Partial<StoryDelta> = {}): StoryDelta => ({
-  promisesOpened: [],
-  promisesPaid: [],
-  promisesBroken: [],
-  factsAdded: [],
-  entities: {},
-  unansweredAdded: [],
-  unansweredResolved: [],
-  ...overrides
-});
 
 const plan = (promises: string[]) => ({
   title: "Book",
@@ -51,6 +39,17 @@ const plan = (promises: string[]) => ({
 describe("storyStateStore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("reads the stored state, and seeds the plan's promises as open for a book that holds none", async () => {
+    const stored = { promises: [], facts: [{ text: "Ada packed.", pageIndex: 2 }], entities: {}, unanswered: [] };
+    mocks.prisma.project.findUnique.mockResolvedValueOnce({ storyState: stored });
+    await expect(loadProjectStoryState("project-1", ["The lantern will be lit."])).resolves.toEqual(stored);
+    mocks.prisma.project.findUnique.mockResolvedValueOnce({ storyState: null });
+    await expect(loadProjectStoryState("project-1", ["The lantern will be lit."])).resolves.toMatchObject({
+      promises: [{ id: "plan-1", text: "The lantern will be lit.", status: "open" }],
+      facts: []
+    });
   });
 
   it("rebuilds through the shared CAS helper", async () => {
@@ -93,100 +92,5 @@ describe("storyStateStore", () => {
 
     expect(mocks.prisma.planVersion.findUnique).not.toHaveBeenCalled();
     expect(mocks.casRebuildProjectStoryState).toHaveBeenCalledWith("project-1", [], { currentPlanId: null });
-  });
-
-  it("applies the page delta onto current project state without scanning every page", async () => {
-    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
-    mocks.prisma.project.findUnique.mockResolvedValue({
-      storyState: {
-        promises: [],
-        facts: [{ text: "It is raining.", pageIndex: 1 }],
-        entities: {},
-        unanswered: []
-      }
-    });
-    mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
-
-    const state = await persistPageStoryDelta({
-      projectId: "project-1",
-      pageIndex: 2,
-      delta: emptyDelta({ factsAdded: ["Ada packed."] }),
-      seedPromises: []
-    });
-
-    expect(mocks.casRebuildProjectStoryState).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledTimes(1);
-    expect(state?.facts.map((fact) => fact.text)).toEqual(["It is raining.", "Ada packed."]);
-  });
-
-  it("keeps the page delta and project fold on a supplied publication client", async () => {
-    const client = {
-      page: { updateMany: vi.fn(async () => ({ count: 1 })) },
-      project: {
-        findUnique: vi.fn(async () => ({ storyState: null })),
-        updateMany: vi.fn(async () => ({ count: 1 }))
-      }
-    };
-
-    await persistPageStoryDelta(
-      {
-        projectId: "project-1",
-        pageIndex: 2,
-        delta: emptyDelta({ factsAdded: ["Ada packed."] }),
-        seedPromises: []
-      },
-      client as never
-    );
-
-    expect(client.page.updateMany).toHaveBeenCalledTimes(1);
-    expect(client.project.findUnique).toHaveBeenCalledTimes(1);
-    expect(client.project.updateMany).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
-    expect(mocks.prisma.project.updateMany).not.toHaveBeenCalled();
-  });
-
-  it("retries the project CAS when a sibling page wins the write", async () => {
-    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
-    mocks.prisma.project.findUnique
-      .mockResolvedValueOnce({ storyState: null })
-      .mockResolvedValueOnce({ storyState: { promises: [], facts: [], entities: {}, unanswered: [] } });
-    mocks.prisma.project.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
-
-    const state = await persistPageStoryDelta({
-      projectId: "project-1",
-      pageIndex: 1,
-      delta: emptyDelta({ factsAdded: ["Ada packed."] }),
-      seedPromises: []
-    });
-
-    expect(mocks.casRebuildProjectStoryState).not.toHaveBeenCalled();
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledTimes(2);
-    expect(mocks.prisma.project.updateMany.mock.calls[0]?.[0].where).toEqual({
-      id: "project-1",
-      storyState: { equals: "DbNull" }
-    });
-    expect(state?.facts[0]?.text).toBe("Ada packed.");
-  });
-
-  it("falls back to an index-order rebuild when persist CAS retries are exhausted", async () => {
-    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
-    mocks.prisma.project.findUnique.mockResolvedValue({ storyState: null });
-    mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
-    mocks.casRebuildProjectStoryState.mockResolvedValue({
-      promises: [],
-      facts: [{ text: "Ada packed.", pageIndex: 1 }],
-      entities: {},
-      unanswered: []
-    });
-
-    const state = await persistPageStoryDelta({
-      projectId: "project-1",
-      pageIndex: 1,
-      delta: emptyDelta({ factsAdded: ["Ada packed."] }),
-      seedPromises: []
-    });
-
-    expect(mocks.casRebuildProjectStoryState).toHaveBeenCalledWith("project-1", []);
-    expect(state?.facts[0]?.text).toBe("Ada packed.");
   });
 });

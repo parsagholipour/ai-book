@@ -1,5 +1,6 @@
 import { countReadableWords } from "./proseShape.js";
 import { figureFreeProse } from "./figures/figureBlocks.js";
+import { LATIN_SCRIPT_LANGUAGES, findScriptLeaks, type ScriptLeak } from "./scriptLeaks.js";
 
 /**
  * Whether a composed chapter is prose at all. The fast tier's writer
@@ -17,7 +18,12 @@ import { figureFreeProse } from "./figures/figureBlocks.js";
  * (2.8× there, never past ~1.3× elsewhere), and characters from a script the
  * book is not written in (4 there, 0 elsewhere then; a quoted foreign word is
  * ordinary under the creative contract, so the ceiling is a run of forty). The
- * script check runs only for Latin-script target languages.
+ * script count runs only for Latin-script target languages.
+ *
+ * `scriptLeaks` is not one of them: a chapter with "покрыیده" in it is prose
+ * with a wrong word, not a chapter that is not prose, so it never makes the
+ * draft `degenerate` (`scriptLeaks.ts`, and {@link guardComposedDraft} for
+ * what the compose path does with it).
  */
 export type ChapterDegeneracy = {
   degenerate: boolean;
@@ -25,6 +31,8 @@ export type ChapterDegeneracy = {
   words: number;
   templateShare: number;
   foreignCharacters: number;
+  /** Words in a script the book is not written in; any book whose script is known. */
+  scriptLeaks: ScriptLeak[];
 };
 
 const TEMPLATE_SHARE_CEILING = 0.4;
@@ -40,11 +48,6 @@ const RUNAWAY_LENGTH_FACTOR = 1.8;
 // length before the script count.
 const FOREIGN_CHARACTER_CEILING = 40;
 
-export const LATIN_SCRIPT_LANGUAGES = new Set([
-  "en", "fr", "de", "es", "it", "pt", "nl", "sv", "da", "no", "nb", "nn", "fi", "pl", "cs", "sk", "hu", "ro",
-  "hr", "sl", "tr", "id", "ms", "vi", "et", "lv", "lt", "ca", "gl", "eu", "af", "sw", "tl", "is"
-]);
-
 const NON_LATIN_SCRIPT = /[一-鿿぀-ヿ가-힯؀-ۿ֐-׿Ѐ-ӿ฀-๿ऀ-ॿ]/g;
 
 function sentenceOpenings(markdown: string): string[] {
@@ -57,7 +60,12 @@ function sentenceOpenings(markdown: string): string[] {
 
 export function chapterDegeneracy(
   markdown: string,
-  options: { maxWords: number; language?: string | undefined }
+  options: {
+    maxWords: number;
+    language?: string | undefined;
+    /** The book's brief: a script it is written in or names is not a leak (`scriptLeaks.ts`). */
+    brief?: string | undefined;
+  }
 ): ChapterDegeneracy {
   const reasons: string[] = [];
   // A figure block is drawn, not read: its JSON is neither a sentence nor a script.
@@ -84,5 +92,55 @@ export function chapterDegeneracy(
   if (foreignCharacters > FOREIGN_CHARACTER_CEILING) {
     reasons.push(`${foreignCharacters} characters from a script the book is not written in`);
   }
-  return { degenerate: reasons.length > 0, reasons, words, templateShare, foreignCharacters };
+  const scriptLeaks = findScriptLeaks(prose, { language: options.language ?? "en", brief: options.brief });
+  return { degenerate: reasons.length > 0, reasons, words, templateShare, foreignCharacters, scriptLeaks };
+}
+
+/**
+ * Whether `edited` carries a leaked word `original` did not: an edit that
+ * brings one in is refused like an edit that stops being prose, and one that
+ * keeps a leak the draft already had is not the edit's fault.
+ */
+export function addsScriptLeaks(
+  original: string,
+  edited: string,
+  options: { language?: string | undefined; brief?: string | undefined }
+): boolean {
+  const scope = { language: options.language ?? "en", brief: options.brief };
+  const edits = findScriptLeaks(figureFreeProse(edited), scope);
+  if (edits.length === 0) return false;
+  const before = new Set(findScriptLeaks(figureFreeProse(original), scope).map((leak) => leak.word));
+  return edits.some((leak) => !before.has(leak.word));
+}
+
+/**
+ * The compose call's guard. A draft that is not prose is composed once more
+ * and, if the second comes back not prose either, the job fails (composed-13).
+ * A draft that is prose but carries a word in another script is composed once
+ * more too — the line edit that used to clean such a word up is gone — and
+ * the draft with fewer such words is kept, because one stray word is not worth
+ * a failed paid book: E1c's chapter leaked in three of five draws, so two in a
+ * row is a real chance. What a kept leak still meets is the page integrity
+ * rule (`pagesLocalQa.ts`), which revises that page at finalize.
+ */
+export async function guardComposedDraft<T extends { markdown: string }>(options: {
+  draft: T;
+  guard: (markdown: string) => ChapterDegeneracy;
+  recompose: () => Promise<T>;
+  chapterIndex: number;
+  onRecompose?: ((verdict: ChapterDegeneracy) => void) | undefined;
+}): Promise<{ draft: T; verdict: ChapterDegeneracy }> {
+  const first = options.guard(options.draft.markdown);
+  if (!first.degenerate && first.scriptLeaks.length === 0) return { draft: options.draft, verdict: first };
+  options.onRecompose?.(first);
+  const second = await options.recompose();
+  const verdict = options.guard(second.markdown);
+  if (verdict.degenerate) {
+    if (!first.degenerate) return { draft: options.draft, verdict: first };
+    throw new Error(
+      `Chapter ${options.chapterIndex} came back degenerate twice (${verdict.reasons.join("; ")}); the book is not published with it.`
+    );
+  }
+  if (!first.degenerate && first.scriptLeaks.length < verdict.scriptLeaks.length) return { draft: options.draft, verdict: first };
+  return { draft: second, verdict };
 }

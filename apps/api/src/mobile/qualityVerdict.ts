@@ -119,11 +119,31 @@ export function qualityWithExportsOnDisk(
  */
 const READER_SILENT_ISSUE_CODES = new Set(["BRIEF_COVERAGE_UNVERIFIED"]);
 
-/** The quality card a reader is shown: exports settled from disk, reviewer uncertainty left out. */
+/**
+ * The quality card a reader is shown.
+ *
+ * **A split report's card is its reader findings, and nothing else crosses the
+ * wire** (`readerFindings.ts` in core, Parsa's "verified defects only",
+ * 2026-10-15): `normalizeProjectQuality` already put them in `issues`, graded
+ * `state` and `score` from them and named only their pages, and the console's
+ * `diagnosticIssues` are dropped here. Installed apps read `state`, `score`,
+ * `issues` and `affectedPageIndexes` and nothing new, so the wire only lost a
+ * field it never had; `passed` with an empty list is the common card now.
+ *
+ * A report made before the split is served as it was graded — exports settled
+ * from disk, reviewer uncertainty left out — because the project status the
+ * app also reads (REVIEW_REQUIRED or COMPLETE) was decided from it, and a card
+ * re-graded under the new rule would contradict that status. The book's next
+ * owning compile grades it the new way.
+ */
 export function qualityForReader(
   quality: ProjectQualityStatus,
   exports: Record<CompanionExportFormat, { available: boolean }>
 ): ProjectQualityStatus {
+  if (quality.readerPolicy !== undefined) {
+    const { diagnosticIssues: _console, ...reader } = quality;
+    return reader;
+  }
   const settled = qualityWithExportsOnDisk(quality, exports);
   if (!settled.issues.some((issue) => READER_SILENT_ISSUE_CODES.has(issue.code))) {
     return settled;

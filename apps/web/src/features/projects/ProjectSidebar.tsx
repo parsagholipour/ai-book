@@ -390,14 +390,6 @@ export function ProjectSidebar(props: {
             <option value="3">3 drafts + judge (best quality)</option>
           </select>
         </label>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={props.draft.finalReview}
-            onChange={(event) => props.setDraft({ ...props.draft, finalReview: event.target.checked })}
-          />
-          Final review before export
-        </label>
         <Button
           variant="primary"
           fullWidth

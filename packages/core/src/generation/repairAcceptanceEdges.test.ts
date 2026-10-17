@@ -1,9 +1,7 @@
 import { expect, it } from "vitest";
 import captured from "./testing/repairAcceptanceEdges.json" with { type: "json" };
 import { reviewPageDraftLocally, type LocalPageReviewOptions } from "./pagesLocalQa.js";
-import { reviewPictureBookManuscript } from "./pictureBookReview.js";
-import { validateStyleAuditEvidence } from "./styleAuditor.js";
-import { scriptedDevelopmentModel, originalDevelopmentPlan, developmentInput } from "./testing/bookDevelopmentFixtures.js";
+import { originalDevelopmentPlan, developmentInput } from "./testing/bookDevelopmentFixtures.js";
 import { sentenceLengthStats } from "./proseShape.js";
 
 const input = { ...developmentInput, category: "KIDS" as const, targetPages: 30,
@@ -16,22 +14,6 @@ it("keeps Quick's saved candidate blocked after the readability relaxation faile
   expect(report.approved).toBe(false);
   expect(report.issues).toHaveLength(1);
   expect(report.issues[0]).toMatch(/Sentences are too long.*average 13\.0/s);
-});
-
-it("recovers Premium's composite evidence literally without buying a citation-recovery call or dropping its warning", async () => {
-  const { model, calls } = scriptedDevelopmentModel([{ pages: [captured.premiumReview] }, { findings: [] }]);
-  const reviews = await reviewPictureBookManuscript({ input, plan: originalDevelopmentPlan(), pages: [captured.premiumPage],
-    chapterBriefs: [], checks: { pageModelReview: true, storyExtractAudit: true, styleAuditor: true }, textModel: model });
-  expect(calls.map(call => call.purpose)).toEqual(["review-page", "review-picture-book-continuity"]);
-  const review = reviews[0]!;
-  const expected = captured.premiumPage.markdown.slice(captured.premiumPage.markdown.indexOf("He slowed them"));
-  expect(review.findings?.[0]?.quote).toBe(expected);
-  expect(review.report).toMatchObject({ approved: false, score: captured.premiumReview.score });
-  expect(review.findings?.[0]?.message).toBe(captured.premiumReview.findings[0]!.message);
-  const style = validateStyleAuditEvidence(review.styleAudit!, captured.premiumPage.markdown);
-  expect(style.styleOk).toBe(false);
-  expect(style.unverifiedStyleIssues).toEqual([]);
-  expect(style.evidence?.[0]?.quote).toBe(expected);
 });
 
 it.each(["larger_mean", "longest_sentence", "younger_band", "explicit_limit", "prompt_leak", "repetition"])(

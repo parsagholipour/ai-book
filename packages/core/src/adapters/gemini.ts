@@ -528,6 +528,7 @@ function researchThinkingConfig(model: string): { thinkingConfig?: { thinkingBud
 export class GeminiResearchAdapter implements ResearchAdapter {
   private readonly ai: any;
   private readonly model: string;
+  readonly identity: { provider: string; model: string };
 
   constructor(options: GeminiAdapterOptions) {
     if (!options.apiKey) {
@@ -535,6 +536,7 @@ export class GeminiResearchAdapter implements ResearchAdapter {
     }
     this.ai = new GoogleGenAI({ apiKey: options.apiKey });
     this.model = options.textModel ?? "gemini-2.5-flash";
+    this.identity = { provider: "gemini", model: this.model };
   }
 
   async search(query: ResearchQuery): Promise<ResearchResult> {

@@ -527,7 +527,6 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     label: string;
     complexity: number;
     temperature: number;
-    finalReview: boolean;
     draftCandidates: 1 | 2;
     parallelPageGeneration?: boolean;
     modelTier: ModelTier;
@@ -537,7 +536,6 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     label: "Fast",
     complexity: 4,
     temperature: 0.65,
-    finalReview: false,
     draftCandidates: 1,
     parallelPageGeneration: true,
     modelTier: "fast"
@@ -546,7 +544,6 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     label: "Balanced",
     complexity: 5,
     temperature: 0.65,
-    finalReview: true,
     draftCandidates: 1,
     parallelPageGeneration: true,
     modelTier: "balanced"
@@ -555,7 +552,6 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     label: "Premium",
     complexity: 6,
     temperature: 0.55,
-    finalReview: true,
     // Not 2: every mobile length routes to a strategy that never reads
     // best-of drafting, so the knob only distorted the premium price. The
     // tier's value is the premium model routing, which applies everywhere.
@@ -566,7 +562,6 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     label: "Ultra effort",
     complexity: 7,
     temperature: 0.55,
-    finalReview: true,
     draftCandidates: 2,
     modelTier: "ultra"
   }

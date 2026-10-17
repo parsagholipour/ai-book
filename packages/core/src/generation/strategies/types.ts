@@ -2,7 +2,6 @@ import type { CompiledBookMarkdown, CompileMarkdownInput } from "../markdown.js"
 import type { BookPageMapPlan, GenerateBookPdfOptions, GenerateBookPdfResult } from "../pdf.js";
 import type { CreatePlanOptions, RevisePlanOptions } from "../planner.js";
 import type {
-  FinalBookQaOptions,
   GenerateBatchDraftOptions,
   GenerateChapterDraftOptions,
   GenerateChapterBriefOptions,
@@ -11,8 +10,6 @@ import type {
   GeneratePageMapOptions,
   GeneratePageOptions,
   GenerateWholeBookOptions,
-  PolishPageOptions,
-  RepairPageBriefOptions,
   ReviewPageOptions,
   RevisePageOptions,
   WholeBookDraft
@@ -21,9 +18,7 @@ import type {
   BookPlan,
   ChapterBrief,
   CreateProjectInput,
-  FinalBookQa,
   PageDraft,
-  PageProductionBeat,
   PageQualityReport
 } from "../../schemas/book.js";
 
@@ -55,11 +50,8 @@ export type BookGenerationStrategy = {
   readonly generateChapterDraft?: (options: GenerateChapterDraftOptions) => Promise<WholeBookDraft>;
   readonly generateBatchDraft?: (options: GenerateBatchDraftOptions) => Promise<WholeBookDraft>;
   readonly generatePageDraft: (options: GeneratePageOptions) => Promise<PageDraft>;
-  readonly polishPageDraft?: (options: PolishPageOptions) => Promise<PageDraft>;
   readonly reviewPageDraft: (options: ReviewPageOptions) => Promise<PageQualityReport>;
-  readonly repairPageBrief: (options: RepairPageBriefOptions) => Promise<PageProductionBeat>;
   readonly revisePageDraft: (options: RevisePageOptions) => Promise<PageDraft>;
-  readonly runFinalBookQa: (options: FinalBookQaOptions) => Promise<FinalBookQa>;
   readonly shouldIllustratePage: (input: CreateProjectInput, plan: BookPlan, pageIndex: number) => boolean;
   readonly generateImageBytes: (options: GenerateImageBytesOptions) => Promise<GeneratedImageBytes>;
   readonly compileMarkdown: (input: CompileMarkdownInput) => string;

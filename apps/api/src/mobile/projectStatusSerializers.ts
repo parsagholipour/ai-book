@@ -2,6 +2,7 @@ import { bookPdfNumberingForProject } from "../bookPageNumbering.js";
 import { buildProjectStatus, type PipelineStep } from "../projectStatus.js";
 import { type GenerationJobType } from "../queue.js";
 import { serializeEditProgress } from "./editProgress.js";
+import { loadEstimateInputs, statusSecondsLeft, type EstimateInputs } from "./generationEstimate.js";
 import { serializeGenerationProgress } from "./generationProgress.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { imageSettingsFromMediaSettings } from "./imageSettings.js";
@@ -86,8 +87,13 @@ export async function loadSerializedProjectStatus(
     !EXPORTLESS_PROJECT_STATUSES.has(status.project.status)
   );
   const failedJob = currentOwningFailedJob(status);
-  const creditsReturned = failedJob ? await failedAttemptCreditsReturned(failedJob.attemptId) : false;
-  return serializeProjectStatus(status, exports, await loadStudioDraftStatus(status.project), { creditsReturned });
+  const [creditsReturned, estimate, studioDraft] = await Promise.all([
+    failedJob ? failedAttemptCreditsReturned(failedJob.attemptId) : false,
+    // Null without a read for any book that is not planning or being written.
+    loadEstimateInputs(status),
+    loadStudioDraftStatus(status.project)
+  ]);
+  return serializeProjectStatus(status, exports, studioDraft, { creditsReturned, estimate });
 }
 
 /**
@@ -148,7 +154,10 @@ export function serializeProjectStatus(
   status: ProjectStatusResult,
   exports: MobileExportSetDto,
   studioDraft: StudioDraftStatus | null = null,
-  failure: { creditsReturned?: boolean } = {}
+  // What `loadSerializedProjectStatus` read beside the status: whether the
+  // failed attempt's credits came back, and the clock and run history the
+  // time-left estimate needs. Absent, there is no estimate.
+  loaded: { creditsReturned?: boolean; estimate?: EstimateInputs | null } = {}
 ): MobileProjectStatusDto {
   const project = status.project;
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
@@ -171,6 +180,13 @@ export function serializeProjectStatus(
   const editProgress = serializeEditProgress(status);
   const progressPercent = studioDraft?.progressPercent ?? statusProgressPercent(status, generationProgress, editProgress);
   const planningProgress = serializePlanningProgress(status);
+  // Read off the percents the two progress objects already carry, so the
+  // estimate and the bar beside it can never describe different runs.
+  const secondsLeft = statusSecondsLeft(
+    status,
+    { planning: planningProgress?.percent ?? null, generation: generationProgress?.percent ?? null },
+    loaded.estimate ?? null
+  );
   // Newest eligible attempt first: `resumableAttemptIds` follows the failed
   // jobs' creation order, so after a paid retry fails the retry's id is the
   // later one — and it, not the original, is what can be retried again. An
@@ -208,14 +224,14 @@ export function serializeProjectStatus(
       generationProgress?.detail ??
       editProgress?.detail ??
       currentActionFromSteps(project.status, steps, progressPercent),
-    planningProgress,
-    generationProgress,
+    planningProgress: planningProgress && { ...planningProgress, estimatedSecondsLeft: secondsLeft.planning },
+    generationProgress: generationProgress && { ...generationProgress, estimatedSecondsLeft: secondsLeft.generation },
     editProgress,
     // The phase sentence, never the worker's raw `error` (provider HTTP text);
     // that column stays for the operator console. `projectFailureCopy.ts`.
     failureMessage: failedJob
       ? failureMessageForJob(failedJob.type as GenerationJobType, failedJob.error, {
-          creditsReturned: failure.creditsReturned === true
+          creditsReturned: loaded.creditsReturned === true
         })
       : null,
     retryAvailable: status.progress.resumableFailedJobs > 0 && recoveryQuote !== null,

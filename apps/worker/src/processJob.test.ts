@@ -531,6 +531,38 @@ describe("processWorkerJob failure routing", () => {
     );
   });
 
+  it("surfaces a stop a compile's stand-down returned past, at the COMPLETED write it would have made", async () => {
+    // The early brief inventory is a settled promise, so a stand-down return
+    // drains a rejected stop without rethrowing it; `markCompleted` re-reads
+    // the stopped row first, and its stop is no durable completion to keep.
+    const afterJobCompleted = vi.fn();
+    mocks.compileExport.mockResolvedValue({ lifecycleSettlement: "defer-to-successor", afterJobCompleted });
+    mocks.markCompleted.mockRejectedValue(new StopRequestedError());
+
+    await expect(processWorkerJob(job("compile-export"))).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mocks.markStopped).toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(afterJobCompleted).not.toHaveBeenCalled();
+    expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
+  });
+
+  it("fans a book run in only after its COMPLETED write, and leaves a staged replan to its own tail", async () => {
+    // `maybeEnqueueCompile` waits while the run is open, so this call — made
+    // with the run's row terminal — is what queues a compile no unit could.
+    mocks.generateBook.mockImplementation(async () => { mocks.order.push("handler"); return {}; });
+    mocks.markCompleted.mockImplementation(async () => { mocks.order.push("completed"); return true; });
+    mocks.maybeCompileAfterCompletedJob.mockImplementation(async () => { mocks.order.push("fan-in"); });
+
+    await processWorkerJob(job("generate-book"));
+    expect(mocks.order.slice(-3)).toEqual(["handler", "completed", "fan-in"]);
+
+    vi.clearAllMocks();
+    mocks.generateBook.mockResolvedValue({});
+    await processWorkerJob(job("generate-book", { replanOperationId: "operation-1" }));
+    expect(mocks.maybeCompileAfterCompletedJob).not.toHaveBeenCalled();
+  });
+
   it("routes a stop request to markStopped as unrecoverable", async () => {
     mocks.generatePage.mockRejectedValue(new StopRequestedError());
 

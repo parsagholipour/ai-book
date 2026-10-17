@@ -742,8 +742,10 @@ export async function hasOpenProjectWork(
     projectId,
     status: { in: ["QUEUED", "ACTIVE"] },
     // A Writing Studio assist is a detached derivative: it never writes the
-    // book, so it must never hold an edit, a publish or an undo back.
-    type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH", "WRITING_ASSIST"] }
+    // book, so it must never hold an edit, a publish or an undo back. Nor does
+    // the speculative composition prep, which writes only its own plan
+    // version's fields and stands down when a revision supersedes it.
+    type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH", "WRITING_ASSIST", "PREPARE_COMPOSITION"] }
   } satisfies Prisma.GenerationJobWhereInput;
   const openJobs = await db.generationJob.findMany({ where: openWork, select: { payload: true } });
   return openJobs.some((job) => !isDetachedFromProjectLifecycle(job.payload));

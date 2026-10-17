@@ -16,8 +16,6 @@ const mocks = vi.hoisted(() => ({
   prepareEmbedding: vi.fn(),
   strategyUsesSemanticMemory: vi.fn(() => false),
   writePreparedEmbedding: vi.fn(),
-  keeperStoryExtractForSave: vi.fn(),
-  persistStoryExtract: vi.fn(),
   renewStructuralPageLeaseTx: vi.fn(),
   advanceJobStep: vi.fn()
 }));
@@ -50,10 +48,6 @@ vi.mock("../generation/embeddingWrites.js", () => ({
 vi.mock("../generation/generationContext.js", () => ({
   loadContinuityNotes: async () => [],
   loadResearchNotesForGeneration: async () => []
-}));
-vi.mock("../generation/qualityEnrichment.js", () => ({
-  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-  persistStoryExtract: mocks.persistStoryExtract
 }));
 vi.mock("../generation/pageReview.js", () => ({
   reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage
@@ -147,8 +141,6 @@ describe("draftInsertedPages adherence publication gate", () => {
     mocks.strategyUsesSemanticMemory.mockReturnValue(false);
     mocks.prepareEmbedding.mockResolvedValue(null);
     mocks.writePreparedEmbedding.mockResolvedValue("stored");
-    mocks.keeperStoryExtractForSave.mockResolvedValue(null);
-    mocks.persistStoryExtract.mockResolvedValue(null);
     mocks.renewStructuralPageLeaseTx.mockResolvedValue({ status: "ACTIVE" });
     mocks.generatePageDraft.mockImplementation(async ({ pageIndex }: { pageIndex: number }) =>
       draft(pageIndex, "Initial")
@@ -702,9 +694,9 @@ describe("draftInsertedPages adherence publication gate", () => {
     expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
   });
 
-  it.each(["embedding", "story"] as const)(
-    "publishes the page and audit when the %s SQL write aborts its best-effort block",
-    async (failedMemory) => {
+  it(
+    "publishes the page and audit when the embedding SQL write aborts its best-effort block",
+    async () => {
       mocks.reviewAppliedBookEdit.mockResolvedValue({
         satisfied: true,
         confidence: 0.99,
@@ -714,32 +706,15 @@ describe("draftInsertedPages adherence publication gate", () => {
       });
       mocks.strategyUsesSemanticMemory.mockReturnValue(true);
       mocks.prepareEmbedding.mockResolvedValue({ vectorLiteral: "[0.1]", error: null });
-      mocks.keeperStoryExtractForSave.mockResolvedValue({
-        storyDelta: {
-          promisesOpened: [],
-          promisesPaid: [],
-          promisesBroken: [],
-          factsAdded: [],
-          entities: {},
-          unansweredAdded: [],
-          unansweredResolved: []
-        },
-        contradictions: []
-      });
-
       const aborted = new Error("current transaction is aborted (25P02)");
       const failSqlAndSwallow = async (client: { $executeRawUnsafe: (sql: string) => Promise<unknown> }) => {
         await client.$executeRawUnsafe("FAIL OPTIONAL MEMORY").catch(() => undefined);
         return null;
       };
-      if (failedMemory === "embedding") {
-        mocks.writePreparedEmbedding.mockImplementation(async (_target, _prepared, client) => {
-          await failSqlAndSwallow(client);
-          return "degraded";
-        });
-      } else {
-        mocks.persistStoryExtract.mockImplementation(async ({ client }) => failSqlAndSwallow(client));
-      }
+      mocks.writePreparedEmbedding.mockImplementation(async (_target, _prepared, client) => {
+        await failSqlAndSwallow(client);
+        return "degraded";
+      });
 
       const committedMarkdown: string[] = [];
       let transactionClient: typeof mocks.prisma | undefined;
@@ -795,7 +770,6 @@ describe("draftInsertedPages adherence publication gate", () => {
         'ROLLBACK TO SAVEPOINT "best_effort_page_memory"'
       );
       expect(mocks.writePreparedEmbedding).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), transactionClient);
-      expect(mocks.persistStoryExtract).toHaveBeenCalledWith(expect.objectContaining({ client: transactionClient }));
     }
   );
 });

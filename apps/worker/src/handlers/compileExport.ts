@@ -1,11 +1,10 @@
-import { quickDraftPageQuality, quickDraftQaTargets, quickDraftRepairTargets, usesQuickDraftReview } from "../generation/quickDraftReviewPolicy.js";
-import { chapterTransitionRepairIssues } from "../generation/chapterTransitionRepairs.js";
+import { quickDraftQaTargets, quickDraftRepairTargets, usesCompileDefectScreen, usesQuickDraftReview } from "../generation/quickDraftReviewPolicy.js";
 import { qualityIssuesFromFinalQa } from "../generation/exportQualityProvenance.js";
 import { pageQualityAdvisoryIssues } from "../generation/pageQualityAdvisories.js";
 import { unresolvedPageQualityIssues } from "../generation/unresolvedPageQuality.js";
 import { finalRepairQualityIssues } from "./compileRepairOutcome.js";
 import { loadPagesForExport, strategyForInput } from "../generation/bookHelpers.js";
-import { extractRepairPageIndexes, lastPageIndex } from "../generation/finalQaPageTargets.js";
+import { lastPageIndex } from "../generation/finalQaPageTargets.js";
 import {
   discardPendingExports,
   exportPublicationSuperseded,
@@ -13,25 +12,18 @@ import {
   publishCompiledExports
 } from "../generation/exportPublication.js";
 import { resolveCompileReaderLayout } from "./compileExportLayout.js";
-import { storyPageDesignFor, storyPageLayoutFor } from "@book-maker/core";
-import { usesShortPictureBookReview } from "../generation/shortPictureBook.js";
-import { loadPictureBookRequirementTargets, shortPictureBookChecks } from "../generation/shortPictureBookReviewCache.js";
-import { shortPictureBookReaderChapters } from "../generation/shortPictureBookExport.js";
-import { prepareFinalizationCoverageInventory, finalizationCoverageForCompile } from "./compileExportCoverageCheckpoint.js";
+import { renderCompiledBook, type RenderedCompile } from "./compileExportRender.js";
 import { buildManuscriptCoverageContext, manuscriptCoverageForCompile } from "../generation/manuscriptCoverageReview.js";
 import { enqueueFinalizationIllustrations } from "../generation/finalizationIllustrations.js";
 import { FinalizationLeaseLostError, hasCompileFinalization, openCompileFinalization } from "./compileFinalization.js";
-import { reviewFinalizationManuscript } from "./compileFinalizationReview.js";
-import type { FinalQaOwnershipClient } from "./compileExportRepairSemantics.js";
+import { quickDraftReviewAfterRepair, reviewFinalizationManuscript } from "./compileFinalizationReview.js";
+import type { FinalQaOwnershipClient } from "./compileExportFence.js";
 import { loadQualityContext, qualityContextFromSnapshot } from "../generation/qualitySettings.js";
 import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { appliedEditPublicationOwnerId } from "../generation/editProjectStatus.js";
 import { currentCoverAsset } from "../generation/currentCover.js";
-import {
-  ExportRepairIllustrationDeferredError,
-  repairPagesFromFinalQa
-} from "./compileExportRepair.js";
+import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import {
   ExportRepairFenceUnreadableError,
   ExportRepairSupersededError,
@@ -43,52 +35,39 @@ import {
   qualityReportFromFindings,
   pagesTheCompileNoLongerSpeaksFor,
   recordCompileQualityReport,
-  reviewedStoryState,
   standDownForNewerExport,
   standDownForOpenImageJobs,
-  unpaidPromiseQualityIssues,
   type StandDownFindings
 } from "./compileExportStandDown.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { maybeEnqueueCompile, maybeEnqueueCoverRetypeset, parallelPageWaveSize } from "../runtime/dispatch.js";
+import { maybeEnqueueCompile, maybeEnqueueCoverRetypeset } from "../runtime/dispatch.js";
 import { advanceJobStep, editOperationIdFromJob, updateJobProgress } from "../runtime/jobLifecycle.js";
-import { type ExportPageForRepair, type JobCompletion } from "../runtime/jobTypes.js";
+import { isStopRequestedError, type ExportPageForRepair, type JobCompletion } from "../runtime/jobTypes.js";
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
 import { runCompileManuscriptChecks } from "../generation/compileManuscriptChecks.js";
 import { arithmeticErrorIssues, unsupportedCaseClaimIssues } from "../generation/composedEvidenceResiduals.js";
 import { composedChapterLengthIssues } from "../generation/composedChapterLength.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import { companionFormatsToRender, renderCompanionExports } from "./compileExportCompanions.js";
-import { pdfPageMapAfterCompileRender } from "./compilePdfPageMap.js";
-import { reviewManuscriptStructure } from "./compileExportStructuralReview.js";
 import {
-  assertBookLikeMarkdown,
   bookPlanSchema,
   compilePublicationPolicyFromPayload,
   createProviders,
-  chapterHeadingLabelPreference,
   chapterStructureForExport,
-  chapterHeadingStylePreference,
-  includeSourcesPreference,
   isAuthorManuscript,
-  markdownOpensOnCoverSheet,
-  publicAssetUrl,
   strategyComposesChapters,
   resolvePublicImageUrl,
   normalizedCompilePublicationPolicy,
-  type PersistableBookPdfPageMap,
-  type CompiledBookMarkdown,
   type FinalBookQa,
   type ManuscriptQualityIssue
 } from "@book-maker/core";
-import { bookMatterForExport, prisma, researchCitationsForExport } from "@book-maker/db";
+import { prisma } from "@book-maker/db";
 import type { CompileExportJob } from "../runtime/jobPayloads.js";
-import { writeFile } from "node:fs/promises";
 import { withTemporaryDirectory } from "@book-maker/storage";
 import { failedQaPageIndexesForCompile } from "./compileExportCitationRepair.js";
 import { urlBackedResearchNotes } from "../generation/researchSources.js";
-import { dedupeQualityIssues, qualitySummaryMessage } from "./compileExportQualitySummary.js";
+import { dedupeQualityIssues, isStoryBook, qualitySummaryMessage, settledModelIssues, withPrintedShortfall } from "./compileExportQualitySummary.js";
 /**
  * `compile-export` job: final QA over the manuscript, then Markdown/PDF and companion (EPUB, Word) output.
  */
@@ -213,6 +192,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   // two different revisions — the repaired pages written against one gate set,
   // the report that ships them against another.
   let quality = await loadQualityContext(input);
+  // The compile's one review: the defect screen and its scoped repair (`usesCompileDefectScreen`).
+  const defectScreen = () => usesCompileDefectScreen(input, strategy);
   const citeableResearchNotes = urlBackedResearchNotes(project.research);
   let failedQaPageIndexes = failedQaPageIndexesForCompile(pages, citeableResearchNotes, { input, plan, strategy });
   // Lazily cache the pre-repair sweep used for repair targeting and stand-down.
@@ -220,42 +201,44 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
   let initialIntegrityIssuesSnapshot: ManuscriptQualityIssue[] | undefined;
   const initialIntegrityIssues = (): ManuscriptQualityIssue[] =>
     (initialIntegrityIssuesSnapshot ??= runCompileManuscriptChecks({
-      pages, expectedPageCount: input.targetPages, ...(input.language ? { language: input.language } : {}), authorManuscript
+      pages, expectedPageCount: input.targetPages, ...(input.language ? { language: input.language } : {}), authorManuscript,
+      narrative: isStoryBook(input, plan)
     }));
+  // Error-severity integrity findings are repair targets; warnings and the corroborated structural barrier are not.
+  const integrityRepairIssues = () => initialIntegrityIssues().filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION");
   let modelQualityIssues: ManuscriptQualityIssue[] = [];
   let recoveredFinalQaIssues: ManuscriptQualityIssue[] | undefined;
   let repairVerificationIncomplete = false;
-  // An explicit project choice is a request, not a hint; the preset controls only
-  // the automatic continuity review added for parallel-wave drafting.
-  // `skipFinalReview` still prevents unexpected edit/presentation recompile charges and rewrites.
-  const automaticFinalReview = quality.enabled("finalBookQa") &&
-    (usesQuickDraftReview(input) || (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1));
   // `detachedRepair` is belt and braces here — every repair is queued with
   // `skipFinalReview` — but it is the signal that actually means "uncharged", and
   // a repair's verdict is discarded anyway: `ownsProjectStatus` is false, so it
   // writes no status, and its row was created with `ownsQualityVerdict` false —
   // which is the column the API reads the book's verdict off — so the report
   // below stays on this job for an operator and never reaches the app.
-  // Quick Draft screens composed prose too, with minimal repairs and no page templates.
-  // Other tiers retain their chapter editor and skip the page-based final repair pass.
   const finalizationIdentity = { projectId, planId, contentRevision: queuedContentRevision,
     operationIdentity: { attemptId: generationAttemptId, editOperationId, policy } };
-  // Never over an author's book: its repair pass redrafts the pages it flags, and
-  // which page is the author's is not a question a page can answer.
+  // The screen runs where `finalBookQa` is on for the book's tier and the book is of a kind it was
+  // measured on; everything else is printed as written, with the deterministic checks. Never over an
+  // author's book: which page is the author's is not a question a page can answer. A screen that
+  // began before a settings toggle finishes (`hasCompileFinalization`).
   const runFinalReview =
     !authorManuscript &&
     !skipFinalReview &&
     !detachedRepair &&
     !presentationOnly &&
-    (!strategyComposesChapters(strategy) || usesQuickDraftReview(input)) &&
-    (input.mediaSettings.finalReview || automaticFinalReview || await hasCompileFinalization(finalizationIdentity));
+    defectScreen() &&
+    (quality.enabled("finalBookQa") || await hasCompileFinalization(finalizationIdentity));
   const finalization = runFinalReview ? await openCompileFinalization({
     ...finalizationIdentity, generationJobId,
     input: { input, plan, settings: quality.settings, promptMode: quality.pageReviewPromptMode },
     pages, payload: job.data
   }) : null;
   let durablePublicationCommitted = false;
-  let inventoryWork: Promise<PromiseSettledResult<unknown>> | undefined;
+  // Model work the compile runs beside its other steps. Each is a settled
+  // promise, so none can reject unobserved, and all are drained below before the
+  // finalization lease is released.
+  let briefWork: Promise<PromiseSettledResult<Awaited<ReturnType<typeof manuscriptCoverageForCompile>> | null>> | undefined;
+  let verdictWork: Promise<PromiseSettledResult<CompileVerdict>> | undefined;
   try {
   // Another delivery may have finished while this one waited for its lease.
   if (finalization?.state.phase === "published") return { durableCompletionCommitted: true };
@@ -269,29 +252,21 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     failedQaPageIndexes = failedQaPageIndexesForCompile(pages, citeableResearchNotes, { input, plan, strategy });
     if (await exportPublicationSuperseded(projectId, queuedContentRevision)) return {};
   }
-  const overlapCoverage = finalization && !usesQuickDraftReview(input) && ownsOutcome && !skipFinalReview && shortPictureBookReaderChapters({ input, plan, strategy, pages });
-  if (overlapCoverage) inventoryWork = prepareFinalizationCoverageInventory(finalization!, input.prompt, providers.text, plan.requirementInventory)
-    .then((value) => ({ status: "fulfilled" as const, value }), (reason: unknown) => ({ status: "rejected" as const, reason }));
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
-    const reviewManuscript = () => reviewFinalizationManuscript({ input, plan, pages, strategy,
-      textModel: providers.text, projectId, researchNotes: citeableResearchNotes, skipLocalChecks: !quality.enabled("pageLocalQa"),
-      shortBookReview: { generationJobId, planId, quality } });
+    const reviewManuscript = () => reviewFinalizationManuscript({ input, plan, pages, textModel: providers.text });
     let finalQa: FinalBookQa;
     const review = await finalization!.review("initial", pages, reviewManuscript);
+    // The book is not read again after its repair (`quickDraftReviewAfterRepair`).
+    const reviewAfterRepair = () => Promise.resolve(quickDraftReviewAfterRepair(review, finalization!.state, pages));
     modelQualityIssues = review.issues;
     finalQa = review.finalQa;
-    const chapterRepairs = chapterTransitionRepairIssues(modelQualityIssues, pages);
-    const chapterRepairIndexes = chapterRepairs.flatMap((issue) => issue.affectedPageIndexes);
-    if ((!finalQa.approved || failedQaPageIndexes.length > 0 || chapterRepairs.length > 0 ||
-      (usesQuickDraftReview(input) && initialIntegrityIssues().some((issue) => issue.severity === "error"))) &&
-      (!usesQuickDraftReview(input) || quality.enabled("pageQaRewrite")) && !finalization!.state.repairPassCompleted) {
+    if ((!finalQa.approved || failedQaPageIndexes.length > 0 || initialIntegrityIssues().some((issue) => issue.severity === "error")) &&
+      quality.enabled("pageQaRewrite") && !finalization!.state.repairPassCompleted) {
       const targets = new Set([
-        ...failedQaPageIndexes, ...chapterRepairIndexes, ...(usesQuickDraftReview(input) ? quickDraftQaTargets(finalQa) : extractRepairPageIndexes(finalQa, lastPageIndex(pages))),
-        ...initialIntegrityIssues().filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION")
-          .flatMap((issue) => issue.affectedPageIndexes)
+        ...failedQaPageIndexes, ...quickDraftQaTargets(finalQa), ...integrityRepairIssues().flatMap((issue) => issue.affectedPageIndexes)
       ]);
-      await finalization!.beginRepair((usesQuickDraftReview(input) ? quickDraftRepairTargets(pages, targets, finalQa) : pages.filter((page) => targets.has(page.index))).map((page) => page.id));
+      await finalization!.beginRepair(quickDraftRepairTargets(pages, targets, finalQa).map((page) => page.id));
       const revisionFence = exportRepairOwnershipFence(projectId, queuedContentRevision);
       const repairOwnershipFence = revisionFence ? async (client?: FinalQaOwnershipClient) => {
         await revisionFence(client);
@@ -306,27 +281,18 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           plan,
           providers,
           strategy,
-          quality: quickDraftPageQuality(input, quality),
           pages,
           finalQa,
-          additionalRepairIssues: usesQuickDraftReview(input) ? [...chapterRepairs, ...initialIntegrityIssues().filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION")] : chapterRepairs,
+          additionalRepairIssues: integrityRepairIssues(),
           shouldRepairPage: (id) => !finalization!.state.startedPageIds.includes(id),
-          onRepairPageStarted: (id, index) => finalization!.claimPage(id, index),
           onRepairGroupStarted: (targets) => finalization!.claimPages(targets),
           onRepairGroupPublished: (client, snapshot) => finalization!.finishRepairInTransaction(client, snapshot),
-          onRepairPageCompleted: (id) => finalization!.completePage(id),
           onRepairPageUnavailable: (id, pageIndex, error) => finalization!.unavailablePage(id, pageIndex, error),
+          // A repaired page's picture is redrawn by this compile's finalization (`enqueueFinalizationIllustrations`).
           deferIllustrations: queuedContentRevision !== null,
-          researchNotes: citeableResearchNotes,
-          extraPageIndexes: [
-            ...failedQaPageIndexes, ...chapterRepairIndexes,
-            // Errors only: warning-severity issues and the corroborated
-            // structural barrier are review findings, not licences to
-            // model-rewrite every page they touch.
-            ...initialIntegrityIssues()
-              .filter((issue) => issue.severity === "error" && issue.code !== "STRUCTURAL_SLOP_SATURATION")
-              .flatMap((issue) => issue.affectedPageIndexes)
-          ],
+          // Errors only: warning-severity issues and the corroborated structural
+          // barrier are review findings, not licences to rewrite every page they touch.
+          extraPageIndexes: [...failedQaPageIndexes, ...integrityRepairIssues().flatMap((issue) => issue.affectedPageIndexes)],
           // What fences every durable write the pass makes — the pages it
           // rewrites as well as the chapter beats it repairs; see
           // `exportRepairOwnershipFence` and the parameter's own docstring. Its
@@ -340,23 +306,19 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         if (repairedPages) {
           pages = repairedPages;
           await finalization!.finishRepair(pages);
-          // The repair's last page claim does not protect the model call that
-          // follows it. An edit can commit in that gap, making this expensive
-          // second opinion both obsolete and capable of recording a verdict
-          // for pages the book no longer holds. Reuse the exact revision fence
-          // immediately before spending; its superseded answer takes the same
-          // stand-down path as a repair that lost ownership mid-page.
+          // An edit can commit after the repair's claim; the verdict derived
+          // below would then describe pages the book no longer holds. Its
+          // superseded answer takes the same stand-down path as a repair that
+          // lost ownership mid-page.
           if (repairOwnershipFence) {
             await repairOwnershipFence();
           }
-          const reviewed = await finalization!.review("final", pages, reviewManuscript);
+          const reviewed = await finalization!.review("final", pages, reviewAfterRepair);
           finalQa = reviewed.finalQa;
           modelQualityIssues.push(...reviewed.issues);
         }
         await finalization!.finishRepair(pages);
       } catch (error) {
-        const deferToReplacementSuccessor = error instanceof ExportRepairFenceUnreadableError &&
-          error.replacementIllustrationCreated;
         if (error instanceof ExportRepairFenceUnreadableError) {
           // The barrier could not answer, so this compile decides nothing on
           // its behalf. It stops repairing — which is the whole of what the
@@ -416,7 +378,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           });
           pages = repairedPages;
         }
-        if (error instanceof ExportRepairSupersededError || deferToReplacementSuccessor) {
+        if (error instanceof ExportRepairSupersededError) {
           // The same answer this condition gets further down at the compile's own
           // supersede read, reached from deeper in. The pages this pass had
           // already rewritten stay written — they are an improvement to the
@@ -429,9 +391,9 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           // compile that owns the quality verdict ever reaches here —
           // `runFinalReview` is false for every detached repair, presentation
           // reprint and `skipFinalReview` recompile, which is `jobOwnsQualityVerdict`'s
-          // exclusion list — and by this point it has run the whole review: the
-          // bounded chapter sweep and the book QA both. That is the only
-          // model-graded opinion of this manuscript anyone is going to produce.
+          // exclusion list — and by this point it has run the whole review, the
+          // defect screen. That is the only model-graded opinion of this
+          // manuscript anyone is going to produce.
           // The compile that supersedes it need not replace it: an edit's own
           // recompile owns the verdict but builds its report with
           // `finalReviewRan: false`, and an image move, remove or insertion queues
@@ -457,34 +419,19 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
             findings: {
               // `project.pages` rather than `pages`, which is the same array at
               // this point — the reassignment below this catch is the only
-              // thing that ever moves it — and is the copy that still carries
-              // each page's `storyDelta`. The unpaid-promise half is folded
-              // from those, so that it answers for the manuscript this compile
-              // reviewed rather than for the one the reader has since edited.
+              // thing that ever moves it.
               reviewedPages: project.pages,
-              deterministicIssues: [
-                ...initialIntegrityIssues(),
-                ...unpaidPromiseQualityIssues({
-                  quality,
-                  targetPages: input.targetPages,
-                  // Deferred rather than folded here: with `storyExtractAudit`
-                  // off that call returns on its first line, and this fold is a
-                  // zod parse per page plus a rebuild over the result — every
-                  // page of a 300-page book, synchronously, while the compile
-                  // that superseded this one is publishing.
-                  storyState: () => reviewedStoryState(project.pages, plan)
-                })
-              ],
-              modelIssues: dedupeQualityIssues([
+              deterministicIssues: [...initialIntegrityIssues()],
+              modelIssues: settledModelIssues([
                 ...modelQualityIssues,
                 ...unresolvedPageQualityIssues(project.pages),
                 ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages), pages))
-              ]),
+              ], project.pages),
               finalReviewRan: true,
               deterministicWarningsAffectVerdict: true
             }
           });
-          return error instanceof ExportRepairIllustrationDeferredError || error instanceof FinalizationLeaseLostError || deferToReplacementSuccessor
+          return error instanceof FinalizationLeaseLostError
             ? { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile }
             : {};
         } else if (!(error instanceof ExportRepairFenceUnreadableError)) {
@@ -493,10 +440,9 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       }
     }
     if (finalization!.state.repairPassCompleted) {
-      const reviewed = await finalization!.review("final", pages, reviewManuscript);
+      const reviewed = await finalization!.review("final", pages, reviewAfterRepair);
       finalQa = reviewed.finalQa;
-      // Initial chapter findings describe the pre-repair prose. Retain only
-      // the current whole-book verdict after a repair, never stale warnings.
+      // Retain only the verdict after the repair, never findings about prose it replaced.
       modelQualityIssues = reviewed.issues;
     }
     if (!finalQa.approved) {
@@ -507,9 +453,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       });
     }
     // Two questions off one verdict, and they are not the same question. The
-    // repair pass above asked which pages to *redraft* and keeps both prose
-    // edge heuristics for it (`extractRepairPageIndexes` in
-    // `compileExportRepair.ts`). This asks what to show the reader, so it is
+    // repair pass above asked which pages to *redraft* (`quickDraftQaTargets`,
+    // capped to whole finding groups). This asks what to show the reader, so it is
     // per message and named pages only — `qualityIssuesFromFinalQa` maps each
     // complaint to the pages that complaint names, bounded by the book's own
     // page count. One array over the whole verdict cannot be right for both,
@@ -517,8 +462,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     //
     // Bounded by `pages`, which is the manuscript this compile just reviewed,
     // rather than by `input.targetPages`, which is the plan's count and can
-    // differ — `runLocalFinalQa` reports the difference as a mismatch of its
-    // own. The card's promise is a page the reader can open.
+    // differ — the deterministic manuscript audit reports the difference as a
+    // mismatch of its own. The card's promise is a page the reader can open.
     modelQualityIssues.push(
       ...(recoveredFinalQaIssues ?? qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages), pages))
     );
@@ -526,8 +471,13 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     await advanceJobStep(generationJobId, "qa", 25, "Running deterministic integrity checks");
   }
 
-  let pendingFinalizationImages: string[] = [];
-  if (finalization && queuedContentRevision !== null) {
+  // A compile that owns a review publishes only once every illustrated page has the picture of its
+  // current keeper: a page the screen repaired is redrawn here (its revision moved its keeper token),
+  // and so is a picture an older release deferred to the compile's final review, which a book on a
+  // tier the screen does not read would otherwise never get. An unchanged page's early picture is
+  // found under the shared `pageIllustrationJobDedupeKey` and costs nothing.
+  const drawsCurrentPictures = ownsOutcome && !skipFinalReview && !detachedRepair && !presentationOnly && !authorManuscript;
+  if (drawsCurrentPictures && queuedContentRevision !== null) {
     const illustrations = await enqueueFinalizationIllustrations({
       projectId, planId, contentRevision: queuedContentRevision, input, plan, strategy
     });
@@ -535,11 +485,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       await standDownForNewerExport({ projectId, generationJobId });
       return {};
     }
-    await finalization.phase("illustrations", illustrations.pendingJobIds);
-    if (illustrations.pendingJobIds.length > 0) {
-      if (!overlapCoverage) return { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile };
-      pendingFinalizationImages = illustrations.pendingJobIds;
-    }
+    await finalization?.phase("illustrations", illustrations.pendingJobIds);
+    if (illustrations.pendingJobIds.length > 0) return { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile };
     if (illustrations.missingPageIndexes.length > 0) modelQualityIssues.push({
       code: "ILLUSTRATIONS_UNAVAILABLE", source: "deterministic", severity: "warning",
       message: "Some requested illustrations could not be generated.", guidance: "Review these pages and retry their illustrations if needed.",
@@ -577,43 +524,35 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     guidance: "Review these pages or request another repair.",
     affectedPageIndexes: pages.filter((page) => interruptedRepairIds.includes(page.id)).map((page) => page.index)
   });
-  await finalization?.phase("coverage", pendingFinalizationImages);
-  // Quick Draft's single screen already reads the request and actual manuscript.
-  // Composed tiers without brief coverage retain their established opt-out.
-  const coverageSkipped = !authorManuscript && !overlapCoverage && (usesQuickDraftReview(input) ||
-    (strategyComposesChapters(strategy) && !quality.enabled("briefCoverageReview")));
-  if (!coverageSkipped) await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
-  const inventory = await inventoryWork;
-  if (inventory?.status === "rejected") throw inventory.reason;
-  const requirementTargets = !authorManuscript && usesShortPictureBookReview({ input, plan, strategy, pages })
-    ? await loadPictureBookRequirementTargets({ projectId, planId, generationJobId, input, plan, pages, checks: shortPictureBookChecks(quality) }) : [];
-  const coverageOptions = { requirementTargets, inventory: plan.requirementInventory, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
+  // The brief coverage read runs on no tier by default (`briefCoverageReview`), whatever
+  // pipeline wrote the book; a revision that lists the gate still runs it. Quick Draft's
+  // screen already reads the request beside the manuscript.
+  const coverageSkipped = !authorManuscript && (usesQuickDraftReview(input) || !quality.enabled("briefCoverageReview"));
+  if (!coverageSkipped) {
+    await finalization?.phase("coverage");
+    await updateJobProgress(generationJobId, { message: "Checking the finished book against your request" });
+  }
+  const coverageOptions = { inventory: plan.requirementInventory, brief: input.prompt, promises: [...(plan.promises ?? []), ...storyState.promises.map((promise) => promise.text)],
     pages, chapters: chapterStructureForExport({ plan, pages: markdownPages, readerChapters }), textModel: providers.text,
     evidenceContext: buildManuscriptCoverageContext({ input, plan, pages, images: project.images,
       expectedIllustratedPageIndexes: pages.filter((page) => strategy.shouldIllustratePage(input, plan, page.index)).map((page) => page.index) }) };
-  // Only the overlapping path needs a new fence after awaiting its early inventory.
   // A superseded delivery still reaches the findings-aware withdrawal below: an
   // early empty stand-down would discard findings about pages the edit left alone.
-  const supersededForCoverage = supersededBeforeCoverage || Boolean(overlapCoverage &&
-    await exportPublicationSuperseded(projectId, queuedContentRevision));
-  const coverage = authorManuscript || coverageSkipped ? null : overlapCoverage
-    ? supersededForCoverage ? null : await finalizationCoverageForCompile({ ...coverageOptions, operation: finalization! })
-    : await manuscriptCoverageForCompile({ ...coverageOptions, projectId, allowModelReview: ownsOutcome && !skipFinalReview });
-  if (pendingFinalizationImages.length > 0 && !supersededForCoverage) {
-    await finalization!.phase("illustrations", pendingFinalizationImages);
-    return { lifecycleSettlement: "defer-to-successor", afterJobCompleted: requeueCompile };
-  }
-  if (coverage && ownsOutcome && !skipFinalReview) modelQualityIssues.push(...coverage.issues);
-  const deterministicIssues = [
-    ...(coverage && (!ownsOutcome || skipFinalReview) ? coverage.issues : []),
+  const coverageRuns = !authorManuscript && !coverageSkipped;
+  briefWork = settled(!coverageRuns ? Promise.resolve(null)
+    : manuscriptCoverageForCompile({ ...coverageOptions, projectId, allowModelReview: ownsOutcome && !skipFinalReview }));
+  // Everything the verdict is graded on but the coverage read. An owning compile
+  // files the read's answer as model findings, never in this sweep.
+  const sweptIssues: ManuscriptQualityIssue[] = [
     ...runCompileManuscriptChecks({
       pages,
       expectedPageCount: input.targetPages,
       ...(input.language ? { language: input.language } : {}),
-      authorManuscript
+      authorManuscript,
+      narrative: isStoryBook(input, plan)
     }),
-    // A case assertion the composed chapter's repair could not narrow: recorded on the chapter's
-    // report, matched against the pages that still carry it, and a blocking issue on the card.
+    // What the composed chapter's repairs could not settle, matched against the pages that still carry
+    // it: console errors, except a wrong number, which the reader sees quoted (`readerFindings.ts`).
     // An author's chapter is as long as they wrote it, whatever strategy "auto" resolves to.
     ...(strategyComposesChapters(strategy) && !authorManuscript ? [...unsupportedCaseClaimIssues(pages), ...arithmeticErrorIssues(pages), ...composedChapterLengthIssues(pages, input)] : []),
     ...(repairVerificationIncomplete
@@ -625,173 +564,79 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
           guidance: "Review the remaining flagged pages in Edit Mode or rerun final QA.",
           affectedPageIndexes: pages.filter((page) => page.status === "FAILED_QA").map((page) => page.index)
         }]
-      : []),
-    // Imports have no generation brief to enforce. Any remaining continuity
-    // entries are unverified candidates, never proof that a passage is absent.
-    ...(coverage || coverageSkipped ? [] : unpaidPromiseQualityIssues({ quality, targetPages: input.targetPages, storyState: () => storyState }))
+      : [])
   ];
-  // Quick Draft already screens duplication in its one manuscript read. Other tiers
-  // adjudicate structural clusters separately; unpaid reprints never re-grade prose.
-  if (ownsOutcome && !skipFinalReview && !usesQuickDraftReview(input)) {
-    modelQualityIssues.push(
-      ...await reviewManuscriptStructure({
-        pages,
-        plan,
-        findings: deterministicIssues,
-        textModel: providers.text,
-        projectId
-      })
-    );
-  }
-  // An outcome compile's deterministic warnings are new quality evidence even
-  // when model review was not requested. Every `skipFinalReview` recompile — an
-  // undo, exact replacement, or chat edit — re-runs these checks over prose it
-  // never touched, so its warnings remain recorded without retroactively
-  // re-grading the book. Errors still block from either mode.
-  // Kept as findings and graded, rather than graded and kept, because two of
-  // this handler's three stand-downs are below this line: both of them have
-  // already stored `qualityReport`, and a stored verdict is an opinion with no
-  // way back to the pages it was about. `standDownForNewerExport` is what
-  // withdraws the half of it that stops being true, and it can only do that
-  // from these.
-  const findings: StandDownFindings = {
-    reviewedPages: pages,
-    deterministicIssues,
-    modelIssues: dedupeQualityIssues([...modelQualityIssues, ...pageQualityAdvisoryIssues(pages), ...unresolvedPageQualityIssues(pages)]),
-    finalReviewRan: runFinalReview,
-    deterministicWarningsAffectVerdict: ownsOutcome && !skipFinalReview
+  const settleVerdict = async (): Promise<CompileVerdict> => {
+    // No model adjudicates the sweep's structural clusters any more: the defect screen reads for
+    // duplication, and the adjudicator's findings fixed nothing (console only, never a repair target).
+    const coverage = settledValue(await briefWork!);
+    if (coverage && ownsOutcome && !skipFinalReview) modelQualityIssues.push(...coverage.issues);
+    // An outcome compile's deterministic warnings are new quality evidence even
+    // when model review was not requested. Every `skipFinalReview` recompile — an
+    // undo, exact replacement, or chat edit — re-runs these checks over prose it
+    // never touched, so its warnings remain recorded without retroactively
+    // re-grading the book. Errors still block from either mode.
+    // Kept as findings and graded, rather than graded and kept, because two of
+    // this handler's three stand-downs are below this line: both of them have
+    // already stored `qualityReport`, and a stored verdict is an opinion with no
+    // way back to the pages it was about. `standDownForNewerExport` is what
+    // withdraws the half of it that stops being true, and it can only do that
+    // from these.
+    const findings: StandDownFindings = {
+      reviewedPages: pages,
+      deterministicIssues: [...(coverage && (!ownsOutcome || skipFinalReview) ? coverage.issues : []), ...sweptIssues],
+      modelIssues: settledModelIssues([...modelQualityIssues, ...pageQualityAdvisoryIssues(pages), ...unresolvedPageQualityIssues(pages)], pages),
+      finalReviewRan: runFinalReview,
+      deterministicWarningsAffectVerdict: ownsOutcome && !skipFinalReview
+    };
+    const qualityReport = { ...qualityReportFromFindings(findings), ...(coverage ? { briefCoverage: coverage.stored } : {}) };
+    await recordCompileQualityReport(generationJobId, qualityReport);
+    // A blocked report used to stop here with no artifacts at all, which held a
+    // paid book hostage to its own QA: nothing to read in-app, downloads refused.
+    // Now every compile produces the best available book — the same promise the
+    // model-QA path already made — and "blocked" only decides whether the project
+    // finishes as REVIEW_REQUIRED, which keeps the flagged issues on screen and
+    // the free Edit Mode repair path open.
+    const reviewRequired = qualityReport.state === "blocked";
+    if (reviewRequired) {
+      await updateJobProgress(generationJobId, {
+        message: qualitySummaryMessage(qualityReport)
+      });
+    }
+    return { findings, qualityReport, reviewRequired };
   };
-  const qualityReport = { ...qualityReportFromFindings(findings), ...(coverage ? { briefCoverage: coverage.stored } : {}) };
-  await recordCompileQualityReport(generationJobId, qualityReport);
-  // A blocked report used to stop here with no artifacts at all, which held a
-  // paid book hostage to its own QA: nothing to read in-app, downloads refused.
-  // Now every compile produces the best available book — the same promise the
-  // model-QA path already made — and "blocked" only decides whether the project
-  // finishes as REVIEW_REQUIRED, which keeps the flagged issues on screen and
-  // the free Edit Mode repair path open.
-  const reviewRequired = qualityReport.state === "blocked";
-  if (reviewRequired) {
-    await updateJobProgress(generationJobId, {
-      message: qualitySummaryMessage(qualityReport)
-    });
-  }
+  verdictWork = settled(settleVerdict());
 
-  await advanceJobStep(generationJobId, "compile", 55);
-  await finalization?.phase("render");
-  await updateJobProgress(generationJobId, {
-    progress: 62,
-    message: "Placing reader chapters"
-  });
-  // Exit before rendering if an edit landed during coverage or structural review: an edit
-  // applied while this compile was in QA has already queued the recompile that
-  // will publish instead. The binding decision is the claim in
-  // `publishCompiledExports`, since an edit can still land after this read.
-  if (supersededForCoverage || await exportPublicationSuperseded(projectId, queuedContentRevision)) {
-    await standDownForNewerExport({ projectId, generationJobId, findings });
-    return {};
-  }
-  const compileCurrentMarkdown = async (): Promise<CompiledBookMarkdown> => {
-    const researchSources = await researchCitationsForExport(project.research);
-    return strategy.compileMarkdownWithPageAnchors({
-      plan,
-      storyPageLayout: storyPageLayoutFor(input, markdownPages),
-      // The row's preference and prompt, never the plan's snapshot: changing the
-      // design is a live preference that only queues a recompile, and the API's
-      // inline rebuild resolves it from the same row.
-      storyPageDesign: storyPageDesignFor({
-        mediaSettings: project.mediaSettings,
-        category: input.category,
-        prompt: project.prompt,
-        plan
-      }),
-      authorManuscript,
-      category: input.category,
-      language: input.language,
-      readerChapters,
-      ...(cover
-        ? {
-            cover: {
-              imagePath: publicAssetUrl(config.PUBLIC_API_URL, cover.path),
-              imageAlt: `Cover for ${plan.title}`
-            }
-          }
-        : {}),
-      pages: markdownPages,
-      researchSources,
-      // From the project row rather than `input`, whose mediaSettings come from
-      // the plan's frozen snapshot: dropping the Sources list or restyling the
-      // chapter headings is a live reader preference that only queues a recompile.
-      ...(project.authorName ? { authorName: project.authorName } : {}),
-      matter: await bookMatterForExport(project),
-      includeSources: includeSourcesPreference(project.mediaSettings),
-      chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
-      chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
-    });
-  };
-  // The exact published manuscript remains the repair source whenever it is
-  // available. User edits intentionally invalidate it before queueing their
-  // compile, though, and both queue failure and a `not-ready` fan-in hand the
-  // resulting COMPLETE + missing-files state to this detached lane. Refusing to
-  // reconstruct there made every status poll enqueue another repair that could
-  // never succeed. The fallback is built solely from this revision's durable
-  // project rows, without QA/model calls, and is installed with the derivative
-  // below so subsequent repairs are exact again.
-  const repairReconstructedMarkdown = detachedRepair && publishedMarkdown === undefined;
-  // A repair publishes the exact published `book.md`, whose bytes carry no
-  // anchor offsets — but a free deterministic recompile (no model call: the
-  // published Contents pins the chapter partition, and `allowModelCall` is off)
-  // routinely reproduces those bytes exactly. When it does, its anchor plan is
-  // honest for the published manuscript and the repair renders measured — the
-  // printed Contents keeps its measured numbers instead of regressing to model
-  // indexes. When it does not, the exact published bytes win, unmeasured: no
-  // markers, no Contents reprint. That is a different Chromium pass than the
-  // one the stored map was measured from (the reprint exists because digit
-  // width moves breaks), so the stored ranges give way to a cover-skip stub —
-  // chrome keeps the footer numbering, chat drops back to model indexes. A book
-  // chat cannot translate is the graceful path; a map from a different
-  // pagination is the wrong-page edit the map exists to stop.
-  const recompiled = await compileCurrentMarkdown();
-  const compiled =
-    detachedRepair && publishedMarkdown !== undefined && recompiled.markdown !== publishedMarkdown
-      ? undefined
-      : recompiled;
-  const markdown = compiled ? compiled.markdown : publishedMarkdown;
-  if (markdown === undefined) {
-    throw new Error("Export compile produced no manuscript");
-  }
-  assertBookLikeMarkdown(markdown, { authorManuscript });
-  await advanceJobStep(generationJobId, "write", 80);
-  // Render in scoped local scratch. Only the final revision claim permits
-  // publishing these bytes to the project’s durable object keys.
+  // The book's bytes read nothing the verdict decides, so they render while the
+  // brief is checked, and are consulted only once the verdict is recorded and the
+  // supersede read below has answered — the order the serial code observed them
+  // in (`renderCompiledBook`). An edit seen before the read skips both.
   return await withTemporaryDirectory("book-compile-", async (scratchDir) => {
     const pending = pendingExportPaths(scratchDir);
     let characterPreparationJobId: string | null = null;
-    let pdfPageMapUpdate: PersistableBookPdfPageMap | undefined;
+    const rendering = supersededBeforeCoverage ? undefined : settled(renderCompiledBook({ job, projectId, generationJobId,
+      project, plan, input, strategy, authorManuscript, pages: markdownPages, readerChapters, cover, detachedRepair,
+      publishedMarkdown, repairFormat, pdfTargetPageCount, pending, finalization }));
     try {
-      if (repairFormat === null || repairReconstructedMarkdown) {
-        await writeFile(pending.markdown, markdown, "utf8");
+      const verdict = await verdictWork!;
+      if (verdict.status === "rejected") {
+        // A stop wins wherever it was raised.
+        const rendered = await rendering;
+        throw rendered?.status === "rejected" && isStopRequestedError(rendered.reason) ? rendered.reason : verdict.reason;
       }
-      if (repairFormat === null || repairFormat === "pdf") {
-        await advanceJobStep(generationJobId, "pdf", 88);
-        const pdfResult = await strategy.generatePdfWithPageMap(markdown, {
-          imageSource: "object-storage",
-          publicApiUrl: config.PUBLIC_API_URL,
-          outputPath: pending.pdf,
-          documentTitle: plan.title,
-          language: input.language,
-          targetPageCount: pdfTargetPageCount,
-          // Scopes the renderer's file access to this book's own illustrations.
-          projectId,
-          ...(compiled ? { pageMapPlan: compiled } : {})
-        });
-        // A complete measurement wins. Every failed or plan-less measurement
-        // replaces stored ranges with cover numbering for these newly rendered
-        // bytes: matching manuscript text does not prove matching pagination.
-        pdfPageMapUpdate = await pdfPageMapAfterCompileRender(job, pdfResult, {
-          planned: compiled !== undefined,
-          hasCoverPage: compiled?.hasCoverPage ?? markdownOpensOnCoverSheet(markdown)
-        });
+      const { findings, qualityReport, reviewRequired } = verdict.value;
+      // Exit before publishing if an edit landed during coverage or structural review: an edit
+      // applied while this compile was in QA has already queued the recompile that
+      // will publish instead. The binding decision is the claim in
+      // `publishCompiledExports`, since an edit can still land after this read.
+      if (supersededBeforeCoverage || await exportPublicationSuperseded(projectId, queuedContentRevision)) {
+        await standDownForNewerExport({ projectId, generationJobId, findings });
+        return {};
       }
+      const { markdown, compiled, repairReconstructedMarkdown, pdfPageMapUpdate, printedSheets }: RenderedCompile = settledValue(await rendering!);
+      // The one length finding a reader is shown needs the PDF, so it joins the recorded verdict here.
+      const shortfall = withPrintedShortfall(qualityReport, printedSheets);
+      if (shortfall) await recordCompileQualityReport(generationJobId, shortfall);
       const companions = await renderCompanionExports({
         formats: companionFormatsToRender(repairFormat),
         markdown,
@@ -802,7 +647,7 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
         title: plan.title,
         author: project.authorName,
         language: input.language,
-        qualityReport
+        qualityReport: shortfall ?? qualityReport
       });
       await finalization?.assertLease();
       const publication = await publishCompiledExports({
@@ -847,6 +692,8 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
       // cannot turn that delivered result back into a failed/refunded job.
       await finalization?.phase("published").catch(() => undefined);
     } finally {
+      // Never discard scratch a render is still writing into.
+      await rendering;
       await discardPendingExports(pending);
     }
     const persistedCharacterPreparationJobId = characterPreparationJobId;
@@ -872,15 +719,22 @@ export async function compileExport(job: CompileExportJob): Promise<JobCompletio
     }
     throw error;
   } finally {
-    await inventoryWork; // Drain owned work before releasing the finalization lease.
+    // Drain owned work before releasing the finalization lease.
+    await briefWork; await verdictWork;
     if (durablePublicationCommitted) await finalization?.close().catch(() => undefined);
     else await finalization?.close();
   }
 }
 
-export {
-  chapterQualityReviewSchema,
-  runBoundedChapterQualityReview
-} from "./compileExportChapterReview.js";
+type CompileVerdict = { findings: StandDownFindings; qualityReport: ReturnType<typeof qualityReportFromFindings>; reviewRequired: boolean };
+
+function settled<T>(work: Promise<T>): Promise<PromiseSettledResult<T>> {
+  return work.then((value) => ({ status: "fulfilled" as const, value }), (reason: unknown) => ({ status: "rejected" as const, reason }));
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>): T {
+  if (result.status === "rejected") throw result.reason;
+  return result.value;
+}
 
 export { dedupeQualityIssues, qualitySummaryMessage };

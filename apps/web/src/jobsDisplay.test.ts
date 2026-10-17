@@ -38,7 +38,8 @@ describe("resolveJobDisplaySteps", () => {
     for (const [type, template] of Object.entries(JOB_STEP_TEMPLATES)) {
       const steps = resolveJobDisplaySteps(jobRow({ type }));
 
-      expect(template.length, `${type} has no authored steps`).toBeGreaterThan(0);
+      // The speculative composition prep reports nothing: nobody waits on it (packages/core/src/jobSteps.ts).
+      if (type !== "PREPARE_COMPOSITION") expect(template.length, `${type} has no authored steps`).toBeGreaterThan(0);
       expect(
         steps.map((step) => step.label),
         `${type} renders the wrong labels`

@@ -90,6 +90,38 @@ reads a `qualityPreset` rather than a `modelTier`.
   (it cannot have gained a file; the push sweep reads the same function every 15 s), reporting
   every format unavailable — EDITING keeps them, since the reader is still reading its file.
   `statusStreams.test.ts` drives real sockets.
+- **A time-left estimate is seconds left, rounded so the stream does not churn, and null whenever
+  a number would be a guess.** Asked for on 2026-10-17 ("Est remaining time when the book/plan is
+  being generated"). `planningProgress.estimatedSecondsLeft` and
+  `generationProgress.estimatedSecondsLeft` (`generationEstimate.ts`) are seconds, never a
+  finishing time, because the phone's clock may be wrong and the app counts down on its own
+  between statuses (`TimeLeftNote`, `apps/mobile/lib/features/projects/CLAUDE.md`). The number
+  blends the schedule — a typical run less the time this one has run — with, once a fifth of the
+  run's bar is behind it, the pace (the time so far stretched over the bar that is left); never
+  under 20 s while the work runs, never over three typical runs. A plan is timed from its open
+  job's `startedAt`; a book from its open `FULL_BOOK_GENERATION` attempt's, which is stamped once
+  at the first claim and stays open until the compile publishes — the book job's own stamp moves
+  on every reclaim, and the job can fall out of the status read's 25-row window. The book's
+  fraction is measured from `BOOK_PROGRESS_START` (20, `generationProgress.ts`), where its share of
+  the bar begins, so a run that has just started is not read as a fifth done. *Typical* is
+  measured: the last 30 days of finished first runs, one raw query per ten minutes per process,
+  single-flight. Each run is divided by the compiled model for its own tier, pictures and length
+  (`modelSeconds`, dev's timings of 2026-10-17), and the median ratio over the narrowest pool with
+  five runs — same tier, pictures and page bucket (≤12, 13–40, 41–80, 81+), then without the
+  bucket, without the pictures, without the tier — scales this book's model. Ratios rather than raw
+  durations, so a widened pool does not hand a 60-page book the median of the 10-page books it was
+  pooled with. **The rounding is the stream's rule**: up to the next 30 s under ten minutes and the
+  next minute above, so the value moves about twice a minute at most — `…/status/events` writes
+  only a status whose JSON changed, and an unrounded number would send one every three seconds.
+  **Null is the honest answer**: a book waiting in line, work queued and not started, a paid retry
+  (it resumes part-way, so its clock started late against a bar that did not start at the
+  bottom), a run past its schedule with under a fifth of its bar done, and anything stopped,
+  failed, finished or an edit. A settled or waiting book costs no read for it. A failed history
+  read uses the model alone and is asked again a minute later; a failed attempt read answers null;
+  neither fails the status, and both log at error level. The push sweep needed nothing: its loader
+  reads only `progressPercent` and `currentAction`, so a moving estimate sends no extra push. The
+  key has no "model" or "queue" in it, for the leak tests' sake. `generationEstimate.test.ts`,
+  `generationEstimateStatus.test.ts`.
 
 ## A finished book prices every edit as a proposal first
 
@@ -270,13 +302,15 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   off. The spend breaker's soft-cap rule for Ultra (`AI_BUSY` for free accounts) still applies once
   an operator turns it on.
 - **One account holds at most its share of the long lane, asked at every door that starts long
-  work, after the breaker and before anything is claimed.** The worker's long lane runs one book
-  at a time in production (`apps/worker/CLAUDE.md`, the lanes), and nothing stopped one account
-  approving ten plans in a row and holding every other reader's book behind its own for a day.
+  work, after the breaker and before anything is claimed.** The worker's long lane ran one book
+  at a time in production until 2026-10-17 (thirty since; `docs/deployment.md`, "Job lanes"), and
+  nothing stopped one account approving ten plans in a row and holding every other reader's book
+  behind its own for a day. Thirty slots make that rarer, not impossible, so the share stays.
   `booksInProgress.ts` counts the account's books with long-lane work QUEUED or ACTIVE — read off
   the `GenerationJob` rows and classified by the same `JOB_LANES` map the enqueue sides route by,
-  so an edit's recompile does not count and a generation's waiting compile does, and the book
-  being started never counts against itself — and refuses past one on a free account, three on
+  so an edit's recompile does not count and a generation's waiting compile or pictures do (they
+  run in the compile and image lanes now, beside the long one, but the book is still being made:
+  `isBookWork`), and the book being started never counts against itself — and refuses past one on a free account, three on
   any plan (`hasActiveSubscriptionEntitlement`, the spend breaker's notion of paid; an
   unreadable plan counts as paid). The doors: plan approval (not its replay), a paid `/resume`
   whose jobs take the long lane, audiobook start, manuscript import, and the chat Apply of a
@@ -299,7 +333,14 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
   durable rows, because a row whose Redis dispatch is still deferred is still in line — once per
   three seconds per process, adds the asking book's own fresh rows, and counts books with core's
   `booksAheadInLongLane`, the rule that sits beside the placement that makes it true (continuations
-  before starts, FIFO within each). The key has no "queue" in it on purpose: the status payload's
+  before starts, FIFO within each). It takes the lane's slot count, read from the same
+  `WORKER_LONG_CONCURRENCY` the worker reads (`workerLaneConcurrency`): books queued before this one
+  are ahead of it, but books already running hold it up only once every slot is taken, so they
+  count as `running − (slots − 1)` and never below zero. At thirty slots a book first in line
+  behind twenty-nine running books is told it is first; counted as at one slot it was told
+  twenty-nine. Only long-lane rows take part: a generation's pictures and its
+  compile wait in lanes of their own and drain in seconds to minutes, so a book down to those is
+  ahead of nobody and is not itself told it is waiting in line. The key has no "queue" in it on purpose: the status payload's
   leak tests forbid raw queue state, and this is a count of books. A failed read answers null,
   never a failed status. The app's words for it — "Waiting in line — 2 books ahead of yours",
   "Starting soon" — are in `waitingInLineLabel` (`project_status_models.dart`).
@@ -976,6 +1017,22 @@ listening to, and a book whose EPUB is now on disk may not keep saying the expor
 `qualityWithExportsOnDisk` drops it against `serializeExportSet`'s availability — disk beats a
 historical job row — and nothing else, because every other issue is about prose no later compile
 of the same manuscript can have fixed.
+
+- **The app's quality card is the reader's findings, in the fields installed builds already read,
+  and the console's diagnostics never cross the wire.** Since 2026-10-15 a compile's report is
+  split (`readerPolicy` set; core `readerFindings.ts`, Parsa's "verified defects only"):
+  `normalizeProjectQuality` (`../projectStatus.ts`) puts the reader's findings in `issues`, keeps
+  `state`, `score` and `affectedPageIndexes` as graded from them, and hands the rest of the ledger
+  over as `diagnosticIssues`, which the operator status route serves and the console's "Quality
+  verdict" card draws apart (`apps/web/src/features/projects/QualitySection.tsx`).
+  `qualityForReader` drops `diagnosticIssues` on the way to the app, so the mobile wire only gained
+  `readerPolicy` and lost nothing an installed build parses (`MobileProjectQuality` reads `state`,
+  `score`, `issues` and `affectedPageIndexes`). A report made before the split is served exactly as
+  it was graded, `qualityWithExportsOnDisk` and the reviewer-uncertainty filter included, because
+  the project status the app also reads (REVIEW_REQUIRED or COMPLETE) was decided from it and a card
+  re-graded under the new rule would contradict that status; the book's next owning compile grades
+  it the new way. Nothing in a split report blocks today, so a new compile publishes COMPLETE and
+  "passed" with an empty list is the common card.
 
 - **A reader's own stop or delete refunds only what was not delivered, and an ended month's
   allowance lapses instead of turning permanent.** The ledger half — what counts as delivered, how
@@ -2203,7 +2260,8 @@ contract: `.scratch/writing-studio/spec.md`.
   would mark the author's book "review recommended" on its first compile. Every page is set
   COMPLETED with `qualityReport`, `imagePrompt` and `imageFailureReason` nulled — the verdict is the
   author rules' integrity-only one from then on. `storyDelta`, summaries, titles, embeddings and
-  continuity notes stay: the prose did not change, and a continuation still needs its memory.
+  continuity notes stay: the prose did not change, and a continuation of an older book still reads
+  the story state folded from those deltas (nothing writes new ones since 2026-10-16, E6).
 
 ## Book notes
 

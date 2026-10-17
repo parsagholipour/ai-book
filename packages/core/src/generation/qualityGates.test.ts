@@ -4,17 +4,22 @@ import {
   QUALITY_FEATURE_DEFAULTS,
   QUALITY_FEATURE_IDS,
   QUALITY_FEATURES,
+  REMOVED_QUALITY_FEATURE_IDS,
   parseQualityFeatureSettings,
   qualityFeatureEnabled
 } from "./qualityGates.js";
 
 describe("qualityFeatureEnabled", () => {
-  it("skips Quick Draft plan review by default while retaining manuscript review", () => {
-    expect(qualityFeatureEnabled(undefined, "planCritic", "fast")).toBe(false);
-    expect(qualityFeatureEnabled(undefined, "finalBookQa", "fast")).toBe(true);
-    for (const tier of ["balanced", "premium", "ultra"] as const) {
-      expect(qualityFeatureEnabled(undefined, "planCritic", tier)).toBe(true);
+  it("retires the four gates the E4 review audit removed: a stored revision that lists one parses, and it controls nothing", () => {
+    // Every dev revision before 2026-10-16 lists them (E4, `.scratch/eval-data/reports/e4-review-audit.md`).
+    const stored = parseQualityFeatureSettings({ planCritic: ["ultra", "premium", "balanced"], bestOfPolish: ["ultra"],
+      formPlanRepair: ["ultra", "premium", "balanced"], proseArithmeticCheck: ["ultra", "premium", "balanced", "fast"], finalBookQa: [] });
+    for (const id of ["planCritic", "bestOfPolish", "formPlanRepair", "proseArithmeticCheck"]) {
+      expect(REMOVED_QUALITY_FEATURE_IDS).toContain(id);
+      expect(stored).not.toHaveProperty(id);
     }
+    expect(stored.finalBookQa).toEqual([]);
+    expect(qualityFeatureEnabled(undefined, "finalBookQa", "fast")).toBe(true);
   });
   it("enables chapter semantic acceptance by default above Quick Draft and supports per-tier opt-out and opt-in", () => {
     for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
@@ -24,12 +29,41 @@ describe("qualityFeatureEnabled", () => {
       expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditAcceptance: [] }), "chapterEditAcceptance", tier)).toBe(false);
       expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditAcceptance: ["balanced"] }), "chapterEditAcceptance", tier)).toBe(tier === "balanced");
     }
-    expect(QUALITY_FEATURES.find((feature) => feature.id === "chapterEditAcceptance")).toMatchObject({ pipelines: ["composed"], stage: "Chapter edit" });
+    expect(QUALITY_FEATURES.find((feature) => feature.id === "chapterEditAcceptance")).toMatchObject({ pipelines: ["composed"], stage: "Chapter repairs" });
   });
-  it("cannot reactivate the retired pattern rewrite from a saved revision", () => {
-    const settings = parseQualityFeatureSettings({ coupletRewrite: ["balanced", "fast", "premium", "ultra"] });
-    for (const tier of ["balanced", "fast", "premium", "ultra"] as const) {
-      expect(qualityFeatureEnabled(settings, "coupletRewrite", tier)).toBe(false);
+  it("retires the composed line edit: a stored revision that lists it parses, and it runs nowhere", () => {
+    // Revisions 73–75 on dev list it on every tier (2026-10-16).
+    const stored = parseQualityFeatureSettings({ chapterEditorPass: ["ultra", "premium", "balanced", "fast"], chapterEditAcceptance: ["balanced"] });
+    expect(stored.chapterEditorPass).toEqual(["ultra", "premium", "balanced", "fast"]);
+    for (const tier of ["ultra", "premium", "balanced", "fast"] as const) {
+      expect(qualityFeatureEnabled(stored, "chapterEditorPass", tier)).toBe(false);
+      expect(qualityFeatureEnabled(undefined, "chapterEditorPass", tier)).toBe(false);
+    }
+    // The acceptance gate keeps its readers: the repairs' corrections and the read's cuts.
+    expect(qualityFeatureEnabled(stored, "chapterEditAcceptance", "balanced")).toBe(true);
+    const editor = QUALITY_FEATURES.find((feature) => feature.id === "chapterEditorPass")!;
+    expect(editor).toMatchObject({ retired: true, pipelines: [] });
+    expect(editor.summary).toMatch(/Removed 2026-10-16/);
+  });
+  it("parses a stored revision that still carries a removed gate, and the gate controls nothing", () => {
+    // Revision 73 on dev stored the deleted couplet rewrite on balanced and up.
+    // Revision 77 still stores the page-map critic (E5) on every tier.
+    const settings = parseQualityFeatureSettings({ coupletRewrite: ["balanced", "fast", "premium", "ultra"], pageMapCritic: ["ultra", "premium", "fast", "balanced"], styleAuditor: ["ultra"] });
+    expect(settings).not.toHaveProperty("coupletRewrite");
+    expect(settings).not.toHaveProperty("pageMapCritic");
+    expect(settings.styleAuditor).toEqual(["ultra"]);
+    expect(settings.figures).toEqual(QUALITY_FEATURE_DEFAULTS.figures);
+    for (const id of REMOVED_QUALITY_FEATURE_IDS) {
+      expect(QUALITY_FEATURE_IDS).not.toContain(id);
+      expect(QUALITY_FEATURES.map((feature) => feature.id)).not.toContain(id);
+    }
+  });
+  it("shelves the gates measured off on every tier, and a revision can still opt one in for an experiment", () => {
+    const shelved = QUALITY_FEATURES.filter((feature) => feature.shelved).map((feature) => feature.id);
+    expect(shelved.sort()).toEqual(["bookDevelopment", "caseEvidence", "changedCandidateGrounding", "chapterFocus", "developmentalEdit"]);
+    for (const id of shelved) {
+      expect(QUALITY_FEATURE_DEFAULTS[id]).toEqual([]);
+      expect(qualityFeatureEnabled(parseQualityFeatureSettings({ [id]: ["balanced"] }), id, "balanced")).toBe(true);
     }
   });
   it("cannot reactivate tier reasoning boosts from an older revision", () => {
@@ -44,18 +78,12 @@ describe("qualityFeatureEnabled", () => {
         expect(qualityFeatureEnabled(undefined, feature, tier)).toBe(true);
       }
     }
-    expect(qualityFeatureEnabled(undefined, "storyExtractAudit", "fast")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "styleAuditor", "fast")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "styleAuditor", "premium")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "styleAuditor", "ultra")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "writerTools", "premium")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "writerTools", "ultra")).toBe(true);
-    expect(qualityFeatureEnabled(undefined, "bestOfPolish", "balanced")).toBe(false);
-    expect(qualityFeatureEnabled(undefined, "pageMapCritic", "balanced")).toBe(false);
-    expect(qualityFeatureEnabled(undefined, "pageMapCritic", "premium")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "planThinkingBoost", "premium")).toBe(false);
-    expect(qualityFeatureEnabled(undefined, "claimRetrieve", "ultra")).toBe(false);
-    expect(qualityFeatureEnabled(undefined, "claimVerifier", "premium")).toBe(false);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "fast")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "balanced")).toBe(true);
     expect(qualityFeatureEnabled(undefined, "compactPageDraftContext", "premium")).toBe(false);
@@ -85,7 +113,7 @@ describe("qualityFeatureEnabled", () => {
         expect(qualityFeatureEnabled(olderRow, feature, tier)).toBe(false);
       }
     }
-    expect(qualityFeatureEnabled(olderRow, "chapterEditorPass", "balanced")).toBe(true);
+    expect(qualityFeatureEnabled(olderRow, "manuscriptReadPass", "balanced")).toBe(true);
     // An explicit opt-in enables each feature for the named tier only.
     for (const feature of features) {
       const optedIn = parseQualityFeatureSettings({ [feature]: ["balanced"] });
@@ -121,19 +149,19 @@ describe("qualityFeatureEnabled", () => {
   it("treats an empty array as disabled", () => {
     const settings = parseQualityFeatureSettings({
       finalBookQa: [],
-      storyExtractAudit: [],
+      pageModelReview: [],
       styleAuditor: ["fast"]
     });
     expect(qualityFeatureEnabled(settings, "finalBookQa", "balanced")).toBe(false);
-    expect(qualityFeatureEnabled(settings, "storyExtractAudit", "ultra")).toBe(false);
-    expect(qualityFeatureEnabled(settings, "storyExtractAudit", "fast")).toBe(false);
+    expect(qualityFeatureEnabled(settings, "pageModelReview", "ultra")).toBe(false);
+    expect(qualityFeatureEnabled(settings, "pageModelReview", "fast")).toBe(false);
     expect(qualityFeatureEnabled(settings, "styleAuditor", "fast")).toBe(true);
     expect(qualityFeatureEnabled(settings, "styleAuditor", "premium")).toBe(false);
   });
 
   it("falls back to the compiled default for a missing key", () => {
-    const settings = parseQualityFeatureSettings({ planCritic: ["ultra"], finalBookQa: [] });
-    expect(settings.planCritic).toEqual(["ultra"]);
+    const settings = parseQualityFeatureSettings({ writerTools: ["premium"], finalBookQa: [] });
+    expect(settings.writerTools).toEqual(["premium"]);
     expect(settings.pageLocalQa).toEqual([...QUALITY_FEATURE_DEFAULTS.pageLocalQa]);
     expect(qualityFeatureEnabled(settings, "pageLocalQa", "balanced")).toBe(true);
     expect(settings.finalBookQa).toEqual([]);
@@ -157,9 +185,9 @@ describe("qualityFeatureEnabled", () => {
     expect(QUALITY_FEATURES.find((feature) => feature.id === "smartUnslop")).toEqual({
       id: "smartUnslop",
       label: "Smart unslop",
-      summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page.",
+      summary: "A reader's chat page rewrite only: finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page. No generated page is rewritten for slop since 2026-10-16.",
       pipelines: ["per-page", "composed"],
-      stage: "Page checks"
+      stage: "Chat page rewrite"
     });
     expect(QUALITY_FEATURES.find((feature) => feature.id === "compactPageDraftContext")).toEqual({
       id: "compactPageDraftContext",
@@ -168,13 +196,12 @@ describe("qualityFeatureEnabled", () => {
       pipelines: ["per-page"],
       stage: "Page draft"
     });
-    expect(QUALITY_FEATURES.find((feature) => feature.id === "beatDedup")).toEqual({
-      id: "beatDedup",
-      label: "Page-beat rewrite (optional polish)",
-      summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox.",
-      pipelines: ["per-page"],
-      stage: "Page map"
-    });
+    // Story memory and its scheduling gate went with E6 (2026-10-16): no row, and a stored revision naming them parses.
+    for (const removed of ["storyExtractAudit", "storyNotesTogether"]) {
+      expect(QUALITY_FEATURES.some((feature) => (feature.id as string) === removed)).toBe(false);
+      expect(REMOVED_QUALITY_FEATURE_IDS).toContain(removed);
+    }
+    expect(qualityFeatureEnabled(parseQualityFeatureSettings({ storyExtractAudit: ["ultra"], storyNotesTogether: ["fast"] }), "finalBookQa", "ultra")).toBe(true);
   });
 
   it("lists mandatory integrity separately from disableable polish ids", () => {
@@ -196,43 +223,41 @@ describe("qualityFeatureEnabled", () => {
       pageQaRewrite: [],
       finalBookQa: [],
       storyExtractAudit: [],
-      planCritic: [],
-      claimVerifier: [],
       compactPageDraftContext: [],
       styleExcerpts: [],
       styleAuditor: [],
-      pageMapCritic: [],
-      beatDedup: [],
       writerTools: [],
-      bestOfPolish: [],
-      planThinkingBoost: [],
-      claimRetrieve: []
-    }), "beatDedup", "ultra")).toBe(false);
+      planThinkingBoost: []
+    }), "styleAuditor", "ultra")).toBe(false);
   });
 });
 
 
-it("switches changed-candidate grounding independently of initial claim verification", () => {
+it("switches changed-candidate grounding from a stored revision, off by default", () => {
   expect(qualityFeatureEnabled(undefined, "changedCandidateGrounding", "balanced")).toBe(false);
-  const off = parseQualityFeatureSettings({ changedCandidateGrounding: [], claimVerifier: ["balanced"] });
-  expect(qualityFeatureEnabled(off, "changedCandidateGrounding", "balanced")).toBe(false);
-  expect(qualityFeatureEnabled(off, "claimVerifier", "balanced")).toBe(true);
   const on = parseQualityFeatureSettings({ changedCandidateGrounding: ["balanced"], claimVerifier: [] });
   expect(qualityFeatureEnabled(on, "changedCandidateGrounding", "balanced")).toBe(true);
-  expect(qualityFeatureEnabled(on, "claimVerifier", "balanced")).toBe(false);
+  expect(on).not.toHaveProperty("claimVerifier");
 });
 
-it("gives Quick Draft its speed defaults: no edit review, no manuscript read, no form repair, no brief-coverage read; notes and sources together", () => {
+it("gives Quick Draft its speed defaults: no edit review, no manuscript read, no brief-coverage read; notes and sources together", () => {
   const quick = (feature: Parameters<typeof qualityFeatureEnabled>[1]) => qualityFeatureEnabled(undefined, feature, "fast");
   const balanced = (feature: Parameters<typeof qualityFeatureEnabled>[1]) => qualityFeatureEnabled(undefined, feature, "balanced");
-  for (const feature of ["chapterEditAcceptance", "manuscriptReadPass", "formPlanRepair", "briefCoverageReview"] as const) {
+  for (const feature of ["chapterEditAcceptance"] as const) {
     expect([quick(feature), balanced(feature)]).toEqual([false, true]);
   }
-  for (const feature of ["storyNotesTogether", "wideSourceGathering"] as const) {
-    expect([quick(feature), balanced(feature)]).toEqual([true, false]);
-    expect(QUALITY_FEATURES.find((entry) => entry.id === feature)).toMatchObject({ pipelines: ["composed"] });
+  // The manuscript read and its cuts moved a Balanced book by 0.75% of its words (E3, 2026-10-16), and the
+  // compile's brief-coverage read only filed console diagnostics, real 27% and 40% of the time. Both are
+  // under the owner's 5–10% bar, so no tier runs them by default — Premium and Ultra included: a critic that
+  // does not help one writer is not kept for another in case.
+  for (const tier of ["fast", "balanced", "premium", "ultra"] as const) {
+    expect(qualityFeatureEnabled(undefined, "manuscriptReadPass", tier)).toBe(false);
+    expect(qualityFeatureEnabled(undefined, "manuscriptReadCuts", tier)).toBe(false);
+    expect(qualityFeatureEnabled(undefined, "briefCoverageReview", tier)).toBe(false);
   }
+  expect([quick("wideSourceGathering"), balanced("wideSourceGathering")]).toEqual([true, false]);
+  expect(QUALITY_FEATURES.find((entry) => entry.id === "wideSourceGathering")).toMatchObject({ pipelines: ["composed"] });
   // A saved revision that never named the new gates takes their defaults.
-  expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: ["fast"] }), "storyNotesTogether", "fast")).toBe(true);
+  expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: ["fast"] }), "wideSourceGathering", "fast")).toBe(true);
   expect(qualityFeatureEnabled(parseQualityFeatureSettings({ chapterEditorPass: ["fast"] }), "briefCoverageReview", "fast")).toBe(false);
 });

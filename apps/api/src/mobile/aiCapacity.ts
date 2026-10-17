@@ -104,6 +104,20 @@ export async function assertAiCapacity(userId: string, kind: AiWorkKind, log?: B
   if (!decision.allowed) throw new AiCapacityRefusedError(decision);
 }
 
+/**
+ * Whether a plan door may queue the unbilled composition prep for the plan it starts (harness redesign H4,
+ * `apps/worker/src/handlers/prepareComposition.ts`): the breaker asked for `speculative` work, which a free account
+ * past the soft cap is refused. It answers the payload flag the worker reads, never the request: a refusal costs
+ * the reader nothing, the book run plans those steps itself after approval, and an unreadable answer is no prep.
+ */
+export async function speculativeWorkAllowed(userId: string, log?: BreakerLogger): Promise<boolean> {
+  try {
+    return (await spendBreaker.check(userId, "speculative", log)).allowed;
+  } catch {
+    return false;
+  }
+}
+
 export function sendAiCapacityRefusal(
   reply: FastifyReply,
   decision: Exclude<AiAccessDecision, { allowed: true }>

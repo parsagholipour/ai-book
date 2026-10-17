@@ -32,13 +32,22 @@ x-app: &app
     S3_BUCKET: ${S3_BUCKET:?Set S3_BUCKET from the Terraform assets_bucket output}
     S3_REGION: ${S3_REGION:-eu-central-1}
     MAX_PARALLEL_PAGE_JOBS: ${MAX_PARALLEL_PAGE_JOBS:-1}
-    MAX_PARALLEL_IMAGE_JOBS: ${MAX_PARALLEL_IMAGE_JOBS:-1}
-    # The worker's two lanes (packages/core/src/jobLanes.ts): one long job (a
-    # book run, its pages and pictures, a generation's compile, narration, an
-    # import) beside two interactive ones (plans, edits, assists, portraits,
-    # short compiles). Sized for the worker's 2 GiB: docs/deployment.md, "Job lanes".
-    WORKER_LONG_CONCURRENCY: ${WORKER_LONG_CONCURRENCY:-1}
+    # The worker's five lanes (packages/core/src/jobLanes.ts): thirty long jobs
+    # (book runs and their pages, narration, imports: provider calls over a
+    # manuscript, about 4 MB of heap each), four pictures (a generation's pages
+    # and cover, drawn beside its text), three generation compiles (mostly a
+    # model call; Chromium renders two books at most however many run), two
+    # interactive jobs (plans, edits, assists, portraits, short compiles) and
+    # four background jobs (the composition prep a plan queues while its reader
+    # reads it: provider calls, a few MB each). Sized for the worker's 2 GiB and
+    # measured with thirty books at once: docs/deployment.md, "Job lanes".
+    # The image lane is set here rather than by MAX_PARALLEL_IMAGE_JOBS, which
+    # only sizes it where this is unset (development).
+    WORKER_LONG_CONCURRENCY: ${WORKER_LONG_CONCURRENCY:-30}
+    WORKER_IMAGE_CONCURRENCY: ${WORKER_IMAGE_CONCURRENCY:-4}
+    WORKER_COMPILE_CONCURRENCY: ${WORKER_COMPILE_CONCURRENCY:-3}
     WORKER_INTERACTIVE_CONCURRENCY: ${WORKER_INTERACTIVE_CONCURRENCY:-2}
+    WORKER_BACKGROUND_CONCURRENCY: ${WORKER_BACKGROUND_CONCURRENCY:-4}
   # Containers only keep disposable render scratch; durable files are in S3.
   logging: *logging
 
@@ -132,7 +141,7 @@ services:
   # about 1.2 GiB of the ceiling is off-heap. Same no-swap rule as the api.
   # oom_score_adj makes it the kernel's first choice if the whole host still
   # runs out: a killed job is redelivered, a killed Postgres backend is not.
-  # Both job lanes run inside this container and share the 2 GiB; a second
+  # All five job lanes run inside this container and share the 2 GiB; a second
   # worker container is a new row in the budget, not a copy of this one.
   worker:
     <<: *app
@@ -143,7 +152,7 @@ services:
     oom_score_adj: 500
     stop_grace_period: 5m
     shm_size: 256mb
-    # Healthy only while both lanes' heartbeat keys were last written by this
+    # Healthy only while every lane's heartbeat key was last written by this
     # container: a worker whose interactive Worker failed to start would leave
     # plans and edits queued, and a key the drained worker left behind lives
     # 90 s, long enough to pass a new one's `up --wait` without the host check.

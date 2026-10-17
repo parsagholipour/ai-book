@@ -1,194 +1,30 @@
 import {
   auditPageStyle,
-  extractStoryState,
   figureFreeProse,
-  hasResearchIntent,
   isCancellationError,
   localStyleInstructions,
-  pageDraftSummary,
-  verifyPageClaims,
-  withClaimVerification,
-  withStoryContradictions,
-  validateStoryExtractEvidence,
-  validateStyleAuditEvidence,
   withStyleAudit,
   type BookPlan,
-  type CreateProjectInput,
   type DecisionModelRoute,
   type PageDraft,
   type PageQualityReport,
-  type PriorPageContext,
   type QualityFeatureId,
-  type StoryExtractResult,
-  type StoryState,
   type TextModelAdapter
 } from "@book-maker/core";
-import { loadProjectStoryState, persistPageStoryDelta } from "./storyStateStore.js";
-import { loadQualityContext } from "./qualitySettings.js";
-import type { Prisma } from "@book-maker/db";
-import type { PrecomputedPageReview } from "./precomputedPageReview.js";
-
-/** Drops figure fences via `figureFreeProse` (no stand-in) and runs the summary through `pageDraftSummary`; this is not `figureFreeDraft`. */
-function figureFreeProseFields(draft: Pick<PageDraft, "markdown" | "summary">) {
-  return {
-    markdown: figureFreeProse(draft.markdown),
-    summary: pageDraftSummary(draft.markdown, draft.summary)
-  };
-}
-
-export type EnrichedPageReview = {
-  report: PageQualityReport;
-  extract: StoryExtractResult | null;
-  storyState: StoryState;
-};
 
 export type QualityGateContext = {
   enabled: (feature: QualityFeatureId) => boolean;
   lightweight?: boolean;
 };
 
-function withUnavailableQualityCheck(report: PageQualityReport, check: "story_continuity" | "style"): PageQualityReport {
-  const message = `${check === "style" ? "Style audit" : "Story continuity audit"} was unavailable; this check did not produce a verdict.`;
+function withUnavailableQualityCheck(report: PageQualityReport, check: "style"): PageQualityReport {
+  const message = "Style audit was unavailable; this check did not produce a verdict.";
   const advisories = report.qualityAdvisories ?? [];
   return { ...report,
     notes: `${report.notes}\n${message}`,
     qualityAdvisories: advisories.some((item) => item.check === check && item.message === message)
       ? advisories : [...advisories, { check, status: "unverified", message }]
   };
-}
-
-export async function enrichPageQualityReport(options: {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  pageIndex: number;
-  draft: PageDraft;
-  report: PageQualityReport;
-  previousPages: PriorPageContext[];
-  researchNotes: string[];
-  textModel: TextModelAdapter;
-  decisions?: DecisionModelRoute | undefined;
-  /** The requested edit is authoritative for intentional changes to style. */
-  userRequest?: string | undefined;
-  projectId: string;
-  /**
-   * The caller's pinned style lock — pages 1–2, loaded when its own window no
-   * longer reaches them — or empty when the gate is off. **Required**, and that
-   * is the fix rather than the shape: this used to pin from `previousPages`
-   * when absent, so a caller that handed in a recency window (`continueBook`
-   * passes the last eighteen pages) had a continuation at page 41 audited and
-   * revised against pages 23 and 24 instead of the book's opening voice, and
-   * nothing said so. A caller with nothing to pin passes `[]` and means it.
-   */
-  styleExcerpts: string[];
-  quality?: QualityGateContext | undefined;
-  storyState?: StoryState | undefined;
-  /** Already snapshot-validated by the publication caller. */
-  precomputed?: Pick<PrecomputedPageReview, "storyExtract" | "styleAudit" | "manuscriptPages" | "reviewUnavailable"> | undefined;
-}): Promise<EnrichedPageReview> {
-  const quality = options.quality ?? (await loadQualityContext(options.input));
-  const storyState =
-    options.storyState ?? (await loadProjectStoryState(options.projectId, options.plan.promises ?? []));
-  const styleExcerpts = options.styleExcerpts;
-  let report = options.report;
-  let extract: StoryExtractResult | null = null;
-
-  if (quality.enabled("storyExtractAudit") && options.precomputed?.reviewUnavailable && !options.precomputed.storyExtract) {
-    report = withUnavailableQualityCheck(report, "story_continuity");
-  } else if (quality.enabled("storyExtractAudit")) {
-    try {
-      extract = options.precomputed?.storyExtract ?? await extractStoryState({
-        textModel: options.textModel,
-        pageIndex: options.pageIndex,
-        title: options.draft.title,
-        ...figureFreeProseFields(options.draft),
-        currentState: storyState,
-        previousPages: options.previousPages.map((page) => ({ index: page.index, markdown: figureFreeProse(page.markdown) }))
-      });
-      extract = validateStoryExtractEvidence(extract, { index: options.pageIndex, markdown: figureFreeProse(options.draft.markdown) }, options.precomputed?.manuscriptPages ?? options.previousPages);
-      report = withStoryContradictions(report, extract.contradictions);
-      if (extract.unverifiedContradictions?.length) report = { ...report,
-        notes: `${report.notes}\nUnverified continuity hypotheses (not rewrite instructions): ${extract.unverifiedContradictions.join("; ")}`,
-        qualityAdvisories: [...(report.qualityAdvisories ?? []), ...extract.unverifiedContradictions.map((message) => ({ check: "story_continuity" as const, status: "unverified" as const, message,
-          ...(extract?.findingIdsByContradiction?.[message] ? { findingId: extract.findingIdsByContradiction[message] } : {}) }))] };
-    } catch (error) {
-      if (isCancellationError(error)) {
-        throw error;
-      }
-      report = withUnavailableQualityCheck(report, "story_continuity");
-      console.warn(`Story extract skipped for project ${options.projectId} page ${options.pageIndex}`, error);
-    }
-    // Open continuity entries are candidates for the final manuscript coverage
-    // review, not evidence that this page needs a rewrite. Payoff may be spread
-    // across earlier pages that this single-page extractor has never read.
-  }
-
-  const claimVerificationApplies = quality.enabled("claimVerifier") && hasResearchIntent(options.input);
-  // This seam receives the already URL-filtered notes from generationContext;
-  // blank strings still do not constitute evidence.
-  const hasSourceBackedResearchNotes = options.researchNotes.some((note) => note.trim().length > 0);
-  if (claimVerificationApplies && !hasSourceBackedResearchNotes) {
-    report = {
-      ...report,
-      groundedOk: true,
-      groundingStatus: "unverified_no_sources"
-    };
-  } else if (claimVerificationApplies) {
-    try {
-      const verification = await verifyPageClaims({
-        textModel: options.textModel,
-        pageIndex: options.pageIndex,
-        markdown: figureFreeProse(options.draft.markdown),
-        researchNotes: options.researchNotes,
-        book: { category: options.input.category, prompt: options.input.prompt, premise: options.plan.premise }
-      });
-      report = withClaimVerification(report, verification);
-    } catch (error) {
-      if (isCancellationError(error)) {
-        throw error;
-      }
-      report = {
-        ...report,
-        groundedOk: true,
-        groundingStatus: "unavailable"
-      };
-      console.warn(`Claim verifier skipped for project ${options.projectId} page ${options.pageIndex}`, error);
-    }
-  } else {
-    report = {
-      ...report,
-      groundedOk: true,
-      groundingStatus: "not_applicable"
-    };
-  }
-
-  if (quality.enabled("styleAuditor") && quality.enabled("styleExcerpts") && options.precomputed?.reviewUnavailable && !options.precomputed.styleAudit) {
-    report = withUnavailableQualityCheck(report, "style");
-  } else if (quality.enabled("styleAuditor") && (styleExcerpts.length > 0 || options.precomputed?.styleAudit)) {
-    try {
-      const audit = options.precomputed?.styleAudit
-        ? validateStyleAuditEvidence(options.precomputed.styleAudit, figureFreeProse(options.draft.markdown))
-        : await auditPageStyle({
-        textModel: options.textModel,
-        ...(options.decisions ? { decisions: options.decisions } : {}),
-        pageIndex: options.pageIndex,
-        finalPage: options.pageIndex === options.input.targetPages,
-        markdown: figureFreeProse(options.draft.markdown),
-        voiceGuide: options.plan.voiceGuide,
-        antiAiRules: localStyleInstructions(options.plan),
-        styleExcerpts,
-        ...(options.userRequest ? { userRequest: options.userRequest } : {})
-      });
-      report = withStyleAudit(report, audit);
-    } catch (error) {
-      if (isCancellationError(error)) {
-        throw error;
-      }
-      report = withUnavailableQualityCheck(report, "style");
-      console.warn(`Style auditor skipped for project ${options.projectId} page ${options.pageIndex}`, error);
-    }
-  }
-
-  return { report, extract, storyState };
 }
 
 export type RevisedDraftStyleAuditor = (
@@ -201,19 +37,16 @@ export type RevisedDraftStyleAuditor = (
  * Ceiling on logical re-audit attempts per page, including screens. `maxCandidates` bounds the
  * revise/review pairs but nothing counted the audits layered on top: every
  * revision the reviewer approved bought one more `auditPageStyle` call, so a
- * page oscillating between the two gates spent up to six uncounted calls on
- * top of the one `enrichPageQualityReport` already made. After this many
- * second opinions the reviewer's approval stands unaudited.
+ * page oscillating between the two gates spent up to six uncounted calls. After
+ * this many second opinions the reviewer's approval stands unaudited.
  */
 const MAX_REVISED_DRAFT_STYLE_AUDITS = 2;
 
 /**
- * The style audit for drafts the quality loop rewrites. `enrichPageQualityReport`
- * runs once, on the initial draft, so the dedicated auditor used to see exactly
- * one of up to seven candidates: a rewrite that fixed the flagged beat but
- * reintroduced excerpt-divergent register shipped through a strictly weaker
- * gate than the draft it replaced — and the auditor exists precisely because
- * the general reviewer approves pages it would reject. `runPageQualityLoop`
+ * The style audit for the drafts a reader's chat page rewrite goes through (the
+ * only loop left since 2026-10-16: no generated page is reviewed or audited,
+ * `withoutPageReview`). The auditor exists because the general reviewer
+ * approves pages it would reject. `runPageQualityLoop`
  * calls this on a revision the reviewer has approved; a flip back to
  * not-approved keeps the loop revising inside its existing candidate budget,
  * and the audits themselves are capped at `MAX_REVISED_DRAFT_STYLE_AUDITS`
@@ -222,9 +55,8 @@ const MAX_REVISED_DRAFT_STYLE_AUDITS = 2;
  * Returns undefined when the gate is off or there is nothing to compare
  * against, so `runPageQualityLoop` — its one caller, which builds it out of the
  * same excerpts it revises and reviews with — can simply skip the audit.
- * Failure degrades to the unaudited report, the same bargain
- * `enrichPageQualityReport` makes; cancellation (`isCancellationError`: abort
- * and user stop) travels out.
+ * Failure degrades to the unaudited report; cancellation (`isCancellationError`:
+ * abort and user stop) travels out.
  */
 export function revisedDraftStyleAuditor(options: {
   projectId: string;
@@ -292,85 +124,4 @@ export function mergeEntityAndStoryStateLines(
     merged.push(key);
   }
   return merged;
-}
-
-export type KeeperStoryDeltaOptions = {
-  projectId: string;
-  pageIndex: number;
-  draft: PageDraft;
-  textModel: TextModelAdapter;
-  plan: BookPlan;
-  input: CreateProjectInput;
-  previousExtract: StoryExtractResult | null;
-  keeperWasRevised: boolean;
-  currentState: StoryState;
-  quality?: QualityGateContext | undefined;
-};
-
-/**
- * The model half of `persistKeeperStoryDelta`, on its own so a caller that has
- * to publish under an ownership fence can spend the call *before* the fence and
- * leave nothing but writes behind it.
- *
- * A revised keeper is re-extracted because the review's own extract described a
- * draft that is no longer the one being saved; an unrevised keeper reuses it.
- * Either way this writes nothing, so a caller that stands down after it has
- * published no story state at all.
- */
-export async function keeperStoryExtractForSave(
-  options: KeeperStoryDeltaOptions
-): Promise<StoryExtractResult | null> {
-  const quality = options.quality ?? (await loadQualityContext(options.input));
-  if (!quality.enabled("storyExtractAudit")) {
-    return null;
-  }
-  let extract = options.previousExtract;
-  if (options.keeperWasRevised || !extract) {
-    try {
-      extract = await extractStoryState({
-        textModel: options.textModel,
-        pageIndex: options.pageIndex,
-        title: options.draft.title,
-        ...figureFreeProseFields(options.draft),
-        currentState: options.currentState
-      });
-    } catch (error) {
-      if (isCancellationError(error)) {
-        throw error;
-      }
-      console.warn(`Keeper story extract skipped for project ${options.projectId} page ${options.pageIndex}`, error);
-      return null;
-    }
-  }
-  return extract;
-}
-
-/** The write half: one delta, no provider call, nothing long to straddle. */
-export async function persistStoryExtract(options: {
-  projectId: string;
-  pageIndex: number;
-  plan: BookPlan;
-  extract: StoryExtractResult;
-  client?: Pick<Prisma.TransactionClient, "page" | "project"> | undefined;
-}): Promise<StoryState | null> {
-  const write = {
-    projectId: options.projectId,
-    pageIndex: options.pageIndex,
-    delta: options.extract.storyDelta,
-    seedPromises: options.plan.promises ?? []
-  };
-  return options.client ? persistPageStoryDelta(write, options.client) : persistPageStoryDelta(write);
-}
-
-export async function persistKeeperStoryDelta(options: KeeperStoryDeltaOptions): Promise<StoryState | null> {
-  const extract = await keeperStoryExtractForSave(options);
-  if (!extract) {
-    return null;
-  }
-  return persistStoryExtract({
-    projectId: options.projectId,
-    pageIndex: options.pageIndex,
-    plan: options.plan,
-    extract
-  });
 }

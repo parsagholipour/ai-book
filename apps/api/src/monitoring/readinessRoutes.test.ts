@@ -54,7 +54,20 @@ describe("GET /api/ready", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.json()).toEqual({
       ok: true,
-      checks: { db: "ok", redis: "ok", storage: "ok", mail: "ok", worker_long: "ok", worker_interactive: "ok", queue_long: "ok", queue_interactive: "ok" }
+      checks: {
+        db: "ok",
+        redis: "ok",
+        storage: "ok",
+        mail: "ok",
+        worker_long: "ok",
+        worker_interactive: "ok",
+        worker_images: "ok",
+        worker_compile: "ok",
+        queue_long: "ok",
+        queue_interactive: "ok",
+        queue_images: "ok",
+        queue_compile: "ok"
+      }
     });
   });
 

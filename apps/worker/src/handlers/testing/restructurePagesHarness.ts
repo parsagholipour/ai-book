@@ -97,10 +97,6 @@ vi.mock("../../generation/embeddingWrites.js", () => ({
   strategyUsesSemanticMemory: () => false,
   writePreparedEmbedding: vi.fn()
 }));
-vi.mock("../../generation/qualityEnrichment.js", () => ({
-  keeperStoryExtractForSave: async () => null,
-  persistStoryExtract: vi.fn()
-}));
 vi.mock("../../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ targetPages: 6 }) }));
 vi.mock("../../generation/qualitySettings.js", () => ({ loadQualityContext: async () => ({ enabled: () => false }) }));
 vi.mock("../../generation/storyStateStore.js", () => ({

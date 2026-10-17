@@ -15,14 +15,13 @@ import type {
 } from "./types.js";
 
 /**
- * `book.final_qa.chapter_transitions` and `review-manuscript-structure` are
- * passed by apps/worker compile handlers, which this core test does not read;
- * the worker's own suites exercise the calls that carry them.
+ * Mechanical purposes passed only by apps/worker, which this core test does not
+ * read. None today: the compile's chapter-transition sweep
+ * (`book.final_qa.chapter_transitions`) and structural adjudicator
+ * (`review-manuscript-structure`) were removed on 2026-10-16, and the defect
+ * screen's `final-book-qa` is passed by core.
  */
-const PURPOSES_EMITTED_OUTSIDE_CORE: ReadonlySet<string> = new Set([
-  "book.final_qa.chapter_transitions",
-  "review-manuscript-structure"
-]);
+const PURPOSES_EMITTED_OUTSIDE_CORE: ReadonlySet<string> = new Set<string>([]);
 
 /**
  * Every other purpose core passes today: the prose writers and revisers, the
@@ -40,7 +39,6 @@ const PROSE_LANE_PURPOSES: ReadonlySet<string> = new Set([
   "generate-page",
   "generate-page-batch",
   "write-page-with-tools",
-  "polish-page",
   "revise-page",
   "patch-page", // Writes replacement prose; keeps the existing edit-model route.
   "plan-book",
@@ -184,7 +182,7 @@ describe("RoutingTextModelAdapter", () => {
   it("routes prose and unknown purposes to the prose model", async () => {
     const { prose, routing } = routedAdapters();
 
-    for (const purpose of ["generate-page", "plan-book", "polish-page", "inventory-brief-requirements", "some-future-purpose"]) {
+    for (const purpose of ["generate-page", "plan-book", "revise-page", "inventory-brief-requirements", "some-future-purpose"]) {
       const result = await routing.generateJson({ messages: [], purpose, schema: undefined as never });
       expect(result.model).toBe("prose-model");
     }

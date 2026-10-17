@@ -320,15 +320,25 @@ class MobileGenerationRecoveryQuote {
 }
 
 class MobilePlanningProgress {
-  const MobilePlanningProgress({required this.percent, required this.steps});
+  const MobilePlanningProgress({
+    required this.percent,
+    required this.steps,
+    this.estimatedSecondsLeft,
+  });
 
   final int percent;
+
+  /// Seconds until the plan is ready, as the server estimated them when it
+  /// sent this status. Null whenever the server has no number worth showing
+  /// (and from a server that predates the field); the words are the app's.
+  final int? estimatedSecondsLeft;
   final List<MobileProjectStatusStep> steps;
 
   factory MobilePlanningProgress.fromJson(Map<String, dynamic> json) {
     final rawSteps = json['steps'] as List<dynamic>? ?? const [];
     return MobilePlanningProgress(
       percent: ((json['percent'] as num?)?.round() ?? 0).clamp(0, 100),
+      estimatedSecondsLeft: _secondsLeftFromJson(json['estimatedSecondsLeft']),
       steps: rawSteps
           .whereType<Map>()
           .map(
@@ -350,10 +360,15 @@ class MobileGenerationProgress {
     required this.percent,
     required this.steps,
     this.detail,
+    this.estimatedSecondsLeft,
   });
 
   final int percent;
   final String? detail;
+
+  /// Seconds until the book is ready, as [MobilePlanningProgress]'s are for a
+  /// plan. An edit's progress never carries one.
+  final int? estimatedSecondsLeft;
   final List<MobileProjectStatusStep> steps;
 
   factory MobileGenerationProgress.fromJson(Map<String, dynamic> json) {
@@ -361,6 +376,7 @@ class MobileGenerationProgress {
     final detail = (json['detail'] as String?)?.trim();
     return MobileGenerationProgress(
       percent: ((json['percent'] as num?)?.round() ?? 0).clamp(0, 100),
+      estimatedSecondsLeft: _secondsLeftFromJson(json['estimatedSecondsLeft']),
       detail: detail == null || detail.isEmpty ? null : detail,
       steps: rawSteps
           .whereType<Map>()
@@ -371,6 +387,13 @@ class MobileGenerationProgress {
           .toList(),
     );
   }
+}
+
+/// The server's `estimatedSecondsLeft`: whole seconds, or null for anything
+/// that is not a number of them.
+int? _secondsLeftFromJson(Object? value) {
+  if (value is! num || !value.isFinite || value < 0) return null;
+  return value.round();
 }
 
 class MobileProjectQuality {

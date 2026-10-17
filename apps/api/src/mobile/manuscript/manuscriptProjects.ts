@@ -56,7 +56,6 @@ export function studioProjectInput(options: { title: string; kind: StudioKind; l
     includeCover: includeCoverForSource("design"),
     coverArtSource: "design",
     coverTemplate: "auto",
-    finalReview: false,
     toneProfile: "neutral",
     modelTier: quality.modelTier,
     mobile: {

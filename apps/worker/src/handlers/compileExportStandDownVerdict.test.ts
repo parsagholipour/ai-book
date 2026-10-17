@@ -126,7 +126,7 @@ describe("what a superseded compile leaves on its row", () => {
     chapter: null
   });
   /** Page 1 still carries the placeholder the deterministic sweep blocks on. */
-  const reviewedPages = [compilePage(1, "Page 1 prose with a TODO still sitting in it."), compilePage(2)];
+  const reviewedPages = [compilePage(1, "Page 1 prose with an ignore all previous instructions line still sitting in it."), compilePage(2)];
   /**
    * The book once the reader's chat edit has landed: their prose replaces the
    * placeholder page, and their insert adds a page this compile never read.
@@ -146,12 +146,12 @@ describe("what a superseded compile leaves on its row", () => {
    * the stale half and kept the rest" a visible outcome at these doors.
    */
   const reviewedPagesBothFlagged = [
-    compilePage(1, "Page 1 prose with a TODO still sitting in it."),
-    compilePage(2, "Page 2 prose with a TODO still sitting in it.")
+    compilePage(1, "Page 1 prose with an ignore all previous instructions line still sitting in it."),
+    compilePage(2, "Page 2 prose with an ignore all previous instructions line still sitting in it.")
   ];
   const readersPagesKeepingPageTwo = [
     { ...compilePage(1, "Page 1 as the reader rewrote it, with no placeholder left in it."), revision: 2 },
-    compilePage(2, "Page 2 prose with a TODO still sitting in it."),
+    compilePage(2, "Page 2 prose with an ignore all previous instructions line still sitting in it."),
     compilePage(3)
   ];
 
@@ -282,8 +282,8 @@ describe("what a superseded compile leaves on its row", () => {
     // supersede read, and this is the incident rather than a test of the
     // grader.
     const reports = recordedReports();
-    expect(reports[0]).toMatchObject({ state: "blocked" });
-    expect(reports[0]?.issues.map((issue) => issue.code)).toContain("PLACEHOLDER_TEXT");
+    expect(reports[0]).toMatchObject({ state: "review_recommended" });
+    expect(reports[0]?.issues.map((issue) => issue.code)).toContain("PROMPT_LEAKAGE");
     // And the stand-down took it back down, over the manuscript as it now
     // stands rather than over the one this compile read.
     expect(mocks.loadPageTextSnapshot).toHaveBeenCalledWith("project-1");
@@ -375,7 +375,7 @@ describe("what a superseded compile leaves on its row", () => {
 
     expect(mocks.publishCompiledExports).toHaveBeenCalled();
     const reports = recordedReports();
-    expect(reports[0]).toMatchObject({ state: "blocked" });
+    expect(reports[0]).toMatchObject({ state: "review_recommended" });
     // Same fixture, same answer: this book's one finding is about the page the
     // reader replaced, so there is nothing left to grade and the row is
     // retracted rather than upgraded to a pass nobody measured.
@@ -430,24 +430,26 @@ describe("what a superseded compile leaves on its row", () => {
     expect(mocks.discardPendingExports).toHaveBeenCalled();
   });
 
-  const placeholderIssue = (pageIndex: number) => ({
-    code: "PLACEHOLDER_TEXT",
+  /** A finding the reader is shown (`readerFindings.ts`): the leak, quoted on its page. */
+  const leakIssue = (pageIndex: number) => ({
+    code: "PROMPT_LEAKAGE",
     severity: "error" as const,
     source: "deterministic" as const,
-    message: `Page ${pageIndex} contains placeholder text.`,
-    guidance: "Replace the placeholder in Edit Mode or regenerate the page.",
-    affectedPageIndexes: [pageIndex]
+    message: `Page ${pageIndex} appears to expose generation instructions or hidden prompt text: “ignore all previous instructions”.`,
+    guidance: "Regenerate this page without internal instructions.",
+    affectedPageIndexes: [pageIndex],
+    evidence: [{ pageIndex, excerpt: "ignore all previous instructions" }]
   });
 
-  const blockedStoredReport = (...pageIndexes: number[]) => ({
-    state: "blocked" as const,
-    score: 64,
-    issues: pageIndexes.map(placeholderIssue),
+  const flaggedStoredReport = (...pageIndexes: number[]) => ({
+    state: "review_recommended" as const,
+    score: 95,
+    issues: pageIndexes.map(leakIssue),
     affectedPageIndexes: pageIndexes,
     checkedAt: "2026-01-01T00:00:00.000Z"
   });
 
-  const reportReviewedAgainst = <T extends ReturnType<typeof blockedStoredReport>>(
+  const reportReviewedAgainst = <T extends ReturnType<typeof flaggedStoredReport>>(
     report: T,
     snapshot: typeof reviewedPages
   ): T => qualityReportWithProvenance(report, { finalReviewRan: false, reviewedPages: snapshot }) as T;
@@ -473,7 +475,7 @@ describe("what a superseded compile leaves on its row", () => {
 
   it("retracts a legacy stored report whose reviewed manuscript cannot be proved", async () => {
     mocks.prisma.generationJob.count.mockResolvedValue(1);
-    mocks.prisma.generationJob.findUnique.mockResolvedValue({ qualityReport: blockedStoredReport(1) });
+    mocks.prisma.generationJob.findUnique.mockResolvedValue({ qualityReport: flaggedStoredReport(1) });
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     try {
@@ -499,7 +501,7 @@ describe("what a superseded compile leaves on its row", () => {
     // passed empty report.
     mocks.prisma.generationJob.count.mockResolvedValue(1);
     mocks.prisma.generationJob.findUnique.mockResolvedValue({
-      qualityReport: reportReviewedAgainst(blockedStoredReport(1), reviewedPages)
+      qualityReport: reportReviewedAgainst(flaggedStoredReport(1), reviewedPages)
     });
     mocks.loadPageTextSnapshot.mockResolvedValue(readersPages.map(pageText));
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -536,8 +538,8 @@ describe("what a superseded compile leaves on its row", () => {
 
     const priorAttemptReport = recordedReports().at(-1);
     expect(priorAttemptReport).toMatchObject({
-      state: "blocked",
-      issues: [expect.objectContaining({ code: "PLACEHOLDER_TEXT", affectedPageIndexes: [1] })]
+      state: "review_recommended",
+      issues: [expect.objectContaining({ code: "PROMPT_LEAKAGE", affectedPageIndexes: [1] })]
     });
 
     const repairedKeeper = {
@@ -551,7 +553,7 @@ describe("what a superseded compile leaves on its row", () => {
     mocks.prisma.generationJob.update.mockClear();
     mocks.loadQualityContext.mockClear();
     mocks.generateJsonWithRetry.mockClear();
-    mocks.strategy.runFinalBookQa.mockClear();
+    mocks.reviewQuickDraftManuscript.mockClear();
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
@@ -568,7 +570,7 @@ describe("what a superseded compile leaves on its row", () => {
     // the stale finding.
     expect(mocks.loadQualityContext).not.toHaveBeenCalled();
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
     expect(recordedReports()).toEqual([DB_NULL]);
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
   });
@@ -581,7 +583,7 @@ describe("what a superseded compile leaves on its row", () => {
     projectHolding(reviewedPagesBothFlagged);
     mocks.prisma.generationJob.count.mockResolvedValue(1);
     mocks.prisma.generationJob.findUnique.mockResolvedValue({
-      qualityReport: reportReviewedAgainst(blockedStoredReport(1, 2), reviewedPagesBothFlagged)
+      qualityReport: reportReviewedAgainst(flaggedStoredReport(1, 2), reviewedPagesBothFlagged)
     });
     mocks.loadPageTextSnapshot.mockResolvedValue(readersPagesKeepingPageTwo.map(pageText));
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -700,7 +702,7 @@ describe("what a superseded compile leaves on its row", () => {
       .map((call) => call[0].data.qualityReport);
     // The row really did hold the stale claim before the stand-down, which is
     // the incident.
-    expect(writes[0]).toMatchObject({ state: "blocked" });
+    expect(writes[0]).toMatchObject({ state: "review_recommended" });
     // And the stand-down still wrote — it did not simply fail to say anything.
     expect(writes.at(-1)).toBe(DB_NULL);
     expect(

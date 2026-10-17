@@ -22,7 +22,8 @@ import {
   AI_DAILY_LIMIT_MESSAGE,
   AI_PAUSED_FREE_MONTH_MESSAGE,
   AI_PAUSED_FREE_TODAY_MESSAGE,
-  AI_PAUSED_MESSAGE
+  AI_PAUSED_MESSAGE,
+  speculativeWorkAllowed
 } from "./aiCapacity.js";
 import { bearer, buildMobileApp, jobRecord, mockAccessTokens, mockPrisma, projectRecord, teardownMobileHarness } from "./testing/mobileApiHarness.js";
 import { buildVoiceApp, resetVoiceCallTestState } from "./testing/voiceCallTestUtils.js";
@@ -265,6 +266,13 @@ describe("the AI spend breaker at the doors", () => {
       const balanced = await app.inject({ method: "POST", url: "/api/mobile/plans/plan-1/approve", headers: bearer("token-a") });
       expect(balanced.json().error?.code).not.toBe("AI_BUSY");
       await app.close();
+    });
+
+    it("withholds the unbilled composition prep from a free account's plan, and grants a paying one's (H4)", async () => {
+      await buildMobileApp();
+      expect(await speculativeWorkAllowed("user-a")).toBe(false);
+      vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(true);
+      expect(await speculativeWorkAllowed(SUBSCRIBER)).toBe(true);
     });
 
     it("leaves a paying account's narration alone", async () => {

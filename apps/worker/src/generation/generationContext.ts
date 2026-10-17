@@ -201,14 +201,23 @@ export async function loadContinuityNotes(
   return ranked.reverse();
 }
 
+/** A research row gathered in memory and not yet written: the shape `recordDossierSources` and the expansion write. */
+export type PendingResearchRow = { query: string; title: string; url?: string | null | undefined; summary: string };
+
 export async function loadResearchNotesForGeneration(
   projectId: string,
   strategy: BookGenerationStrategy,
   chapter?: ChapterPlan | undefined,
-  semantic?: { embedding: EmbeddingAdapter; queryText: string; vector?: number[] | undefined } | undefined
+  semantic?: { embedding: EmbeddingAdapter; queryText: string; vector?: number[] | undefined } | undefined,
+  /**
+   * Rows a composed run has gathered but not written yet (harness redesign H4): a chapter composes once its own
+   * material settles, while the rows of the whole book are written once every chapter's has. They read as the
+   * newest rows; one the table already holds is read once.
+   */
+  pendingRows: readonly PendingResearchRow[] = []
 ): Promise<string[]> {
   const take = strategy.researchDepth ? strategy.researchDepth + 12 : 12;
-  const [retrieved, storedSources] = await settleIndependentLoads([
+  const [retrieved, tableSources] = await settleIndependentLoads([
     semantic
       ? retrieveSemanticResearchNotes({
           projectId,
@@ -229,6 +238,12 @@ export async function loadResearchNotesForGeneration(
       ...(semantic || chapter ? {} : { take })
     })
   ]);
+  const rowKey = (row: { query: string; title: string; url?: string | null | undefined; summary: string }) => `${row.query}\n${row.title}\n${row.url ?? ""}\n${row.summary}`;
+  const stored = new Set(tableSources.map(rowKey));
+  const storedSources = [
+    ...pendingRows.filter((row) => !stored.has(rowKey(row))).map((row) => ({ query: row.query, title: row.title, url: row.url ?? null, summary: row.summary })),
+    ...tableSources
+  ];
   // The Sources back matter can cite only rows with a real URL. Keep the
   // generation contract on the same boundary: URL-less grounding/bootstrap
   // summaries are useful planner context, but cannot satisfy a request to name
@@ -245,7 +260,9 @@ export async function loadResearchNotesForGeneration(
 
   const chapterTerms = searchableTerms(`${chapter.title} ${chapter.summary} ${chapter.keyBeats.join(" ")}`);
   // A chapter's own query carries its title, so its rows outrank every other
-  // chapter's; within a rank the brief comes first, then by shared terms. Word
+  // chapter's: its chapter-research query, or on a sourced composed book each
+  // of its leads' answers (`<chapter title>: <lead query>`, core
+  // `leadResearch.ts`). Within a rank the briefs come first, then by shared terms. Word
   // overlap alone put three chapters' briefs ahead of chapter 1's own.
   // Another chapter's brief is 900 words of another chapter; with a flat
   // bonus every brief outranked the chapter's own sources and each writer

@@ -21,8 +21,11 @@ const mocks = vi.hoisted(() => ({
   txPlanVersionCreate: vi.fn(),
   txPlanVersionUpdate: vi.fn(),
   txPlanVersionUpdateMany: vi.fn(),
-  txProjectUpdateMany: vi.fn()
+  txProjectUpdateMany: vi.fn(),
+  enqueueWorkerJob: vi.fn(),
+  strategy: { executionMode: "composed-chapters" as string }
 }));
+vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorkerJob }));
 
 vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma, Prisma: {}, researchScope: (id: string) => `research:${id}`,
@@ -64,7 +67,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
   // The real deep clone, not a stub: the mediaSettings write-back merge is one
   // of the behaviors these tests exist to pin down.
   planMediaSettingsSnapshot: (input: { mediaSettings: unknown }) => JSON.parse(JSON.stringify(input.mediaSettings)),
-  strategyForInput: () => ({ createPlan: mocks.createPlan, revisePlan: mocks.revisePlan })
+  strategyForInput: () => ({ createPlan: mocks.createPlan, revisePlan: mocks.revisePlan, executionMode: mocks.strategy.executionMode })
 }));
 vi.mock("../generation/qualitySettings.js", () => ({
   loadQualityContext: async () => ({
@@ -245,6 +248,26 @@ describe("revisePlan guards", () => {
     await revisePlan(reviseJob({ operationId: "op-1" }));
 
     expect(mocks.revisePlan).toHaveBeenCalled();
+  });
+});
+
+describe("revisePlan and the composition prep", () => {
+  it("revises the plan without anything the prep stored for it, and queues the revised plan's own prep", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({
+      id: "plan-1",
+      inputSnapshot,
+      planningPackage: {
+        title: "Current", chapters: [], authorStance: { thesis: "The planner's" }, episodes: { chapters: [] },
+        compositionPrep: { version: 1, generationJobId: "prep", fingerprint: "f", planned: ["episodes"], steps: { episodes: "stored" }, written: ["episodes"] }
+      },
+      messages: [],
+      project: { id: "project-1", currentPlanId: "plan-1", mediaSettings: null }
+    });
+    const completion = await revisePlan(reviseJob({ prepareComposition: true }));
+    expect(mocks.revisePlan).toHaveBeenCalledWith(expect.objectContaining({ currentPlan: { title: "Current", chapters: [], authorStance: { thesis: "The planner's" } } }));
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "PLAN_READY", currentPlanId: "plan-2" });
+    await completion.afterJobCompleted?.();
+    expect(mocks.enqueueWorkerJob).toHaveBeenCalledWith(expect.objectContaining({ type: "PREPARE_COMPOSITION", dedupeKey: "prepare-composition:plan-2" }));
   });
 });
 
@@ -468,6 +491,25 @@ describe("planBook", () => {
       data: expect.objectContaining({ status: "COMPLETED" })
     }));
     expect(completion).toEqual({ durableCompletionCommitted: true });
+  });
+
+  it("queues the speculative composition prep after the plan only when its door asked for it, and only for a composed book", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "PLAN_READY", currentPlanId: "plan-2" });
+    expect(await planBook(planJob())).toEqual({ durableCompletionCommitted: true });
+    const completion = await planBook({ data: { projectId: "project-1", generationJobId: "gj-plan", prepareComposition: true } } as unknown as Job);
+    await completion.afterJobCompleted?.();
+    expect(mocks.enqueueWorkerJob).toHaveBeenCalledWith({
+      projectId: "project-1", type: "PREPARE_COMPOSITION", payload: { planId: "plan-2" }, dedupeKey: "prepare-composition:plan-2", attemptIdOverride: null
+    });
+    // A plan a revision or an approval has already moved past gets none, and neither does a book written page by page.
+    mocks.enqueueWorkerJob.mockClear();
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", currentPlanId: "plan-2" });
+    await completion.afterJobCompleted?.();
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "PLAN_READY", currentPlanId: "plan-2" });
+    mocks.strategy.executionMode = "sequential-pages";
+    await (await planBook({ data: { projectId: "project-1", generationJobId: "gj-plan", prepareComposition: true } } as unknown as Job)).afterJobCompleted?.();
+    mocks.strategy.executionMode = "composed-chapters";
+    expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
   });
 
   it("does not re-insert research sources a previous delivery already saved", async () => {

@@ -53,6 +53,19 @@ function legacyPageIllustrationKeeperToken(page: PageIllustrationKeeper): string
   return createHash("sha256").update(JSON.stringify(projection)).digest("hex").slice(0, 24);
 }
 
+/**
+ * The durable identity of one page picture: one row per page, plan, keeper
+ * revision and keeper token (the attempt suffix is `enqueueWorkerJob`'s). Every
+ * producer spells it through here, because the draft-time enqueue
+ * (`draftIllustrations.ts`) is only free when the publication and finalization
+ * enqueues for the same unchanged keeper land on its row instead of a new one.
+ */
+export function pageIllustrationJobDedupeKey(options: {
+  pageId: string; planId: string; revision: number; keeperToken: string;
+}): string {
+  return `generate-image:${options.pageId}:${options.planId}:${options.revision}:${options.keeperToken}`;
+}
+
 /** Current token first, followed by the one token-era migration alias. */
 export function pageIllustrationKeeperTokens(page: PageIllustrationKeeper): readonly [string, string] {
   return [pageIllustrationKeeperToken(page), legacyPageIllustrationKeeperToken(page)];

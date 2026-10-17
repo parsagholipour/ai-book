@@ -153,9 +153,10 @@ export const DEFAULT_CREDIT_COSTS = {
   // non-picture book, a 30-page illustrated workbook, is 905 plus its 40-credit
   // plan, and the largest picture book — 30 pages, twelve pictures
   // (`pictureBookIllustrationCap`), a drawn cover — is 1,175 plus its plan:
-  // 1,215. 1,150 left every picture book of 22 pages or more out (migration
-  // 000110 moves an installation still on it); `welcomeCredits.test.ts` in core
-  // walks every free length.
+  // 1,215. Under the picture-a-page rule before 2026-10-17, 1,150 left every
+  // picture book of 22 pages or more out (migration 000110 moves an
+  // installation still on it); `welcomeCredits.test.ts` in core walks every
+  // free length.
   welcomeCredits: 1_250,
   welcomeCreditsEnabled: 1,
   welcomeCreditsRegionalEnabled: 0,

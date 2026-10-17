@@ -2,9 +2,9 @@ import { getProjectOrThrow, strategyForInput } from "../generation/bookHelpers.j
 import {
   generateBookBatchWindow,
   generateBookChapterWholePass,
-  generateBookDraftThenPolish,
   generateBookWholePass
 } from "../generation/bookPasses.js";
+import { generateBookDraftThenPolish } from "../generation/draftThenPolish.js";
 import { generateBookComposedChapters } from "../generation/composedChaptersPass.js";
 import { prepareChapterSetups } from "../generation/bookState.js";
 import { ensureCharacterReferenceAssets } from "../generation/characterReferences.js";
@@ -12,7 +12,8 @@ import { strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { embedResearchSourcesForProject } from "../generation/researchMemory.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { generateReplannedBook } from "../generation/replanEditCandidates.js";
-import { createLoggedJudgeTextModel, createLoggedProviders } from "../providers/loggedAdapters.js";
+import { chapterResearchReadiness } from "../generation/chapterResearchReadiness.js";
+import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { createRunLogger } from "../providers/runLogging.js";
 import { config } from "../runtime/config.js";
 import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover, parallelPageWaveSize } from "../runtime/dispatch.js";
@@ -25,11 +26,14 @@ import {
   jsonPayloadToRecord,
   preparePictureBookRequirementContract,
   usesCompactPictureBookPlanning,
+  scopedResearchPlan,
   seedStoryStateFromPromises,
   type BookGenerationStrategy,
   type BookPlan,
+  type ChapterResearchScope,
   type CreateProjectInput,
-  type ProviderSet
+  type ProviderSet,
+  type ResearchSource
 } from "@book-maker/core";
 import { Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
 import type { GenerateBookJob } from "../runtime/jobPayloads.js";
@@ -103,16 +107,23 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
   }
 
   // The composed pass starts the expansion itself: once its stance has said
-  // the book is written from sources (a novel searches nothing), beside the
-  // material and the form plan, since the notes are read only when a chapter
-  // is composed — and silently, since its step would move the bar back under
-  // theirs (2026-09-30: 17 s of a Quick Draft book). The finally keeps a
-  // failed pass from leaving it writing rows behind the job.
+  // the book is written from sources (a novel searches nothing) and its
+  // episodes are settled, beside the dossier and the form plan, since the
+  // notes are read only when a chapter is composed — and silently, since its
+  // step would move the bar back under theirs (2026-09-30: 17 s of a Quick
+  // Draft book). Its scope leaves out every chapter whose leads' answers are
+  // its notes (core `leadResearch.ts`). The finally keeps a failed pass from
+  // leaving it writing rows behind the job.
   const composed = strategy.executionMode === "composed-chapters";
   let research: Promise<{ error: unknown } | undefined> | undefined;
-  const startResearch = () => {
-    research ??= maybeExpandStrategyResearch({ projectId, input, plan, providers, strategy, generationJobId, announce: !composed })
+  // A composed chapter waits for its own chapter's search, not the whole expansion (harness redesign H4).
+  const readiness = chapterResearchReadiness(plan);
+  const startResearch = (scope?: ChapterResearchScope) => {
+    if (research) return;
+    research = maybeExpandStrategyResearch({ projectId, input, plan: scope ? scopedResearchPlan(plan, scope) : plan, providers, strategy, generationJobId, announce: !composed,
+      ...(composed ? { onQuery: readiness.onQuery } : {}) })
       .then(() => undefined, (error: unknown) => ({ error }));
+    if (composed) readiness.started(scope, research);
   };
   const researchReady = async () => {
     const failed = await research;
@@ -178,9 +189,8 @@ export async function generateBook(job: GenerateBookJob): Promise<JobCompletion>
           providers,
           strategy,
           generationJobId,
-          judgeTextModel: createLoggedJudgeTextModel(job, input),
           runLog: createRunLogger(job),
-          research: { start: startResearch, ready: researchReady }
+          research: { start: startResearch, ready: researchReady, readyFor: readiness.readyFor, pendingRows: readiness.pendingRows }
         });
       } finally {
         await research;
@@ -441,6 +451,8 @@ export async function maybeExpandStrategyResearch(options: {
   generationJobId?: string | undefined;
   /** False when it runs beside another step that owns the progress bar. */
   announce?: boolean | undefined;
+  /** Each query's rows as it settles, before the expansion writes them all (`chapterResearchReadiness.ts`). */
+  onQuery?: ((query: string, rows: readonly ResearchSource[]) => void) | undefined;
 }) {
   const cap = options.strategy.researchDepth ?? 0;
   if (cap <= 0) {
@@ -472,7 +484,8 @@ export async function maybeExpandStrategyResearch(options: {
     input: options.input,
     plan: options.plan,
     research: options.providers.research,
-    cap
+    cap,
+    ...(options.onQuery ? { onQuery: options.onQuery } : {})
   });
   if (sources.length === 0) {
     return;

@@ -194,6 +194,7 @@ function durableOperation(editInstruction: string) {
   };
 }
 
+// The page's local checks take no `figures`: only a revise is told whether a figure is held or kept.
 type ReviewCall = { draft: { index: number; markdown: string }; figures?: "keep" | "hold" };
 
 function reviewCalls(): ReviewCall[] {
@@ -347,7 +348,6 @@ describe("generateReplannedBook figure preservation", () => {
     await completion.afterJobCompleted?.();
 
     const page2 = reviewCalls().find((call) => call.draft.index === 2);
-    expect(page2?.figures).toBe("hold");
     expect(page2?.draft.markdown).toContain("[Figure: Carts by decade]");
     expect(page2?.draft.markdown).not.toContain("```figure");
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
@@ -373,7 +373,6 @@ describe("generateReplannedBook figure preservation", () => {
       })
     );
     const lastReview = reviewCalls().at(-1);
-    expect(lastReview?.figures).toBe("hold");
     expect(lastReview?.draft.markdown).toContain("[Figure: Carts by decade]");
     expect(lastReview?.draft.markdown).not.toContain("```figure");
     expect(publishedMarkdown(2)).toContain("```figure");
@@ -404,8 +403,6 @@ describe("generateReplannedBook figure preservation", () => {
         })
       })
     );
-    const lastReview = reviewCalls().at(-1);
-    expect(lastReview?.figures).toBe("keep");
     expect(publishedMarkdown(2)).toContain("```figure");
     expect(publishedMarkdown(2)).toContain("Carts by decade");
     expect(publishedMarkdown(2)).toContain('"kind":"bar"');
@@ -431,7 +428,6 @@ describe("generateReplannedBook figure preservation", () => {
         reviseOptions: expect.objectContaining({ figures: "keep" })
       })
     );
-    expect(reviewCalls().at(-1)?.figures).toBe("keep");
     expect(publishedMarkdown(2)).not.toContain("```figure");
   });
 

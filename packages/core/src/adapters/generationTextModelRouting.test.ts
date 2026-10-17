@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../config.js";
 import { generateJsonWithRetry } from "../generation/generateJsonWithRetry.js";
 import { OPENROUTER_GLM_53_FLASH_MODEL } from "./openrouterModels.js";
@@ -11,7 +11,6 @@ import {
 import { ProviderHttpError } from "./retry.js";
 import {
   compiledGenerationTextModelRouting,
-  generationStageRoute,
   generationTextModelOptionKey,
   isJevSelection,
   JEV_SELECTION,
@@ -26,19 +25,6 @@ import type {
   TextModelAdapter,
   TextResult
 } from "./types.js";
-
-it("inherits continuity routing from the saved page review until explicitly configured", () => {
-  const config = testConfig({});
-  const routing = compiledGenerationTextModelRouting(config, generationTextModelOptions(config));
-  const saved = { primary: { provider: "openai", model: "gpt-6-luna", thinkingEffort: "low" },
-    fallback: { provider: "openai", model: "gpt-6-sol", thinkingEffort: "medium" } } as const;
-  routing.balanced.stages = { "review-page": saved };
-  expect(generationStageRoute(routing, "balanced", "review-picture-book-continuity")).toEqual(saved);
-  const explicit = { primary: { provider: "openai", model: "gpt-6-sol", thinkingEffort: "high" }, fallback: saved.fallback } as const;
-  routing.balanced.stages["review-picture-book-continuity"] = explicit;
-  expect(generationStageRoute(routing, "balanced", "review-picture-book-continuity")).toEqual(explicit);
-  expect(generationStageRoute(routing, "balanced", "review-page")).toEqual(saved);
-});
 
 describe("generation text model routing", () => {
   it("sends the admin-selected Ultra effort to the chapter adapter unchanged", async () => {
@@ -97,7 +83,7 @@ describe("generation text model routing", () => {
         judgmentFallback: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false }
       }
     });
-    expect(resolveGenerationTextModelRouting({ planCritic: ["premium"] }, defaults)).toEqual(materializeGenerationStages(defaults));
+    expect(resolveGenerationTextModelRouting({ pageMapCritic: ["premium"] }, defaults)).toEqual(materializeGenerationStages(defaults));
   });
 
   it("uses the next configured catalog option when a default provider is unavailable", () => {
@@ -247,24 +233,31 @@ describe("generation text model routing", () => {
     expect(calls).toEqual(["inline-fast", "inline-fast"]);
   });
 
-  it("uses the selected fallback once for an availability failure", async () => {
-    const config = testConfig({});
-    const calls: string[] = [];
-    const events: string[] = [];
-    const routing = routingWithBalancedWriter("primary-writer");
-    routing.balanced.writerFallback = { provider: "deepseek", model: "fallback-writer" };
-    const live = new LiveGenerationTextModelAdapter(config, {
-      tier: "balanced",
-      loadRouting: async () => routing,
-      createAdapter: (selection) => new AvailabilityAdapter(selection.model, calls),
-      onFallbackEvent: (event) => void events.push(event.event)
-    });
+  it("retries the primary once, then uses the selected fallback once, for an availability failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const config = testConfig({});
+      const calls: string[] = [];
+      const events: string[] = [];
+      const routing = routingWithBalancedWriter("primary-writer");
+      routing.balanced.writerFallback = { provider: "deepseek", model: "fallback-writer" };
+      const live = new LiveGenerationTextModelAdapter(config, {
+        tier: "balanced",
+        loadRouting: async () => routing,
+        createAdapter: (selection) => new AvailabilityAdapter(selection.model, calls),
+        onFallbackEvent: (event) => void events.push(event.event)
+      });
 
-    const result = await live.generateText({ messages: [], purpose: "generate-page" });
+      const pending = live.generateText({ messages: [], purpose: "generate-page" });
+      await vi.runAllTimersAsync();
+      const result = await pending;
 
-    expect(result.model).toBe("fallback-writer");
-    expect(calls).toEqual(["primary-writer", "fallback-writer"]);
-    expect(events).toEqual(["fallback.start", "fallback.success"]);
+      expect(result.model).toBe("fallback-writer");
+      expect(calls).toEqual(["primary-writer", "primary-writer", "fallback-writer"]);
+      expect(events).toEqual(["fallback.primary_retry", "fallback.start", "fallback.success"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("throws at construction when MOCK_AI is off and no text provider is configured", () => {

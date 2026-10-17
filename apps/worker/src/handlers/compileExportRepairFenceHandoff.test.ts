@@ -38,13 +38,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -78,7 +71,8 @@ describe("compile final-QA repair fence replacement handoff", () => {
     complexity: 3,
     temperature: 0.6,
     language: "en",
-    mediaSettings: { finalReview: true }
+    // The defect screen and its scoped repair are the compile's one review and repair.
+    mediaSettings: { modelTier: "fast" }
   };
   const plan = { title: input.title, premise: "A walk home.", audience: "adults", chapters: [] };
   const version = new Date("2026-01-01T00:00:00.000Z");
@@ -95,15 +89,6 @@ describe("compile final-QA repair fence replacement handoff", () => {
     images: [],
     chapter: null
   }));
-  const repairedPageOne = {
-    ...pages[0]!,
-    title: "Repaired page 1",
-    markdown: "Repaired prose for page 1.",
-    summary: "Repaired summary for page 1.",
-    imagePrompt: "The repaired scene.",
-    revision: 2,
-    updatedAt: new Date("2026-01-01T00:00:00.002Z")
-  };
   const storageDirs: string[] = [];
 
   beforeEach(async () => {
@@ -132,32 +117,14 @@ describe("compile final-QA repair fence replacement handoff", () => {
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: isDefaultCompileQualityFeature });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: repairedPageOne.title,
-      markdown: repairedPageOne.markdown,
-      summary: repairedPageOne.summary,
-      imagePrompt: repairedPageOne.imagePrompt,
-      continuityNotes: []
-    });
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: vi.fn().mockResolvedValue({
-        approved: true,
-        score: 90,
-        issues: [],
-        requiredRevisions: [],
-        notes: "",
-        checks: { repetitionOk: true, progressionOk: true }
-      }),
-      revisePageDraft: vi.fn(),
-      repairPageBrief: vi.fn(),
-      shouldIllustratePage: () => true
-    });
+    mocks.reviewQuickDraftManuscript.mockResolvedValue({ approved: false, score: 60, notes: "Focused screen.",
+      issues: ["Page 1: The walk starts twice."], requiredFixes: ["Page 1: Start it once."],
+      focusedReview: { rejectedFindings: 0, repairGroups: [[1]], findings: [{ targets: [1], kind: "duplicate",
+        problem: "The walk starts twice.", fix: "Start it once.",
+        evidence: [{ pageIndex: 1, quote: "Original prose for page 1." }, { pageIndex: 2, quote: "Original prose for page 2." }] }] } } as never);
+    mocks.repairQuickDraftPages.mockReset().mockImplementation(async ({ pages: book }) =>
+      book.map((page) => page.index === 1 ? { ...page, markdown: "Repaired prose for page 1." } : page));
+    Object.assign(mocks.strategy, { shouldIllustratePage: () => true });
     mocks.prisma.page.update.mockImplementation(async ({ where, data }) => ({
       ...pages.find((page) => page.id === where.id),
       ...data,
@@ -176,12 +143,14 @@ describe("compile final-QA repair fence replacement handoff", () => {
     };
     mocks.exportPublicationSuperseded.mockImplementation(barrierAnswer);
     mocks.prisma.project.updateMany.mockImplementation(async () => ({ count: (await barrierAnswer()) ? 0 : 1 }));
+    // The scoped repair publishes its group in one transaction, so a fence that goes dark at its
+    // claim leaves the manuscript exactly as it was read.
     mocks.loadPagesForExport.mockImplementation(async () => {
       databaseUnreachable = false;
-      return [repairedPageOne, pages[1]!];
+      return pages;
     });
     mocks.loadPageTextSnapshot.mockResolvedValue(
-      [repairedPageOne, pages[1]!].map(({ index, title, markdown, revision }) => ({
+      pages.map(({ index, title, markdown, revision }) => ({
         index,
         title,
         markdown,
@@ -191,14 +160,14 @@ describe("compile final-QA repair fence replacement handoff", () => {
   });
 
   afterEach(async () => {
-    for (const key of ["reviewPageDraft", "revisePageDraft", "repairPageBrief", "shouldIllustratePage"]) {
+    for (const key of ["shouldIllustratePage"]) {
       delete (mocks.strategy as Record<string, unknown>)[key];
     }
     await Promise.all(storageDirs.map((dir) => rm(dir, { recursive: true, force: true })));
     storageDirs.length = 0;
   });
 
-  it("defers final illustrations after a partial repair fence outage without republishing the old snapshot", async () => {
+  it("defers final illustrations after a repair fence outage, writing no page, and hands the compile to a successor", async () => {
     mocks.enqueueFinalizationIllustrations.mockResolvedValueOnce({ kind: "ready", pendingJobIds: ["image-job-1"], missingPageIndexes: [] });
     const warnings: unknown[][] = [];
     const logged = vi.spyOn(console, "warn").mockImplementation((...args) => warnings.push(args));
@@ -229,6 +198,8 @@ describe("compile final-QA repair fence replacement handoff", () => {
     expect(mocks.enqueueFinalizationIllustrations).toHaveBeenCalledWith(expect.objectContaining({
       projectId: "project-1", planId: "plan-1", contentRevision: 4
     }));
+    expect(mocks.repairQuickDraftPages).toHaveBeenCalledOnce();
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
     expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
     expect(mocks.strategy.compileMarkdown).not.toHaveBeenCalled();

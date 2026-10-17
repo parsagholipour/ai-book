@@ -589,6 +589,8 @@ export type MobileProjectStatusDto = {
   waitingInLine: { booksAhead: number } | null;
   planningProgress: {
     percent: number;
+    /** Seconds left, rounded up; null whenever a number would be a guess (`generationEstimate.ts`). */
+    estimatedSecondsLeft: number | null;
     steps: Array<{
       key: "understand" | "shape" | "finalize";
       label: string;
@@ -602,6 +604,7 @@ export type MobileProjectStatusDto = {
    */
   generationProgress: {
     percent: number;
+    estimatedSecondsLeft: number | null; // as `planningProgress`'s
     detail: string | null;
     finalization: {
       phase: "review" | "repair" | "final_review" | "illustrations" | "coverage" | "render" | "published";

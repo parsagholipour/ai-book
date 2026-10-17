@@ -22,7 +22,8 @@ export function staleGenerationTargetReason(input: {
     "GENERATE_PAGE",
     "GENERATE_IMAGE",
     "COMPILE_EXPORT",
-    "APPLY_BOOK_EDIT"
+    "APPLY_BOOK_EDIT",
+    "PREPARE_COMPOSITION"
   ]);
   if (
     input.planId &&

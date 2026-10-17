@@ -398,7 +398,8 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         projectId: id,
         type: "PLAN_BOOK",
         dedupeKey: `plan-book:${id}:${stablePayloadHash(input ? jsonPayload(input) : {})}`,
-        payload: input ? { inputSnapshot: jsonPayload(input) } : {},
+        // The operator's console never asks the spend breaker, so its plans are always prepared ahead (H4).
+        payload: { ...(input ? { inputSnapshot: jsonPayload(input) } : {}), prepareComposition: true },
         transaction: tx,
         dispatch: false
       });
@@ -457,6 +458,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
           planId: id,
           message: body.message,
           editOperationId: operation.id,
+          prepareComposition: true,
           ...(body.respondedQuestionPrompts?.length
             ? { respondedQuestionPrompts: body.respondedQuestionPrompts }
             : {})

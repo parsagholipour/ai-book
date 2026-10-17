@@ -70,10 +70,10 @@ kinds to the same policy, reading the fallback off the APPLIED operation's own a
 an outcome one. A generation's own compile, a replan copy's and a book title's stay `outcome`.
 
 **A fence that cannot be read has a third answer, and it settles nothing.** The export repair's
-ownership fence asks Postgres two or three times per repaired page across the minutes a long book
-takes: advisory `exportPublicationSuperseded` reads around provider work, then a no-op
-`Project.contentRevision` CAS as the first statement of the page/brief publication transaction. A
-brief repair's `chapter` read and CAS ask Postgres again. A throw
+ownership fence asks Postgres around its provider work and again as the first statement of its
+publication transaction: advisory `exportPublicationSuperseded` reads, then a no-op
+`Project.contentRevision` CAS. (The per-page repair loop, removed on 2026-10-16, asked it two or
+three times per page and once more around each chapter-brief repair.) A throw
 from any of them is not an `ExportRepairSupersededError`, so it travelled straight out of the catch
 written to keep this compile away from `markFailed` — and `compile-export` is not in
 `DERIVATIVE_GENERATION_JOBS`, so BullMQ retries nothing: one pool hiccup marked a finished, fully
@@ -91,15 +91,17 @@ Markdown compilation and format render; otherwise pages already repaired before 
 would be durable in Postgres but absent from files published under that same revision. The chapter
 sweep and first whole-book verdict are not re-run: their page-scoped findings survive only for
 unchanged pages, and their unscoped book-wide findings survive only when no page changed, matching
-the superseded stand-down's withdrawal semantics. The truncated-pass warning records the incomplete
-repair separately, while a distinct `FINAL_QA_REPAIR_INCOMPLETE` error finding keeps the exported
-best-effort book in REVIEW_REQUIRED without preserving a stale content complaint or buying another
-model review; any durable FAILED_QA pages are its page links. Assuming
+the superseded stand-down's withdrawal semantics. (Today the first verdict is the defect screen's.) The truncated-pass warning records the incomplete
+repair separately, while a distinct `FINAL_QA_REPAIR_INCOMPLETE` error finding records it on the
+console without preserving a stale content complaint or buying another model review; any durable
+FAILED_QA pages are its page links. It is a pipeline status, so since 2026-10-15 it is a diagnostic
+and the book publishes COMPLETE (it used to hold it in REVIEW_REQUIRED; see "A reader is shown"
+below). Assuming
 "not superseded" would not let a loser publish — publication claims on
 `contentRevision` — but it would keep the pass rewriting page rows over a reader's paid edit, which
 is the harm the fence is actually for. The transaction CAS is the binding page fence: a paid edit
-that commits after the preceding read makes it miss, and both page branches plus any accepted brief
-repair roll back and take the same superseded stand-down. If the re-read fails too, that failure settles the compile —
+that commits after the preceding read makes it miss, and the whole repair group rolls back and takes
+the same superseded stand-down. If the re-read fails too, that failure settles the compile —
 a compile that cannot reach the database has earned `markFailed` — but it travels *composed*, or the
 fence's evidence dies with it: `markFailed` writes `error.message` and nothing else onto the row, so
 a driver error thrown in place of the fence's marked a fully written, fully paid book FAILED with no
@@ -115,35 +117,32 @@ run-log line in the same `.jsonl` as the provider calls of the pass that stopped
 use here, since `markCompleted` overwrites it moments later. It records how far the pass got, and it
 is called after the manuscript re-read, so a compile that cannot re-read settles on the composed
 failure instead of filing a note about a pass it will not finish, two of whose numbers are measured
-against a manuscript it never got back. **How far it got is counted in pages, by the pass.** The
-fence's own tally is barriers, and it is asked twice per repaired page and *three* times for any page that
-reaches a brief repair (`repairPagesFromFinalQa` at the loop top and before its writes,
-`repairPageBriefForRecovery` after the planner call; the brief CAS shares the write fence), so the arithmetic that
-number invited was wrong by exactly the pages that took the expensive route. `repairPagesFromFinalQa`
-counts the pages it saw through to their writes — a page it could not fix included, since that page
-spent its whole budget and saved its best draft — and stamps `TruncatedRepairProgress` onto the fence
-error on its way out, at the throw, where the count is still what it was when the database went quiet.
-**Both halves of that fraction are pages the book has.** The targets are a union of indexes — the
-FAILED_QA ones, every error-severity deterministic finding's `affectedPageIndexes`, and the verdict's
-own, bounded only by the book's highest index — so the pass resolves them to rows before it walks
-them, and the denominator is that resolved list. Counting the raw indexes named a target the pass
-could never reach and made it look one page less finished for each, which is the same arithmetic
-error `barriersCleared` was demoted for; a verdict resolving to no rows at all is no pass, and
-returns nothing rather than buying the caller a second `runFinalBookQa` over an unrewritten book.
-`barriersCleared` stays as evidence about the fence: it is exact, and it is the only number that exists
-when a fence goes dark before anything has been written.
+against a manuscript it never got back. **How far it got is counted in pages, by the pass**, and
+since the defect screen's scoped repair is the compile's only repair it is all or nothing: the
+group of at most three pages publishes in one transaction, so a fence that goes dark reports 0 of
+the group's pages (`fenceUnreadableAfter`'s `TruncatedRepairProgress`). The per-page loop it replaced
+counted the pages it saw through to their writes, against targets resolved to rows the book has —
+counting the fence's own barriers, or raw indexes, was wrong by exactly the pages that took a brief
+repair or did not exist. `barriersCleared` stays as evidence about the fence: it is exact, and it is
+the only number that exists when a fence goes dark before anything has been written.
 
-**A final-QA rewrite never ships with the generated picture of the keeper it replaced.** The repair
-prepares its story extract and embedding before opening a transaction, then claims both the queued
-`contentRevision` and the exact page snapshot it reviewed. One transaction stages an illustrated
-keeper as GENERATING, retires only system-owned assets for the old keeper, creates the tokened
-`GENERATE_IMAGE` row, re-reads that exact job id and verifies its project, type, page, plan, prompt and
-keeper token, then compare-and-swaps the staged page fields and version to terminal. Those are three
-ordered statements but one durable commit: a crash before terminalization rolls back the page, asset
-retirement, job and brief together, so no committed GENERATING page can wait for a callback that will
-never come. A failed Redis dispatch happens after the commit and leaves the durable QUEUED row for
-reconciliation. The compile itself stands down whenever it created a
-replacement, and the image job's normal fan-in queues the export after no image jobs remain open.
+**A final-QA rewrite never ships with the generated picture of the keeper it replaced.** The scoped
+repair (`compileQuickDraftRepair.ts`) claims the queued `contentRevision` and the exact snapshot of
+every page it read, then in one transaction writes each changed page at the next `revision` and
+retires only the system-owned assets of the keeper it replaced (`retireGeneratedPageIllustrations`).
+The new revision changes the page's keeper token, so the picture is redrawn rather than reused:
+`enqueueFinalizationIllustrations` finds no reusable illustration for the new keeper, queues its
+`GENERATE_IMAGE` row under the shared `pageIllustrationJobDedupeKey`, and the compile defers to the
+successor that the image's fan-in queues once no image jobs remain open. An illustrated target is
+refused unless the compile can defer that way (`deferIllustrations`, a compile with a queued
+revision). Pictures are drawn at publication on every tier now, so a short picture book's early
+picture is one this rule redraws, never one that ships beside the repaired prose. The enqueue runs
+in every compile that owns a review (outcome or edit, not skip-review, not detached, not an
+author's book), with or without a finalization: a Balanced+ book the previous release generated
+deferred its pictures to the old final review, and a book the screen does not read would otherwise
+publish without them. An unchanged page's early picture is found under the dedupe key and costs
+nothing. (The per-page repair loop this replaced staged its keeper GENERATING and created the
+tokened job in the same commit; it went with the loop on 2026-10-16.)
 `compileExport` repeats that open-image-job gate before any QA or render work because a Bull
 redelivery bypasses fan-in: a crash after the atomic commit but before dispatch/stand-down has a
 terminal keeper and a QUEUED replacement row, and may not render merely because the page is terminal.
@@ -209,10 +208,11 @@ pages queued for a presentation fallback, a detached format, or no-verdict publi
 intents, while an exact retry remains idempotent.
 Manual/operation-suffixed assets are never retired. A retry or sibling compile loses the original
 page-version claim before it can reuse a terminal dedupe row; a reader edit loses the project claim.
-Story delta, continuity notes, entity state and embedding writes live in
-`compileExportRepairSemantics.ts`: one transaction starts with the same `contentRevision` fence, locks
-the exact repaired keeper, and only then writes every memory row. There is no provider call inside it,
-and an ownership miss writes none of the semantic tail.
+A repaired page's memory goes in the same transaction as its prose: the scoped repair nulls its
+story delta and deletes its continuity notes and embeddings, which describe the prose it replaced,
+behind the same `contentRevision` fence and page claim, with no provider call inside
+it, so an ownership miss writes none of it. (The per-page loop's semantic tail,
+`compileExportRepairSemantics.ts`, went with the loop.)
 
 **A compile that stands down leaves no verdict about prose it no longer speaks for.**
 There are four ways out of `compileExport.ts` with nothing published — the repair losing the
@@ -250,8 +250,8 @@ prefix of the book and never reaches the last page — so a compile whose own re
 (and possibly paid off) the promise stood down complaining about it. Both survive only a book
 nothing has moved in, and the code is what tells the second apart, spelled once beside the producer
 that stamps the signpost. Nothing here can tell a cosmetic edit from a paid rewrite, and the
-publishing path answers the same question by re-running `runFinalBookQa` over the repaired pages,
-which a stand-down cannot do — re-folding the promises over the reader's rows instead is the
+publishing path answers the same question from the verdict its verified repair settles
+(`quickDraftReviewAfterRepair`), which a stand-down cannot do — re-folding the promises over the reader's rows instead is the
 `PAGE_COUNT_MISMATCH` mistake in another column, so the fold stays on the pages this compile read.
 **A withdrawal that leaves nothing behind is not a pass.** An empty report is a claim, not a
 silence: no findings grades `passed`, score 100 — "Quality checks passed" — so the filter written to
@@ -266,7 +266,12 @@ it again upgrades nothing. A redelivery keeps that prior measured clean pass whe
 fingerprints still match every current page; movement makes the old clean grade unproven and retracts
 it rather than throwing away or asserting a verdict on guesswork.
 `withheldEveryFindingItMeasured` is where the two are told apart, and it asks about the findings
-rather than about the report, because a grade cannot say which of the two produced it.
+rather than about the report, because a grade cannot say which of the two produced it. **Since the
+reader/diagnostics split both questions are asked of the reader's findings** (`readerFindingCount`,
+the grader's own `readerFindingsFrom`): the grade is made from them alone, so a withdrawal that
+keeps three console diagnostics and withholds the one leak it quoted has no claim left for the
+reader either, and a redelivery's stored pass is "clean" when it showed the reader nothing, however
+many diagnostics sat beside it.
 **And a read that cannot answer is a third thing to say.** The manuscript re-read the withdrawal
 rests on is taken *outside* the best-effort write and on the fence's own retry budget, because a
 read decides what to write and only the write itself may be dropped: folded inside it, one timeout
@@ -281,6 +286,177 @@ a P2025 from a retired `GenerationJob` row travelling out of a stand-down would 
 fully paid book FAILED. A `StopRequestedError` still escapes, and so does everything else — the
 `recordTruncatedRepairPass` note above is guarded inside itself for exactly that reason, since a
 trace filed on a path that may not fail must not be the thing that fails it.
+
+**A reader is shown only findings of a measured type, quoted on their page, and none of them blocks.**
+Parsa, 2026-10-15: "verified defects only". Labelled blind (177 findings, κ 0.83), 32% of
+what the compile filed was a defect a reader would want fixed and no type reached 0.95, while 147 of
+175 recent books read "review recommended" or "blocked". `buildManuscriptQualityReport` now grades
+`state`, `score` and `affectedPageIndexes` from `readerFindings` (core `readerFindings.ts`: the
+admission list is data, `READER_FINDING_ADMISSIONS`), keeps every finding in `issues` and the
+console's groups in `findings`, and stamps `readerPolicy`. Admitted today: `PROMPT_LEAKAGE` with
+the span the detector matched, `ARITHMETIC_ERRORS` with the residual statement the compile
+re-evaluated (`composedEvidenceResiduals.ts`), and `BOOK_PRINTED_SHORT`, whose evidence is the
+sheet count. None may block, and an admitted error is a warning on the reader's copy: showing 0.99
+takes about 300 labelled hits and these detectors fire a few times a month, so "≥ 0.99 to block"
+can only be refuted, and it was, for every blocking detector measured. So every compile publishes
+COMPLETE unless a future admission measured that high says otherwise; unmeasured integrity errors
+(`PAGE_COUNT_MISMATCH`, `EMPTY_PAGE`, `STRUCTURAL_SLOP_SATURATION` …) are console errors and still
+the repair pass's targets, because the repair reads `issues`, never the grade. **The printed-short
+finding is the one made after the render**: `renderCompiledBook` returns `printedSheets`
+(`printedSheetsFor`: the fitter's miss below its target for a prose book, the story sheets the
+measured map counts for a picture book) and the handler appends it with `appendQualityIssue` and
+records the report again before the companions, the way a companion failure is — a warning, so it
+cannot move the status the verdict already decided, and a stand-down drops it with the PDF it was
+about. **And a claim the named page refutes is filed nowhere**: `settledModelIssues` drops a "this
+page has no dialogue" finding about a page that prints attributed speech (`withoutRefutedFindings`)
+at every door model findings are filed through. The re-grade of the stored reports under these
+paths is 170 / 5 / 0 (passed / review / blocked) against 28 / 121 / 26.
+
+**A compile's verdict and its bytes are made side by side, and the verdict is settled first.**
+Once the defect screen and its repair are done and their pictures have landed, the two things left
+before publication run together: the verdict — the deterministic sweep, plus the brief coverage
+read where a revision lists `briefCoverageReview` — and `renderCompiledBook` (Markdown, PDF, page
+map), which reads nothing the verdict decides. The order a failure is *observed* in is the serial
+one: the verdict is recorded first, the supersede read answers next, and only then is a render
+failure thrown, so a compile that cannot render still leaves its report, and one an edit overtook
+stands down with its findings exactly as before. A compile superseded before the read renders
+nothing; one superseded during it renders for nothing (CPU, not spend). The render is always
+drained before scratch is discarded, and every settled promise before the finalization lease is
+released. Companion formats still render after the verdict, because a companion failure is
+appended to its report.
+The coverage read runs on no tier by default, for a book either pipeline wrote, and never on Quick
+Draft (`coverageSkipped`): it was 43–77 s of a Balanced compile for findings that are console
+diagnostics, labelled real 27% (`MISSING_BRIEF_REQUIREMENT`) and 40% (`UNPAID_PROMISE`) of the time,
+and the owner declined to keep it on Premium and Ultra unmeasured. Skipped, it files nothing in its
+place — no `briefCoverage`, no `BRIEF_COVERAGE_UNVERIFIED`, no unpaid-promise fallback. Until
+2026-10-16 a per-page book's compile ran it whatever the gate said, overlapped inside the old final
+review's lease (`overlapCoverage`: the brief inventory beside the review, the read over the picture
+wait, both checkpointed for the successor); that path, its checkpoints and its inventory went with
+the final review, and a revision that lists the gate runs the plain read for both pipelines. The
+structural review that ran beside the read — a model call adjudicating the sweep's duplication
+clusters on every tier but Quick Draft — was removed the same day: its findings were console
+diagnostics and never a repair target, so it fixed nothing in any book, and the defect screen reads
+for duplication.
+
+**Quick Draft reads its book once; its repair reads the pages it repairs, and a figure is the repair's to patch.**
+The screen (`reviewQuickDraftManuscript`) reads the whole book, and its ≤3-page
+repair used to read it three more times: `patch-page` and the verification were each handed every
+page, and a published repair bought a full re-screen — 94k of a 30-page novel's 249k input tokens
+to patch one page (2026-10-15), and the re-screen sampled *different* defects each time and filed
+them unrepaired. And a target with a ```` ```figure ```` block was refused outright ("Focused repair
+requires prose-only targets"), which took every other target of the same pass down with it: the
+60-page Quick Draft history book shipped a flowchart that routed every failed vote to "Senate
+approval" and an unrepaired arithmetic page beside it. Now (core `quickDraftRepairScope.ts`):
+- **Patch and verify see the targets, both neighbours, every page a finding quotes and every page
+  the instruction names, in full, plus a one-line outline of every other page.** The screen's
+  grounded findings ride `finalQa.focusedReview.findings` so the repair is handed each target's own
+  problem, fix and evidence, never another page's complaint (`quickDraftTargetMessages` for a review
+  stored before the field). The verifier is also shown, by code, every unchanged page that repeats a
+  number or a name the patch removed or added (`quickDraftRepairEchoPages`, at most four, a token on
+  more than a fifth of the pages ignored), which is how it still follows a changed clue into a later
+  page without the book.
+- **No re-read after a verified repair** (`quickDraftReviewAfterRepair`, `compileFinalizationReview.ts`):
+  a repair publishes only what its verification resolved with no regression, so the findings on the
+  published pages are settled and every other finding of the screen stands; a rejected repair leaves
+  the manuscript fingerprint unchanged and the checkpoint reuses the first verdict, as before. It is
+  derived from the delivery's own initial review and the checkpoint's completed/unavailable page ids,
+  through `finalization.review("final", …)`, so a redelivery reads the same answer.
+- **A figure is shown as its JSON only where a finding is about it** — a quote found inside the
+  block, or a target finding that names the chart (`mentionsFigure`); everywhere else it is the
+  `[Figure: title]` stand-in and must come back byte for byte (`figure_changed`, re-asked once).
+  Patches apply to the stored page, not the view. A patched block must still parse, keep its kind
+  and hold only numbers already in the block or the page's prose (`figure_invented_value`); it may
+  be removed whole, never added; it is stored in the validator's canonical line
+  (`checkQuickDraftFigurePatch`). An illustrated page is still refused unless finalization defers
+  its picture, and a repaired page still takes a new revision and retires its earlier picture
+  (`retireGeneratedPageIllustrations`), so a short picture book's early picture is redrawn.
+- The fence, the page CAS over every page the pass read (the outline and the echo search read them
+  all, so it still locks all), the reader-findings split and every stand-down are unchanged.
+Replayed on 21 stored Quick Draft repairs × 2 samples on today's route (2026-10-16,
+`.scratch/eval-data/h7/`): accepted 23/38 non-figure attempts either way, 8 regressions caught by
+the verifier either way; input per attempt 64.9k → 12.7k, plus the 28k re-screen (~32 s) every
+accepted repair used to buy — on 100–120-page books 193k → 16k; repair wall time 17.1 → 12.6 s.
+The real flowchart defect was repaired in 2 of 2 samples (the old path refused it), 16 of 16
+planted figure defects (misrouted flow edges, a chart value contradicting its prose) were restored
+exactly with the prose untouched, and a chart of fabricated zeros whose prose disowns it was
+rejected by the verifier rather than half-fixed. Blind Opus readers, both orders, on the 15 cases
+both paths repaired: scoped 5, full-book 4, tie 6 (3 byte-identical), with 1 new reader-visible
+problem in the scoped repairs' judgments against 4 in the full-book ones.
+
+**The compile's one review is the defect screen, and it runs only on the books it was measured to help.**
+Every other compile review — the chapter-transition sweep, the whole-book QA, the reused
+picture-book review, the coordinated and per-page repairs, the structural adjudicator, the brief
+coverage read — and the review stages before it (polish, best-of, the plan critic, form-plan repair,
+the line edit, the manuscript read, a short book's page-time review) were removed under the owner's
+rule: measured (E4, H2, H7, H7b), or, for the structural adjudicator, because nothing it filed could
+reach a page — console findings, never a repair target (Parsa, 2026-10-16: a review or edit stage that improves
+books by 5–10% or not at all goes, on every tier, Premium and Ultra included; a taste stage needs a
+decided-win share ≥ 60% with its 95% lower bound above 50%, a model defect screen must correctly fix
+a real reader-visible defect in at least 10% of books). What is left at the compile is the screen
+and its scoped repair, behind `finalBookQa`, for the book kinds `usesCompileDefectScreen` names:
+- **Every Quick Draft book.** Composed: over 48 stored Quick Draft books (one per plan title, the
+  pre-repair manuscript where a compile log kept it) it found 33 grounded findings in 24 books,
+  labelled real 79% of the time, and correctly fixed a real defect (contradictions, wrong arithmetic,
+  duplicated passages, unfinished content) in 11 books, 23%; 1 of 17 repairs read worse than the
+  original (a reveal rewritten to contradict a delivery the reader saw, with that page in view).
+  Short and per-page (H7b, `.scratch/eval-data/h7b/`, pre-registered): over the logged
+  whole-book drafts of 17 Quick Draft short books — what a short book ships, since no page-time
+  review runs (`../generation/CLAUDE.md`, "Short books") — it found 4 grounded findings in 4 books
+  (3 labelled real, 1 minor), correctly fixed a real defect in 2 books (12%: a moon already rising
+  before a before-moonrise deadline, a romance that stopped before the ending its brief promised), and
+  blind readers preferred all 4 repairs over the draft in both orders.
+- **Every book composed by chapters.** Balanced: over 33 stored manuscripts the findings labelled
+  real 61%, a real defect was correctly fixed in 12 books (36%), the repairs won or tied in 15 of 17
+  judged pairs, and it adds a median 43 s (screen ~31 s, repair ~10 s when there is one) to the
+  compile. Premium and Ultra compose on the same writer (gpt-6-luna) and have three stored composed
+  books between them, so they take Balanced's answer; until 2026-10-16 nothing at their compile read
+  the prose for defects. It sees few of a novel's contradictions between chapters, though: over 21
+  novels it found 14 and fixed 8 (its verification refused the other six repairs), while blind
+  readers found 113 more in the books it published (E7, `../generation/CLAUDE.md`, "A composed
+  chapter is written against the facts…"). A continuity sentence added to its prompt found about as
+  many on a four-book, two-sample probe (8 against 6), so the prompt is not the limit. A per-chapter
+  continuity screen with patch repair was measured in its place and failed on precision (E7b, same
+  section: 44% of its patches real, 52% harmful), so neither this screen nor a new one patches
+  continuity.
+- **Not a short or per-page book on Balanced, Premium or Ultra.** On the logged drafts of 13 Balanced
+  short books the screen found no grounded defect at all (0 of 13: the pre-registered screen-first
+  stop), and every tier drafts short books on gpt-6-luna, so Premium and Ultra follow. Those books are
+  printed as drafted, with the deterministic checks; their old compile final review, coordinated
+  short-book repair and per-page repair loop — part of E4's losing "all review stages on" arm — were
+  deleted with the chapter-transition sweep, the reused picture-book review and `runFinalBookQa`.
+`mediaSettings.finalReview` controls nothing since that day: it asked for the old final review, and
+through it deferred pictures to the compile, put a short book on its path and chose compact
+picture-book planning. Pictures are drawn at publication on every tier; the short-book path is
+decided by shape alone; compact planning reads the tier (not Quick Draft), which is who the flag
+had left off; no preset or console field writes it, and stored rows keep it. The parallel-wave
+"automatic continuity review" `finalBookQa` used to add to per-page books went with the old review.
+Spend on the screen and its repair is attributed to `finalBookQa` in the console's gate costs:
+`final-book-qa` and, from compile jobs only, `patch-page` (a chat edit's patch tier shares it).
+
+## Speculative composition prep
+
+- **The composition prep is owned by nobody but its own row: unbilled, never the book's failure,
+  and stopped by the book run rather than finished beside it.** `prepareComposition.ts` runs the
+  stance, the brief inventory, the episodes and the form plan of a composed book while its reader
+  reads the plan (the mechanism is `../generation/CLAUDE.md`, "A composed book's stance…").
+  `PREPARE_COMPOSITION` is in `DERIVATIVE_GENERATION_JOBS`, so a failure or a stop settles its row
+  alone, and it carries no `attemptId` (`enqueueWorkerJob`'s `attemptIdOverride: null`: queued from
+  the plan's own delivery, it would otherwise inherit the plan's attempt and a failure would refund
+  the plan). It is a plan-bound type for the stale check, so a superseded plan's prep is canceled
+  before it runs; it exits without a call when its plan is no longer the open, current draft, when
+  it waited more than `PREPARE_COMPOSITION_STALE_MS` (10 minutes) in the queue, or when the book is
+  not composed. It never ends FAILED for a provider error — each step records `failed` and the run
+  plans that step itself — so the operator's failed-job alert does not count it. The book run
+  fences it to CANCELED, never FAILED, so neither the alert nor a book push reads it as a failure or
+  a reader's stop; its `markCompleted` then finds CANCELED and stands down (`job.superseded`). The
+  API keeps it out of the busy gate (`hasOpenProjectWork`), and a stop that finds only a running prep
+  on a PLAN_READY book leaves the book as it was (`stopProjectGenerationJobs`): an account
+  suspension or the console's Stop used to have nothing to stop there and must not now fail it. It
+  is queued only behind a door that asked the spend breaker for `speculative` work
+  (`prepareComposition` on the `plan-book` / `revise-plan` payload; the console's doors always
+  stamp it, since they never ask). No reader-visible steps: `JOB_STEP_TEMPLATES` holds `[]` for it.
+  It runs in the background lane, four at a time, never in a slot a reader's plan or edit waits for
+  (`../../CLAUDE.md`, "Work nobody waits on has a lane of its own").
 
 ## Page generation
 
@@ -309,11 +485,9 @@ trace filed on a path that may not fail must not be the thing that fails it.
   writes the very embedding rows the retrieval then reads, so overlapping them would have a page read
   the memory it is in the middle of backfilling.
 - **Every illustrated keeper is published in three fenced steps.** `generatePage` first claims the
-  page's loaded `updatedAt` version, then commits the keeper content (and any earned chapter-brief repair)
-  while the page remains GENERATING,
+  page's loaded `updatedAt` version, then commits the keeper content while the page remains GENERATING,
   then creates the image job, then exposes COMPLETED with a status-only compare-and-swap on that exact
-  content. This ordering means neither a failed brief CAS can leak a picture job nor a sibling compile
-  can observe a terminal page before its job exists. The job's versioned `keeperToken` is a digest of
+  content. This ordering means a sibling compile cannot observe a terminal page before its job exists. The job's versioned `keeperToken` is a digest of
   the project id, stable page id and page fields the image depicts; it is part of the dedupe key, and
   `generateImage` checks it before provider work, after rendering and under the asset-publication row
   lock. Content-only tokens already in the queue remain a read-only migration alias, but no producer
@@ -387,7 +561,7 @@ reason, and a null answer refuses the whole move rather than half-applying it.
 - **Text-edit publication is one set-based manuscript transaction followed by a durable tail.**
   `ACTIVE` is a lifecycle state, not an owner: matching it let a stalled Bull delivery and its
   replacement both rewrite and publish. Each invocation therefore carries a database-time lease
-  token through provider work. Once every rewrite, story extract and optional embedding has been
+  token through provider work. Once every rewrite and optional embedding has been
   prepared in memory, `textEditPublication.ts` locks Project, the durable GenerationJob and the
   operation in that order, then publishes every page and before/after snapshot with one
   `jsonb_to_recordset` statement. The statement compares the complete before-image (including page
@@ -541,7 +715,7 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   deliveries the same inserted page ids. If the owner crashes, expiry lets the waiting redelivery
   resume those ids; if it crashed after APPLIED, the replacement owns only the export tail. A
   heartbeat keeps ordinary provider waits live, and structural insert review is deferred: drafting,
-  page QA, adherence review, embedding preparation and story extraction produce only an in-memory
+  page QA, adherence review and embedding preparation produce only an in-memory
   publication candidate. After any shortfall refund and the last heartbeat barrier, one short
   Project-first transaction renews and locks the exact ACTIVE owner, publishes every inserted page
   and its optional savepoint-isolated memory, stores the adherence audit, increments
@@ -731,7 +905,10 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   continuation was rolled back and refunded. Both loops now keep the last reviewed, satisfied set
   and publish it when a later round loses adherence, FAILED_QA pages and all, which is what page
   QA's own rule already says. The continuation also names each page's chapter and position in the
-  title the reviewer reads (`continuationReviewTitle`).
+  title the reviewer reads (`continuationReviewTitle`). Page QA here is the pages' deterministic
+  local checks since 2026-10-16: no model reviews a page an edit drafts (E5,
+  `../generation/CLAUDE.md`, "Page review"), so a repair round is bought by the adherence review or
+  by a local check, never by a page reviewer.
 - **Only the post-APPLIED window is that handler's to flip.** The `updateMany` after the rollback
   claims `status: "APPLIED"` and deliberately does not claim ACTIVE: a drafting failure — the
   ordinary one — leaves the operation ACTIVE, and `markFailed` settles exactly that row through

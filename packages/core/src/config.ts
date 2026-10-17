@@ -244,10 +244,9 @@ const envSchema = z.object({
   MAX_PARALLEL_PAGE_JOBS: z.coerce.number().int().min(1).max(32).default(4),
   MAX_PARALLEL_IMAGE_JOBS: z.coerce.number().int().min(1).max(8).default(2),
   /**
-   * How many long-lane jobs (book runs, pages, pictures, a generation's own
-   * compile, narration, imports) the worker runs at once. Unset — or blank —
-   * means the single queue's old concurrency, `max(MAX_PARALLEL_PAGE_JOBS,
-   * MAX_PARALLEL_IMAGE_JOBS)` (`workerLaneConcurrency` in `jobLanes.ts`).
+   * How many long-lane jobs (book runs and their pages, narration, imports,
+   * continuations) the worker runs at once. Unset — or blank — means
+   * `MAX_PARALLEL_PAGE_JOBS` (`workerLaneConcurrency` in `jobLanes.ts`).
    */
   WORKER_LONG_CONCURRENCY: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
@@ -255,6 +254,38 @@ const envSchema = z.object({
   ),
   /** How many interactive-lane jobs (plans, edits, assists, portraits, short compiles) run at once. */
   WORKER_INTERACTIVE_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  /**
+   * How many image-lane jobs (a generation's pictures and its cover) run at
+   * once. Unset — or blank — means `MAX_PARALLEL_IMAGE_JOBS`. Each is a provider
+   * call and a few MB; the ceiling is the provider's rate and the worker's
+   * ten-connection database pool, not memory (docs/deployment.md, "Job lanes").
+   */
+  WORKER_IMAGE_CONCURRENCY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(1).max(8).optional()
+  ),
+  /**
+   * How many generation compiles — the job that typesets a whole book — run at
+   * once. Unset — or blank — means one (`DEFAULT_COMPILE_LANE_CONCURRENCY`);
+   * production runs three. Chromium renders two books at most however many run
+   * (`RENDER_CONCURRENCY`), so the ceiling is the container's memory for their
+   * manuscripts (docs/deployment.md, "Job lanes").
+   */
+  WORKER_COMPILE_CONCURRENCY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(1).max(4).optional()
+  ),
+  /**
+   * How many background-lane jobs — the speculative composition prep a plan
+   * queues while its reader reads it — run at once. Unset — or blank — means
+   * four (`DEFAULT_BACKGROUND_LANE_CONCURRENCY`). Each is minutes of provider
+   * calls and a few MB, so its ceiling is the text provider's rate and the
+   * database pool, not memory (docs/deployment.md, "Job lanes").
+   */
+  WORKER_BACKGROUND_CONCURRENCY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.coerce.number().int().min(1).max(8).optional()
+  ),
   MOCK_AI: z
     .string()
     .optional()

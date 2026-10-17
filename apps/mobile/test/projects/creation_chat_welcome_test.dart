@@ -103,7 +103,7 @@ void main() {
     // "Bedtime story for 5 year olds" read, to a store reviewer, as an app
     // aimed at children. The maker of a bedtime story is a parent.
     final ideas = creationChatLocalGreetingTurn.quickReplies;
-    expect(ideas, contains('A bedtime story for my 5-year-old'));
+    expect(ideas, contains('A bedtime story where my 5-year-old is the hero'));
     for (final idea in ideas) {
       expect(
         idea,

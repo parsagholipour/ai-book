@@ -87,7 +87,8 @@ describe("mobile plan lifecycle", () => {
       job: { id: "job-generate", status: "queued" }
     });
     expect(vi.mocked(enqueueGenerationJob).mock.calls.map((call) => call[0])).toEqual([
-      expect.objectContaining({ projectId: "project-1", type: "PLAN_BOOK" }),
+      // On a normal day the breaker allows speculative work, so the plan's composition prep follows it (H4).
+      expect.objectContaining({ projectId: "project-1", type: "PLAN_BOOK", payload: expect.objectContaining({ prepareComposition: true }) }),
       expect.objectContaining({
         projectId: "project-1",
         type: "REVISE_PLAN",
@@ -95,7 +96,8 @@ describe("mobile plan lifecycle", () => {
           planId: "plan-1",
           message: "Make the examples warmer and more practical.",
           billingLedgerEntryId: "ledger-PLAN_REVISION",
-          editOperationId: "operation-1"
+          editOperationId: "operation-1",
+          prepareComposition: true
         })
       }),
       expect.objectContaining({

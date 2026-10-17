@@ -1,49 +1,23 @@
 import { z } from "zod";
-import type { TextModelAdapter } from "../adapters/types.js";
-import type { ChapterBrief, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
-import { evidenceLedgerFields, evidenceLedgerRules, usesEvidenceLedger } from "./evidenceLedger.js";
-import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import { usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
-import { developPictureBookMap } from "./pictureBookMapDevelopment.js";
-import {
-  FIRST_PAGE_ENDING_PRESSURE,
-  LAST_PAGE_ENDING_PRESSURE,
-  firstPageBriefFieldsForRange,
-  pageEndingContract,
-  type PageBriefBookScope
-} from "./pageBriefContract.js";
+import type { ChapterBrief, PageProductionBeat } from "../schemas/book.js";
+import { evidenceLedgerFields } from "./evidenceLedger.js";
+import { FIRST_PAGE_ENDING_PRESSURE, LAST_PAGE_ENDING_PRESSURE, pageEndingContract } from "./pageBriefContract.js";
 
 /**
- * The last pass over the page map before anything is drafted, which makes it
- * the last writer of page 1's brief. `prepareChapterSetups`
- * (apps/worker/src/generation/bookState.ts) runs it immediately after the map
- * is generated, so whatever the four producers in `pagesPageMap.ts` wrote under
- * the first-page contract, a `beatPatch` for pageIndex 1 or an entry in
- * `missingEndingPressure` replaces it here. Both halves therefore state the
- * contract: the prompt, so a patch is written in compliance, and the
- * substitution below, which is our own sentence rather than a model's. Both
- * take it from `pageBriefContract.ts`, which is a module rather than a block
- * inside the map so that this pass can say what the map said without importing
- * the map.
+ * The merge of a patch onto a page map. Its one writer today is the beat-dedup
+ * rewrite inside mandatory map integrity (`pageBeatDedup.ts`,
+ * `apps/worker/src/generation/productionMapIntegrity.ts`). The page-map critic
+ * that also wrote these patches (`critiquePageMap`, purpose `critique-page-map`,
+ * and its picture-book scene development) was removed on every tier on
+ * 2026-10-16: blind readers preferred the whole short book drafted from its
+ * patched map to the one drafted from the map it was handed 5 wins, 7 ties,
+ * 6 losses (45% of decided pairs, [21–72]) over 41 logged short books, 18 of
+ * them with an empty patch (E5, `.scratch/eval-data/reports/e5-final-review-sweep.md`).
  *
- * Neither half infers how long the book is. This pass is handed a map, and a map
- * that came back short of `targetPages` is the very failure the brief repair
- * loop exists for — so the book's last page arrives from the caller, which holds
- * `input.targetPages`. Read off the briefs in hand instead, a truncated map
- * makes its highest page the book's ending: a middle page told to resolve the
- * central promise, and a map that only reached page 1 briefed as a one-page
- * book.
- *
- * The critic half takes that `input` itself, beside the `plan`, rather than the
- * two values it needs off them. Page 1's contract asks three questions and only
- * two of them are answerable from a number: the third is whether this book's
- * opening is the pipeline's to commit at all, which lives in the *project's*
- * provenance (`isAuthorManuscript`, `schemas/mediaSettings.ts`). Handed
- * `plan.openingHook` as a string, this pass could not ask it — so the gate lived
- * in the worker, one call site away from the rule it gates, which is how an
- * imported manuscript's page 1 went on being briefed to deliver a hook a later
- * plan revision invented for it. The merge below still takes a plain
- * `lastPageIndex`, because it states no rule and asks nothing about the opening.
+ * The merge states no rule and asks nothing about the opening, so it takes a
+ * plain `lastPageIndex`: the book's last page, which only the caller holding
+ * `input.targetPages` knows — a map that came back short of it must not have its
+ * highest page read as the ending.
  */
 
 const pageMapCriticBeatPatchSchema = z.object({
@@ -57,16 +31,12 @@ const pageMapCriticBeatPatchSchema = z.object({
   note: z.string().min(1).optional()
 });
 
-export const pageMapCriticPatchSchema = z.object({
+/** The patch shape; no model answers in it since the critic was removed, so it is a type source only. */
+const pageMapCriticPatchSchema = z.object({
   beatPatches: z.array(pageMapCriticBeatPatchSchema).default([]),
   duplicatePurposeWarnings: z.array(z.string().min(1)).default([]),
   missingEndingPressure: z.array(z.number().int().positive()).default([]),
   unscheduledPromises: z.array(z.string().min(1)).default([])
-});
-
-/** A scene has no evidence ledger, including in the provider's JSON contract. */
-const narrativePageMapCriticPatchSchema = pageMapCriticPatchSchema.extend({
-  beatPatches: z.array(pageMapCriticBeatPatchSchema.omit({ claim: true, evidenceAnchors: true })).default([])
 });
 
 /**
@@ -207,12 +177,10 @@ function assignmentWithoutLedger(page: PageProductionBeat): Omit<PageProductionB
  * the drafter has always been given — truncating it is lossy rather than
  * redundant, which is why `focusWithCriticNotes` leaves an untouched list alone
  * and only the appending path measures itself against this number. The limit
- * therefore belongs to the side spending the budget, and it is exported because
- * there are two of them: this merge, and the worker's brief repair
- * (`replacePageBriefInChapterBrief`, `apps/worker/src/generation/pageReviewRecovery.ts`),
- * which appends a repaired page's own continuity onto the chapter's. Spelled
- * twice it is a number two workspaces can drift apart on; the name says
- * "chapter" rather than "critic" for the same reason.
+ * therefore belongs to the side spending the budget. The worker's page-QA brief
+ * repair spent it too, appending a repaired page's continuity onto the
+ * chapter's, until it went with the per-page review chain on 2026-10-16; the
+ * name says "chapter" rather than "critic" for the same reason.
  */
 export const CHAPTER_CONTINUITY_FOCUS_LIMIT = 20;
 
@@ -221,9 +189,9 @@ export const CHAPTER_CONTINUITY_FOCUS_LIMIT = 20;
  *
  * A brief this patch adds nothing to comes back with the entries it arrived with —
  * untouched, not re-deduped and not truncated. That distinction cost nothing
- * while `QUALITY_FEATURE_DEFAULTS.pageMapCritic` was `["ultra", "premium"]` and
- * this merge only ever ran behind `critiquePageMap`. `beatDedup` defaults to all
- * four tiers and composes its patch in this shape (`beatDedupPatch`,
+ * while the page-map critic (removed 2026-10-16) ran on Ultra and Premium only and
+ * this merge only ever ran behind it. The beat-dedup rewrite runs on all four
+ * tiers and composes its patch in this shape (`beatDedupPatch`,
  * `pageBeatDedup.ts`) with both note lists empty, and production-map integrity
  * merges over chapter briefs when a sparse rewrite answers — so an unconditional
  * `slice` started silently deleting the 21st constraint
@@ -237,10 +205,9 @@ export const CHAPTER_CONTINUITY_FOCUS_LIMIT = 20;
  * the pre- and post-merge maps shared one list and any later `push` — a brief
  * repair's, a fallback path's — would have written through to both. That was
  * theoretical while every path here appended; it is the common path now that
- * `beatDedup` merges an empty-note patch on every tier. A copy costs nothing at
- * this size, and it is the same write-through
- * `replacePageBriefInChapterBrief` (`apps/worker/src/generation/pageReviewRecovery.ts`)
- * was made pure to remove. The pages beside it are already safe by construction:
+ * the beat-dedup rewrite merges an empty-note patch on every tier. A copy costs nothing at
+ * this size, and it is the same write-through the worker's brief-repair merge
+ * (removed 2026-10-16) was made pure to remove. The pages beside it are already safe by construction:
  * every field a page carries is a primitive except `requiredContinuity`, and
  * `patchedContinuity` answers with a fresh array on both of its branches.
  *
@@ -258,79 +225,6 @@ function focusWithCriticNotes(existing: string[], patch: PageMapCriticPatch): st
     return [...existing];
   }
   return uniqueStrings([...existing, ...notes]).slice(0, CHAPTER_CONTINUITY_FOCUS_LIMIT);
-}
-
-/** Short auto stories already have one complete map and a review of the finished
- * prose. Automatically developing that map again adds a second authoring pass,
- * not an independent quality verdict. Keep the critic for other workflows and
- * when prose review is disabled; explicit calls remain available for evaluation.
- * Mandatory production-map integrity is independent of this optional pass. */
-export function pageMapCriticApplies(input: CreateProjectInput, proseReviewEnabled: boolean): boolean {
-  return !proseReviewEnabled || !usesCompactPictureBookPlanning(input);
-}
-
-export async function critiquePageMap(
-  options: PageBriefBookScope & {
-    textModel: TextModelAdapter;
-    briefs: ChapterBrief[];
-    promises: string[];
-  }
-): Promise<PageMapCriticPatch> {
-  if (usesCompactPictureBookPlanning(options.input)) return developPictureBookMap(options);
-  // The critic is handed the whole book twice over — the map it critiques, and
-  // the `input`/`plan` that map was written from — so it asks the contract the
-  // same way the four producers in `pagesPageMap.ts` do, over the book's own
-  // page range rather than the map's. That keeps every half together here too:
-  // the rule, the payload key it names, the first-page/last-page ranking, and
-  // the exemption that silences an import's hook. A patch for page 1 of a
-  // one-page book is written under the same ending contract the substitution
-  // below would have supplied.
-  const firstPage = firstPageBriefFieldsForRange(options, 1, options.input.targetPages);
-  const withEvidenceLedger = usesEvidenceLedger(options.input, options.plan);
-  const result = await generateJsonWithRetry(options.textModel, {
-    purpose: "critique-page-map",
-    temperature: 0,
-    maxTokens: 1400,
-    schema: withEvidenceLedger ? pageMapCriticPatchSchema : narrativePageMapCriticPatchSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You critique a whole-book page map.",
-          "Return beat patches for duplicate purpose, missing endingPressure, or a promise that is never scheduled.",
-          "Do not regenerate the map. Prefer an empty patch when the beats already progress.",
-          ...evidenceLedgerRules(options.input, options.plan, "critic"),
-          "A beat patch for pageIndex 1 replaces the book's opening assignment, so it must satisfy the same first-page contract the map was written under:",
-          ...firstPage.rules
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            promises: options.promises,
-            ...firstPage.payload,
-            pages: options.briefs.flatMap((brief) =>
-              brief.pages.map((page) => ({
-                pageIndex: page.pageIndex,
-                chapterIndex: page.chapterIndex,
-                purpose: page.purpose,
-                beat: page.beat,
-                endingPressure: page.endingPressure,
-                ...(withEvidenceLedger ? evidenceLedgerFields(page) : {})
-              }))
-            )
-          },
-          null,
-          2
-        )
-      }
-    ]
-  });
-  // Already this schema's output: `generateJsonWithRetry` passes `schema` to the
-  // adapter, which is what parses — and what its retry loop re-prompts on when
-  // the parse fails.
-  return result.data;
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   type SpendSnapshot
 } from "./alertConditions.js";
 import { freshAlertState, newerAlertState, stepAlert, type AlertNotification, type AlertState } from "./alertState.js";
+import { providerCallOutcomesSource } from "./providerQuota.js";
 import type { ReadinessProbe } from "./readiness.js";
 
 /**
@@ -302,7 +303,10 @@ export function prismaAlertStore(db: AlertDatabase): AlertStore {
 
 // ---- wiring ----------------------------------------------------------------------
 
-type MonitoredDatabase = AlertDatabase & Parameters<typeof failedJobsSource>[0] & Parameters<typeof safetyReportsSource>[0];
+type MonitoredDatabase = AlertDatabase &
+  Parameters<typeof failedJobsSource>[0] &
+  Parameters<typeof safetyReportsSource>[0] &
+  Parameters<typeof providerCallOutcomesSource>[0];
 
 export function spendSource(breaker: Pick<SpendBreaker, "globalView">, log: AlertLogger): AlertSources["spend"] {
   return async (): Promise<SpendSnapshot> => {
@@ -348,7 +352,8 @@ export function startOperatorAlerts(input: {
       spend: spendSource(input.spendBreaker, input.log),
       failedJobsSince: failedJobsSource(input.db),
       disk: diskSource(),
-      openSafetyReports: safetyReportsSource(input.db)
+      openSafetyReports: safetyReportsSource(input.db),
+      providerCallOutcomesSince: providerCallOutcomesSource(input.db)
     },
     mailer: input.mailer,
     recipient: input.recipient,

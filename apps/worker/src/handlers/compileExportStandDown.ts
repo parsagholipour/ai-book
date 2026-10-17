@@ -7,18 +7,13 @@ import {
   type ReviewedPageFingerprint
 } from "./compileExportQualityProvenance.js";
 import { parseStoredQualityIssue } from "./compileExportStoredQuality.js";
-import type { QualityGateContext } from "../generation/qualityEnrichment.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
 import {
   buildManuscriptQualityReport,
-  parseStoryDelta,
-  rebuildStoryState,
-  seedStoryStateFromPromises,
-  type BookPlan,
+  readerFindingsFrom,
   type ManuscriptQualityIssue,
-  type ManuscriptQualityReport,
-  type StoryState
+  type ManuscriptQualityReport
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -403,32 +398,6 @@ export async function writeStandDownRecordBestEffort(
 const UNPAID_PROMISE_CODE = "UNPAID_PROMISE";
 
 /**
- * A compile that cannot run the manuscript coverage review can only report
- * that continuity tracking left payoffs unverified. An open delta is never
- * proof of absence: the explanation may use different words or span pages.
- * The state stays lazy so disabled extraction does not pay for a page fold.
- * Empty page indexes scope this uncertainty to the entire reviewed book.
- */
-export function unpaidPromiseQualityIssues(options: {
-  quality: QualityGateContext;
-  targetPages: number;
-  /** Unevaluated until the gate above has said the fold will be read. */
-  storyState: () => StoryState;
-}): ManuscriptQualityIssue[] {
-  if (!options.quality.enabled("storyExtractAudit")) {
-    return [];
-  }
-  return options.storyState().promises.filter((promise) => promise.status === "open").map((promise) => ({
-    code: "BRIEF_COVERAGE_UNVERIFIED",
-    severity: "warning",
-    source: "deterministic",
-    message: `Continuity tracking could not verify this promise: ${promise.text}`,
-    guidance: "Check the whole manuscript for the promised explanation before requesting a rewrite.",
-    affectedPageIndexes: []
-  }));
-}
-
-/**
  * The pages this compile reviewed that the book no longer holds in that form.
  *
  * Compared row by row against the manuscript as it now stands, because two
@@ -477,9 +446,9 @@ export function pagesTheCompileNoLongerSpeaksFor(
  * length check. A finding that names **no** page has nothing to be scored
  * against but the book, which is argued in `issuesStillTrueOfTheBook` below. A
  * finding that names **one page it is not about** is the same claim wearing a
- * page number: `unpaidPromiseQualityIssues` stamps `[targetPages]` on every
- * promise the book leaves open, and that index is where the reader is told to
- * pay it off, not the prose being complained about.
+ * page number: an `UNPAID_PROMISE` finding carries the book's last page for
+ * every promise the book leaves open, and that index is where the reader is
+ * told to pay it off, not the prose being complained about.
  *
  * Scored as a located finding, that anchor was unfalsifiable by construction.
  * The repair pass rewrites in ascending order and stops where the fence went
@@ -496,7 +465,8 @@ export function pagesTheCompileNoLongerSpeaksFor(
  * way out, and it is the one thing this file may not do: those pages are the
  * reader's manuscript, and measuring anything over them is how a stand-down
  * invents a finding about prose nobody here reviewed — the rule
- * `withdrawnQualityVerdict` and `reviewedStoryState` are both written against,
+ * `withdrawnQualityVerdict` is written against (as `reviewedStoryState` was,
+ * until the story-memory check it folded for went on 2026-10-16, E6),
  * and the reason a fresh deterministic sweep is refused two functions down.
  * Naming the shape instead costs one advisory line on the book where the
  * promise really is still open and some unrelated page moved, and it buys back
@@ -536,11 +506,11 @@ function scoredAgainstTheWholeBook(issue: ManuscriptQualityIssue): boolean {
  * cosmetic edit from a substantive one — `pagesTheCompileNoLongerSpeaksFor`
  * compares revision, title and text, and a fixed typo and a paid page rewrite
  * are the same answer — and the pass's own repairs count as movement too, which
- * is the case that settles it: the publishing path re-runs
- * `strategy.runFinalBookQa` over the repaired pages precisely because a
- * whole-book verdict does not survive the pages under it being rewritten. A
- * stand-down cannot re-run anything, so withholding is the only honest form of
- * the same rule. What it costs is one advisory line on a card; what keeping it
+ * is the case that settles it: the publishing path settles the findings on the
+ * repaired pages from the verification that published them
+ * (`quickDraftReviewAfterRepair`) precisely because a verdict does not survive
+ * the pages under it being rewritten. A stand-down has no verification to read,
+ * so withholding is the only honest form of the same rule. What it costs is one advisory line on a card; what keeping it
  * costs is a claim about a book nobody graded.
  */
 function issuesStillTrueOfTheBook(
@@ -554,14 +524,25 @@ function issuesStillTrueOfTheBook(
   );
 }
 
-/** Both halves of what a compile measured, counted: the grade is over the two together. */
-function findingCount(findings: StandDownFindings): number {
-  return findings.deterministicIssues.length + findings.modelIssues.length;
+/**
+ * The findings of a measurement that reach the reader's grade, counted — the
+ * grade is over these alone since the split (`readerFindings.ts`), so "no
+ * claim" and "a clean pass" are questions about them, never about the
+ * diagnostics beside them. Counted with the grader's own rule, so the two
+ * cannot disagree about which findings speak.
+ */
+function readerFindingCount(findings: StandDownFindings): number {
+  return readerFindingsFrom([...findings.deterministicIssues, ...findings.modelIssues], {
+    deterministicWarningsAffectVerdict: findings.deterministicWarningsAffectVerdict ?? findings.finalReviewRan
+  }).length;
 }
 
 /**
- * Whether the withdrawal has taken away everything this compile had to say —
- * which is not the same fact as its having found nothing.
+ * Whether the withdrawal has taken away everything this compile had to say to
+ * the reader — which is not the same fact as its having found nothing. Asked
+ * of the reader's findings (`readerFindingCount`): a stand-down that withheld
+ * the one leak it quoted and kept three console diagnostics has no claim left
+ * for the reader's card either, and grading the survivors would write `passed`.
  *
  * `buildManuscriptQualityReport` grades no findings as `passed`, score 100:
  * "Quality checks passed" on the reader's card. That sentence is a
@@ -595,7 +576,7 @@ function findingCount(findings: StandDownFindings): number {
  * than a filter — the rule `issuesStillTrueOfTheBook` exists to avoid.
  */
 function withheldEveryFindingItMeasured(measured: StandDownFindings, surviving: StandDownFindings): boolean {
-  return findingCount(measured) > 0 && findingCount(surviving) === 0;
+  return readerFindingCount(measured) > 0 && readerFindingCount(surviving) === 0;
 }
 
 /**
@@ -606,13 +587,13 @@ function withheldEveryFindingItMeasured(measured: StandDownFindings, surviving: 
  *
  * The stand-down used to record the pre-repair snapshot verbatim, stamped
  * `finalReviewRan: true`, and that report was a claim about a manuscript that
- * no longer existed. The repair pass runs in ascending page order and rewrites
- * every `severity === "error"` page the deterministic sweep named; a fence that
- * trips on page 15 of 15 has already saved fourteen repairs to the database,
- * and the report still named all fifteen. The publishing path never ships that
- * report — it re-runs `strategy.runFinalBookQa` over the repaired pages
- * precisely because the pre-repair verdict is stale — so this path was
- * publishing what that path refuses to.
+ * no longer existed. The per-page repair loop of the time ran in ascending page
+ * order and rewrote every `severity === "error"` page the deterministic sweep
+ * named; a fence that tripped on page 15 of 15 had already saved fourteen
+ * repairs, and the report still named all fifteen. The publishing path never
+ * ships a pre-repair verdict for repaired pages — today it settles them from
+ * the repair's own verification (`quickDraftReviewAfterRepair`) — so this path
+ * was publishing what that path refuses to.
  *
  * Which mattered because nothing was coming to replace it. The compile that
  * supersedes this one may own no verdict at all: an image move, remove or
@@ -690,7 +671,7 @@ async function standDownQualityReport(
   // still describes the current manuscript. Movement makes it unproven, not a
   // fresh failure and certainly not a fresh pass.
   const storedCleanPassMoved =
-    findings.reviewedPageFingerprints !== undefined && findingCount(findings) === 0 && moved.size > 0;
+    findings.reviewedPageFingerprints !== undefined && readerFindingCount(findings) === 0 && moved.size > 0;
   return storedCleanPassMoved || withheldEveryFindingItMeasured(findings, surviving)
     ? null
     : qualityReportFromFindings(surviving);
@@ -749,49 +730,4 @@ async function withdrawnQualityVerdict(
       projectId
     }
   });
-}
-
-/**
- * The story state a stand-down is entitled to fold, over the pages it read
- * rather than over the project's rows.
- *
- * `unpaidPromiseQualityIssues` is part of every report the publishing path
- * ships, and a stand-down report that silently drops a whole check is a
- * different report about the same book — so it is folded on that path too. But
- * `rebuildStoryStateFromPages` reads the project, which by then holds the
- * reader's new page 3 and every page this pass had already rewritten. So the
- * one half of the report measured over a different book was an UNPAID_PROMISE
- * derived from prose this compile never read, asserted about a book it had just
- * disclaimed, and served to the reader's quality card by
- * `loadProjectQualityReport`.
- *
- * The withdrawal filter does not stand in for this, and the two are not the
- * same guard. It now scores the finding against the whole book
- * (`scoredAgainstTheWholeBook`), so it withholds it the moment any page has
- * moved — but that is a question about a *third* read, taken later and against
- * a book that is still changing, and its answer is "keep" whenever the two
- * snapshots happen to agree. What decides which prose the finding is about at
- * all is this fold. The filter withholds a claim that has stopped being true;
- * this keeps the claim from being about somebody else's pages in the first
- * place, which is not something a later comparison can undo.
- *
- * What the fold actually needs is one column per page — `Page.storyDelta` — and
- * the reviewed snapshot carries it. This is the same arithmetic
- * `rebuildStoryStateFromPages` does, minus the read that made it a question
- * about a different manuscript, and minus the write: a compile standing down
- * may not put a fold of a book it has disclaimed back onto the project. A page
- * whose delta never landed contributes nothing, exactly as it contributes
- * nothing there.
- */
-export function reviewedStoryState(
-  reviewedPages: Array<{ index: number; storyDelta: unknown }>,
-  plan: BookPlan
-): StoryState {
-  return rebuildStoryState(
-    reviewedPages.flatMap((page) => {
-      const delta = parseStoryDelta(page.storyDelta);
-      return delta ? [{ pageIndex: page.index, delta }] : [];
-    }),
-    seedStoryStateFromPromises(plan.promises ?? [])
-  );
 }

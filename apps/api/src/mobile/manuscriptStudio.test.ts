@@ -48,7 +48,6 @@ describe("creating a Studio book", () => {
       category: "STORY"
     });
     expect(project.mediaSettings).toMatchObject({
-      finalReview: false,
       fullIllustrations: false,
       coverArtSource: "design",
       modelTier: "balanced",

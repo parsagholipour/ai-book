@@ -6,7 +6,6 @@ import {
   ANTI_SLOP_DETECTOR_VERSION,
   ANTI_SLOP_LIVE_GATES_MET,
   ANTI_SLOP_STYLE_CONTRACT_VERSION,
-  ANTI_SLOP_STRUCTURAL_REVIEW_BOUNDS,
   ANTI_SLOP_THRESHOLD_STATUS,
   BOOK_MAKER_PRODUCTION_MAP_INTEGRITY_ENV,
   PHASE_06_AUTOMATIC_CONSOLIDATION_ENTRY_MET,
@@ -27,9 +26,6 @@ describe("replayAntiSlopCalibration", () => {
     expect(report.productionMapIntegrityEnvRetained).toBe(true);
     expect(report.productionMapIntegrityEnv).toBe(BOOK_MAKER_PRODUCTION_MAP_INTEGRITY_ENV);
     expect(report.thresholdStatus).toBe(ANTI_SLOP_THRESHOLD_STATUS);
-    expect(report.structuralReviewBounds).toEqual(ANTI_SLOP_STRUCTURAL_REVIEW_BOUNDS);
-    expect(report.structuralReviewBounds.maxOutputTokens).toBe(1800);
-    expect(report.structuralReviewBounds.temperature).toBe(0);
     expect(report.corpusCalibrationOwner).toBe(ANTI_SLOP_CORPUS_CALIBRATION_OWNER);
     expect(report.corpusCalibrationCadence).toBe(ANTI_SLOP_CORPUS_CALIBRATION_CADENCE);
     expect(report.automaticRepairExclusions).toEqual([...ANTI_SLOP_AUTOMATIC_REPAIR_EXCLUSIONS]);

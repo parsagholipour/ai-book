@@ -76,26 +76,28 @@ export function interiorIllustrationLaunchCap(input: CreateProjectInput): number
 export const PICTURE_BOOK_MAX_PICTURES = 12;
 
 /**
- * **A children's picture book has a picture on every page up to twelve pages,
- * and twelve pictures spread across any longer one: `min(pages, 12)`.** It was
- * capped at four whatever its length — a 12-page bedtime book printed eight
- * sheets of words alone — and the picture book is what the store listing leads
- * with (launch review, 2026-10-13). The first rule after that, a picture a page
- * to twelve and then one per two pages, stepped *down* at thirteen (12 pages
- * drew 12, 13 drew 7), so a longer book got fewer pictures than a shorter one;
- * the count is now monotonic, and every picture book of 12 pages or more gets
- * twelve, at the tier's ordinary image rate (coordinator's decision,
- * 2026-10-13). Past twelve pages the slots are the existing even spread, so 24
- * pages draw pages 1, 3 … 23. The typesetter already gives every KIDS scene its
- * own sheet from 5 to 40 pages and sets a picture scene's words under a capped
- * picture (`pdfStoryPages.ts`), so no layout changed; past 40 pages the house
- * layout prints them inline. With a drawn cover, the largest free picture book
- * (30 pages, twelve pictures) is 1,175 plus its 40-credit plan, inside the
- * 1,250 welcome grant (`welcomeCredits.test.ts`). Mirrored by
- * `pictureBookIllustrationCount` in the app's `project_models.dart`.
+ * **A children's picture book draws two pictures for every five pages, rounded
+ * to the nearest, at least one and at most twelve**: 5 pages draw 2, 10 draw 4,
+ * 12 draw 5, 16 draw 6, 24 draw 10, and 29 or more draw 12. Pictures are about
+ * 99% of an illustrated book's provider cost — a 10-page Quick Draft children's
+ * book spent $0.585 on its 15 image calls and $0.006 on all of its text — and
+ * the owner judged four enough for a 10-page book (Parsa, 2026-10-17). It
+ * replaced `min(pages, 12)`, a picture on every page to twelve (2026-10-13),
+ * which had replaced a flat four whatever the length. The count must never
+ * step down as a book grows: a picture a page to twelve and then one per two
+ * pages drew 12 at twelve pages and 7 at thirteen, and was rejected for it.
+ * Integer arithmetic, so the app's twin agrees on every length: round(2p/5)
+ * is `floor((4p + 5) / 10)`, and 2p/5 never lands on a half. The slots are the
+ * existing even spread, so 10 pages draw pages 1, 3, 6 and 8, and a scene
+ * without one is set as a centred text sheet (`pdfStoryPages.ts`). With a drawn
+ * cover, the largest free picture book (30 pages, twelve pictures) is 1,175
+ * plus its 40-credit plan, inside the 1,250 welcome grant
+ * (`welcomeCredits.test.ts`). Mirrored by `pictureBookIllustrationCount` in the
+ * app's `project_models.dart`.
  */
 export function pictureBookIllustrationCap(pages: number): number {
-  return Math.min(PICTURE_BOOK_MAX_PICTURES, Math.max(0, Math.round(pages)));
+  const whole = Math.max(0, Math.round(pages));
+  return Math.min(PICTURE_BOOK_MAX_PICTURES, Math.max(whole > 0 ? 1 : 0, Math.floor((4 * whole + 5) / 10)));
 }
 
 /**

@@ -29,13 +29,24 @@ describe("longLaneQueuePosition", () => {
       [
         // A short recompile of someone's edit is interactive and holds nobody up.
         { projectId: "edited", type: "COMPILE_EXPORT", status: "QUEUED", createdAt: at(0), payload: { skipFinalReview: true } },
-        // A generation's own compile continues a book already under way.
-        { projectId: "finishing", type: "COMPILE_EXPORT", status: "QUEUED", createdAt: at(20), payload: { exportPublicationProjectStatus: "GENERATING" } }
+        // A generation's own compile and its pictures run in lanes of their own, beside the long one.
+        { projectId: "finishing", type: "COMPILE_EXPORT", status: "QUEUED", createdAt: at(20), payload: { exportPublicationProjectStatus: "GENERATING" } },
+        { projectId: "drawing", type: "GENERATE_IMAGE", status: "ACTIVE", createdAt: at(0), payload: { planId: "p", pageId: "x" } }
       ]
     );
     const mine = [{ projectId: "mine", type: "GENERATE_BOOK", status: "QUEUED", createdAt: at(5), payload: {} }];
 
-    await expect(longLaneQueuePosition("mine", mine, 1_000)).resolves.toEqual({ booksAhead: 3 });
+    await expect(longLaneQueuePosition("mine", mine, 1_000, 1)).resolves.toEqual({ booksAhead: 2 });
+  });
+
+  it("is null for a book whose pictures or compile are all it is waiting on", async () => {
+    openRows([{ projectId: "running", type: "GENERATE_BOOK", status: "ACTIVE", createdAt: at(1) }]);
+    await expect(
+      longLaneQueuePosition("mine", [
+        { projectId: "mine", type: "GENERATE_IMAGE", status: "QUEUED", createdAt: at(2), payload: { planId: "p", pageId: "x" } },
+        { projectId: "mine", type: "COMPILE_EXPORT", status: "QUEUED", createdAt: at(3), payload: { exportPublicationProjectStatus: "GENERATING" } }
+      ])
+    ).resolves.toBeNull();
   });
 
   it("is null while the book's long work runs, or when it has none waiting", async () => {
@@ -69,7 +80,19 @@ describe("longLaneQueuePosition", () => {
     );
     const mine = [{ projectId: "mine", type: "APPLY_BOOK_EDIT", status: "QUEUED", createdAt: at(5), payload: wholeBook }];
 
-    await expect(longLaneQueuePosition("mine", mine, 50_000)).resolves.toEqual({ booksAhead: 2 });
+    await expect(longLaneQueuePosition("mine", mine, 50_000, 1)).resolves.toEqual({ booksAhead: 2 });
+  });
+
+  it("counts the running books only once every slot of the lane is taken, reading the worker's own setting", async () => {
+    const running = ["a", "b"].map((projectId, minute) => ({ projectId, type: "GENERATE_BOOK", status: "ACTIVE", createdAt: at(minute) }));
+    openRows([...running, { projectId: "older", type: "GENERATE_BOOK", status: "QUEUED", createdAt: at(3) }]);
+    const mine = [{ projectId: "mine", type: "GENERATE_BOOK", status: "QUEUED", createdAt: at(5) }];
+    await expect(longLaneQueuePosition("mine", mine, 60_000, 1)).resolves.toEqual({ booksAhead: 3 });
+    await expect(longLaneQueuePosition("mine", mine, 60_000, 2)).resolves.toEqual({ booksAhead: 2 });
+    resetLongLaneSnapshotForTests();
+    vi.stubEnv("WORKER_LONG_CONCURRENCY", "30");
+    await expect(longLaneQueuePosition("mine", mine, 60_000)).resolves.toEqual({ booksAhead: 1 });
+    vi.unstubAllEnvs();
   });
 
   it("answers zero for the first book in line", async () => {

@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createProjectSchema, pageQualityReportSchema } from "../schemas/book.js";
 import { characterSchema } from "../schemas/plan.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
-import { reviewPageDraft, revisePageDraft } from "./pagesReview.js";
-import { reviewPictureBookManuscript } from "./pictureBookReview.js";
-import { repairPictureBookManuscript } from "./pictureBookRepair.js";
+import { reviewPageDraft } from "./pagesReview.js";
 import { scriptedDevelopmentModel } from "./testing/bookDevelopmentFixtures.js";
 
 // Premium page 25, captured 2026-09-25. Its plan used L4; the original prose did not.
@@ -24,10 +22,6 @@ const leakReport = pageQualityReportSchema.parse({ approved: false, score: 90,
   issues: ['The page is otherwise acceptable, but "set L4 on post four" exposes planning shorthand.'],
   requiredRevisions: ['Restore "the fourth lantern" without undoing the corrected near-bank position.'],
   checks: { promptLeakFree: false } });
-const finding = { domain: "prose", basis: "page_prose", requirementQuote: null, category: "prompt_leak",
-  message: "The repair substituted internal L4 for the established fourth lantern.",
-  guidance: 'Use "the fourth lantern" while keeping the neighbors on the near bank.',
-  quote: "Wise Turtle set L4 on post four.", relatedEvidence: [] };
 
 describe("contextual planning-label repairs", () => {
   it("does not promote an explicit leak rejection to approval because other prose is acceptable", async () => {
@@ -47,33 +41,6 @@ describe("contextual planning-label repairs", () => {
     });
     expect(calls[0]!.messages[0]!.content).toContain("planning shorthand");
     expect(calls[0]!.messages[0]!.content).toContain("legitimate alphanumeric");
-  });
-
-  it("briefs page and manuscript repair calls to preserve established reader names", async () => {
-    const corrected = { ...draft, markdown: leakedMarkdown.replace("L4", "the fourth lantern") };
-    const page = scriptedDevelopmentModel([corrected]);
-    expect(await revisePageDraft({ ...options, draft: { ...draft, markdown: originalMarkdown }, report: leakReport, textModel: page.model })).toEqual(corrected);
-    const manuscript = scriptedDevelopmentModel([{ pages: [] }]);
-    await repairPictureBookManuscript({ input, plan, pages: [{ ...draft, index: 25 }],
-      issues: [{ pageIndexes: [25], messages: leakReport.issues }], textModel: manuscript.model });
-    for (const { calls } of [page, manuscript]) {
-      expect(calls).toHaveLength(1);
-      expect(calls[0]!.messages[0]!.content).toContain("established reader-facing names");
-      expect(calls[0]!.messages[0]!.content).toContain("legitimate alphanumeric");
-    }
-  });
-
-  it("carries an exact quoted manuscript leak into a failing quality check in one call", async () => {
-    const { model, calls } = scriptedDevelopmentModel([{ pages: [{ pageIndex: 25, score: 90, findings: [finding], storyExtract: null, styleAudit: null,
-      repairAssessment: { targetResolved: true, meaningPreserved: false, noNewRegressions: false, reason: "The bridge correction introduced internal planning shorthand." } }] }]);
-    const reviews = await reviewPictureBookManuscript({ input, plan, pages: [{ ...draft, index: 25 }], chapterBriefs: [],
-      checks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false }, textModel: model,
-      repairContext: { issues: [{ pageIndexes: [25], messages: ["Keep the neighbors on the near bank."] }],
-        changes: [{ pageIndex: 25, originalMarkdown, reason: "Correct the bridge transition." }] } });
-    expect(calls).toHaveLength(1);
-    expect(reviews[0]!.report).toMatchObject({ approved: false, checks: { promptLeakFree: false }, requiredRevisions: [finding.guidance] });
-    expect(reviews[0]!.report.issues[0]).toContain(finding.quote);
-    expect(calls[0]!.messages[0]!.content).toContain("planning shorthand");
   });
 
   it.each(["L4", "R2-D2", "B12"])("preserves a contextually valid %s without a lexical veto", async (name) => {

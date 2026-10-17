@@ -137,5 +137,10 @@ export const JOB_STEP_TEMPLATES: Record<GenerationJobType, readonly JobStepTempl
     { key: "prepare", label: "Read your manuscript" },
     { key: "assist", label: "Work on your request" },
     { key: "save", label: "Save the suggestion" }
-  ]
+  ],
+  // Speculative composition prep, run while the reader is still reading the
+  // plan (`handlers/prepareComposition.ts`). No steps on purpose: nobody is
+  // waiting on it, the plan screen must look exactly as it did, and the book
+  // run it feeds reports its own progress.
+  PREPARE_COMPOSITION: []
 };

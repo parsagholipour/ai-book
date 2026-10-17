@@ -4,13 +4,11 @@ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prom
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import { chapterEpisodeSchema, type BookEpisodes } from "../schemas/episodes.js";
 import { instructionalSettingSchema, type InstructionalSetting } from "../schemas/instructional.js";
-import { isRecord } from "../schemas/jsonCoercion.js";
 import { TOOLKIT_FORMS } from "./chapterFormPalette.js";
 import {
   PLAN_CHAPTER_FORMS_PURPOSE,
   assignedSectionCount,
   capFigures,
-  compositionShapeIssues,
   compositionVarietyIssues,
   fallbackChapterComposition,
   figureCapFor,
@@ -123,8 +121,10 @@ function isStopLike(error: unknown): boolean {
 }
 
 /**
- * The form plan of a toolkit book: `planChapterForms`' one call, repair and
- * rotation, with the toolkit's rules, palette and contract. The reply also
+ * The form plan of a toolkit book: `planChapterForms`' one call with the
+ * toolkit's rules, palette and contract, and no repair call (removed
+ * 2026-10-16 with the `formPlanRepair` gate; Quick Draft had planned toolkit
+ * books without it since 2026-09-30). The reply also
  * carries the book's cast, caveats, rules and (a workbook) running case; the
  * brief's asks are checked for a home in code before any prose exists, and a
  * chapter's long section is moved onto a deliverable.
@@ -156,7 +156,7 @@ export async function planInstructionalForms(options: PlanChapterFormsOptions): 
     );
   const normalize = (reply: unknown) => deliverableCarriesLength(normalizeChapterCompositions(reply, open, palette, { toolkit: true }));
 
-  const request = (repair: { compositions: ChapterComposition[]; issues: string[] } | undefined) =>
+  const request = () =>
     generateJsonWithRetry(options.textModel, {
       purpose: PLAN_CHAPTER_FORMS_PURPOSE,
       temperature: Math.min(0.7, options.input.temperature),
@@ -171,9 +171,6 @@ export async function planInstructionalForms(options: PlanChapterFormsOptions): 
             ...(fixedCast ? [FIXED_EXAMPLE_CAST_RULE] : []),
             ...(options.toolkit ? [FIXED_TOOLKIT_RULE] : []),
             ...(options.figures ? [TOOLKIT_FIGURE_FORM_PLAN_RULE] : []),
-            ...(repair
-              ? ["Your previous plan is in previousPlan and failed the checks listed in issues. Return a corrected complete plan for the same chapters that resolves every issue while keeping headings, subjects and ownership where the issues allow."]
-              : []),
             ...targetLanguageGenerationGuidance(options.input.language)
           ].join(" ")
         },
@@ -217,7 +214,6 @@ export async function planInstructionalForms(options: PlanChapterFormsOptions): 
                     }))
                   }
                 : {}),
-              ...(repair ? { previousPlan: repair.compositions, issues: repair.issues } : {}),
               outputContract: toolkitOutputContract(kind, Boolean(options.figures))
             },
             null,
@@ -247,7 +243,7 @@ export async function planInstructionalForms(options: PlanChapterFormsOptions): 
 
   let planned: ChapterComposition[];
   try {
-    const reply = (await request(undefined)).data;
+    const reply = (await request()).data;
     planned = normalize(reply);
     if (!fixedCast) cast = exampleCastFrom(reply);
     toolkit ??= toolkitFrom(reply, kind, setting, chapterIndexes);
@@ -257,27 +253,9 @@ export async function planInstructionalForms(options: PlanChapterFormsOptions): 
     const homed = homeByCode(fallback);
     return finish(homed.compositions, "fallback", homed.homed);
   }
-  let merged = merge(planned);
-  let issues = [...compositionVarietyIssues(merged, palette, { thesis }), ...coverageOf(merged)];
-  const repair = options.repair !== false;
-  const shape = compositionShapeIssues(merged);
-  if (issues.length === 0 && (shape.length === 0 || !repair)) return finish(merged, "model");
-  if (repair) {
-    try {
-      const reply = (await request({ compositions: planned, issues: [...issues, ...shape] })).data;
-      const repaired = merge(normalize(reply));
-      const repairedIssues = [...compositionVarietyIssues(repaired, palette, { thesis }), ...coverageOf(repaired)];
-      if (repairedIssues.length + compositionShapeIssues(repaired).length < issues.length + shape.length) {
-        merged = repaired;
-        issues = repairedIssues;
-        if (!fixedCast) cast = exampleCastFrom(reply) ?? cast;
-        if (!options.toolkit && isRecord(reply)) toolkit = toolkitFrom(reply, kind, setting, chapterIndexes);
-      }
-      if (issues.length === 0) return finish(merged, "repaired");
-    } catch (error) {
-      if (isStopLike(error)) throw error;
-    }
-  }
+  const merged = merge(planned);
+  const issues = [...compositionVarietyIssues(merged, palette, { thesis }), ...coverageOf(merged)];
+  if (issues.length === 0) return finish(merged, "model");
   // No rotation: a toolkit section's form is what it delivers, and rotating an objection into an exercise
   // left the subject behind (2026-10-01 replay). The variety issues stay on the result as diagnostics;
   // a requirement still without a home is homed by code.

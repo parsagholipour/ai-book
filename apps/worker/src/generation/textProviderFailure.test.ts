@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { ProviderHttpError, ProviderStreamInterruptedError, TextAttemptBudgetExhaustedError } from "@book-maker/core";
-import { isBoundedTextProviderFailure } from "./textProviderFailure.js";
+import { ProviderHttpError, ProviderStreamInterruptedError, TextAttemptBudgetExhaustedError, TextGenerationFallbackError } from "@book-maker/core";
+import { isBoundedTextProviderFailure, isTextProviderFailure } from "./textProviderFailure.js";
 
 it.each([
   new TextAttemptBudgetExhaustedError(5),
@@ -22,4 +22,20 @@ it.each([
   Object.assign(new Error("aborted"), { name: "AbortError" })
 ])("preserves permanent, cancellation and infrastructure failures: %s", (error) => {
   expect(isBoundedTextProviderFailure(error)).toBe(false);
+});
+
+it("keeps saved prose when a provider's account is empty, on either attempt of a pair", () => {
+  const empty = new ProviderHttpError("429 You have no credits remaining.", { status: 429, code: "credit_balance_exhausted" });
+  const deepSeekBalance = Object.assign(new Error("402 Insufficient Balance"), { name: "Error", status: 402 });
+  expect(isBoundedTextProviderFailure(empty)).toBe(true);
+  expect(isBoundedTextProviderFailure(deepSeekBalance)).toBe(true);
+  expect(isTextProviderFailure(deepSeekBalance)).toBe(true);
+  // The pair's error as the fallback adapter builds it, each attempt serialized: an empty
+  // primary beside a fallback that refused the request outright.
+  const pair = new TextGenerationFallbackError({
+    operation: "generateText",
+    primary: { provider: "openai", model: "gpt-6-luna", error: { name: "ProviderHttpError", message: empty.message, status: 429 } },
+    fallback: { provider: "deepseek", model: "deepseek-v4-pro", error: { name: "ProviderHttpError", message: "bad request", status: 400 } }
+  });
+  expect(isBoundedTextProviderFailure(pair)).toBe(true);
 });

@@ -1,5 +1,4 @@
 import type { PriorPageContext } from "./pagesShared.js";
-import type { PictureBookPageReview } from "./pictureBookReviewValidation.js";
 import { pictureBookChecklistSpans } from "./pictureBookChecklistSpans.js";
 
 /** This challenges an absence diagnosis, never certifies natural dialogue.
@@ -16,19 +15,4 @@ export function pictureBookSpeechCounterevidence(page: Pick<PriorPageContext, "i
     offset += text.length;
     return quotations.some(match => match.index < offset && match.index + match[0].length > start) ? [id] : [];
   });
-}
-
-export function pictureBookChecklistCounterevidence(page: Pick<PriorPageContext, "index" | "markdown">,
-  findings: NonNullable<PictureBookPageReview["findings"]>) {
-  return findings.flatMap((finding, findingIndex) => {
-    const spanIds = finding.domain === "prose" && finding.basis === "missing_requirement"
-      ? pictureBookSpeechCounterevidence(page, finding.requirementQuote ?? "", finding.message) : [];
-    return spanIds.length ? [{ findingIndex, spanIds }] : [];
-  });
-}
-
-export function pictureBookCounterevidenceErrors(page: Pick<PriorPageContext, "index" | "markdown">,
-  findings: NonNullable<PictureBookPageReview["findings"]>) {
-  return pictureBookChecklistCounterevidence(page, findings).map(({ findingIndex }) =>
-    `Finding ${findingIndex} claims speech is absent, but current-page quotations need explicit counterevidence review before any rewrite. Distinguish absence from inadequate dialogue.`);
 }

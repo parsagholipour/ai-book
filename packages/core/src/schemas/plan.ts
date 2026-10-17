@@ -4,6 +4,7 @@ import {
   booleanField,
   coerceStringArray,
   isRecord,
+  jsonValueSchema,
   recordField,
   stringArrayField,
   stringField,
@@ -13,7 +14,7 @@ import { bookArcSchema } from "./bookArc.js";
 import { bookDevelopmentSchema } from "./bookDevelopment.js";
 import { bookDossierSchema, bookEpisodesSchema } from "./episodes.js";
 import { exampleCastSchema } from "./exampleCast.js";
-import { instructionalToolkitSchema } from "./instructional.js";
+import { instructionalSettingSchema, instructionalToolkitSchema } from "./instructional.js";
 import { illustrationCadenceSchema } from "./mediaSettings.js";
 import {
   isWritingMode,
@@ -642,6 +643,11 @@ export const planQuestionSchema = z.preprocess(
   })
 );
 
+/** A worker-owned JSON document a plan carries opaquely; one that is not JSON is dropped, never a reason to fail the plan. */
+function storedJsonField() {
+  return z.preprocess((value) => (jsonValueSchema.safeParse(value).success ? value : undefined), jsonValueSchema.optional());
+}
+
 const bookPlanObjectSchema = z.object({
   title: z.string(),
   subtitle: z.string().optional(),
@@ -677,13 +683,26 @@ const bookPlanObjectSchema = z.object({
   exampleCast: z.preprocess((value) => (exampleCastSchema.safeParse(value).success ? value : undefined), exampleCastSchema.optional()),
   /** A practical guide's or a workbook's whole-book decisions (generation/instructionalBook.ts); dropped when it no longer parses. */
   toolkit: z.preprocess((value) => (instructionalToolkitSchema.safeParse(value).success ? value : undefined), instructionalToolkitSchema.optional()),
+  /** The country, currency and year a guide's research leads were planned for, stored with its episodes so a later run plans its forms from the same setting. */
+  instructionalSetting: z.preprocess((value) => (instructionalSettingSchema.safeParse(value).success ? value : undefined), instructionalSettingSchema.optional()),
+  /**
+   * The chapter form plan, stored by the speculative composition prep
+   * (apps/worker/src/generation/composedSpeculativePrep.ts) and reused by the book run only when its own
+   * inputs match the ones it was planned from. Opaque here: the worker owns its shape.
+   */
+  compositions: storedJsonField(),
+  /** Which fields the speculative composition prep wrote, under which inputs, and how each step ended. Worker-owned. */
+  compositionPrep: storedJsonField(),
   illustrationPlan: illustrationPlanSchema
 });
+
+/** What a model never authors: the run-time fields a book run or its prep stores on a plan version. */
+const RUN_STORED_PLAN_FIELDS = { instructionalSetting: true, compositions: true, compositionPrep: true } as const;
 
 export const bookPlanSchema = z.preprocess((value) => normalizeBookPlan(value, undefined), bookPlanObjectSchema);
 
 export function bookPlanSchemaWithFallback(fallback: BookPlan) {
-  return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema.omit({ requirementInventory: true }));
+  return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema.omit({ requirementInventory: true, ...RUN_STORED_PLAN_FIELDS }));
 }
 
 /**
@@ -699,7 +718,7 @@ export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compac
   return z.preprocess(
     normalizeBookPlanWithFallback(fallback, true),
     bookPlanObjectSchema.omit({ researchNotes: true, requirementInventory: true, bookDevelopment: true, episodes: true, dossier: true, storyTreatment: true, bookArc: true, exampleCast: true, toolkit: true,
-      ...(compactStory ? { authorStance: true as const, styleContract: true as const } : {}) })
+      ...RUN_STORED_PLAN_FIELDS, ...(compactStory ? { authorStance: true as const, styleContract: true as const } : {}) })
   );
 }
 
@@ -707,7 +726,7 @@ export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan, compac
 export function pictureBookStoryPlanSchema(fallback: BookPlan) {
   return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema.omit({
     chapters: true, researchNotes: true, requirementInventory: true, bookDevelopment: true, episodes: true, dossier: true,
-    authorStance: true, styleContract: true, bookArc: true, exampleCast: true, toolkit: true
+    authorStance: true, styleContract: true, bookArc: true, exampleCast: true, toolkit: true, ...RUN_STORED_PLAN_FIELDS
   }).extend({ storyTreatment: z.string().trim().min(200).max(16_000) }));
 }
 

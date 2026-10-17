@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
-  FallbackTextModelAdapter, OpenAITextAdapter, ProviderHttpError,
+  FallbackTextModelAdapter, OpenAITextAdapter, ProviderHttpError, isTextProviderFallbackError,
   type TextModelAdapter
 } from "@book-maker/core";
 import { MemoryObjectStore, readRunLog, setObjectStoreForTests } from "@book-maker/storage";
@@ -24,7 +24,8 @@ vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: vi.fn(), upd
 import { LoggingTextModelAdapter } from "./loggedAdapters.js";
 import { createRunLogger } from "./runLogging.js";
 
-type Outcome = { input: number; output: number; fail?: boolean; reportUsage?: boolean };
+/** `interrupt`: the connection dies mid-answer — a stream with no terminal event, or a socket closed under a plain request. */
+type Outcome = { input: number; output: number; fail?: boolean; reportUsage?: boolean; interrupt?: boolean };
 type Operation = "generateText" | "generateJson" | "generateWithTools";
 const options = { messages: [{ role: "user" as const, content: "Write a result." }], maxTokens: 1000, purpose: "compose-chapter" };
 
@@ -33,6 +34,12 @@ function provider(model: string, outcomes: Outcome[]) {
   Object.assign(adapter, { client: { responses: { create: async (request: { stream?: boolean }) => {
     const outcome = outcomes.shift();
     if (!outcome) throw new Error("Unexpected extra provider dispatch");
+    if (outcome.interrupt && !request.stream) {
+      throw Object.assign(new TypeError("terminated"), { cause: { name: "SocketError", code: "UND_ERR_SOCKET", message: "other side closed" } });
+    }
+    if (outcome.interrupt) return (async function* () {
+      yield { type: "response.output_text.delta", delta: '{"value":"partial answer' };
+    })();
     if (!request.stream) return { model, output_text: '{"value":"ok"}', output: [],
       status: outcome.fail ? "failed" : "completed",
       ...(outcome.fail ? { error: { message: "connection reset after response" } } : {}),
@@ -117,7 +124,10 @@ it("does not double-settle a failed fallback when the outer retry restarts the p
   const run = logged(new FallbackTextModelAdapter({
     primary: { selection: { provider: "openai", model: "primary" }, adapter: primary },
     fallback: { selection: { provider: "openai", model: "fallback" }, adapter: fallback },
-    shouldFallback: () => true
+    shouldFallback: () => true,
+    // The pair as it was before the same-model retry: this test is about the
+    // outer retry restarting it, which the retry below would otherwise answer.
+    retryPrimary: false
   }));
   await invoke(run.adapter, "generateText");
   const rows = settled();
@@ -125,4 +135,39 @@ it("does not double-settle a failed fallback when the outer retry restarts the p
   expect(rows.map(row => row.model)).toEqual(["primary", "fallback", "primary"]);
   expect(sum(rows, "outputTokens")).toBe(504);
   expect(sum(rows, "promptTokens")).toBe(90);
+});
+
+describe.each<Operation>(["generateText", "generateJson", "generateWithTools"])("%s same-model retry accounting", operation => {
+  function pair(primary: Outcome[]) {
+    return logged(new FallbackTextModelAdapter({
+      primary: { selection: { provider: "openai", model: "primary" }, adapter: provider("primary", primary) },
+      // No outcomes: dispatching the fallback at all fails the test.
+      fallback: { selection: { provider: "openai", model: "fallback" }, adapter: provider("fallback", []) },
+      shouldFallback: isTextProviderFallbackError
+    }));
+  }
+
+  it("keeps an interrupted primary's partial output on its own row, then answers on the primary", async () => {
+    const run = pair([{ input: 20, output: 112, interrupt: true }, { input: 40, output: 224 }]);
+    await invoke(run.adapter, operation);
+    const rows = [...ledger.rows.values()];
+    expect(rows.map(row => row.model)).toEqual(["primary", "primary"]);
+    expect(new Set(rows.map(row => (row.metadata as Record<string, unknown>).callId)).size).toBe(1);
+    // The retry's answer is settled alone, never merged with the interrupted request.
+    expect(settled()).toHaveLength(1);
+    expect(sum(settled(), "outputTokens")).toBe(224);
+    const interrupted = rows.find(row => !settled().includes(row))!;
+    expect(interrupted).toMatchObject({ costHint: null, metadata: { liveStatus: "failed", provisional: true } });
+    // What it streamed before the cut is still on the ledger as spend.
+    if (operation !== "generateWithTools") expect(Number(interrupted.outputTokens)).toBeGreaterThan(0);
+  });
+
+  it("settles the failed primary's reported usage exactly once beside the retry's", async () => {
+    const run = pair([{ input: 20, output: 112, fail: true }, { input: 40, output: 224 }]);
+    await invoke(run.adapter, operation);
+    const rows = settled();
+    expect(rows.map(row => row.model)).toEqual(["primary", "primary"]);
+    expect(sum(rows, "promptTokens")).toBe(60);
+    expect(sum(rows, "outputTokens")).toBe(336);
+  });
 });

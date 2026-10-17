@@ -38,17 +38,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-// One export of one module, over the real rest of it: which pages the final-QA
-// repair redrafts is a test hook, while the per-message extractor behind the
-// reader's quality card and the page bound both questions are asked in stay
-// real, so the card assertions below measure the actual mapping.
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -99,7 +88,6 @@ describe("composed chapter length at publication", () => {
     await mkdir(join(storage, "project-1"), { recursive: true });
     mocks.inputForPlanVersion.mockReturnValue(input);
     mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: plan, inputSnapshot: null });
-    mocks.strategy.runFinalBookQa.mockResolvedValue({ approved: true, issues: [], requiredFixes: [], repairPageIndexes: [] });
     mocks.strategy.compileMarkdown.mockReturnValue("# Public Keys\n\nProse.\n");
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
@@ -110,7 +98,7 @@ describe("composed chapter length at publication", () => {
   });
   afterEach(async () => { await rm(storage, { recursive: true, force: true }); });
 
-  it.each([false, true])("flags a short composed chapter in the exported report (skipFinalReview=%s)", async (skipFinalReview) => {
+  it.each([false, true])("files a short composed chapter for the console (skipFinalReview=%s)", async (skipFinalReview) => {
     const chapters = [
       { id: "chapter-1", index: 1, title: "Public keys", targetPages: 4 },
       { id: "chapter-2", index: 2, title: "Applications", targetPages: 8 }
@@ -133,7 +121,10 @@ describe("composed chapter length at publication", () => {
       message: expect.stringContaining("1370 readable words against a 1720-word minimum")
     }));
     expect(persistedQualityReport().issues.filter((issue) => issue.severity === "error").map((issue) => issue.code)).toEqual(["CHAPTER_LENGTH_SHORTFALL", "CHAPTER_LENGTH_SHORTFALL"]);
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "REVIEW_REQUIRED" }));
+    // A console diagnostic since the reader/diagnostics split: every book that carried one in
+    // the 20 days to 2026-10-15 printed its paid pages, so it holds nobody's book for review.
+    expect(persistedQualityReport().state).toBe("passed");
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 
 });

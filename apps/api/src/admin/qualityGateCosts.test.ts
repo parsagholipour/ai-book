@@ -49,6 +49,13 @@ describe("qualityGateCostsForProject", () => {
       costRows: [row("accept-chapter-edit-meaning", 0.001), row("accept-chapter-edit-intent", 0.001), row("review-chapter-edit-acceptance", 0.02), row("edit-chapter", 0.1)] });
     expect(gates.find((gate) => gate.id === "chapterEditAcceptance")).toMatchObject({ calls: 3, providerCostUsd: 0.022 });
   });
+  it("lists edit-chapter spend under the composed edits-and-repairs row, never the removed line edit's", () => {
+    const gates = qualityGateCostsForProject({ mediaSettings: { modelTier: "balanced" }, fallbackAt: at(10), runs: [],
+      revisions: [{ version: 1, settings: settingsWith("chapterEditorPass"), createdAt: at(5) }],
+      costRows: [row("edit-chapter", 0.1), row("edit-chapter", 0.05)] });
+    expect(gates.find((gate) => gate.id === "composed.edit-chapter")).toMatchObject({ calls: 2, providerCostUsd: 0.15 });
+    expect(gates.find((gate) => gate.id === "chapterEditorPass")).toMatchObject({ calls: null, providerCostUsd: null, costNote: expect.stringContaining("Removed 2026-10-16") });
+  });
   it("uses the settings revision active for the run and attributes direct provider calls", () => {
     const gates = qualityGateCostsForProject({
       mediaSettings: { modelTier: "balanced" },
@@ -67,7 +74,7 @@ describe("qualityGateCostsForProject", () => {
           ),
           createdAt: at(5)
         },
-        { version: 2, settings: settingsWith("planCritic"), createdAt: at(15) }
+        { version: 2, settings: settingsWith("writerTools"), createdAt: at(15) }
       ],
       costRows: [
         row("review-page", 0.01),
@@ -110,7 +117,7 @@ describe("qualityGateCostsForProject", () => {
       calls: null,
       providerCostUsd: null
     });
-    expect(gates.some((gate) => gate.id === "planCritic")).toBe(false);
+    expect(gates.some((gate) => gate.id === "writerTools")).toBe(false);
   });
 
   it("unions gates enabled across multiple runs and reports an enabled direct gate with no calls", () => {
@@ -123,7 +130,7 @@ describe("qualityGateCostsForProject", () => {
       ],
       revisions: [
         { version: 1, settings: settingsWith("pageModelReview"), createdAt: at(5) },
-        { version: 2, settings: settingsWith("planCritic"), createdAt: at(15) }
+        { version: 2, settings: settingsWith("writerTools"), createdAt: at(15) }
       ],
       costRows: []
     });
@@ -133,7 +140,7 @@ describe("qualityGateCostsForProject", () => {
       "integrity.dedupe-page-beats",
       "integrity.review-manuscript-structure",
       "pageModelReview",
-      "planCritic"
+      "writerTools"
     ]);
     expect(gates.find((gate) => gate.id === "pageModelReview")).toMatchObject({
       calls: 0,
@@ -174,7 +181,6 @@ describe("qualityGateCostsForProject", () => {
       providerCostUsd: 0.03
     });
     expect(gates.find((gate) => gate.id === "finalBookQa")).toBeUndefined();
-    expect(gates.find((gate) => gate.id === "beatDedup")).toBeUndefined();
   });
 
   it("still shows clean-path no-call integrity rows when every polish gate is off", () => {

@@ -6,7 +6,9 @@ import {
   isRecoverableNetworkError,
   isSpeechProviderFallbackError,
   isStopOrAbortError,
+  isTextPrimaryRetryError,
   isTextProviderFallbackError,
+  ProviderStreamInterruptedError,
   withRecoverableNetworkRetry
 } from "./retry.js";
 
@@ -140,6 +142,44 @@ describe("isTextProviderFallbackError", () => {
     expect(
       isTextProviderFallbackError(Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" }))
     ).toBe(false);
+  });
+});
+
+describe("isTextPrimaryRetryError", () => {
+  it("retries a transport failure that left no complete answer", () => {
+    expect(isTextPrimaryRetryError(new ProviderStreamInterruptedError("OpenAI response stream ended without a completion event."))).toBe(true);
+    expect(isTextPrimaryRetryError(new TypeError("terminated"))).toBe(true);
+    expect(isTextPrimaryRetryError(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" }))).toBe(true);
+    expect(isTextPrimaryRetryError(new Error("socket hang up"))).toBe(true);
+    expect(
+      isTextPrimaryRetryError({ message: "fetch failed", cause: { name: "SocketError", code: "UND_ERR_SOCKET", message: "other side closed" } })
+    ).toBe(true);
+  });
+
+  it.each([502, 503, 504])("retries a gateway's HTTP %s, a deadline's 504 included", (status) => {
+    expect(isTextPrimaryRetryError(new ProviderHttpError("gateway", { status }))).toBe(true);
+  });
+
+  it("hops at once on a content filter, a quota, or a request the provider rejected", () => {
+    expect(isTextPrimaryRetryError(new Error('400 data: {"error":{"code":"data_inspection_failed"}}'))).toBe(false);
+    expect(isTextPrimaryRetryError(new ProviderHttpError("quota", { status: 429, retryAfterMs: 845 }))).toBe(false);
+    expect(isTextPrimaryRetryError(new ProviderHttpError("quota", { status: 429, retryAfterMs: 20_698_000 }))).toBe(false);
+    expect(isTextPrimaryRetryError(new ProviderHttpError("bad request", { status: 400 }))).toBe(false);
+    expect(isTextPrimaryRetryError(new ProviderHttpError("server error", { status: 500 }))).toBe(false);
+    expect(isTextPrimaryRetryError(new Error("OpenAI response was incomplete: max_output_tokens."))).toBe(false);
+  });
+
+  it("does not spend a second identical wait on a timeout the client declared", () => {
+    expect(isTextPrimaryRetryError(new Error("Request timed out."))).toBe(false);
+    expect(isTextPrimaryRetryError({ message: "fetch failed", cause: { code: "UND_ERR_HEADERS_TIMEOUT", message: "Headers Timeout Error" } })).toBe(false);
+    expect(isTextPrimaryRetryError(Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" }))).toBe(false);
+  });
+
+  it("never retries a stop, by identity or by prose", () => {
+    expect(isTextPrimaryRetryError(Object.assign(new Error("Generation stopped"), { name: "StopRequestedError" }))).toBe(false);
+    expect(isTextPrimaryRetryError(new DOMException("This operation was aborted", "AbortError"))).toBe(false);
+    // Prose only ever suppresses a retry here, so the gateway's own wording wins.
+    expect(isTextPrimaryRetryError(new ProviderHttpError("upstream request aborted by the gateway", { status: 502 }))).toBe(false);
   });
 });
 

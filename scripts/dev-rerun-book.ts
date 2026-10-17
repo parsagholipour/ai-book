@@ -4,7 +4,7 @@ import { listRunLogs, readRunLog as readStoredRunLog } from "../packages/storage
  * collect everything needed to judge the result: the text, a step-by-step
  * trace of the run, and the structural scorecard.
  *
- *   pnpm exec tsx scripts/dev-rerun-book.ts run --source <projectId> --label <name> [--reuse-plan <projectId>] [--tier fast|balanced|premium|ultra] [--cover design|ai|none] [--baseline <text file>]...
+ *   pnpm exec tsx scripts/dev-rerun-book.ts run --source <projectId> --label <name> [--reuse-plan <projectId>] [--tier fast|balanced|premium|ultra] [--cover design|ai|none] [--plan-review-seconds <n>] [--baseline <text file>]...
  *   pnpm exec tsx scripts/dev-rerun-book.ts resume --project <projectId> --label <name> [--baseline <file>]...
  *   pnpm exec tsx scripts/dev-rerun-book.ts retry --project <projectId> --label <name> [--baseline <file>]...
  *   pnpm exec tsx scripts/dev-rerun-book.ts export --project <projectId> --label <name> [--baseline <file>]...
@@ -43,6 +43,8 @@ type Args = {
   /** The cover's art source for the clone; `design` unless asked otherwise. */
   cover: string;
   stancePositions?: string | undefined;
+  /** Seconds to wait between the plan landing and its approval: a reader reading the plan, so the composition prep runs first (H4). */
+  planReviewSeconds?: number | undefined;
   project?: string | undefined;
   label: string;
   baselines: string[];
@@ -65,6 +67,7 @@ function parseArgs(argv: string[]): Args {
     else if (flag === "--cover" && value) args.cover = value;
     else if (flag === "--stance-positions") args.stancePositions = value;
     else if (flag === "--project") args.project = value;
+    else if (flag === "--plan-review-seconds" && value) args.planReviewSeconds = Number(value);
     else if (flag === "--label") args.label = value ?? "";
     else if (flag === "--baseline" && value) args.baselines.push(value);
     else if (flag === "--out" && value) args.outDir = value;
@@ -134,7 +137,8 @@ async function queuePlan(projectId: string, inputSnapshot: Prisma.JsonValue): Pr
       projectId,
       type: "PLAN_BOOK",
       dedupeKey: `plan-book:${projectId}:${stablePayloadHash(snapshot)}`,
-      payload: { inputSnapshot: snapshot },
+      // As the console's plan door does: queue the speculative composition prep after the plan (H4).
+      payload: { inputSnapshot: snapshot, prepareComposition: true },
       transaction: tx,
       dispatch: false
     });
@@ -463,6 +467,10 @@ async function main(): Promise<void> {
     } else {
       await queuePlan(projectId, cloned.inputSnapshot);
       await waitForJobs(projectId, ["PLAN_BOOK"], 20 * 60_000);
+      if (args.planReviewSeconds) {
+        log(`reading the plan for ${args.planReviewSeconds}s before approving`);
+        await new Promise((resolve) => setTimeout(resolve, args.planReviewSeconds! * 1000));
+      }
     }
     await approveLatestPlan(projectId);
     await waitForBook(projectId, 120 * 60_000);

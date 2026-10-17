@@ -1,20 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { FakeTextModelAdapter, unsupportedGenerateWithTools } from "../adapters/fake.js";
-import type { TextModelAdapter } from "../adapters/types.js";
 import {
   applyStoryDelta,
-  compactStoryStateForExtract,
   emptyStoryState,
-  extractStoryState,
   formatStoryStateLines,
   rebuildStoryState,
   seedStoryStateFromPromises,
-  STORY_STATE_EXTRACT_FACTS_CAP,
-  STORY_STATE_EXTRACT_KNOWS_CAP,
-  STORY_STATE_EXTRACT_PAID_PROMISES_CAP,
   STORY_STATE_PERSIST_FACTS_CAP,
   STORY_STATE_PERSIST_KNOWS_CAP,
-  unpaidPromiseIssues,
   type StoryDelta,
   type StoryState
 } from "./storyState.js";
@@ -49,35 +41,6 @@ const blankDelta = (overrides: Partial<StoryDelta> = {}): StoryDelta => ({
   unansweredResolved: [],
   ...overrides
 });
-
-function numberedFacts(count: number, prefix: string): StoryState["facts"] {
-  return Array.from({ length: count }, (_, index) => ({
-    text: `${prefix}-${index + 1}`,
-    pageIndex: index + 1
-  }));
-}
-
-function capturingExtractModel(): {
-  model: TextModelAdapter;
-  payload?: Record<string, unknown>;
-} {
-  const capture: { model: TextModelAdapter; payload?: Record<string, unknown> } = {
-    model: {
-      async generateText() {
-        return { text: "", model: "test-model", provider: "test" };
-      },
-      async generateJson(options) {
-        capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, unknown>;
-        return new FakeTextModelAdapter().generateJson(options);
-      },
-      async *streamText() {
-        yield "";
-      },
-      generateWithTools: unsupportedGenerateWithTools
-    }
-  };
-  return capture;
-}
 
 describe("story state apply / rebuild / undo", () => {
   it("assigns the next numeric promise id from the max suffix, not the array length", () => {
@@ -185,98 +148,9 @@ describe("story state apply / rebuild / undo", () => {
     expect(formatStoryStateLines(state).length).toBeLessThanOrEqual(12);
   });
 
-  it("allows unpaid promises mid-book and fails them on the last page", () => {
-    const state = seedStoryStateFromPromises(["The door will open."]);
-    expect(unpaidPromiseIssues(state, 3, 10)).toEqual([]);
-    expect(unpaidPromiseIssues(state, 10, 10)).toEqual([
-      "Unpaid promise on the final page: The door will open."
-    ]);
-    const paidOnLast = applyStoryDelta(state, payDelta("The door will open."), 10);
-    expect(unpaidPromiseIssues(paidOnLast, 10, 10)).toEqual([]);
-  });
-});
-
-describe("extractStoryState", () => {
-  it("returns a valid delta from the fake adapter", async () => {
-    const result = await extractStoryState({
-      textModel: new FakeTextModelAdapter(),
-      pageIndex: 1,
-      title: "Opening",
-      markdown: "Ada lights the lantern.",
-      summary: "Ada lights the lantern.",
-      currentState: emptyStoryState()
-    });
-    expect(result.contradictions).toEqual([]);
-    expect(result.storyDelta.promisesOpened).toEqual([]);
-  });
-
-  it("sends compacted currentState to the model, not the full fact blob", async () => {
-    const capture = capturingExtractModel();
-    const bloated: StoryState = {
-      promises: [
-        { id: "still-open", text: "The door will open.", status: "open", openedAtPage: 1 },
-        ...Array.from({ length: 30 }, (_, index) => ({
-          id: `paid-${index + 1}`,
-          text: `Paid promise ${index + 1}`,
-          status: "paid" as const,
-          openedAtPage: 1,
-          paidAtPage: index + 1
-        }))
-      ],
-      facts: numberedFacts(100, "unique-fact"),
-      entities: {
-        Ada: {
-          knows: Array.from({ length: 20 }, (_, index) => `knows-${index + 1}`),
-          updatedAtPage: 100
-        },
-        OldTown: { knows: ["ancient-secret"], location: "ruins", updatedAtPage: 1 }
-      },
-      unanswered: []
-    };
-
-    await extractStoryState({
-      textModel: capture.model,
-      pageIndex: 101,
-      title: "Later",
-      markdown: "Ada walks on.",
-      summary: "Ada walks on.",
-      currentState: bloated
-    });
-
-    const sent = JSON.stringify(capture.payload);
-    expect(sent).not.toMatch(/"unique-fact-1"/);
-    expect(sent).not.toContain("ancient-secret");
-    expect(sent).toContain("unique-fact-100");
-    expect(sent).toContain("The door will open.");
-
-    const currentState = capture.payload?.currentState as StoryState;
-    expect(currentState.facts).toHaveLength(STORY_STATE_EXTRACT_FACTS_CAP);
-    expect(currentState.facts[0]?.text).toBe(`unique-fact-${100 - STORY_STATE_EXTRACT_FACTS_CAP + 1}`);
-    expect(currentState.entities.Ada?.knows).toHaveLength(STORY_STATE_EXTRACT_KNOWS_CAP);
-    expect(currentState.entities.OldTown).toBeUndefined();
-    expect(currentState.promises.filter((promise) => promise.status === "paid")).toHaveLength(
-      STORY_STATE_EXTRACT_PAID_PROMISES_CAP
-    );
-  });
 });
 
 describe("story state caps", () => {
-  it("omits old facts beyond the extract prompt cap", () => {
-    const compact = compactStoryStateForExtract({
-      promises: [],
-      facts: numberedFacts(40, "prompt-fact"),
-      entities: {},
-      unanswered: []
-    });
-    expect(compact.facts).toHaveLength(STORY_STATE_EXTRACT_FACTS_CAP);
-    expect(compact.facts.map((fact) => fact.text)).toEqual(
-      numberedFacts(40, "prompt-fact")
-        .slice(-STORY_STATE_EXTRACT_FACTS_CAP)
-        .map((fact) => fact.text)
-    );
-    expect(compact.facts.some((fact) => fact.text === "prompt-fact-1")).toBe(false);
-  });
-
   it("keeps only the last persist-cap facts when applyStoryDelta adds 100", () => {
     const next = applyStoryDelta(
       emptyStoryState(),
@@ -304,28 +178,6 @@ describe("story state caps", () => {
       expect.objectContaining({ text: "The door will open.", status: "open" })
     ]);
 
-    const compact = compactStoryStateForExtract({
-      promises: [
-        { id: "still-open", text: "The door will open.", status: "open", openedAtPage: 1 },
-        ...Array.from({ length: 20 }, (_, index) => ({
-          id: `paid-${index + 1}`,
-          text: `Paid ${index + 1}`,
-          status: "paid" as const,
-          openedAtPage: 1,
-          paidAtPage: index + 1
-        }))
-      ],
-      facts: numberedFacts(40, "prompt-fact"),
-      entities: {},
-      unanswered: []
-    });
-    expect(compact.promises.filter((promise) => promise.status === "open")).toEqual([
-      expect.objectContaining({ id: "still-open", text: "The door will open." })
-    ]);
-    expect(compact.promises.filter((promise) => promise.status === "paid")).toHaveLength(
-      STORY_STATE_EXTRACT_PAID_PROMISES_CAP
-    );
-    expect(compact.promises.some((promise) => promise.id === "paid-1")).toBe(false);
   });
 
   it("caps persisted knows per entity, including entities the delta did not touch", () => {

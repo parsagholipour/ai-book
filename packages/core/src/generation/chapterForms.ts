@@ -107,8 +107,8 @@ export type ChapterFormRange = { chapter: ChapterPlan; startPage: number; endPag
 const MAX_BOOK_FORM_SHARE = 0.4;
 
 /**
- * The variety contract, as messages. Empty means the plan passes. Each string
- * is written so the repair call can act on it.
+ * The variety contract, as messages. Empty means the plan passes; whatever
+ * is left after `settleFormVariety` is logged with the plan.
  */
 const LANDING_NEGATION_CONTRAST = /\b(?:did|does|do|was|were|is|are|could|would|had|has|have)\s+not\s+(?:simply|merely|only|just)\b|\b(?:was|were|is|are)\s+never\s+(?:only|simply|merely)\b|\bless\s+(?:on|about|a|an)\b.{3,80}\bthan\b|\bneither\b.{3,60}\bnor\b|\brather than\b|\bnot\b.{2,60}\bbut\b/i;
 const LANDING_STOP_WORDS = new Set([
@@ -166,8 +166,9 @@ export function landingIssues(
 }
 
 /**
- * Shape issues the repair call is asked to fix and the deterministic settle
- * cannot: fifteen chapters of exactly four sections at exactly a quarter each
+ * Shape issues the deterministic settle cannot fix, so they are advisory and
+ * stand (the repair call that was asked to fix them was removed 2026-10-16):
+ * fifteen chapters of exactly four sections at exactly a quarter each
  * was the best-scoring balanced book's form plan (composed-19a), and the
  * readers called every chapter the same silhouette. Kept apart from
  * `compositionVarietyIssues`, whose contract is that `settleFormVariety`
@@ -412,7 +413,7 @@ function leastUsedForm(
  * Bring a parsed answer onto the chapter ranges: every chapter present once,
  * section counts within range, forms canonical, shares summing to one.
  * Unknown forms and missing chapters are replaced deterministically; the
- * variety issues that remain are the repair call's to fix.
+ * variety issues that remain are `settleFormVariety`'s to clear.
  */
 export function normalizeChapterCompositions(
   raw: unknown,
@@ -539,7 +540,7 @@ export function capFigures(
 }
 
 /**
- * Deterministic last resort for a plan the repair call could not clear:
+ * Deterministic settle for a plan that breaks the variety contract:
  * replace over-used, doubled and same-opening forms with the least-used form
  * in the palette. The subjects, ownership and landings stay as planned.
  */
@@ -580,9 +581,9 @@ export function rotateFormsForVariety(
 
 export type ChapterFormsResult = {
   compositions: ChapterComposition[];
-  /** Variety issues still standing after repair; empty on a clean plan. */
+  /** Variety issues still standing after the rotation; empty on a clean plan. */
   issues: string[];
-  source: "model" | "repaired" | "rotated" | "fallback";
+  source: "model" | "rotated" | "fallback";
   /** The recurring example people (`exampleCast.ts`): planned when asked for, or the fixed cast handed back. */
   cast?: ExampleCastMember[] | undefined;
   /** A toolkit book's whole-book decisions (`instructionalPlanning.ts`), and how its brief's asks were homed. */
@@ -601,8 +602,6 @@ export type PlanChapterFormsOptions = {
   figures?: boolean | undefined;
   /** The book's episodes when they were planned first: the cases each chapter is built from, so the planner does not choose a second set. */
   episodes?: BookEpisodes | undefined;
-  /** The `formPlanRepair` gate: false goes straight from a plan with issues to the rotation. Defaults to true. */
-  repair?: boolean | undefined;
   /** What the brief explicitly asks the book to contain (its requirement inventory): each is given a section. */
   requirements?: readonly string[] | undefined;
   /** "plan" asks for a cast of recurring example people; a cast is the one earlier chapters use, kept as it is. */
@@ -630,9 +629,12 @@ const CHAPTER_FOCUS_RULE =
   "A chapter with focus investigates that specific question using its assigned material. Give its investigation enough room to show what happened and why; arrange sections in the order that explanation needs. alreadyEstablished is reader knowledge, not a new section to repeat. contribution is the new distinction earned by this chapter, not a sentence to paste. Do not finish each chapter by translating its result back into the same book-wide thesis.";
 
 /**
- * One call for the whole book, so variety can be global, then one repair
- * call against the deterministic issues (unless `repair` is false), then
- * rotation. Never blocks: a provider failure drafts from the rotated fallback.
+ * One call for the whole book, so variety can be global, then the
+ * deterministic rotation where the variety contract fails. Never blocks: a
+ * provider failure drafts from the rotated fallback. There is no repair call
+ * (removed 2026-10-16, E4: a second planner call re-emitted the whole plan,
+ * ~54 s on the critical path, and blind readers preferred the chapters it
+ * shaped in 4 of 16 replays against 8 for the rotation alone).
  */
 export async function planChapterForms(options: PlanChapterFormsOptions): Promise<ChapterFormsResult> {
   const mode = inferWritingMode(options.input, options.plan);
@@ -671,7 +673,7 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
         fallbackChapterComposition(range, palette, range.chapter.index)
     );
 
-  const request = (repair: { compositions: ChapterComposition[]; issues: string[] } | undefined) =>
+  const request = () =>
     generateJsonWithRetry(options.textModel, {
       purpose: PLAN_CHAPTER_FORMS_PURPOSE,
       temperature: Math.min(0.7, options.input.temperature),
@@ -700,11 +702,6 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
             "Section counts per chapter are given as sectionCount; shares are fractions of the chapter's length and sum to 1. Vary the count from chapter to chapter across that range, and give every chapter one section that takes at least its sustainedShare of its length and one that takes under 15%, so no two chapters have the same silhouette. Where a chapter has many sections, the sections are short passages of a few paragraphs each, not essays; every one still has its own subject and owns its own material.",
             "avoid names what earlier chapters already established that this chapter must not re-explain or re-argue.",
             "Where a chapter carries kind, its forms serve it: a case chapter is mostly scenes and close readings of one episode, a document chapter is close readings of one text, a complication chapter ends on an open question, a portrait follows one person, an argument chapter carries an argument and a counterargument, a method chapter shows a procedure, a resolution closes with a verdict.",
-            ...(repair
-              ? [
-                  "Your previous plan is in previousPlan and failed the checks listed in issues. Return a corrected complete plan for the same chapters that resolves every issue while keeping subjects and ownership."
-                ]
-              : []),
             ...targetLanguageGenerationGuidance(options.input.language)
           ].join(" ")
         },
@@ -749,7 +746,6 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
                     }))
                   }
                 : {}),
-              ...(repair ? { previousPlan: repair.compositions, issues: repair.issues } : {}),
               outputContract: {
                 chapters: [
                   {
@@ -785,7 +781,7 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
   let cast = fixedCast;
   const withCast = (result: ChapterFormsResult): ChapterFormsResult => (cast ? { ...result, cast } : result);
   try {
-    const reply = (await request(undefined)).data;
+    const reply = (await request()).data;
     planned = normalizeChapterCompositions(reply, open, palette);
     if (!fixedCast && planCast) cast = exampleCastFrom(reply);
   } catch (error) {
@@ -797,34 +793,12 @@ export async function planChapterForms(options: PlanChapterFormsOptions): Promis
     return withCast({ compositions: capped(fallback), issues: compositionVarietyIssues(fallback, palette, { thesis: options.stance?.thesis }), source: "fallback" });
   }
   const thesis = options.stance?.thesis;
-  let merged = merge(planned);
-  let issues = compositionVarietyIssues(merged, palette, { thesis });
-  // Shape issues ride along to the one repair call; they never block and the
-  // deterministic settle below is not asked to clear them. Without the call
-  // (the formPlanRepair gate) they stand, and the rotation alone settles
-  // the forms — never the landings, which only the repair rewrites.
-  const repair = options.repair !== false;
-  const shape = compositionShapeIssues(merged);
-  if (issues.length === 0 && (shape.length === 0 || !repair)) {
+  const merged = merge(planned);
+  const issues = compositionVarietyIssues(merged, palette, { thesis });
+  // Shape issues (`compositionShapeIssues`) are advisory and stand: the
+  // rotation settles forms, never section counts or landings.
+  if (issues.length === 0) {
     return withCast({ compositions: capped(merged), issues, source: "model" });
-  }
-  if (repair) {
-    try {
-      const reply = (await request({ compositions: planned, issues: [...issues, ...shape] })).data;
-      const repaired = normalizeChapterCompositions(reply, open, palette);
-      if (!fixedCast && planCast) cast = exampleCastFrom(reply) ?? cast;
-      const repairedMerged = merge(repaired);
-      const repairedIssues = compositionVarietyIssues(repairedMerged, palette, { thesis });
-      if (repairedIssues.length + compositionShapeIssues(repairedMerged).length < issues.length + shape.length) {
-        merged = repairedMerged;
-        issues = repairedIssues;
-      }
-      if (issues.length === 0) {
-        return withCast({ compositions: capped(merged), issues, source: "repaired" });
-      }
-    } catch (error) {
-      if (isStopLike(error)) throw error;
-    }
   }
   const rotated = settleFormVariety(merged, palette);
   return withCast({ compositions: capped(rotated), issues: compositionVarietyIssues(rotated, palette, { thesis }), source: "rotated" });

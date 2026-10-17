@@ -16,11 +16,14 @@ vi.mock("./jobLifecycle.js", () => ({
   markMalformedJobFailed: mocks.markMalformedJobFailed
 }));
 
-import { GENERATION_JOB_RETENTION } from "@book-maker/core";
+import { GENERATION_JOB_RETENTION, JOB_LANE_NAMES } from "@book-maker/core";
 import { LANE_LOCK_DURATION_MS, LANE_MAX_STALLED_COUNT, STALLED_OUT_QUIET_MS, startLaneWorkers } from "./laneWorkers.js";
 import { STALLED_OUT_DELIVERY_ERROR, STALLED_OUT_FAILED_REASON } from "./lostDeliveries.js";
 
 type FailedListener = (job: unknown, error: Error, prev?: string) => void;
+
+/** Production's shape (docker-compose.production.yml). */
+const CONCURRENCY = { long: 30, interactive: 2, images: 4, compile: 3, background: 4 } as const;
 
 function fakeWorkers() {
   const created: Array<{
@@ -59,40 +62,50 @@ beforeEach(() => {
 });
 
 describe("startLaneWorkers", () => {
-  it("consumes the old book-maker queue as the long lane and the interactive queue beside it", () => {
+  it("consumes the old book-maker queue as the long lane and the other four lanes beside it", () => {
     const { created, createWorker } = fakeWorkers();
     const lanes = startLaneWorkers({
       connection: {} as never,
       processor: vi.fn(async () => undefined),
-      concurrency: { long: 1, interactive: 2 },
+      concurrency: CONCURRENCY,
       createWorker
     });
-    expect(lanes.workers.map(({ lane }) => lane)).toEqual(["long", "interactive"]);
+    expect(lanes.workers.map(({ lane }) => lane)).toEqual(["long", "interactive", "images", "compile", "background"]);
     // A job the previous release left in `book-maker` is still delivered.
-    expect(created.map(({ queueName }) => queueName)).toEqual(["book-maker", "book-maker-interactive"]);
+    expect(created.map(({ queueName }) => queueName)).toEqual([
+      "book-maker",
+      "book-maker-interactive",
+      "book-maker-images",
+      "book-maker-compile",
+      "book-maker-background"
+    ]);
     expect(created[0]!.options).toMatchObject({
-      concurrency: 1,
+      concurrency: 30,
       lockDuration: LANE_LOCK_DURATION_MS,
       removeOnComplete: GENERATION_JOB_RETENTION.removeOnComplete,
       removeOnFail: GENERATION_JOB_RETENTION.removeOnFail
     });
-    expect(created[1]!.options).toMatchObject({ concurrency: 2 });
+    expect(created.map(({ options }) => options.concurrency)).toEqual([30, 2, 4, 3, 4]);
+    // Every lane gets the same lock and the same retention.
+    for (const { options } of created) {
+      expect(options).toMatchObject({ lockDuration: LANE_LOCK_DURATION_MS, removeOnFail: GENERATION_JOB_RETENTION.removeOnFail });
+    }
   });
 
-  it("lets a job be reclaimed five times before BullMQ fails it, on both lanes", () => {
+  it("lets a job be reclaimed five times before BullMQ fails it, on every lane", () => {
     const { created, createWorker } = fakeWorkers();
-    startLaneWorkers({ connection: {} as never, processor: vi.fn(async () => undefined), concurrency: { long: 1, interactive: 2 }, createWorker });
+    startLaneWorkers({ connection: {} as never, processor: vi.fn(async () => undefined), concurrency: CONCURRENCY, createWorker });
     // BullMQ's default of one failed a book at its second deploy.
     expect(LANE_MAX_STALLED_COUNT).toBe(5);
-    expect(created.map(({ options }) => options.maxStalledCount)).toEqual([5, 5]);
+    expect(created.map(({ options }) => options.maxStalledCount)).toEqual(JOB_LANE_NAMES.map(() => LANE_MAX_STALLED_COUNT));
   });
 
-  it("closes both lanes together, and only resolves once both have closed", async () => {
+  it("closes every lane together, and only resolves once all have closed", async () => {
     const { created, createWorker } = fakeWorkers();
     const lanes = startLaneWorkers({
       connection: {} as never,
       processor: vi.fn(async () => undefined),
-      concurrency: { long: 1, interactive: 2 },
+      concurrency: CONCURRENCY,
       createWorker
     });
     let releaseLong!: () => void;
@@ -100,24 +113,27 @@ describe("startLaneWorkers", () => {
     let closed = false;
     const closing = lanes.close().then(() => (closed = true));
     await Promise.resolve();
-    // The interactive lane is asked to close while the long lane is still draining.
-    expect(created[1]!.close).toHaveBeenCalledTimes(1);
+    // The other lanes are asked to close while the long lane is still draining.
+    for (const lane of created.slice(1)) expect(lane.close).toHaveBeenCalledTimes(1);
     expect(closed).toBe(false);
     releaseLong();
     await closing;
     expect(closed).toBe(true);
   });
 
-  it("hands both lanes one shared delivery guard", async () => {
+  it("hands every lane one shared delivery guard", async () => {
     const { createWorker } = fakeWorkers();
     let release!: () => void;
     const processor = vi.fn(() => new Promise<void>((resolve) => (release = resolve)));
-    const lanes = startLaneWorkers({ connection: {} as never, processor, concurrency: { long: 1, interactive: 2 }, createWorker });
+    const lanes = startLaneWorkers({ connection: {} as never, processor, concurrency: CONCURRENCY, createWorker });
     const longProcessor = createWorker.mock.calls[0]![1] as (job: unknown, token?: string) => Promise<void>;
     const interactiveProcessor = createWorker.mock.calls[1]![1] as (job: unknown, token?: string) => Promise<void>;
     const job = (id: string) => ({ id, name: "apply-book-edit", data: { generationJobId: "gj-1" }, moveToDelayed: vi.fn(async () => undefined) });
+    const imageProcessor = createWorker.mock.calls[2]![1] as (job: unknown, token?: string) => Promise<void>;
     const running = longProcessor(job("gj-1"), "a");
     await expect(interactiveProcessor(job("gj-1"), "b")).rejects.toThrow();
+    // A picture the previous release queued in `book-maker`, re-pushed into the image lane while it still runs.
+    await expect(imageProcessor(job("gj-1"), "c")).rejects.toThrow();
     expect(lanes.guard.running().has("gj-1")).toBe(true);
     release();
     await running;
@@ -127,7 +143,7 @@ describe("startLaneWorkers", () => {
     const { createWorker } = fakeWorkers();
     const releases: Array<() => void> = [];
     const processor = vi.fn(() => new Promise<void>((resolve) => releases.push(resolve)));
-    const lanes = startLaneWorkers({ connection: {} as never, processor, concurrency: { long: 1, interactive: 2 }, createWorker });
+    const lanes = startLaneWorkers({ connection: {} as never, processor, concurrency: CONCURRENCY, createWorker });
     const [long, interactive] = lanes.workers;
     const interactiveProcessor = createWorker.mock.calls[1]![1] as (job: unknown, token?: string) => Promise<void>;
     const job = (id: string) => ({ id, name: "plan-book", data: { generationJobId: id }, moveToDelayed: vi.fn(async () => undefined) });
@@ -148,7 +164,7 @@ describe("startLaneWorkers", () => {
       processor: vi.fn(async () => {
         throw new Error("provider down");
       }),
-      concurrency: { long: 1, interactive: 2 },
+      concurrency: CONCURRENCY,
       createWorker
     });
     const longProcessor = createWorker.mock.calls[0]![1] as (job: unknown, token?: string) => Promise<void>;
@@ -169,7 +185,7 @@ describe("a job BullMQ fails for stalling", () => {
     const lanes = startLaneWorkers({
       connection: {} as never,
       processor,
-      concurrency: { long: 1, interactive: 2 },
+      concurrency: CONCURRENCY,
       createWorker,
       ...(settleStalledOut ? { settleStalledOut } : {})
     });

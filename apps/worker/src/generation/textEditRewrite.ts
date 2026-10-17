@@ -280,7 +280,6 @@ export async function rewritePageForUserRequest(options: {
     textModel: options.providers.text,
     generationJobId: options.generationJobId,
     maxCandidates: options.maxCandidates ?? USER_EDIT_MAX_CANDIDATES,
-    repairBrief: false,
     reviseContext: `User edit page ${options.page.index}`,
     reviseProgress: 62,
     quality,

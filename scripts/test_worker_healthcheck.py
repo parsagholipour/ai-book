@@ -20,6 +20,9 @@ SCRIPT = SCRIPTS / "worker-healthcheck.sh"
 CORE = SCRIPTS.parent / "packages" / "core" / "src"
 LONG = "book-maker:worker-heartbeat:book-maker"
 INTERACTIVE = "book-maker:worker-heartbeat:book-maker-interactive"
+IMAGES = "book-maker:worker-heartbeat:book-maker-images"
+COMPILE = "book-maker:worker-heartbeat:book-maker-compile"
+BACKGROUND = "book-maker:worker-heartbeat:book-maker-background"
 ME = "a1b2c3d4e5f6"
 
 
@@ -72,6 +75,21 @@ class FakeRedisHandler(socketserver.StreamRequestHandler):
                 self.wfile.write(b"$%d\r\n%s\r\n" % (len(data), data))
 
 
+def every_lane(host, **overrides):
+    """Every lane's beat from one host; a lane given None is left without one."""
+    beats = {
+        LONG: beat(host, "book-maker"),
+        INTERACTIVE: beat(host, "book-maker-interactive"),
+        IMAGES: beat(host, "book-maker-images"),
+        COMPILE: beat(host, "book-maker-compile"),
+        BACKGROUND: beat(host, "book-maker-background"),
+    }
+    lanes = {"long": LONG, "interactive": INTERACTIVE, "images": IMAGES, "compile": COMPILE, "background": BACKGROUND}
+    for key, value in overrides.items():
+        beats[lanes[key]] = value
+    return {key: value for key, value in beats.items() if value is not None}
+
+
 class WorkerHealthcheckTests(unittest.TestCase):
     def check(self, values, error=False, **env):
         server = FakeRedis(values, error)
@@ -88,23 +106,34 @@ class WorkerHealthcheckTests(unittest.TestCase):
             server.server_close()
         return result
 
-    def test_healthy_while_this_container_beats_on_both_lanes(self):
-        result = self.check({LONG: beat(ME, "book-maker"), INTERACTIVE: beat(ME, "book-maker-interactive")})
+    def test_healthy_while_this_container_beats_on_every_lane(self):
+        result = self.check(every_lane(ME))
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_a_lane_without_a_beat_is_unhealthy(self):
-        result = self.check({LONG: beat(ME, "book-maker")})
+        result = self.check(every_lane(ME, interactive=None))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(INTERACTIVE, result.stderr)
 
+    def test_a_worker_beating_only_the_two_old_lanes_is_unhealthy(self):
+        # A release before the image and compile lanes: its pictures would have no consumer.
+        result = self.check(every_lane(ME, images=None, compile=None))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(IMAGES, result.stderr)
+
+    def test_a_worker_without_the_background_lane_is_unhealthy(self):
+        # /api/ready leaves the lane out, but a release whose background Worker never started is broken.
+        result = self.check(every_lane(ME, background=None))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(BACKGROUND, result.stderr)
+
     def test_a_beat_from_the_container_it_replaced_does_not_count(self):
-        result = self.check({LONG: beat(ME, "book-maker"), INTERACTIVE: beat("0f0f0f0f0f0f", "book-maker-interactive")})
+        result = self.check(every_lane(ME, compile=beat("0f0f0f0f0f0f", "book-maker-compile")))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("another worker", result.stderr)
 
     def test_a_hostname_that_only_prefixes_this_one_does_not_count(self):
-        other = ME + "99"
-        result = self.check({LONG: beat(other, "book-maker"), INTERACTIVE: beat(other, "book-maker-interactive")})
+        result = self.check(every_lane(ME + "99"))
         self.assertNotEqual(result.returncode, 0)
 
     def test_a_redis_error_is_unhealthy(self):
@@ -129,14 +158,13 @@ class WorkerHealthcheckTests(unittest.TestCase):
     def test_the_keys_are_the_ones_the_worker_writes(self):
         lanes = (CORE / "jobLanes.ts").read_text()
         heartbeat = (CORE / "workerHeartbeat.ts").read_text()
-        queues = [
-            re.search(rf'export const {name} = "([^"]+)";', lanes).group(1)
-            for name in ("LONG_JOB_QUEUE", "INTERACTIVE_JOB_QUEUE")
-        ]
-        self.assertIn("GENERATION_JOB_QUEUES = [LONG_JOB_QUEUE, INTERACTIVE_JOB_QUEUE]", lanes)
+        names = ("LONG_JOB_QUEUE", "INTERACTIVE_JOB_QUEUE", "IMAGE_JOB_QUEUE", "COMPILE_JOB_QUEUE", "BACKGROUND_JOB_QUEUE")
+        queues = [re.search(rf'export const {name} = "([^"]+)";', lanes).group(1) for name in names]
+        declared = re.search(r"GENERATION_JOB_QUEUES = \[([^\]]*)\]", lanes).group(1)
+        self.assertEqual([name.strip() for name in declared.split(",") if name.strip()], list(names))
         prefix = re.search(r"return `([^`$]+)\$\{queue\}`;", heartbeat).group(1)
         expected = [prefix + queue for queue in queues]
-        self.assertEqual(expected, [LONG, INTERACTIVE])
+        self.assertEqual(expected, [LONG, INTERACTIVE, IMAGES, COMPILE, BACKGROUND])
         named = re.search(r"^keys=\((.*)\)$", SCRIPT.read_text(), re.MULTILINE).group(1).split()
         self.assertEqual(named, expected)
         # And the worker records the hostname this script compares against.

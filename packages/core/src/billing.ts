@@ -40,8 +40,7 @@ export type ProviderCostAssumptions = { [K in keyof typeof PROVIDER_COST_ASSUMPT
  * bounded thinking), the 3.1 flash image model, and a pro cover — while the
  * mechanical review/QA phases run on cheap flash models in every tier.
  *
- * **Exhaustive by type, for the same reason `FIRST_PAGE_CANDIDATES_BY_TIER`
- * (`generation/bestOf.ts`) is.** As a `Partial` record it resolved an unlisted
+ * **Exhaustive by type.** As a `Partial` record it resolved an unlisted
  * tier to the balanced base table through a `||` fallback, so a fifth
  * `ModelTier` would have been *costed* as balanced while running whatever
  * models it actually routes — nothing fails to compile, no book fails, and the
@@ -52,16 +51,16 @@ export type ProviderCostAssumptions = { [K in keyof typeof PROVIDER_COST_ASSUMPT
 const MODEL_TIER_COST_ASSUMPTIONS_USD: Record<ModelTier, ProviderCostAssumptions> = {
   fast: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
-    // `textBase` stays at the base rate: fast draws one draft of page 1
-    // (`FIRST_PAGE_CANDIDATES_BY_TIER`), so best-of costs it nothing.
+    // `textBase` stays at the base rate: fast always drew one draft of page 1.
     textPerPage: 0.008
   },
   balanced: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
-    // Balanced samples page 1 twice and judges the pair, which measures at
-    // +$0.0024 — one extra `deepseek-v4-pro` draft plus a `deepseek-v4-flash`
-    // judge. Small enough to sit inside this table's error bars, and carried
-    // anyway: balanced is the default tier and what the free tier runs on, so
+    // Balanced sampled page 1 twice and judged the pair until 2026-10-16, when
+    // best-of drafting was removed on every tier (E4: blind readers preferred
+    // the judged pick 5 / 8 / 6 against the single draft); that extra was
+    // +$0.0024, inside this table's error bars, so the base was left as it was.
+    // Spelled out anyway: balanced is the default tier and what the free tier runs on, so
     // it is the row the margin dashboard reports most often, and a tier that
     // silently inherited the base table is the shape this record was made
     // exhaustive to prevent. On the per-book base for the reason premium's is
@@ -70,9 +69,10 @@ const MODEL_TIER_COST_ASSUMPTIONS_USD: Record<ModelTier, ProviderCostAssumptions
   },
   premium: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
-    // Page 1 is drafted best-of-3 and judged (`firstPageCandidateCount`,
-    // `generation/bestOf.ts`), measured at +$0.048 over the single draft it
-    // replaces. That lands on the per-book base and never on `textPerPage`,
+    // Page 1 was drafted best-of-3 and judged until 2026-10-16 (best-of is
+    // removed on every tier; page 1 is drafted once), measured at +$0.048 over
+    // the single draft it replaced. The base still carries it, an overestimate
+    // left for whoever re-measures. It landed on the per-book base and never on `textPerPage`,
     // because it happens **once per book however long the book is**: the same
     // $0.048 is 12% of an 8-page book's per-page text spend and 0.16% of a
     // 600-page book's, so no per-page adder can be right for both — set to
@@ -87,13 +87,13 @@ const MODEL_TIER_COST_ASSUMPTIONS_USD: Record<ModelTier, ProviderCostAssumptions
   },
   ultra: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
-    // Same one-off as premium, priced at ultra's worst realistic shape: an
-    // operator-created ultra book on the sequential path draws three page-1
-    // candidates that are each a full writer-tool loop, plus the judge, for
-    // +$0.087. Per-book for the reason spelled out on premium above.
+    // Same one-off as premium, priced at ultra's worst realistic shape when
+    // page 1 drew three writer-tool candidates plus a judge (+$0.087; removed
+    // 2026-10-16, an overestimate now). Per-book for the reason spelled out on premium above.
     textBase: 0.17,
     // Per *page*, and unchanged by the page-1 work: draft ~$0.05 + polish
-    // ~$0.05 + judge/tools/extract ~$0.02, on every page. Premium's 0.05 only
+    // ~$0.05 + judge/tools/extract ~$0.02, on every page, as measured before
+    // the page polish and best-of were removed (2026-10-16); an overestimate now. Premium's 0.05 only
     // covers one prose call; ultra adds a second full draft, a judge,
     // writer-tool rounds, and extract/audit per page.
     textPerPage: 0.12,

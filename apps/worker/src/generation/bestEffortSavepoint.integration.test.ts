@@ -5,8 +5,9 @@ import type { PrismaClient } from "@book-maker/db";
 /**
  * Opt-in proof against PostgreSQL itself. The unit regression drives the full
  * handler with the same aborted-state machine; these cases prove the real
- * embedding and story helpers leave an interactive transaction in that state,
- * and that the savepoint preserves the lease-fenced manuscript commit.
+ * embedding helper, and any write that swallows its own statement error, leave
+ * an interactive transaction in that state, and that the savepoint preserves
+ * the lease-fenced manuscript commit.
  *
  *   DB_INTEGRATION=true pnpm -F @book-maker/worker exec vitest run \
  *     src/generation/bestEffortSavepoint.integration.test.ts
@@ -23,25 +24,13 @@ let prisma: PrismaClient;
 let Prisma: typeof import("@book-maker/db").Prisma;
 let runBestEffortPageMemoryWrite: typeof import("./bestEffortSavepoint.js").runBestEffortPageMemoryWrite;
 let writePreparedEmbedding: typeof import("./embeddingWrites.js").writePreparedEmbedding;
-let persistStoryExtract: typeof import("./qualityEnrichment.js").persistStoryExtract;
 let assertTextEditLeaseTx: typeof import("./textEditLease.js").assertTextEditLeaseTx;
-
-const emptyDelta = (fact: string) => ({
-  promisesOpened: [],
-  promisesPaid: [],
-  promisesBroken: [],
-  factsAdded: [fact],
-  entities: {},
-  unansweredAdded: [],
-  unansweredResolved: []
-});
 
 describe.skipIf(!enabled)("best-effort page memory savepoints against PostgreSQL (opt-in)", () => {
   beforeAll(async () => {
     ({ prisma, Prisma } = await import("@book-maker/db"));
     ({ runBestEffortPageMemoryWrite } = await import("./bestEffortSavepoint.js"));
     ({ writePreparedEmbedding } = await import("./embeddingWrites.js"));
-    ({ persistStoryExtract } = await import("./qualityEnrichment.js"));
     ({ assertTextEditLeaseTx } = await import("./textEditLease.js"));
 
     await prisma.user.create({ data: { id: userId, email: `${userId}@example.invalid` } });
@@ -100,7 +89,7 @@ describe.skipIf(!enabled)("best-effort page memory savepoints against PostgreSQL
     await prisma.$disconnect();
   });
 
-  it("rolls back an internally swallowed embedding failure and still commits page plus story memory", async () => {
+  it("rolls back an internally swallowed embedding failure and still commits the page", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       await prisma.$transaction(async (tx) => {
@@ -116,15 +105,6 @@ describe.skipIf(!enabled)("best-effort page memory savepoints against PostgreSQL
             tx
           )
         );
-        await runBestEffortPageMemoryWrite(tx, () =>
-          persistStoryExtract({
-            projectId,
-            pageIndex: 1,
-            plan: { promises: [] } as never,
-            extract: { storyDelta: emptyDelta("Story survived."), contradictions: [] },
-            client: tx
-          })
-        );
       });
     } finally {
       logged.mockRestore();
@@ -132,20 +112,19 @@ describe.skipIf(!enabled)("best-effort page memory savepoints against PostgreSQL
 
     await expect(prisma.page.findUnique({ where: { id: pageId } })).resolves.toMatchObject({
       markdown: "Embedding failed; page committed.",
-      revision: 2,
-      storyDelta: emptyDelta("Story survived.")
+      revision: 2
     });
     await expect(prisma.embedding.count({ where: { projectId } })).resolves.toBe(0);
   });
 
-  it("rolls back an internally swallowed story failure without undoing page or embedding", async () => {
+  it("rolls back a later write's swallowed failure without undoing page or embedding", async () => {
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       await prisma.$transaction(async (tx) => {
         await assertTextEditLeaseTx(tx, operationId, ownerToken);
         await tx.page.update({
           where: { id: pageId },
-          data: { markdown: "Story failed; page committed.", summary: "New summary.", revision: { increment: 1 } }
+          data: { markdown: "Later write failed; page committed.", summary: "New summary.", revision: { increment: 1 } }
         });
         await runBestEffortPageMemoryWrite(tx, () =>
           writePreparedEmbedding(
@@ -154,24 +133,23 @@ describe.skipIf(!enabled)("best-effort page memory savepoints against PostgreSQL
             tx
           )
         );
-        await runBestEffortPageMemoryWrite(tx, () =>
-          persistStoryExtract({
-            projectId,
-            pageIndex: 1,
-            plan: { promises: [] } as never,
-            extract: { storyDelta: emptyDelta("PostgreSQL rejects \u0000 in jsonb."), contradictions: [] },
-            client: tx
-          })
-        );
+        // A write that catches its own statement error, as the per-page memory
+        // writers did, leaves the transaction aborted for everything after it.
+        await runBestEffortPageMemoryWrite(tx, async () => {
+          try {
+            await tx.$executeRawUnsafe("SELECT 1 / 0");
+          } catch {
+            console.warn("swallowed");
+          }
+        });
       });
     } finally {
       logged.mockRestore();
     }
 
     await expect(prisma.page.findUnique({ where: { id: pageId } })).resolves.toMatchObject({
-      markdown: "Story failed; page committed.",
-      revision: 2,
-      storyDelta: null
+      markdown: "Later write failed; page committed.",
+      revision: 2
     });
     await expect(prisma.embedding.findFirst({ where: { projectId, scope: "page:1" } })).resolves.toMatchObject({
       sourceId: pageId,

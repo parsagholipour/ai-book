@@ -130,7 +130,7 @@ describe("a saved routing that names a provider with no key", () => {
     expect(byProvider.get("openrouter")?.routes).toContain("balanced.writer");
     expect(byProvider.get("openrouter")?.variables).toEqual(["OPENROUTER_API_KEY"]);
     expect(byProvider.get("vercel-ai-gateway")?.routes).toEqual(
-      expect.arrayContaining(["fastDecisions", "balanced.stages.judge-page-drafts.primary"])
+      expect.arrayContaining(["fastDecisions", "balanced.stages.judge-chapter-drafts.primary"])
     );
   });
 

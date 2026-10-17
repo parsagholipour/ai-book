@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import { isStopOrAbortError } from "../adapters/retry.js";
-import { LATIN_SCRIPT_LANGUAGES } from "./chapterIntegrity.js";
+import { LATIN_SCRIPT_LANGUAGES } from "./scriptLeaks.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { BookArc } from "./bookArc.js";
 import { countReadableWords } from "./proseShape.js";

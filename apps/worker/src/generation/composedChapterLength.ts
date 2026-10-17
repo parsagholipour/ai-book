@@ -39,7 +39,17 @@ const STUB_SHARE = 0.75;
 /**
  * Runs at export after every edit/repair, including resumes and recompiles.
  *
- * What the reader paid for is the book's pages, so the floor that blocks is the
+ * **A diagnostic, never a reader finding** (`readerFindings.ts`, 2026-10-15).
+ * Every one of the 65 books that carried it in the 20 days before printed its
+ * paid pages — the fitter took the shortfall up in type size and leading — and
+ * the one book that printed short carried none, while it blocked 19 of 26
+ * blocked books (11 on nothing else) and repeated the book's total in every
+ * warning. The reader is told about length only when the published PDF has
+ * fewer pages than were paid for (`BOOK_PRINTED_SHORT`, appended by the compile
+ * after its render). The severities below are kept for the console: an error
+ * is a stub chapter or a book short as a whole, a warning is unevenness.
+ *
+ * What the reader paid for is the book's pages, so the floor that errs is the
  * book's: a chapter under its own minimum in a book that is over the sum of
  * its chapters' minimums is unevenness, reported as a warning. The writer's
  * one retry is against the chapter's minimum and keeps the longer draft, so
@@ -50,7 +60,7 @@ const STUB_SHARE = 0.75;
  * blocked ten and this one blocks two: the eight it lets through are 3–17%
  * over their floor as books, and the two it keeps have a chapter at 65–69% of
  * its minimum. A stub chapter, or any chapter of a book that is short as a
- * whole, still blocks.
+ * whole, is still an error on the console (it used to block the book).
  *
  * "Short as a whole" is under `LENGTH_FLOOR_SHARE` of the sum, measured as it
  * prints (2026-10-01). Five books that day were blocked at 0.94–0.995 of the

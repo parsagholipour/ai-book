@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import { createProjectSchema, makeFallbackPlan, type FinalBookQa, type ManuscriptQualityReport, type PageQualityReport } from "@book-maker/core";
+import type { FinalBookQa, ManuscriptQualityReport } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 
 /**
@@ -46,13 +46,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -78,35 +71,17 @@ import { compileExport } from "./compileExport.js";
 import { qualityReportWithProvenance } from "./compileExportQualityProvenance.js";
 import { exportRepairOwnershipFence, ExportRepairSupersededError } from "./compileExportFence.js";
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
-import { pageIllustrationVisualContract } from "../generation/pageIllustrationVisualContract.js";
-import { pageIllustrationKeeperToken } from "../generation/pageIllustrationOwnership.js";
-import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
+import { mocks } from "./testing/compileExportMocks.js";
 
-const approvedReport = (approved: boolean): PageQualityReport =>
-  ({
-    approved,
-    score: approved ? 90 : 40,
-    issues: [],
-    requiredRevisions: [],
-    notes: "",
-    checks: { repetitionOk: true, progressionOk: true }
-  }) as unknown as PageQualityReport;
-
-const draft = {
-  title: "Repaired",
-  markdown: "Repaired prose.",
-  summary: "Repaired summary.",
-  imagePrompt: null,
-  continuityNotes: [] as string[]
-};
-
-const illustratedDraft = {
-  ...draft,
-  imagePrompt: "A repaired scene.",
-  continuityNotes: ["Mara keeps the brass key."]
-};
-
-const page = (chapter = false): ExportPageForRepair =>
+/**
+ * The compile's one repair, the defect screen's scoped patch (`compileQuickDraftRepair.ts`), publishes its whole
+ * group in one transaction behind the revision CAS and an exact snapshot claim of every page it read. A repaired
+ * illustrated page takes a new revision and loses its generated picture in that same commit, and the compile's
+ * finalization draws the new keeper: nothing inside the repair queues an image. The per-page rewrite loop these
+ * suites used to drive — its staged keeper, in-repair image job and semantic tail — went with the old final
+ * review on 2026-10-16.
+ */
+const page = (overrides: Partial<ExportPageForRepair> = {}): ExportPageForRepair =>
   ({
     id: "page-1",
     index: 1,
@@ -117,7 +92,9 @@ const page = (chapter = false): ExportPageForRepair =>
     revision: 1,
     status: "COMPLETED",
     images: [],
-    chapter: chapter ? { id: "chapter-1", index: 1, productionBrief: {} } : null
+    chapter: null,
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides
   }) as unknown as ExportPageForRepair;
 
 const input = {
@@ -128,395 +105,146 @@ const input = {
   complexity: 3,
   temperature: 0.6,
   language: "en",
-  mediaSettings: { finalReview: true }
+  mediaSettings: { modelTier: "fast" }
 };
 const plan = { title: "Book", premise: "A book.", audience: "adults", chapters: [] };
 const finalQa = {
   approved: false,
-  score: 40,
-  issues: [],
-  requiredFixes: [],
-  notes: "",
-  repairPageIndexes: [1]
+  score: 60,
+  issues: ["Page 1: A drafting note was left in."],
+  requiredFixes: ["Page 1: Remove the note."],
+  notes: "Focused screen.",
+  focusedReview: { rejectedFindings: 0, repairGroups: [[1]], findings: [{ targets: [1], kind: "production_note",
+    problem: "A drafting note was left in.", fix: "Remove the note.", evidence: [{ pageIndex: 1, quote: "Original prose." }] }] }
 } as unknown as FinalBookQa;
-const strategy = {
-  executionMode: "whole-book",
-  reviewPageDraft: vi.fn(),
-  revisePageDraft: vi.fn(),
-  repairPageBrief: vi.fn(),
-  shouldIllustratePage: vi.fn(() => false)
-};
-const ownership = () => exportRepairOwnershipFence("project-1", 4)!;
+const strategy = { executionMode: "whole-book", shouldIllustratePage: vi.fn(() => false) };
 const repairOptions = (bookPage: ExportPageForRepair, overrides: Record<string, unknown> = {}) =>
   ({
     projectId: "project-1",
+    planId: "plan-1",
     input,
     plan,
     providers: { text: {}, embedding: {} },
     strategy,
-    quality: { enabled: isDefaultCompileQualityFeature },
     pages: [bookPage],
     finalQa,
-    assertOwnership: ownership(),
+    assertOwnership: exportRepairOwnershipFence("project-1", 4)!,
     generationJobId: "gj-1",
     ...overrides
   }) as never;
+const compileJob = (data: Record<string, unknown> = {}) => ({
+  id: "bull-1",
+  name: "compile-export",
+  data: { projectId: "project-1", planId: "plan-1", generationJobId: "gj-1", contentRevision: 4, ...data }
+}) as unknown as Job;
+const stageCompile = (bookPage: ExportPageForRepair, status = "GENERATING") => {
+  mocks.inputForPlanVersion.mockReturnValue(input);
+  mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: plan, inputSnapshot: null });
+  mocks.prisma.project.findUnique.mockResolvedValue({ id: "project-1", title: "Book", status, contentRevision: 4,
+    authorName: null, mediaSettings: {}, pages: [bookPage], images: [], research: [] });
+  mocks.loadPagesForExport.mockResolvedValue([bookPage]);
+  mocks.reviewQuickDraftManuscript.mockResolvedValueOnce(finalQa as never);
+};
 
-describe("compile final-QA repair atomic publication fence", () => {
+describe("compile scoped repair atomic publication fence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
-    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
-    mocks.parseChapterBrief.mockReturnValue(undefined);
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.loadPagesForExport.mockResolvedValue([page()]);
-    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: isDefaultCompileQualityFeature });
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "fast" as unknown as "balanced",
+      enabled: (feature: string) => feature === "finalBookQa" || feature === "pageQaRewrite" });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
-    mocks.revisePageDraftWithRestart.mockResolvedValue(draft);
-    strategy.revisePageDraft.mockResolvedValue(draft);
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    strategy.repairPageBrief.mockReset();
+    mocks.enqueueFinalizationIllustrations.mockResolvedValue({ kind: "ready", pendingJobIds: [], missingPageIndexes: [] });
     strategy.shouldIllustratePage.mockReturnValue(false);
-    mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
-      ...page(),
-      ...data,
-      revision: 2,
-      updatedAt: new Date("2026-01-01T00:00:00.001Z")
-    }));
+    mocks.repairQuickDraftPages.mockReset().mockImplementation(async ({ pages }) =>
+      pages.map((bookPage) => bookPage.index === 1 ? { ...bookPage, markdown: "Repaired prose.", summary: "Repaired summary." } : bookPage));
+    mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ ...page(), ...data, revision: 2 }));
   });
 
-  it("passes actual following prose to the first rewrite and review", async () => {
-    const following = { ...page(), id: "page-2", index: 2, markdown: "The lantern was already in Turtle's hands." };
-    await repairPagesFromFinalQa(repairOptions(page(), { pages: [page(), following], finalQa: { ...finalQa, issues: ["Page 1 has a broken handoff."] } }));
-    expect(mocks.revisePageDraftWithRestart).toHaveBeenCalledWith(expect.objectContaining({ reviseOptions: expect.objectContaining({ nextPages: [expect.objectContaining({ index: 2, markdown: following.markdown })] }) }));
-    expect(strategy.reviewPageDraft).toHaveBeenCalledWith(expect.objectContaining({ nextPages: [expect.objectContaining({ index: 2, markdown: following.markdown })] }));
-  });
-
-  it("does not spend provider calls for a durably consumed repair claim", async () => {
+  it("spends no provider call for a durably consumed repair group, or a page another delivery started", async () => {
     const started = vi.fn(async () => false);
-    const completed = vi.fn();
-    await repairPagesFromFinalQa(repairOptions(page(), { onRepairPageStarted: started, onRepairPageCompleted: completed, finalQa: { ...finalQa, issues: ["Page 1 needs repair."] } }));
-    expect(started).toHaveBeenCalledWith("page-1", 1);
-    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
-    expect(completed).not.toHaveBeenCalled();
-  });
-
-  it.each([false, true])("only reuses final-repair artwork with unchanged prose (changed scene: %s)", async (changedScene) => {
-    const realInput = createProjectSchema.parse({ prompt: "Rabbit learns to cooperate.", category: "KIDS", targetPages: 30 });
-    const realPlan = makeFallbackPlan(realInput);
-    const original = { ...page(), imagePrompt: "Rabbit and Turtle with a lantern." };
-    const priorKeeper = { ...original, projectId: "project-1", pageId: original.id };
-    const visualContract = pageIllustrationVisualContract({ prompt: original.imagePrompt, input: realInput, plan: realPlan, referenceAssets: [] });
-    const image = { id: "image-1", path: "/image-1.webp", metadata: { visualContract,
-      keeperProjectId: "project-1", keeperPageId: original.id, keeperToken: pageIllustrationKeeperToken(priorKeeper) } };
-    original.images = [image];
-    mocks.prisma.imageAsset.findMany.mockResolvedValueOnce([]).mockResolvedValue([image]);
-    mocks.revisePageDraftWithRestart.mockResolvedValue({ ...illustratedDraft, imagePrompt: original.imagePrompt,
-      markdown: changedScene ? "Rabbit waits alone in a different forest." : original.markdown, continuityNotes: [] });
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    const completed = vi.fn();
-    await repairPagesFromFinalQa(repairOptions(original, { input: realInput, plan: realPlan, planId: "plan-1", deferIllustrations: true, onRepairPageCompleted: completed }));
-    if (changedScene) {
-      expect(mocks.prisma.imageAsset.updateMany).not.toHaveBeenCalled();
-      expect(mocks.prisma.imageAsset.deleteMany).toHaveBeenCalled();
-    } else {
-      expect(mocks.prisma.imageAsset.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ id: image.id, pageId: original.id }),
-        data: { metadata: expect.objectContaining({ visualContract, reusedFromKeeperToken: pageIllustrationKeeperToken(priorKeeper) }) }
-      }));
-      expect(mocks.prisma.imageAsset.deleteMany).not.toHaveBeenCalled();
-    }
-    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
-    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
-    expect(completed).toHaveBeenCalledWith(original.id);
-  });
-
-  it("retires only the prior generated keeper, queues its replacement, and stands export down", async () => {
-    const original = {
-      ...page(),
-      imagePrompt: "The old scene.",
-      updatedAt: new Date("2026-01-01T00:00:00.000Z")
-    } as ExportPageForRepair & { updatedAt: Date };
-    const oldToken = pageIllustrationKeeperToken({
-      projectId: "project-1",
-      pageId: original.id,
-      title: original.title,
-      markdown: original.markdown,
-      summary: original.summary,
-      imagePrompt: original.imagePrompt,
-      revision: original.revision
-    });
-    mocks.revisePageDraftWithRestart.mockResolvedValue({ ...illustratedDraft, continuityNotes: [] });
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    mocks.prisma.imageAsset.findMany.mockResolvedValue([
-      {
-        id: "generated-old",
-        path: `/assets/images/project-1/page-page-1-${oldToken}.webp`,
-        metadata: { keeperToken: oldToken }
-      },
-      {
-        id: "manual-replacement",
-        path: "/assets/images/project-1/page-1-edit-operation.webp",
-        metadata: { operationId: "edit-operation" }
-      }
-    ]);
-
-    await expect(
-      repairPagesFromFinalQa(repairOptions(original, { planId: "plan-1" }))
-    ).rejects.toBeInstanceOf(ExportRepairSupersededError);
-
-    expect(mocks.prisma.imageAsset.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ["generated-old"] }, projectId: "project-1", pageId: "page-1" }
-    });
-    expect(mocks.prisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          id: "page-1",
-          status: "COMPLETED",
-          title: "Page 1",
-          markdown: "Original prose.",
-          summary: "Original summary.",
-          imagePrompt: "The old scene.",
-          revision: 1,
-          updatedAt: original.updatedAt
-        },
-        data: expect.objectContaining({ status: "GENERATING" })
-      })
-    );
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({
-          projectId: "project-1",
-          type: "GENERATE_IMAGE",
-          payload: expect.objectContaining({
-            pageId: "page-1",
-            planId: "plan-1",
-            prompt: "A repaired scene.",
-            keeperToken: expect.stringMatching(/^v2-/)
-          })
-        })
-      })
-    );
-    expect(mocks.dispatchWorkerGenerationJob).toHaveBeenCalledWith("image-job-1");
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ id: "page-1", status: "GENERATING" }),
-        data: expect.objectContaining({ status: "COMPLETED" })
-      })
-    );
-    expect(mocks.prisma.page.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.dispatchWorkerGenerationJob.mock.invocationCallOrder[0]!
-    );
-    expect(mocks.loadPagesForExport).not.toHaveBeenCalled();
-  });
-
-  it("keeps the durable image job and stands down when immediate queue dispatch fails", async () => {
-    const original = {
-      ...page(),
-      imagePrompt: "The old scene.",
-      updatedAt: new Date("2026-01-01T00:00:00.000Z")
-    } as ExportPageForRepair & { updatedAt: Date };
-    mocks.revisePageDraftWithRestart.mockResolvedValue(illustratedDraft);
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    mocks.dispatchWorkerGenerationJob.mockRejectedValueOnce(new Error("redis unavailable"));
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    try {
-      await expect(
-        repairPagesFromFinalQa(repairOptions(original, { planId: "plan-1" }))
-      ).rejects.toBeInstanceOf(ExportRepairSupersededError);
-    } finally {
-      warning.mockRestore();
-    }
-
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.generationJob.findUnique).toHaveBeenCalledWith({
-      where: { id: "image-job-1" },
-      select: { projectId: true, type: true, status: true, payload: true }
-    });
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
-    );
-  });
-
-  it("rolls the keeper stage back when the durable job does not exactly own its token", async () => {
-    const original = {
-      ...page(),
-      imagePrompt: "The old scene.",
-      updatedAt: new Date("2026-01-01T00:00:00.000Z")
-    } as ExportPageForRepair & { updatedAt: Date };
-    mocks.revisePageDraftWithRestart.mockResolvedValue(illustratedDraft);
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    mocks.prisma.generationJob.findUnique.mockResolvedValueOnce({
-      projectId: "project-1",
-      type: "GENERATE_IMAGE",
-      status: "QUEUED",
-      payload: {
-        pageId: "page-1",
-        planId: "plan-1",
-        prompt: "A repaired scene.",
-        keeperToken: "v2-not-this-keeper"
-      }
-    });
-
-    await expect(
-      repairPagesFromFinalQa(repairOptions(original, { planId: "plan-1" }))
-    ).rejects.toBeInstanceOf(ExportRepairSupersededError);
-
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledTimes(1);
-    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
-    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
-    expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
-  });
-
-  it("retries cleanly when durable image-job creation rolls the staged transaction back", async () => {
-    const original = {
-      ...page(),
-      imagePrompt: "The old scene.",
-      updatedAt: new Date("2026-01-01T00:00:00.000Z")
-    } as ExportPageForRepair & { updatedAt: Date };
-    mocks.revisePageDraftWithRestart.mockResolvedValue(illustratedDraft);
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    mocks.prisma.generationJob.upsert.mockRejectedValueOnce(new Error("database unavailable"));
-
-    await expect(
-      repairPagesFromFinalQa(repairOptions(original, { planId: "plan-1" }))
-    ).rejects.toThrow("database unavailable");
-    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
-
-    await expect(
-      repairPagesFromFinalQa(repairOptions(original, { planId: "plan-1" }))
-    ).rejects.toBeInstanceOf(ExportRepairSupersededError);
-
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledTimes(2);
-    expect(mocks.dispatchWorkerGenerationJob).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
-    );
-  });
-
-  it("rolls back a pre-finalization crash and lets redelivery publish one complete lifecycle", async () => {
-    const original = {
-      ...page(),
-      imagePrompt: "The old scene.",
-      updatedAt: new Date("2026-01-01T00:00:00.000Z")
-    } as ExportPageForRepair & { updatedAt: Date };
-    mocks.revisePageDraftWithRestart.mockResolvedValue({ ...illustratedDraft, continuityNotes: [] });
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    // This statement runs after the nonterminal page write and durable-job
-    // upsert, but inside their transaction. A process/database loss here must
-    // expose none of those writes and leave the original snapshot retryable.
-    mocks.prisma.page.updateMany.mockRejectedValueOnce(new Error("worker lost before terminalization"));
-
-    await expect(
-      repairPagesFromFinalQa(repairOptions(original, { planId: "plan-1" }))
-    ).rejects.toThrow("worker lost before terminalization");
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledTimes(1);
-    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
-
-    await expect(
-      repairPagesFromFinalQa(repairOptions(original, { planId: "plan-1" }))
-    ).rejects.toBeInstanceOf(ExportRepairSupersededError);
-
-    expect(mocks.prisma.generationJob.upsert).toHaveBeenCalledTimes(2);
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledTimes(2);
-    expect(mocks.dispatchWorkerGenerationJob).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.page.updateMany.mock.invocationCallOrder[1]).toBeLessThan(
-      mocks.dispatchWorkerGenerationJob.mock.invocationCallOrder[0]!
-    );
+    await expect(repairPagesFromFinalQa(repairOptions(page(), { onRepairGroupStarted: started }))).resolves.toBeUndefined();
+    expect(started).toHaveBeenCalledWith([{ id: "page-1", index: 1 }]);
+    await expect(repairPagesFromFinalQa(repairOptions(page(), { shouldRepairPage: () => false }))).resolves.toBeUndefined();
+    expect(mocks.repairQuickDraftPages).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
   });
 
   it("stands down when the exact page snapshot changes without moving contentRevision", async () => {
-    const original = {
-      ...page(),
-      updatedAt: new Date("2026-01-01T00:00:00.000Z")
-    } as ExportPageForRepair & { updatedAt: Date };
-    mocks.prisma.page.update.mockRejectedValueOnce({ code: "P2025" });
+    const original = page();
+    mocks.prisma.page.updateMany.mockResolvedValueOnce({ count: 0 });
 
-    await expect(repairPagesFromFinalQa(repairOptions(original))).rejects.toBeInstanceOf(
-      ExportRepairSupersededError
-    );
+    await expect(repairPagesFromFinalQa(repairOptions(original))).rejects.toBeInstanceOf(ExportRepairSupersededError);
 
     expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
       where: { id: "project-1", contentRevision: 4 },
       data: { contentRevision: { increment: 0 } }
     });
-    expect(mocks.prisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          id: "page-1",
-          status: "COMPLETED",
-          revision: 1,
-          updatedAt: original.updatedAt
-        })
-      })
-    );
+    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: "page-1", status: "COMPLETED", revision: 1, updatedAt: (original as unknown as { updatedAt: Date }).updatedAt })
+    }));
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
     expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
-    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
-    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
   });
 
-  it("does not publish exports while a repaired illustration job is outstanding", async () => {
-    mocks.enqueueFinalizationIllustrations.mockResolvedValueOnce({ kind: "ready", pendingJobIds: ["image-job-1"], missingPageIndexes: [] });
-    const original = {
-      ...page(),
-      imagePrompt: "The old scene.",
-      updatedAt: new Date("2026-01-01T00:00:00.000Z")
-    } as ExportPageForRepair & { updatedAt: Date };
-    mocks.inputForPlanVersion.mockReturnValue(input);
-    mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: plan, inputSnapshot: null });
-    mocks.prisma.project.findUnique.mockResolvedValue({
-      id: "project-1",
-      title: "Book",
-      status: "GENERATING",
-      contentRevision: 4,
-      authorName: null,
-      mediaSettings: {},
-      pages: [original],
-      images: [],
-      research: []
-    });
-    mocks.loadPagesForExport.mockResolvedValue([original]);
-    mocks.loadPageTextSnapshot.mockResolvedValue([
-      { index: 1, title: illustratedDraft.title, markdown: illustratedDraft.markdown, revision: 2 }
+  it("publishes no page when the revision changes after the prior fence", async () => {
+    mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(repairPagesFromFinalQa(repairOptions(page()))).rejects.toBeInstanceOf(ExportRepairSupersededError);
+
+    expect(mocks.exportPublicationSuperseded).toHaveBeenCalled();
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+  });
+
+  it("gives a repaired illustrated page a new revision and retires its generated picture, queueing none itself", async () => {
+    // The early-picture keeper rule: the keeper token covers the revision, so the picture drawn from the
+    // draft no longer matches this page, and the compile's finalization draws the repaired one.
+    strategy.shouldIllustratePage.mockReturnValue(true);
+    const original = page({ imagePrompt: "The old scene." });
+    mocks.prisma.imageAsset.findMany.mockResolvedValue([
+      { id: "generated-same-owner", path: "/assets/images/project-1/page-1.webp", metadata: { legacyGeneratedPageId: "page-1" } },
+      { id: "manual-operation", path: "/assets/images/project-1/page-1-edit-operation.webp", metadata: { operationId: "edit-operation" } }
     ]);
-    mocks.strategy.runFinalBookQa.mockResolvedValue(finalQa);
-    mocks.revisePageDraftWithRestart.mockResolvedValue(illustratedDraft);
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: strategy.reviewPageDraft,
-      revisePageDraft: strategy.revisePageDraft,
-      repairPageBrief: strategy.repairPageBrief,
-      shouldIllustratePage: () => true
-    });
+
+    await repairPagesFromFinalQa(repairOptions(original, { deferIllustrations: true }));
+
+    expect(mocks.prisma.page.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-1" },
+      data: expect.objectContaining({ markdown: "Repaired prose.", revision: { increment: 1 } }) }));
+    expect(mocks.prisma.imageAsset.deleteMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: { in: ["generated-same-owner"] } }) }));
+    expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
+    expect(mocks.dispatchWorkerGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it("refuses an illustrated page unless the compile's finalization will redraw its picture", async () => {
+    strategy.shouldIllustratePage.mockReturnValue(true);
+    const unavailable = vi.fn();
+
+    await expect(repairPagesFromFinalQa(repairOptions(page({ imagePrompt: "The old scene." }), {
+      deferIllustrations: false, onRepairPageUnavailable: unavailable }))).resolves.toBeUndefined();
+
+    expect(mocks.repairQuickDraftPages).not.toHaveBeenCalled();
+    expect(unavailable).toHaveBeenCalledWith("page-1", 1, expect.objectContaining({
+      message: expect.stringContaining("deferred illustration finalization") }));
+  });
+
+  it("does not publish exports while a repaired page's picture is outstanding", async () => {
+    mocks.enqueueFinalizationIllustrations.mockResolvedValueOnce({ kind: "ready", pendingJobIds: ["image-job-1"], missingPageIndexes: [] });
+    const original = page({ imagePrompt: "The old scene." });
+    stageCompile(original);
+    mocks.loadPageTextSnapshot.mockResolvedValue([{ index: 1, title: "Page 1", markdown: "Repaired prose.", revision: 2 }]);
+    Object.assign(mocks.strategy, { shouldIllustratePage: () => true });
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const job = {
-      id: "bull-1",
-      name: "compile-export",
-      data: {
-        projectId: "project-1",
-        planId: "plan-1",
-        generationJobId: "gj-1",
-        contentRevision: 4,
-        exportPublicationProjectStatus: "GENERATING"
-      }
-    } as unknown as Job;
 
     try {
-      const completion = await compileExport(job);
+      const completion = await compileExport(compileJob({ exportPublicationProjectStatus: "GENERATING" }));
       expect(completion.lifecycleSettlement).toBe("defer-to-successor");
       expect(completion.afterJobCompleted).toEqual(expect.any(Function));
       expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
       await completion.afterJobCompleted?.();
     } finally {
-      for (const key of ["reviewPageDraft", "revisePageDraft", "repairPageBrief", "shouldIllustratePage"]) {
-        delete (mocks.strategy as Record<string, unknown>)[key];
-      }
+      delete (mocks.strategy as Record<string, unknown>).shouldIllustratePage;
       warning.mockRestore();
     }
 
@@ -525,7 +253,7 @@ describe("compile final-QA repair atomic publication fence", () => {
     }));
     expect(mocks.prisma.generationJob.upsert).not.toHaveBeenCalled();
     expect(mocks.prisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
+      expect.objectContaining({ data: expect.objectContaining({ markdown: "Repaired prose.", revision: { increment: 1 } }) })
     );
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith(
@@ -536,17 +264,15 @@ describe("compile final-QA repair atomic publication fence", () => {
         expectedProjectStatus: "GENERATING",
         ownership: { kind: "outcome" }
       },
-      {
-        contentRevision: 4,
-        completedPredecessorId: "gj-1"
-      }
+      { contentRevision: 4, completedPredecessorId: "gj-1" }
     );
   });
 
   it("stands a compile redelivery down before QA while its committed replacement image job is open", async () => {
     const repairedPage = {
       ...page(),
-      ...illustratedDraft,
+      markdown: "Repaired prose.",
+      imagePrompt: "A repaired scene.",
       status: "COMPLETED",
       revision: 2,
       updatedAt: new Date("2026-01-01T00:00:00.002Z")
@@ -574,16 +300,18 @@ describe("compile final-QA repair atomic publication fence", () => {
     // still-current finding and must never write through the newer row.
     const currentKeeperReport = qualityReportWithProvenance(
       {
-        state: "blocked",
-        score: 64,
+        state: "review_recommended",
+        score: 95,
         issues: [
           {
-            code: "CURRENT_KEEPER",
+            // A finding the reader is shown, so the reconstruction has a reader claim to keep.
+            code: "PROMPT_LEAKAGE",
             severity: "error",
             source: "deterministic",
-            message: "The current keeper still contains a publication-blocking defect.",
-            guidance: "Repair the current keeper before publishing.",
-            affectedPageIndexes: [1]
+            message: "Page 1 appears to expose generation instructions or hidden prompt text: “system prompt”.",
+            guidance: "Regenerate this page without internal instructions.",
+            affectedPageIndexes: [1],
+            evidence: [{ pageIndex: 1, excerpt: "system prompt" }]
           }
         ],
         affectedPageIndexes: [1],
@@ -637,23 +365,23 @@ describe("compile final-QA repair atomic publication fence", () => {
     const completion = await compileExport(job);
 
     expect(completion.afterJobCompleted).toEqual(expect.any(Function));
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
-    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
+    expect(mocks.repairQuickDraftPages).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
     expect(mocks.prisma.generationJob.update).toHaveBeenCalledWith({
       where: { id: "gj-1" },
       data: {
         qualityReport: expect.objectContaining({
-          state: "blocked",
-          issues: [expect.objectContaining({ code: "CURRENT_KEEPER", affectedPageIndexes: [1] })]
+          state: "review_recommended",
+          issues: [expect.objectContaining({ code: "PROMPT_LEAKAGE", affectedPageIndexes: [1] })]
         })
       }
     });
     expect(reports.get("gj-1")).toEqual(
       expect.objectContaining({
-        state: "blocked",
-        issues: [expect.objectContaining({ code: "CURRENT_KEEPER", affectedPageIndexes: [1] })]
+        state: "review_recommended",
+        issues: [expect.objectContaining({ code: "PROMPT_LEAKAGE", affectedPageIndexes: [1] })]
       })
     );
     expect(reports.get("gj-newer")).toEqual(newerReport);
@@ -674,210 +402,16 @@ describe("compile final-QA repair atomic publication fence", () => {
     );
   });
 
-  it("rechecks revision ownership before the semantic tail and writes no stale memory", async () => {
-    const storyExtract = { storyDelta: { factsAdded: ["Mara has the key."] } };
-    mocks.revisePageDraftWithRestart.mockResolvedValue({ ...draft, continuityNotes: ["Mara has the key."] });
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
-    mocks.prisma.project.updateMany
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 0 });
-
-    await expect(repairPagesFromFinalQa(repairOptions(page()))).rejects.toBeInstanceOf(
-      ExportRepairSupersededError
-    );
-
-    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
-    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
-    expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
-    expect(mocks.updateEntityStateFromPage).not.toHaveBeenCalled();
-    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
-  });
-
-  it("prepares provider results outside transactions and publishes every semantic write under the exact keeper fence", async () => {
-    const storyExtract = { storyDelta: { factsAdded: ["Mara has the key."] } };
-    let transactionOpen = false;
-    const transactionImplementation = mocks.prisma.$transaction.getMockImplementation();
-    mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => {
-      transactionOpen = true;
-      try {
-        return await run(mocks.prisma);
-      } finally {
-        transactionOpen = false;
-      }
-    });
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      ...draft,
-      continuityNotes: ["Mara has the key."]
-    });
-    mocks.keeperStoryExtractForSave.mockImplementationOnce(async () => {
-      expect(transactionOpen).toBe(false);
-      return storyExtract;
-    });
-    mocks.prepareEmbedding.mockImplementationOnce(async () => {
-      expect(transactionOpen).toBe(false);
-      return { vectorLiteral: "[0]", error: null };
-    });
-    strategy.executionMode = "sequential-pages";
-
-    try {
-      await repairPagesFromFinalQa(repairOptions(page()));
-    } finally {
-      strategy.executionMode = "whole-book";
-      if (transactionImplementation) {
-        mocks.prisma.$transaction.mockImplementation(transactionImplementation);
-      }
-    }
-
-    expect(mocks.persistStoryExtract).toHaveBeenCalledWith(
-      expect.objectContaining({ client: mocks.prisma, extract: storyExtract })
-    );
-    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ pageId: "page-1", body: "Mara has the key." })]
-    });
-    expect(mocks.updateEntityStateFromPage).toHaveBeenCalledWith(
-      "project-1",
-      1,
-      ["Mara has the key."],
-      mocks.prisma
-    );
-    expect(mocks.writePreparedEmbedding).toHaveBeenCalledWith(
-      { projectId: "project-1", scope: "page:1", sourceId: "page-1", text: "Repaired summary." },
-      { vectorLiteral: "[0]", error: null },
-      mocks.prisma
-    );
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          id: "page-1",
-          markdown: "Repaired prose.",
-          revision: 2,
-          status: "COMPLETED"
-        })
-      })
-    );
-  });
-
-  it("writes neither page, brief nor semantic memory when ownership is lost after provider preparation", async () => {
-    const storyExtract = { storyDelta: { factsAdded: ["Mara has the key."] } };
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      ...draft,
-      continuityNotes: ["Mara has the key."]
-    });
-    mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
-    strategy.executionMode = "sequential-pages";
-    mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
-
-    try {
-      await expect(repairPagesFromFinalQa(repairOptions(page(true)))).rejects.toBeInstanceOf(
-        ExportRepairSupersededError
-      );
-    } finally {
-      strategy.executionMode = "whole-book";
-    }
-
-    expect(mocks.keeperStoryExtractForSave).toHaveBeenCalledTimes(1);
-    expect(mocks.prepareEmbedding).toHaveBeenCalledTimes(1);
-    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
-    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
-    expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
-    expect(mocks.updateEntityStateFromPage).not.toHaveBeenCalled();
-    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["COMPLETED", true],
-    ["FAILED_QA", false]
-  ])("publishes no %s page when the revision changes after the prior fence", async (_status, approved) => {
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport(approved));
-    mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
-
-    await expect(repairPagesFromFinalQa(repairOptions(page()))).rejects.toBeInstanceOf(
-      ExportRepairSupersededError
-    );
-
-    expect(mocks.exportPublicationSuperseded).toHaveBeenCalled();
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", contentRevision: 4 },
-      data: { contentRevision: { increment: 0 } }
-    });
-    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
-  });
-
-  it("publishes neither the page nor its repaired brief after the revision changes", async () => {
-    const chapterPage = page(true);
-    const storedBrief = {
-      chapterIndex: 1,
-      title: "One",
-      summary: "Summary",
-      continuityFocus: [],
-      pages: [{ pageIndex: 1, purpose: "Old", beat: "Old", requiredContinuity: [], endingPressure: "" }]
-    };
-    mocks.parseChapterBrief.mockReturnValue(storedBrief);
-    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: storedBrief });
-    mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 1 });
-    strategy.reviewPageDraft
-      .mockResolvedValueOnce({ ...approvedReport(false), checks: { repetitionOk: false, progressionOk: true } })
-      .mockResolvedValueOnce({ ...approvedReport(false), checks: { repetitionOk: false, progressionOk: true } })
-      .mockResolvedValue(approvedReport(true));
-    strategy.repairPageBrief.mockResolvedValue({
-      pageIndex: 1,
-      purpose: "Fresh",
-      beat: "Fresh",
-      requiredContinuity: [],
-      endingPressure: ""
-    });
-    mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
-
-    await expect(repairPagesFromFinalQa(repairOptions(chapterPage))).rejects.toBeInstanceOf(
-      ExportRepairSupersededError
-    );
-
-    expect(strategy.repairPageBrief).toHaveBeenCalled();
-    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
-  });
-
   it("uses the existing stand-down verdict when the atomic page claim loses", async () => {
     const bookPage = page();
-    mocks.inputForPlanVersion.mockReturnValue(input);
-    mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: plan, inputSnapshot: null });
-    mocks.prisma.project.findUnique.mockResolvedValue({
-      id: "project-1",
-      title: "Book",
-      status: "COMPLETE",
-      contentRevision: 4,
-      authorName: null,
-      mediaSettings: {},
-      pages: [bookPage],
-      images: [],
-      research: []
-    });
-    mocks.loadPagesForExport.mockResolvedValue([bookPage]);
-    mocks.loadPageTextSnapshot.mockResolvedValue([
-      { index: 1, title: bookPage.title, markdown: bookPage.markdown, revision: 1 }
-    ]);
-    mocks.strategy.runFinalBookQa.mockResolvedValue(finalQa);
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: strategy.reviewPageDraft,
-      revisePageDraft: strategy.revisePageDraft,
-      repairPageBrief: strategy.repairPageBrief
-    });
+    stageCompile(bookPage, "COMPLETE");
+    mocks.loadPageTextSnapshot.mockResolvedValue([{ index: 1, title: bookPage.title, markdown: bookPage.markdown, revision: 1 }]);
     mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const job = {
-      id: "bull-1",
-      name: "compile-export",
-      data: { projectId: "project-1", planId: "plan-1", generationJobId: "gj-1", contentRevision: 4 }
-    } as unknown as Job;
 
     try {
-      await expect(compileExport(job)).resolves.toEqual({});
+      await expect(compileExport(compileJob())).resolves.toEqual({});
     } finally {
-      for (const key of ["reviewPageDraft", "revisePageDraft", "repairPageBrief"]) {
-        delete (mocks.strategy as Record<string, unknown>)[key];
-      }
       warning.mockRestore();
     }
 
@@ -885,7 +419,7 @@ describe("compile final-QA repair atomic publication fence", () => {
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
     expect(mocks.prisma.generationJob.update).toHaveBeenCalledWith({
       where: { id: "gj-1" },
-      // The stand-down preserves the review verdict instead of letting the
+      // The stand-down records the screen's verdict instead of letting the
       // superseded exception reach normal failure settlement.
       data: { qualityReport: expect.objectContaining({ state: "passed" }) }
     });

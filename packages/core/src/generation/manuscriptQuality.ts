@@ -1,4 +1,4 @@
-import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
+import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, promptLeakSpan } from "./promptLeak.js";
 import { groupManuscriptQualityFindings, manuscriptQualityPenalty } from "./manuscriptQualityFindings.js";
 import { figureFreeProse } from "./figures/figureBlocks.js";
 import { sentenceOpeningCadenceIssues } from "./manuscriptCadence.js";
@@ -11,11 +11,18 @@ import {
 import { plainMarkdown, tokenizePage } from "./manuscriptPageCache.js";
 import {
   manuscriptError,
+  manuscriptWarning,
   type ManuscriptIntegrityPage,
   type ManuscriptQualityIssue,
-  type ManuscriptQualityReport,
-  type ManuscriptQualityState
+  type ManuscriptQualityReport
 } from "./manuscriptQualityIssue.js";
+import {
+  READER_FINDINGS_POLICY,
+  isReaderFinding,
+  readerCopyOf,
+  readerFindingsFrom,
+  readerQualityState
+} from "./readerFindings.js";
 import {
   manuscriptQualityDiagnostics,
   publicationCorroborationError,
@@ -24,6 +31,7 @@ import {
 import { cacheManuscriptPages } from "./manuscriptSignatures.js";
 import { structuralSlopIssues } from "./manuscriptStructuralSlop.js";
 import { recapBacktrackingIssues } from "./manuscriptRecapAudit.js";
+import { describeScriptLeaks, findScriptLeaks } from "./scriptLeaks.js";
 
 export {
   MANUSCRIPT_STRUCTURAL_AUDIT_DETECTOR_VERSION,
@@ -46,6 +54,23 @@ export {
   type ManuscriptQualitySource,
   type ManuscriptQualityState
 } from "./manuscriptQualityIssue.js";
+export {
+  BOOK_PRINTED_SHORT_CODE,
+  READER_FINDINGS_POLICY,
+  READER_FINDING_ADMISSIONS,
+  diagnosticIssuesOf,
+  isReaderFinding,
+  printedSheetsFor,
+  printedShortIssue,
+  readerCopyOf,
+  readerFindingAdmission,
+  readerFindingsFrom,
+  readerQualityState,
+  type PrintedSheets,
+  type ReaderFindingAdmission,
+  type ReaderFindingEvidence
+} from "./readerFindings.js";
+export { hasAttributedSpeech, speechAbsenceRefuted, withoutRefutedFindings } from "./findingCounterevidence.js";
 export {
   DUPLICATE_CLUSTER_BLOCKING_MIN_PAGES,
   PUBLICATION_CORROBORATION_CODES,
@@ -123,16 +148,20 @@ const MANUSCRIPT_PAGE_QUALITY_RULES = [
         [page.index]
       )
   ),
-  manuscriptRule(
-    ({ page }: ManuscriptPageRuleContext) => containsPromptLeak(page.markdown, MANUSCRIPT_PROMPT_LEAK_PATTERNS),
-    ({ page }) =>
-      manuscriptError(
-        "PROMPT_LEAKAGE",
-        `Page ${page.index} appears to expose generation instructions or hidden prompt text.`,
-        "Regenerate this page without internal instructions.",
-        [page.index]
-      )
-  ),
+  // The one rule that quotes what it matched: a reader is shown this finding
+  // (`readerFindings.ts`) only with a quote of the page, and the detector is
+  // the only thing that knows which words it matched.
+  ({ page }: ManuscriptPageRuleContext) => {
+    const span = promptLeakSpan(page.markdown, MANUSCRIPT_PROMPT_LEAK_PATTERNS)?.replace(/\s+/g, " ").trim();
+    if (!span) return undefined;
+    return [manuscriptError(
+      "PROMPT_LEAKAGE",
+      `Page ${page.index} appears to expose generation instructions or hidden prompt text: “${span}”.`,
+      "Regenerate this page without internal instructions.",
+      [page.index],
+      { evidence: [{ pageIndex: page.index, excerpt: span }] }
+    )];
+  },
   manuscriptRule(
     ({ page }: ManuscriptPageRuleContext) => containsPlaceholder(page.markdown),
     ({ page }) =>
@@ -217,6 +246,14 @@ export function runDeterministicManuscriptChecks(options: {
   language?: string;
   /** The author owns the text: content-integrity checks only. See {@link AUTHOR_MANUSCRIPT_CHECK_CODES}. */
   authorManuscript?: boolean;
+  /**
+   * A story (`isNarrativeWritingMode`): no `CROSS_CHAPTER_CONCEPT_REPETITION`,
+   * which looks for explanatory modules taught twice. On stories it read two
+   * adjacent scenes, or a recurring place, as "overlapping explanatory
+   * modules" — 4 of 15 labelled findings false, all on stories and running
+   * examples (2026-10-15).
+   */
+  narrative?: boolean;
 }): ManuscriptQualityIssue[] {
   const pages = [...options.pages].sort((a, b) => a.index - b.index);
   const indexes = pages.map((page) => page.index);
@@ -250,6 +287,7 @@ export function runDeterministicManuscriptChecks(options: {
   if (options.authorManuscript) {
     return stampShadowWouldBlock(issues.filter((issue) => AUTHOR_MANUSCRIPT_CHECK_CODES.has(issue.code)), pages.length);
   }
+  issues.push(...scriptLeakIssues(prepared.map(({ page }) => page), options.language));
   const cached = cacheManuscriptPages(prepared);
   const englishPhraseDetectors = englishPhraseDetectorsEnabled(options.language, pageTexts);
 
@@ -259,7 +297,7 @@ export function runDeterministicManuscriptChecks(options: {
     ...repeatedOpeningIssues(pages, pageTexts, pageTokens)
   );
 
-  const slop = structuralSlopIssues(cached, { englishPhraseDetectors });
+  const slop = structuralSlopIssues(cached, { englishPhraseDetectors, conceptRepetition: !options.narrative });
   issues.push(
     ...slop,
     ...publicationCorroborationError(slop),
@@ -269,6 +307,27 @@ export function runDeterministicManuscriptChecks(options: {
     issues.push(...sentenceOpeningCadenceIssues(cached));
   }
   return stampShadowWouldBlock(issues, pages.length);
+}
+
+/**
+ * A word in a script the book is not written in (`scriptLeaks.ts`), one
+ * warning a page. A console diagnostic and nothing more: the compose guard
+ * and the page integrity rule are what act on a leak, before the compile. It
+ * reads no brief, so a book whose brief asked for another script lists it here
+ * and nowhere else.
+ */
+function scriptLeakIssues(pages: readonly ManuscriptIntegrityPage[], language: string | undefined): ManuscriptQualityIssue[] {
+  return pages.flatMap((page) => {
+    const leaks = findScriptLeaks(page.markdown, { language: language ?? "en" });
+    if (leaks.length === 0) return [];
+    return [manuscriptWarning(
+      "FOREIGN_SCRIPT",
+      `Page ${page.index} contains words in a script the book is not written in: ${describeScriptLeaks(leaks)}.`,
+      "Replace each word with the book's own language in Edit Mode, or regenerate the page.",
+      [page.index],
+      { evidence: [{ pageIndex: page.index, excerpt: leaks[0]!.word }] }
+    )];
+  });
 }
 
 export type ManuscriptQualityReportOptions = {
@@ -295,25 +354,30 @@ export type ManuscriptQualityReportOptions = {
 /**
  * Turns one compile's findings into the verdict the app reads off the book.
  *
- * `deterministicWarningsAffectVerdict` decides whether a deterministic warning
- * may recommend review. It describes the compile's role, independently of
- * whether model QA happened to run: an initial/outcome compile grades a book
- * nobody has graded yet, so every warning it raises is news even when model QA
- * was not requested. A `skipFinalReview` recompile is not grading the whole book:
- * an undo, a verified exact replacement, or a chat edit re-runs deterministic
- * checks over prose the edit never touched. Letting those warnings speak made a
- * book that passed months ago come back "review recommended" permanently, since
- * the export repair pass only rewrites errors.
+ * **The reader's grade is made from `readerFindings` alone** (`readerFindings.ts`):
+ * the admitted types, each with the evidence its admission requires, capped at
+ * a warning unless the type is measured precise enough to block, and none is.
+ * Every other finding is a diagnostic. It stays in `issues` and `findings` —
+ * the console reads them, the repair pass targets the errors among them, and a
+ * stand-down withdraws them — and it never moves `state`, `score` or
+ * `affectedPageIndexes`. Before the split (2026-10-15) a report graded every
+ * finding, and 147 of 175 recent books read "review recommended" or "blocked"
+ * on findings a third of which were real; graded this way, 171 read "passed".
+ * So an empty reader set grades `passed` while the console still lists what the
+ * compile found. Errors a reader is not shown block nothing either:
+ * `PAGE_COUNT_MISMATCH`, `EMPTY_PAGE` and the rest of the integrity sweep are
+ * unmeasured (none fired in those 20 days), and a book that printed short is
+ * told so by the one length finding that is (`BOOK_PRINTED_SHORT`).
  *
- * Two things are deliberately outside that gate. An **error** blocks whatever
- * ran, because publication integrity is never bypassed by an edit. Existing
- * model reviewers still emit warnings; only the structural corroboration path
- * constructs a model `error`. A model finding always speaks, because only a
- * full review can produce one.
+ * `deterministicWarningsAffectVerdict` keeps its meaning over the reader's
+ * findings: a deterministic warning an edit's recompile re-measures over prose
+ * it never touched does not re-grade the book. A deterministic error and a
+ * model finding always speak. No admitted type is a deterministic warning when
+ * it is graded here, so the option is recorded in provenance and silences
+ * nothing a reader sees today.
  *
- * Shadow `diagnostics.wouldBlock` is measured here and is **not** mapped onto
- * `state`. Publication blocks on explicit `severity === "error"`, including a
- * high-confidence corroborated structural duplication.
+ * Shadow `diagnostics.wouldBlock` is measured over every issue and is **not**
+ * mapped onto `state`.
  */
 export function buildManuscriptQualityReport(
   deterministicIssues: ManuscriptQualityIssue[],
@@ -321,65 +385,86 @@ export function buildManuscriptQualityReport(
   options: ManuscriptQualityReportOptions
 ): ManuscriptQualityReport {
   const issues = [...deterministicIssues, ...modelIssues];
-  const blocked = issues.some((entry) => entry.severity === "error");
-  const deterministicWarnings = deterministicIssues.filter((entry) => entry.severity === "warning").length;
-  const advisoryModelIssues = modelIssues.filter((entry) => entry.severity !== "error").length;
   const deterministicWarningsAffectVerdict =
     options.deterministicWarningsAffectVerdict ?? options.finalReviewRan;
-  const state: ManuscriptQualityState = blocked
-    ? "blocked"
-    : advisoryModelIssues > 0 || (deterministicWarningsAffectVerdict && deterministicWarnings > 0)
-      ? "review_recommended"
-      : "passed";
-  const findings = groupManuscriptQualityFindings(issues);
-  const score = Math.max(0, 100 - manuscriptQualityPenalty(findings));
+  const readerFindings = readerFindingsFrom(issues, { deterministicWarningsAffectVerdict });
   const manuscriptPageCount =
     options.manuscriptPageCount ??
     Math.max(0, ...issues.flatMap((issue) => issue.affectedPageIndexes), 0);
   return {
-    state,
-    score,
+    state: readerQualityState(readerFindings),
+    score: readerScore(readerFindings),
     scoreBasis: "unresolved_findings",
-    findings,
+    findings: groupManuscriptQualityFindings(issues),
     issues,
-    affectedPageIndexes: [...new Set(issues.flatMap((entry) => entry.affectedPageIndexes))].sort((a, b) => a - b),
+    readerFindings,
+    readerPolicy: READER_FINDINGS_POLICY,
+    affectedPageIndexes: pagesNamedBy(readerFindings),
     checkedAt: new Date().toISOString(),
     diagnostics: manuscriptQualityDiagnostics(issues, manuscriptPageCount)
   };
 }
 
 /**
- * Adds a post-hoc issue (e.g. an export artifact failure discovered after the
- * manuscript checks ran) to an existing report, recomputing state and score
- * with the same weights as buildManuscriptQualityReport. State never improves:
- * a warning bumps "passed" to "review_recommended"; an error blocks.
+ * Adds a post-hoc issue — an export artifact failure, or the printed-short
+ * finding, both discovered after the manuscript checks ran — to an existing
+ * report. It always joins `issues`; it reaches the reader's grade only when
+ * `isReaderFinding` admits it, and then it always speaks, because it is a fact
+ * about the file this compile produced rather than a re-measurement of prose.
+ * State never improves. A report made before the split grades every issue, as
+ * it always did.
  */
 export function appendQualityIssue(
   report: ManuscriptQualityReport,
   issue: ManuscriptQualityIssue
 ): ManuscriptQualityReport {
-  const blocked = report.state === "blocked" || issue.severity === "error";
   const issues = [...report.issues, issue];
   const findings = groupManuscriptQualityFindings(issues);
+  const diagnostics = report.diagnostics
+    ? {
+        diagnostics: manuscriptQualityDiagnostics(
+          issues,
+          Math.max(0, ...issues.flatMap((entry) => entry.affectedPageIndexes), report.affectedPageIndexes.length)
+        )
+      }
+    : {};
+  if (report.readerFindings === undefined) {
+    return {
+      ...report,
+      state: report.state === "blocked" || issue.severity === "error" ? "blocked" : "review_recommended",
+      score: Math.max(0, 100 - manuscriptQualityPenalty(findings)),
+      scoreBasis: "unresolved_findings",
+      findings,
+      issues,
+      affectedPageIndexes: [...new Set([...report.affectedPageIndexes, ...issue.affectedPageIndexes])].sort(
+        (a, b) => a - b
+      ),
+      ...diagnostics
+    };
+  }
+  const readerFindings = isReaderFinding(issue) ? [...report.readerFindings, readerCopyOf(issue)] : report.readerFindings;
+  const graded = readerQualityState(readerFindings);
   return {
     ...report,
-    state: blocked ? "blocked" : "review_recommended",
-    score: Math.max(0, 100 - manuscriptQualityPenalty(findings)),
+    state: STATE_RANK[graded] >= STATE_RANK[report.state] ? graded : report.state,
+    score: Math.min(report.score, readerScore(readerFindings)),
     scoreBasis: "unresolved_findings",
     findings,
     issues,
-    affectedPageIndexes: [...new Set([...report.affectedPageIndexes, ...issue.affectedPageIndexes])].sort(
-      (a, b) => a - b
-    ),
-    ...(report.diagnostics
-      ? {
-          diagnostics: manuscriptQualityDiagnostics(
-            issues,
-            Math.max(0, ...issues.flatMap((entry) => entry.affectedPageIndexes), report.affectedPageIndexes.length)
-          )
-        }
-      : {})
+    readerFindings,
+    affectedPageIndexes: pagesNamedBy(readerFindings),
+    ...diagnostics
   };
+}
+
+const STATE_RANK: Record<ManuscriptQualityReport["state"], number> = { passed: 0, review_recommended: 1, blocked: 2 };
+
+function readerScore(readerFindings: readonly ManuscriptQualityIssue[]): number {
+  return Math.max(0, 100 - manuscriptQualityPenalty(groupManuscriptQualityFindings(readerFindings)));
+}
+
+function pagesNamedBy(issues: readonly ManuscriptQualityIssue[]): number[] {
+  return [...new Set(issues.flatMap((entry) => entry.affectedPageIndexes))].sort((a, b) => a - b);
 }
 
 /**

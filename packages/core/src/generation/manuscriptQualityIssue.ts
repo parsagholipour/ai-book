@@ -55,15 +55,35 @@ export type ManuscriptQualityDiagnostics = {
 };
 
 export type ManuscriptQualityReport = {
+  /**
+   * The reader's grade. On a report carrying `readerPolicy` it is graded from
+   * `readerFindings` alone; on an older report, from every issue.
+   */
   state: ManuscriptQualityState;
+  /** Scored like `state`: from `readerFindings` on a split report. */
   score: number;
+  /**
+   * Every finding the compile measured — the operator console's ledger, the
+   * repair pass's targets and the stand-down's evidence. The reader is shown
+   * only `readerFindings`; the rest are diagnostics (`diagnosticIssuesOf`).
+   */
   issues: ManuscriptQualityIssue[];
+  /** The pages the reader's findings name (`issues`' pages on an older report). */
   affectedPageIndexes: number[];
   checkedAt: string;
   diagnostics?: ManuscriptQualityDiagnostics;
   /** A count of unresolved findings, not an editorial rating. */
   scoreBasis?: "unresolved_findings";
+  /** Groups over `issues`, the console's ledger; indexes point into `issues`. */
   findings?: import("./manuscriptQualityFindings.js").ManuscriptQualityFinding[];
+  /**
+   * The findings a reader may be shown (`readerFindings.ts`): an admitted
+   * type with the evidence its admission requires, severity capped unless the
+   * type may block. Absent on a report made before the split.
+   */
+  readerFindings?: ManuscriptQualityIssue[];
+  /** Which admission list graded `state`; its presence marks a split report. */
+  readerPolicy?: string;
 };
 
 export type ManuscriptIntegrityPage = {

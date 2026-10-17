@@ -12,15 +12,15 @@ import { DelayedError } from "bullmq";
  * worker ran one job at a time, the reclaimed copy could only start after the
  * first ended, and every handler's redelivery path is written for exactly that
  * order: a COMPLETED row replays its tail, a settled attempt is refused before
- * the claim. Two lanes and a concurrency above one would let the copy start
+ * the claim. Several lanes and a concurrency above one would let the copy start
  * beside the original, in this same process. Deferring it restores that order
  * rather than inventing a new one: the copy runs when the original is gone —
  * never refused, so a delivery the original lost its Bull lock to (it cannot
  * finish its own Bull job any more) is still the one that settles it.
  *
- * Keyed by the durable row id, so a copy of the same row in the other lane —
+ * Keyed by the durable row id, so a copy of the same row in another lane —
  * a previous release queued it in `book-maker`, this one in
- * `book-maker-interactive` — is held too. It is one process's guard and makes
+ * `book-maker-interactive` or `book-maker-images` — is held too. It is one process's guard and makes
  * no claim about a second worker process: that duplicate needs a lock lost the
  * same way, as before, and the handlers' own fences (delivery tokens, revision
  * claims, the attempt state machine) are what answer it.

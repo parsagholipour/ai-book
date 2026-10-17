@@ -55,8 +55,6 @@ const mocks = vi.hoisted(() => {
   heartbeatStop: vi.fn(async () => undefined),
   claimAppliedEditPublication: vi.fn(async () => true),
   restoreEditProjectStatus: vi.fn(async () => true),
-  keeperStoryExtractForSave: vi.fn(async (): Promise<{ storyDelta: unknown } | null> => null),
-  persistStoryExtract: vi.fn(async () => null),
   reviewAppliedBookEdit: vi.fn(),
   claimDurableEditCompletionTx: vi.fn(async () => true),
   settleDurableEditAttemptTx: vi.fn(async () => true),
@@ -117,10 +115,6 @@ vi.mock("../generation/storyStateStore.js", () => ({
   rebuildProjectStoryState: vi.fn(),
   loadProjectStoryState: vi.fn(async () => ({ promises: [], facts: [], entities: {}, unanswered: [] }))
 }));
-vi.mock("../generation/qualityEnrichment.js", () => ({
-  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-  persistStoryExtract: mocks.persistStoryExtract
-}));
 vi.mock("../generation/textEditLease.js", () => ({
   assertTextEditLeaseTx: mocks.assertTextEditLeaseTx,
   completeTextEditLease: mocks.completeTextEditLease,
@@ -156,7 +150,6 @@ vi.mock("@book-maker/core", async () => {
   };
 });
 
-import { keeperStoryExtractForSave } from "../generation/qualityEnrichment.js";
 import { loadProjectStoryState } from "../generation/storyStateStore.js";
 import { applyBookEdit } from "./applyBookEdit.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
@@ -207,8 +200,6 @@ describe("applyBookEdit in exact mode", () => {
     mocks.assertTextEditLeaseTx.mockResolvedValue({ status: "ACTIVE", classifier: {} });
     mocks.heartbeatAssertHeld.mockResolvedValue(undefined);
     mocks.heartbeatStop.mockResolvedValue(undefined);
-    mocks.keeperStoryExtractForSave.mockResolvedValue(null);
-    mocks.persistStoryExtract.mockResolvedValue(null);
     mocks.claimAppliedEditPublication.mockResolvedValue(true);
     mocks.restoreEditProjectStatus.mockResolvedValue(true);
     mocks.reviewAppliedBookEdit.mockReset().mockResolvedValue({
@@ -244,7 +235,8 @@ describe("applyBookEdit in exact mode", () => {
     };
     expect(published.pages.map((entry) => entry.markdownAfter)).toEqual(["Fly runs.", "Fly rests."]);
     expect(mocks.textEditPublicationCompletion).toHaveBeenCalledTimes(1);
-    expect(loadProjectStoryState).toHaveBeenCalledTimes(1);
+    // No story extract, so nothing loads the stored state to extract against (E6).
+    expect(loadProjectStoryState).not.toHaveBeenCalled();
   });
 
   it("bulk-snapshots and publishes 120 pages atomically under the manuscript transaction budget", async () => {
@@ -301,8 +293,6 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.publishTextEditManuscript).toHaveBeenCalledWith(
       expect.objectContaining({ skippedPageIndexes: [2], pages: [expect.objectContaining({ pageIndex: 1 })] })
     );
-    expect(keeperStoryExtractForSave).toHaveBeenCalledTimes(1);
-    expect(keeperStoryExtractForSave).toHaveBeenCalledWith(expect.objectContaining({ pageIndex: 1 }));
     // The queued reply promised page 2, so the operation records the skip for
     // the serializer to surface — silence here left the transcript claiming an
     // edit that never happened.
@@ -443,13 +433,9 @@ describe("applyBookEdit in exact mode", () => {
 
     expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1);
     expect(mocks.publishTextEditManuscript).toHaveBeenCalledTimes(1);
-    expect(keeperStoryExtractForSave).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pageIndex: 1,
-        previousExtract: null,
-        keeperWasRevised: true,
-        draft: expect.objectContaining({ markdown: "Rewritten." })
-      })
+    // No story extract (E6): the rewritten page's old delta is cleared, not re-described.
+    expect(mocks.publishTextEditManuscript).toHaveBeenCalledWith(
+      expect.objectContaining({ pages: [expect.objectContaining({ pageIndex: 1, storyDeltaAfter: null })] })
     );
   });
 
@@ -511,8 +497,8 @@ describe("applyBookEdit in exact mode", () => {
   });
 
   it("reads the operator's quality gates once for the whole edit", async () => {
-    // `rewritePageForUserRequest` loaded its own per page and
-    // `persistKeeperStoryDelta` loaded another behind it, so a three-page edit
+    // `rewritePageForUserRequest` loaded its own per page and the story extract
+    // (removed 2026-10-16, E6) loaded another behind it, so a three-page edit
     // spent six reads — and a Quality-tab save landing between two of them ran
     // the first pages of one edit under one gate configuration and the rest
     // under another, which is the split a compile already fixed by hoisting one
@@ -538,11 +524,8 @@ describe("applyBookEdit in exact mode", () => {
 
     expect(mocks.loadQualityContext).toHaveBeenCalledTimes(1);
     const quality = await mocks.loadQualityContext.mock.results[0]!.value;
-    const handedTo = [
-      ...mocks.rewritePageForUserRequest.mock.calls.map((call) => call[0].quality),
-      ...vi.mocked(keeperStoryExtractForSave).mock.calls.map((call) => (call[0] as { quality?: unknown }).quality)
-    ];
-    expect(handedTo).toHaveLength(6);
+    const handedTo = mocks.rewritePageForUserRequest.mock.calls.map((call) => call[0].quality);
+    expect(handedTo).toHaveLength(3);
     for (const handed of handedTo) {
       expect(handed).toBe(quality);
     }
@@ -652,15 +635,6 @@ describe("applyBookEdit in exact mode", () => {
         })]
       })
     );
-    expect(keeperStoryExtractForSave).toHaveBeenCalledWith(
-      expect.objectContaining({
-        projectId: "project-1",
-        pageIndex: 1,
-        previousExtract: null,
-        keeperWasRevised: true,
-        draft: expect.objectContaining({ markdown: "Fly runs." })
-      })
-    );
   });
 
   it("re-derives the published story state instead of folding onto the stored aggregate", async () => {
@@ -699,8 +673,8 @@ describe("applyBookEdit in exact mode", () => {
       continuityNotes: [],
       qualityReport: { approved: true }
     });
-    // The edit takes the sentence out, so page 2's new extract no longer states it.
-    mocks.keeperStoryExtractForSave.mockResolvedValue({ storyDelta: delta([]) });
+    // The edit takes the sentence out; nothing re-extracts the page (E6), so its
+    // delta is cleared rather than left stating what the reader paid to change.
 
     await applyBookEdit(
       job({
@@ -716,7 +690,7 @@ describe("applyBookEdit in exact mode", () => {
       storyStateAfter: { facts: Array<{ text: string }> };
       pages: Array<{ storyDeltaAfter: unknown }>;
     };
-    expect(published.pages[0]?.storyDeltaAfter).toEqual(delta([]));
+    expect(published.pages[0]?.storyDeltaAfter).toBeNull();
     // Page 1's fact survives because its own delta still states it. Page 2's
     // does not, because the page the reader edited no longer does — a fold over
     // the loaded aggregate can only ever add, so it would keep both.

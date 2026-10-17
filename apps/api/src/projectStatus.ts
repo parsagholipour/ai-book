@@ -1,4 +1,5 @@
 import {
+  diagnosticIssuesOf,
   manuscriptQualityCards,
   optionalQualityProvenance,
   parseManuscriptQualityIssueCluster,
@@ -134,6 +135,16 @@ export type ProjectQualityStatus = {
       wouldBlock: boolean;
     }>;
   };
+  /**
+   * The operator console's half of a split report (`readerFindings.ts` in
+   * core): every finding the compile measured that the reader is not shown.
+   * `issues` is then the reader's findings alone. Absent on a report made
+   * before the split, whose `issues` were all shown. Never sent to the app:
+   * `qualityForReader` drops it.
+   */
+  diagnosticIssues?: ProjectQualityStatus["issues"];
+  /** The admission list that graded `state`, on a split report. */
+  readerPolicy?: string;
 };
 
 
@@ -331,8 +342,42 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
   const state = ["passed", "review_recommended", "blocked"].includes(String(record.state))
     ? (record.state as ProjectQualityStatus["state"])
     : "pending";
-  const rawIssues = Array.isArray(record.issues) ? record.issues : [];
-  const issues = rawIssues.flatMap((entry) => {
+  const issues = parseQualityIssues(record.issues);
+  const affectedPageIndexes = [
+    ...new Set(
+      (Array.isArray(record.affectedPageIndexes) ? record.affectedPageIndexes : issues.flatMap((issue) => issue.affectedPageIndexes))
+        .filter((index): index is number => Number.isInteger(index) && Number(index) > 0)
+    )
+  ].sort((left, right) => left - right);
+  // A split report: the reader's grade is over `readerFindings`, and the rest
+  // of `issues` is the console's. Cards are grouped afresh for each half,
+  // because the stored `findings` index the whole ledger.
+  if (typeof record.readerPolicy === "string" && Array.isArray(record.readerFindings)) {
+    const readerFindings = parseQualityIssues(record.readerFindings);
+    return {
+      state,
+      score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : null,
+      issues: manuscriptQualityCards(readerFindings),
+      ...(record.scoreBasis === "unresolved_findings" ? { scoreBasis: "unresolved_findings" as const } : {}),
+      affectedPageIndexes,
+      ...optionalQualityDiagnostics(record.diagnostics),
+      diagnosticIssues: manuscriptQualityCards(diagnosticIssuesOf({ issues, readerFindings }) ?? []),
+      readerPolicy: record.readerPolicy
+    };
+  }
+  return {
+    state,
+    score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : null,
+    issues: record.scoreBasis === "unresolved_findings" ? manuscriptQualityCards(issues, record.findings) : issues,
+    ...(record.scoreBasis === "unresolved_findings" ? { scoreBasis: "unresolved_findings" as const } : {}),
+    affectedPageIndexes,
+    ...optionalQualityDiagnostics(record.diagnostics)
+  };
+}
+
+function parseQualityIssues(value: unknown): ProjectQualityStatus["issues"] {
+  const rawIssues = Array.isArray(value) ? value : [];
+  return rawIssues.flatMap((entry) => {
     const issue = jsonPayloadToRecord(entry);
     if (typeof issue.code !== "string" || typeof issue.message !== "string") return [];
     const severity: ProjectQualityStatus["issues"][number]["severity"] =
@@ -361,20 +406,6 @@ export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
       })
     }];
   });
-  const affectedPageIndexes = [
-    ...new Set(
-      (Array.isArray(record.affectedPageIndexes) ? record.affectedPageIndexes : issues.flatMap((issue) => issue.affectedPageIndexes))
-        .filter((index): index is number => Number.isInteger(index) && Number(index) > 0)
-    )
-  ].sort((left, right) => left - right);
-  return {
-    state,
-    score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : null,
-    issues: record.scoreBasis === "unresolved_findings" ? manuscriptQualityCards(issues, record.findings) : issues,
-    ...(record.scoreBasis === "unresolved_findings" ? { scoreBasis: "unresolved_findings" as const } : {}),
-    affectedPageIndexes,
-    ...optionalQualityDiagnostics(record.diagnostics)
-  };
 }
 
 function optionalQualityMetrics(

@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { ManuscriptQualityIssue, PictureBookPageReview } from "@book-maker/core";
-import { isInheritedRepairFinding, type PictureBookRepairContext } from "@book-maker/core";
+import type { ManuscriptQualityIssue } from "@book-maker/core";
 import { incompleteRepairReview, repairReviewFindingSchema, repairReviewValidationSchema, unverifiedRepairQualityIssues } from "./compileRepairReviewFailure.js";
 
 const rejectionClass = z.enum(["no_candidate", "local_checks", "verification_failed", "target_unresolved", "semantic_regression"]);
@@ -28,34 +27,6 @@ export function repairFailure(pageId: string, targetPageIndex: number | undefine
     affectedPageIndexes: error instanceof RepairRejectedError ? error.affectedPageIndexes : targetPageIndex === undefined ? [] : [targetPageIndex],
     reason: (error instanceof Error ? error.message : "Automatic repair assessment was unavailable.").slice(0, 4000),
     ...incomplete };
-}
-
-/** Residual findings remain failed QA; only verified improvements may publish alongside them. */
-export function hasOnlyInheritedEditorialFindings(review: PictureBookPageReview, context: PictureBookRepairContext): boolean {
-  const findings = review.findings?.filter((finding) => finding.domain === "prose");
-  const unverified = review.unverifiedFindings ?? [];
-  const count = (findings?.length ?? 0) + unverified.length;
-  if (!count) return false;
-  // A second diagnostic of the very same untouched passage must not erase
-  // verified edits elsewhere. Preserve both diagnostics and FAILED_QA; only
-  // waive rejection when every style issue is tied to an inherited local
-  // prose finding by exact evidence and category, never fuzzy message text.
-  const styleIssues = new Set(review.styleAudit?.styleIssues ?? []);
-  const inheritedStyle = !review.styleAudit || (styleIssues.size === 0 ? review.styleAudit.styleOk :
-    [...styleIssues].every(issue => review.styleAudit!.evidence?.some(evidence => evidence.issue === issue &&
-      ["voice", "scaffold", "repetition"].includes(evidence.category) && evidence.quote.trim().length >= 12 &&
-      review.draftMarkdown.includes(evidence.quote) && findings?.some(finding => finding.basis === "page_prose" &&
-        finding.relatedEvidence.length === 0 && finding.quote === evidence.quote &&
-        finding.category === (evidence.category === "repetition" ? "repetition" : "style") &&
-        isInheritedRepairFinding(finding, review.pageIndex, context)))));
-  const styleRevisions = new Set([...styleIssues].map(issue => `Revise style: ${issue}`));
-  return (findings ?? []).every(finding => isInheritedRepairFinding(finding, review.pageIndex, context)) &&
-    unverified.every(finding => isInheritedRepairFinding(finding, review.pageIndex, context, true)) &&
-    inheritedStyle && review.report.issues.filter(issue => !styleIssues.has(issue)).length === count &&
-    review.report.requiredRevisions.filter(issue => !styleRevisions.has(issue)).length === count &&
-    review.report.groundedOk && review.report.unsupportedClaims.length === 0 &&
-    review.report.checks.placeholderFree && review.report.checks.titleClean && review.report.checks.promptLeakFree &&
-    !review.storyExtract?.contradictions.length;
 }
 
 /** Preserve failure class and actual rejection pages in the final quality card. */

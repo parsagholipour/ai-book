@@ -110,6 +110,168 @@ including streamed JSON and tool calls; adapters with no HTTP client ignore it.
   Reading the deadline through `isCancellationError` would have promoted a stalled gateway to a
   cancelled gate, and the router rethrows a cancellation rather than falling back.
 
+- **A transport failure gets one fresh request on the same model before the fallback, once per
+  logical call, because the fallback is another family's prose.** `FallbackTextModelAdapter` used
+  to hop the moment `isTextProviderFallbackError` said yes. On 2026-10-15 three of four fresh books
+  hit `ProviderStreamInterruptedError` ("OpenAI response stream ended without a completion event")
+  on gpt-6-luna, two of them within one second (a gateway event), and each went straight to
+  DeepSeek. A chapter compose that had streamed 4,063 tokens in 38 s was rewritten by V4 Pro in
+  107 s. An edit ran 158 s on V4 Flash, holding `FINISHES_IN_FLIGHT` so the last chapter's finish
+  waited ~70 s. An acceptance review took 78 s. A luna retry takes ~25–45 s, and every one of those
+  hops put a chapter in a family the tier's writer rule forbids. Now `isTextPrimaryRetryError`
+  (`retry.ts`) earns the primary one fresh request after 1–3 s of jitter, and only the second
+  failure hops. It matches a cut stream, a reset or refused connection, `terminated`,
+  `socket hang up`, and a 502/503/504 (a deadline's 504 included). It is asked only where
+  `shouldFallback` already said yes, because the retry replaces a hop and nothing else.
+  Excluded on purpose:
+  - a provider's content or input filter, which still hops at once (another family's filter *is*
+    the answer, see `generation/CLAUDE.md`);
+  - any 429: a waitable one stays with `withRecoverableNetworkRetry`'s cooldown, and a daily cap
+    or an empty account hops at once (next bullet);
+  - a timeout the client itself declared (`Request timed out.`, `ETIMEDOUT`,
+    `UND_ERR_*_TIMEOUT`). That wait was already spent once, and a second identical one is the
+    delay the fallback exists to avoid;
+  - a stop, read by identity (`isCancellationError`) or by prose (`isStopOrAbortError`, which here
+    can only suppress). A stop during the pause rejects it with the abort, and `beginFallback` now
+    refuses a cancellation whatever `shouldFallback` it was handed.
+
+  **The retry lives in the adapter, and the attempt budget is what makes it once per call.** The
+  worker wraps the pair in `withRecoverableNetworkRetry` (`LoggingTextModelAdapter.runFallbackCall`,
+  three passes), but that loop sees the pair's error only after the hop has happened. Withholding
+  the hop in the hope of a loop above would strand every caller with none: `streamText`, and the
+  API's chat and assists. A retry per entry, though, would make every pass primary, primary,
+  fallback. So the claim is a `WeakSet` over the call's `TextAttemptBudget`, the one object shared
+  by network retries, fallback, output widening and JSON repair, and the next pass finds it spent
+  and hops at once. The budget still caps the call at five HTTP requests. Under a full outage the
+  order goes from P F P F P to P P F P F. A call with no budget (most API calls, each inside its own
+  deadline) gets one retry per invocation. `streamText` retries only before its first chunk, as it
+  only falls back before one.
+
+  **Each request keeps its own cost row, and no event write decides the call.** The adapter emits
+  `fallback.primary_retry` before the pause. In the run log it is `text.routing.fallback.primary_retry`,
+  carrying `errorClass`, `delayMs` and `partialOutputTokens`: the provider's count when the error
+  carried one, else an estimate from the stream the caller was already observing, else `null`.
+  `TextFallbackCallAccounting` handles it as it handles `fallback.start`. It settles the failed
+  request's row (its usage, or its live output estimate under `unknown_usage`), then opens a new
+  row for the fresh request. Without that, the retry's `onProviderRequest` reset the observed usage
+  and the success settled one row for both, so the interrupted tokens vanished from spend
+  (`providerRetryAccounting.test.ts`). Every emission now goes through one `emit` that drops a
+  failed observer, each on its own, and lets only a cancellation travel. That is the image rule
+  below applied to text, and it also closes the text twin of that bug: a throw from
+  `fallback.success`, emitted inside the try around the fallback, used to discard the fallback's
+  answer as a fallback failure.
+
+- **A streamed text request that goes quiet or falls behind the slowest healthy pace is ended as a
+  504, and the same-model retry is its recovery.** On 2026-10-17 one `compose-chapter` on
+  gpt-6-luna took 264 s for 2,576 tokens (about 25 s is normal) and turned a 60-page smoke book's
+  7 minutes into 11.1; nothing ended a slow stream short of the SDK's ten-minute timeout. It was a
+  trickle, not a pause: 9.7 tokens a second. A replay of 41 logged luna calls the same day caught
+  a second one, an `edit-chapter` writing 3,341 tokens in 225 s at 15 a second, its longest gap
+  between two events 1.2 s. So an idle-gap deadline alone would never have fired on either, and a
+  total deadline scaled to the requested output budget (12,912 tokens for that compose, a fuse
+  three times the chapter) would have waited longer than either call took at any rate that spares
+  a healthy one. `TextStallWatchdog` (`textStallDeadline.ts`) applies two rules to a streamed
+  request, both read off the stream rather than off its purpose or budget. **Idle**: no SSE event
+  for `idleMs` (30 s), counted from dispatch. A reasoning request is not silent while it thinks —
+  luna closes a reasoning item every few seconds — so it needs no allowance of its own: across the
+  41 replays the longest gap between any two events was 4.9 s (inside a high-effort manuscript
+  read), between two text deltas 1.1 s, and headers came in 0.4–0.9 s. **Pace**: from the first
+  visible delta on, the time elapsed may not exceed `idleMs` plus the visible tokens so far over
+  `minTokensPerSecond` (25). A delta counts one token, or one per eight characters when longer:
+  luna streams one token a delta in prose and long JSON and folds short JSON runs together, and
+  undercounting is the side that fires. At 9.7 tokens a second that fires about 50 s in, at 15
+  about 77 s in.
+  **The settings are one table, by model.** `TEXT_STALL_DEADLINES` has gpt-6-luna alone; a model
+  with no entry has no deadline until its own streams are measured. Nothing is set per purpose,
+  because neither rule scales with what a purpose writes. Over the 2,477 settled luna calls of the
+  14 days to 2026-10-17 the pace fires on one, the 264 s compose (0.04%), when a reasoning call's
+  thinking is timed at anything up to 145 tokens a second (the replays measured 124–131 for the
+  review and manuscript reads, 156–165 for the book QA). The rows hold no first-token time, so that
+  speed decides where a reasoning call's visible phase begins; read at 165, the fastest measured on
+  any purpose, which makes every visible phase as long as it can be, it fires on three reasoning
+  calls more (0.16%), all of them review and manuscript reads. The most fragile healthy call without reasoning would have
+  had to run 2.67 times slower to fire. The rows cannot say what the idle rule would have done,
+  having no per-event times; every replay stayed at least six times under it. 17 more replays
+  through the guarded adapter fired nothing.
+  **Firing is the Jev and grounded-search rule.** The watchdog aborts with the default reason, so
+  the SDK reports it as any abort — a rejected request, or a stream it ends quietly with no
+  terminal event — and the adapter asks the watchdog what it was. The caller's signal is read
+  first: a stop is answered as the cancellation it is, by `signal.reason`. That also closes an
+  older gap, since the quiet ending of a stream stopped in a silence used to surface as
+  `ProviderStreamInterruptedError`, which the pair read as an interruption and hopped on. Only a
+  deadline the caller did not also stop becomes `ProviderStallDeadlineError`: a
+  `ProviderHttpError` of 504, code `PROVIDER_STALL_DEADLINE`, carrying its `stall` reading and no
+  `cause` (the SDK's abort under it would make `isCancellationError` call it a stop).
+  `isTextPrimaryRetryError` takes it, so the pair makes its one fresh luna request under the same
+  per-call claim, then hops if that request fails too, and a slow one no longer counts as failing
+  (end of this bullet). It is a timeout the client declared, which that predicate otherwise
+  refuses, and is taken because it is not the same wait twice: it fires per request after at most
+  30 s without progress where the client waits ten minutes, and a luna retry takes 25–45 s where
+  the hop rewrote a chapter in 107 s. The pair writes `text.routing.stall_deadline` with the
+  reading before the `fallback.primary_retry` or `fallback.start` that follows, and
+  `TextFallbackCallAccounting` settles the abandoned request's own row on that next event, as for
+  any same-model retry: failed, `unknown_usage`, its streamed output as a live estimate, the error
+  in `metadata.error` (`providerStallAccounting.test.ts`). The routing events had reached the run
+  log as bare `fallback.start` and `fallback.primary_retry`, because the event's own `event` field,
+  spread into the entry, overwrote the prefixed name; `textRoutingRunLog` keeps it out.
+  **The caller's time is not the provider's silence.** The watchdog is held while the generator is
+  paused at a `yield` and around every callback the adapter awaits (chunk, tool-progress and usage
+  observers), so a slow live-usage write cannot end a healthy stream. Only the Responses adapter's
+  streamed path is guarded: every worker `generateText` and `generateJson` streams, and a
+  non-streamed request shows no progress to measure. Another adapter takes the deadline by calling
+  the same watchdog once its model has an entry.
+  **The fresh request after a stall answers only to the idle rule, and goes out under another cache
+  key.** Live, the first 921 guarded luna calls (2026-10-17) fired it four times, about ten times
+  the 0.04% the counterfactual had predicted, and all four fired the same way: a single stream
+  trickling at about 10 tokens a second while the median call in the same quarter-hours ran
+  106–120, so these were single connections, not an outage. Two were `author-stance` calls, cut
+  at 479 and 487 of their roughly 530 tokens and then answered in 9 s by the retry. One was a
+  `compose-chapter`, and its retry trickled at the same pace and was cut too, so DeepSeek V4 Pro
+  wrote that chapter of a novel; it loses fiction 1 in 8 to luna. The retry had the same
+  `prompt_cache_key`, which OpenAI combines with the prompt prefix to pick the machine, so it was
+  sent to the same slow machine. So `retryOptionsAfter` (`textFallback.ts`) marks the
+  retry after a stall `afterStall`. The Responses adapter then starts that request's watchdog with
+  `pace: false` and salts its cache key (`promptCacheKey(input, "after-stall")`). A healthy retry is
+  unchanged. A slow retry finishes in the tier's own writer, so its worst case is the
+  unguarded wait it replaced, not another model's prose. A silent retry is still ended at 30 s and
+  hops. Cache hits are worth ~$0.0003 a call (below), so the salt costs nothing. A retry after any
+  other failure goes out exactly as before, same key and both rules. `textStallDeadline.test.ts`
+  pins all three cases.
+
+- **An account out of credit or quota is neither a waitable 429 nor a transport failure: no layer
+  retries it on the same provider, and it hops to the fallback at once.** On 2026-10-16 the OpenAI
+  account ran dry and every gpt-6-luna call — the writer of every book on every tier — answered
+  `429 {"type":"insufficient_quota","code":"credit_balance_exhausted","message":"You have no credits
+  remaining…"}`. A 429 read as a per-minute window, so `isTextProviderFallbackError` kept it on the
+  primary for `withRecoverableNetworkRetry`'s cooldown, that loop asked luna three times, and the
+  configured DeepSeek fallback never ran; the owner heard about it from an eval agent. Gemini's
+  prepaid credit had failed the same way on 2026-09-02 ("prepayment credits are depleted", 724 of
+  728 embedding calls, three attempts each). `isProviderQuotaExhaustedError` (`retry.ts`) is the
+  third answer beside a waitable 429 and a daily cap: `isRecoverableNetworkError` and
+  `isTextPrimaryRetryError` refuse it, and `isTextProviderFallbackError` and
+  `isSpeechProviderFallbackError` take it whatever its status — a 402 from DeepSeek, DeepInfra or
+  OpenRouter was never a fallback reason before, and DashScope's arrearage is a 400. It reads
+  machine codes anywhere (`insufficient_quota`, `credit_balance_exhausted`,
+  `billing_hard_limit_reached`, `billing_not_active`, `BILLING_DISABLED`, `Arrearage`, …) and a 402
+  alone, but **a sentence counts only beside a 400/402/403/429**, because an error message can quote
+  a model's output and a story about a bank is not the bank's account. "You exceeded your current
+  quota" is the one ambiguous sentence: it is OpenAI's whole `insufficient_quota` message and also
+  the opening of every Gemini quota 429, per-minute windows included, so it counts only where
+  nothing says the window reopens — no `retryAfterMs`, no "retry in", no per-minute metric.
+  `ProviderHttpError` now carries the SDK's `code` and `type` as fields, which `rethrowOpenAiHttpError`
+  fills, so the decision survives the wrap and the serialized copy a fallback event carries.
+  **A two-provider failure is judged attempt by attempt** (`failureBranches`): an empty primary
+  beside a fallback's 503 is still worth another pass, since that pass hops at once, and a pair is
+  out of quota only when both accounts are. The daily cap is judged the same way now, where it used
+  to veto the whole pair off the primary's cooldown. Nothing else changes for it: image calls stop
+  retrying it and `FallbackImageAdapter` hops as before, narration restarts on its backup at once,
+  a decision falls back at once, and research and embeddings — Gemini only — fail at once and
+  degrade where their callers already do. The worker marks every such call's cost row
+  `errorClass: "provider_quota_exhausted"` (`PROVIDER_QUOTA_EXHAUSTED_ERROR_CLASS`), which is what
+  the operator's alert reads (`apps/api/CLAUDE.md`, "A provider account out of credit").
+  `providerQuotaExhaustion.test.ts` drives the real OpenAI SDK with that body through the worker's
+  pair-and-retry stack: three luna requests and no fallback before, one and one after.
+
 - **Jev is a screen that skips a paid call on a confident pass, kept only where a measured pass has
   skipped one; a screen whose pass never accepts, or that runs beside the call it should replace,
   is removed rather than tuned.** Every Jev path is `passesDecisionScreen` or `decideFromCandidates`
@@ -602,6 +764,26 @@ including streamed JSON and tool calls; adapters with no HTTP client ignore it.
   `imageRefusalVerdict.ts` is still load bearing, and a rating never establishes a refusal that the
   fields above it did not.
 
+## Prompt caching
+
+- **gpt-6-luna caches the leading run of identical system messages and whole repeated prompts,
+  nothing in between, and only for calls that share a `prompt_cache_key`.** Measured on 2026-10-15
+  (H12, `.scratch/harness-redesign-2026-10-15/h12-cache.md`). The requests go straight to
+  `api.openai.com`; no gateway sits in between. Today's compose prompt holds `Now chapter N` inside
+  its system message. Consecutive chapters therefore share ~1,400 identical tokens that end
+  mid-message, and they hit 0, under today's key and under a per-purpose + project key alike. The
+  same rules as a system message of their own hit 1,260–1,400 tokens. Adding the book context as a
+  second system message raised that to 2,545–2,667. The same book context as a *user* message added
+  nothing, with or without an assistant turn after it. A repeated whole prompt hits in full. A
+  fresh key per call hit nothing, so the key has to be stable across calls that share a system
+  block, but no key buys a hit the layout does not allow. An identical block under ~1,024 tokens
+  never hits, which is why `extract-chapter-facts` hit 0 of 27 calls. The 2026-09-02 reading
+  "caches whole prompts only" (`generation/CLAUDE.md`) came from the same mid-message prefix.
+  **What a hit is worth.** Latency: no measurable change. A 13k-token whole-prompt hit took
+  1.19 s of server time and a miss 1.24 s. Money: little. luna bills every uncached input token as
+  a cache write ($0.125/M) and a hit at $0.01/M, so caching a compose call's system block saves
+  ~$0.0003. A layout change for caching alone is therefore not worth a quality eval.
+
 ## Tests
 
 Colocated, and they stub `process.env` rather than reading a `.env` — nothing here needs a real key
@@ -691,12 +873,16 @@ to run.
   sources come from**: in all 98 responses `groundingChunks` were exactly the chunks
   `groundingSupports` cited, so a prompt asking for a bare list of documents (2.6 s, 86% cheaper)
   cited 6.2 sources, left 2 of 22 searches under the three URLs the dossier fetches, and dropped
-  PDFs among them from 1.50 to 1.23. That was rejected, and the `case-source-search` summary stays
-  paid for and unread. For `chapter-research` and `plan-research` it is read — it becomes the
-  "Research brief" the writer is given — and the six measured briefs read the same with thinking
-  off. What would move real money past the allowance is fewer grounded prompts, not fewer tokens;
-  and moving research to 3.x would *raise* the fee, at the measured 4.0 queries a prompt ×
-  $0.014 = $0.056 against $0.035.
+  PDFs among them from 1.50 to 1.23. That was rejected, so the answer stays full length — and
+  since 2026-10-16 every answer is read. For `chapter-research` and `plan-research` it becomes the
+  "Research brief" the writer is given, and the six measured briefs read the same with thinking
+  off. A `case-source-search` answer, paid for and thrown away until then, is that lead's research
+  note on a book whose strategy expands research (H3b, core `generation/leadResearch.ts`; the
+  worker side is in `apps/worker/src/generation/CLAUDE.md`), and the chapter then makes no
+  `chapter-research` search of its own: the prompt is unchanged, so the dossier's documents are
+  too. What would move real money past the allowance is fewer grounded prompts, not fewer tokens —
+  which is what that bought, 117 → 76 on four stored sourced books — and moving research to 3.x
+  would *raise* the fee, at the measured 4.0 queries a prompt × $0.014 = $0.056 against $0.035.
 
   The answer is capped at `RESEARCH_MAX_OUTPUT_TOKENS` (8,192) for the one failure length does
   cause: a runaway. Five `case-source-search` calls in the week to 2026-10-01 wrote 64–73k tokens
@@ -704,9 +890,11 @@ to run.
   The deadline bounds the wait, not the tokens billed before it fires, and its 504 is retried into
   the same loop; the cap lands in about 30 s and ends the call as an answer. **A cut answer keeps
   its grounding** — measured with a 120-token cap, both purposes still returned their searches and
-  sources — so the adapter keeps the sources, drops the text (for `chapter-research` that text
-  would be the writer's brief, and a text that hit the cap is almost certainly a loop), returns no
-  stand-in source, and marks the result `truncated` for the run log.
+  sources — so the adapter keeps the sources, drops the text (for `chapter-research` and
+  `case-source-search` that text would be the writer's notes, and a text that hit the cap is almost
+  certainly a loop), returns no stand-in source, and marks the result `truncated` for the run log;
+  a truncated lead answer leaves its sources as rows and no note (`leadResearchRows`). None of the
+  2026-10-16 eval's 73 lead answers hit the cap.
 
 ## Speech, retries and quotas
 

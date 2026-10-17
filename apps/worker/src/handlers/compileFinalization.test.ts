@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { manuscriptRequirementId, PictureBookReviewIncompleteError, pictureBookCitationRowsSchema } from "@book-maker/core";
+import { PictureBookReviewIncompleteError, pictureBookCitationRowsSchema } from "@book-maker/core";
 import quickFinding from "./testing/quickUnverifiedFinding.json" with { type: "json" };
-import type { FinalBookQa, TextModelAdapter, CoverageEvidenceContext } from "@book-maker/core";
+import type { FinalBookQa } from "@book-maker/core";
 
 const db = vi.hoisted(() => ({ rows: new Map<string, { id: string; payload: Record<string, unknown> }>(), lock: vi.fn(), stop: vi.fn() }));
 vi.mock("@book-maker/db", () => {
@@ -25,7 +25,6 @@ vi.mock("@book-maker/db", () => {
 vi.mock("../runtime/jobLifecycle.js", () => ({ assertJobNotStopped: db.stop }));
 import { openCompileFinalization } from "./compileFinalization.js";
 import { prisma } from "@book-maker/db";
-import { finalizationCoverageForCompile, prepareFinalizationCoverageInventory } from "./compileExportCoverageCheckpoint.js";
 import { finalRepairQualityIssues, RepairRejectedError } from "./compileRepairOutcome.js";
 
 const page = { id: "page1", index: 1, title: "Lantern", markdown: "Rabbit waits.", revision: 1 };
@@ -263,113 +262,4 @@ it("keeps illustration totals after a successor resumes with no pending image jo
   expect(resumed.state.illustrationJobsTotal).toBe(2);
   expect(db.rows.get("compile2")?.payload.finalizationProgress).toMatchObject({ illustrationJobsTotal: 2 });
   await resumed.close();
-});
-
-it("durably overlaps complete coverage with images and reuses one QA operation on the successor", async () => {
-  const calls: string[] = [];
-  const textModel: TextModelAdapter = { generateText: vi.fn(), streamText: vi.fn(), generateWithTools: vi.fn(),
-    async generateJson(request) {
-      const phase = JSON.parse(String(request.messages.at(-1)?.content)).phase;
-      calls.push(phase);
-      const data = phase === "brief_requirement_inventory" ? { complete: true, requirements: [
-        { text: "Illustrate every page.", quote: "Illustrate every page.", kind: "illustration", illustrationScope: "all_story_pages" },
-        { text: "No cover artwork.", quote: "No cover artwork.", kind: "content" }
-      ] } : { complete: true, requirements: [
-        { id: "brief-1", status: "unverified", reason: "Pending illustrations.", evidence: [] },
-        { id: "brief-2", status: "unverified", reason: "Media inventory pending.", evidence: [] }
-      ] };
-      return { data: request.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
-    } };
-  const context: CoverageEvidenceContext = { title: "Story", targetStoryPages: 1, storyPageIndexes: [1],
-    illustratedPageIndexes: [], expectedIllustratedPageIndexes: [1], characters: [], referenceProvenance: [],
-    mediaInventory: { storyPagesWithArtwork: [], coverArtworkCount: 0 } };
-  const request = { brief: "Illustrate every page. No cover artwork.", promises: [], pages: [page], chapters: [], evidenceContext: context, textModel };
-  const compute = vi.fn(async () => ({ finalQa: qa, issues: [] }));
-  const first = await openCompileFinalization(options);
-  await prepareFinalizationCoverageInventory(first, request.brief, textModel);
-  await first.review("initial", [page], compute);
-  await first.phase("coverage", ["image1"]);
-  const pending = await finalizationCoverageForCompile({ ...request, operation: first });
-  expect(pending.stored.review.requirements[0]?.status).toBe("missing");
-  expect(pending.stored.review.requirements[1]?.status).toBe("fulfilled");
-  await first.phase("illustrations", ["image1"]); await first.close();
-  const second = await openCompileFinalization({ ...options, generationJobId: "compile2" });
-  await second.review("initial", [page], compute);
-  const complete = await finalizationCoverageForCompile({ ...request, operation: second,
-    evidenceContext: { ...context, illustratedPageIndexes: [1], mediaInventory: { storyPagesWithArtwork: [1], coverArtworkCount: 1 } } });
-  expect(complete.stored.review.requirements[0]?.status).toBe("fulfilled");
-  expect(complete.stored.review.requirements[1]?.status).toBe("missing");
-  expect(calls).toEqual(["brief_requirement_inventory", "manuscript_requirement_verification"]);
-  expect(compute).toHaveBeenCalledOnce();
-  expect([...db.rows.values()].filter((row) => row.payload.finalization)).toHaveLength(1);
-  for (const mutation of [
-    { pages: [{ ...page, markdown: "Turtle finds a new path.", revision: 2 }] },
-    { chapters: [{ index: 1, title: "Current partition", startPageIndex: 1, endPageIndex: 1 }] },
-    { evidenceContext: { ...context, referenceProvenance: [{ id: "portrait2", path: "new.png" }] } }
-  ]) await finalizationCoverageForCompile({ ...request, operation: second, ...mutation });
-  expect(calls.filter((call) => call === "brief_requirement_inventory")).toHaveLength(1);
-  expect(calls.filter((call) => call === "manuscript_requirement_verification")).toHaveLength(4);
-  await second.close();
-  const third = await openCompileFinalization({ ...options, contentRevision: 2, generationJobId: "compile3" });
-  await finalizationCoverageForCompile({ ...request, operation: third });
-  expect(calls.filter((call) => call === "brief_requirement_inventory")).toHaveLength(2);
-  expect(calls.filter((call) => call === "manuscript_requirement_verification")).toHaveLength(5);
-  await third.close();
-});
-
-it("persists ungrounded inventory entries and never buys another quote repair on a successor", async () => {
-  const calls: string[] = [];
-  const textModel: TextModelAdapter = { generateText: vi.fn(), streamText: vi.fn(), generateWithTools: vi.fn(),
-    async generateJson(request) {
-      const phase = JSON.parse(String(request.messages.at(-1)?.content)).phase;
-      calls.push(phase);
-      if (phase !== "brief_requirement_inventory") throw new Error("Quote correction unavailable");
-      const data = { complete: true, requirements: [{ text: "Invented title", quote: "Title it Story.", kind: "title", expectedTitle: "Story" }] };
-      return { data: request.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
-    } };
-  const evidenceContext: CoverageEvidenceContext = { title: "Story", targetStoryPages: 1, storyPageIndexes: [1],
-    illustratedPageIndexes: [], expectedIllustratedPageIndexes: [], characters: [], referenceProvenance: [] };
-  const request = { brief: "A gentle woodland story.", promises: [], pages: [page], chapters: [], evidenceContext, textModel };
-  const first = await openCompileFinalization(options);
-  await prepareFinalizationCoverageInventory(first, request.brief, textModel);
-  const initial = await finalizationCoverageForCompile({ ...request, operation: first });
-  await first.close();
-  const second = await openCompileFinalization({ ...options, generationJobId: "compile2" });
-  const resumed = await finalizationCoverageForCompile({ ...request, operation: second });
-  expect(resumed).toEqual(initial);
-  expect(resumed.stored.review.requirements[0]).toMatchObject({ id: "brief-1", quote: "Title it Story.",
-    sourceQuoteIssue: "not_in_brief", status: "unverified", evidence: [] });
-  expect(resumed.issues[0]?.message).toContain("Invented title");
-  expect(calls).toEqual(["brief_requirement_inventory", "brief_requirement_quote_recovery"]);
-  await second.close();
-});
-
-
-it("binds cached semantic coverage to outstanding requirement criteria without repeating the inventory", async () => {
-  const brief = "Rabbit waits for Turtle and compares their routes.";
-  const calls: string[] = [];
-  const textModel: TextModelAdapter = { generateText: vi.fn(), streamText: vi.fn(), generateWithTools: vi.fn(),
-    async generateJson(request) {
-      const phase = JSON.parse(String(request.messages.at(-1)?.content)).phase;
-      calls.push(phase);
-      const data = phase === "brief_requirement_inventory" ? { complete: true, requirements: [{ text: "Wait and compare", quote: brief, kind: "content" }] }
-        : { complete: true, requirements: [{ id: "brief-1", status: "fulfilled", reason: "Rabbit waits.", evidence: [{ pageIndex: 1, quote: page.markdown }] }] };
-      return { data: request.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
-    } };
-  const first = await openCompileFinalization(options);
-  const request = { brief, promises: [], pages: [page], chapters: [], textModel,
-    evidenceContext: { title: "Story", targetStoryPages: 1, storyPageIndexes: [1], illustratedPageIndexes: [], expectedIllustratedPageIndexes: [], characters: [], referenceProvenance: [] } };
-  const independent = await finalizationCoverageForCompile({ ...request, operation: first });
-  expect(independent.stored.review.status).toBe("reviewed");
-  const requirementTargets = [{ id: "finding-1", requirementId: manuscriptRequirementId(brief, brief), requirementQuote: brief,
-    pageIndex: 1, problem: "Rabbit waits but never compares the routes.", acceptanceCriteria: "Show the comparison.", evidence: [{ pageIndex: 1, quote: page.markdown }] }];
-  const contested = await finalizationCoverageForCompile({ ...request, requirementTargets, operation: first });
-  expect(contested.stored.review.requirements[0]?.status).toBe("unverified");
-  expect(contested.stored.fingerprint).not.toBe(independent.stored.fingerprint);
-  await first.close();
-  const successor = await openCompileFinalization({ ...options, generationJobId: "compile2" });
-  const reused = await finalizationCoverageForCompile({ ...request, requirementTargets, operation: successor });
-  expect(reused.stored).toEqual(contested.stored);
-  expect(calls).toEqual(["brief_requirement_inventory", "manuscript_requirement_verification", "manuscript_requirement_verification"]);
-  await successor.close();
 });

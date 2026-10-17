@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { jobNames } from "./jobDispatch.js";
 import {
+  BACKGROUND_JOB_QUEUE,
+  BOOK_WORK_JOB_TYPES,
+  COMPILE_JOB_QUEUE,
   GENERATION_JOB_QUEUES,
   GENERATION_JOB_RETENTION,
+  IMAGE_JOB_QUEUE,
   INTERACTIVE_JOB_QUEUE,
+  JOB_LANE_NAMES,
   JOB_LANES,
   LONG_JOB_QUEUE,
-  LONG_LANE_CAPABLE_JOB_TYPES,
   LONG_LANE_EDIT_PAGE_THRESHOLD,
   LONG_LANE_START_PRIORITY,
   PAYLOAD_LANED_JOB_TYPES,
@@ -14,8 +18,11 @@ import {
   booksAheadInLongLane,
   clearLaneJobIdForAdd,
   generationJobPlacement,
+  isBookWork,
   isLaneJobActive,
   laneJobForSweep,
+  laneOfClass,
+  queueNameForLane,
   removeIdleLaneJobs,
   jobLaneClass,
   workerLaneConcurrency,
@@ -34,8 +41,29 @@ describe("job lanes", () => {
 
   it("keeps the old queue's name for the long lane, so a previous release's jobs still drain", () => {
     expect(LONG_JOB_QUEUE).toBe("book-maker");
-    expect(GENERATION_JOB_QUEUES).toEqual(["book-maker", INTERACTIVE_JOB_QUEUE]);
-    expect(new Set(GENERATION_JOB_QUEUES).size).toBe(2);
+    // The heartbeat keys, the healthcheck and the worker read the lanes in this order.
+    expect(GENERATION_JOB_QUEUES).toEqual([
+      "book-maker",
+      "book-maker-interactive",
+      "book-maker-images",
+      "book-maker-compile",
+      "book-maker-background"
+    ]);
+    expect(new Set(GENERATION_JOB_QUEUES).size).toBe(5);
+    expect(JOB_LANE_NAMES.map(queueNameForLane)).toEqual([...GENERATION_JOB_QUEUES]);
+  });
+
+  it("files every class in one lane, and counts everything but interactive and background work as a book being made", () => {
+    expect(laneOfClass("long-start")).toBe("long");
+    expect(laneOfClass("long-continuation")).toBe("long");
+    expect(laneOfClass("image")).toBe("images");
+    expect(laneOfClass("compile")).toBe("compile");
+    expect(laneOfClass("interactive")).toBe("interactive");
+    expect(laneOfClass("background")).toBe("background");
+    expect(isBookWork("image")).toBe(true);
+    expect(isBookWork("compile")).toBe(true);
+    expect(isBookWork("interactive")).toBe(false);
+    expect(isBookWork("background")).toBe(false);
   });
 
   it("puts what a reader waits on in the interactive lane, unprioritized", () => {
@@ -53,6 +81,18 @@ describe("job lanes", () => {
     }
   });
 
+  it("puts the speculative composition prep in the background lane, unprioritized, and nothing else there", () => {
+    expect(generationJobPlacement("PREPARE_COMPOSITION", { planId: "p" })).toEqual({
+      lane: "background",
+      queueName: BACKGROUND_JOB_QUEUE
+    });
+    expect(
+      (Object.keys(JOB_LANES) as Array<keyof typeof JOB_LANES>).filter((type) => jobLaneClass(type, {}) === "background")
+    ).toEqual(["PREPARE_COMPOSITION"]);
+    // Not book work: it holds no place in the per-account share.
+    expect(BOOK_WORK_JOB_TYPES).not.toContain("PREPARE_COMPOSITION");
+  });
+
   it("starts long work behind everything already under way, and continues it ahead of every start", () => {
     for (const type of ["GENERATE_BOOK", "IMPORT_BOOK", "CONTINUE_BOOK", "GENERATE_AUDIOBOOK"]) {
       expect(generationJobPlacement(type, {})).toEqual({
@@ -64,12 +104,14 @@ describe("job lanes", () => {
     expect(generationJobPlacement("GENERATE_PAGE", { pageId: "p" })).toEqual({ lane: "long", queueName: LONG_JOB_QUEUE });
   });
 
-  it("sends only a generation's own full-review compile to the long lane", () => {
-    const long = { lane: "long", queueName: LONG_JOB_QUEUE };
+  it("sends only a generation's own full-review compile to the compile lane, unprioritized", () => {
+    const compile = { lane: "compile", queueName: COMPILE_JOB_QUEUE };
     const interactive = { lane: "interactive", queueName: INTERACTIVE_JOB_QUEUE };
-    expect(generationJobPlacement("COMPILE_EXPORT", { planId: "p", exportPublicationProjectStatus: "GENERATING" })).toEqual(long);
+    expect(generationJobPlacement("COMPILE_EXPORT", { planId: "p", exportPublicationProjectStatus: "GENERATING" })).toEqual(compile);
     // A row from before the status was promoted into the payload is a generation's.
-    expect(generationJobPlacement("COMPILE_EXPORT", { planId: "p" })).toEqual(long);
+    expect(generationJobPlacement("COMPILE_EXPORT", { planId: "p" })).toEqual(compile);
+    // It still continues the book: the share counts it.
+    expect(jobLaneClass("COMPILE_EXPORT", { planId: "p" })).toBe("compile");
     expect(generationJobPlacement("COMPILE_EXPORT", { exportPublicationProjectStatus: "EDITING", skipFinalReview: true })).toEqual(interactive);
     // A structural edit's compile reviews the whole book, and its reader is still in the chat.
     expect(generationJobPlacement("COMPILE_EXPORT", { exportPublicationProjectStatus: "EDITING" })).toEqual(interactive);
@@ -82,9 +124,10 @@ describe("job lanes", () => {
     ).toEqual(interactive);
   });
 
-  it("sends a generation's pictures long and a revision's cover or re-typeset interactive", () => {
-    expect(generationJobPlacement("GENERATE_IMAGE", { planId: "p", pageId: "x" }).lane).toBe("long");
-    expect(generationJobPlacement("GENERATE_IMAGE", { planId: "p", assetType: "COVER" }).lane).toBe("long");
+  it("sends a generation's pictures and cover to the image lane and a revision's cover or re-typeset interactive", () => {
+    const images = { lane: "images", queueName: IMAGE_JOB_QUEUE };
+    expect(generationJobPlacement("GENERATE_IMAGE", { planId: "p", pageId: "x" })).toEqual(images);
+    expect(generationJobPlacement("GENERATE_IMAGE", { planId: "p", assetType: "COVER" })).toEqual(images);
     expect(
       generationJobPlacement("GENERATE_IMAGE", {
         assetType: "COVER",
@@ -143,7 +186,7 @@ describe("job lanes", () => {
   });
 
   it("derives the database filters from the record", () => {
-    expect([...LONG_LANE_CAPABLE_JOB_TYPES].sort()).toEqual(
+    expect([...BOOK_WORK_JOB_TYPES].sort()).toEqual(
       [
         "APPLY_BOOK_EDIT",
         "COMPILE_EXPORT",
@@ -158,18 +201,22 @@ describe("job lanes", () => {
     expect([...PAYLOAD_LANED_JOB_TYPES].sort()).toEqual(["APPLY_BOOK_EDIT", "COMPILE_EXPORT", "GENERATE_IMAGE"]);
   });
 
-  it("defaults the long lane to the single queue's old concurrency", () => {
+  it("sizes the long lane to the page wave and the image lane to the picture wave unless told", () => {
     expect(
       workerLaneConcurrency({ MAX_PARALLEL_PAGE_JOBS: 4, MAX_PARALLEL_IMAGE_JOBS: 2, WORKER_INTERACTIVE_CONCURRENCY: 2 })
-    ).toEqual({ long: 4, interactive: 2 });
+    ).toEqual({ long: 4, interactive: 2, images: 2, compile: 1, background: 4 });
+    // Production's shape: every lane set outright, whatever the waves say.
     expect(
       workerLaneConcurrency({
-        MAX_PARALLEL_PAGE_JOBS: 4,
-        MAX_PARALLEL_IMAGE_JOBS: 2,
+        MAX_PARALLEL_PAGE_JOBS: 1,
+        MAX_PARALLEL_IMAGE_JOBS: 1,
         WORKER_LONG_CONCURRENCY: 1,
-        WORKER_INTERACTIVE_CONCURRENCY: 3
+        WORKER_INTERACTIVE_CONCURRENCY: 2,
+        WORKER_IMAGE_CONCURRENCY: 4,
+        WORKER_COMPILE_CONCURRENCY: 1,
+        WORKER_BACKGROUND_CONCURRENCY: 6
       })
-    ).toEqual({ long: 1, interactive: 3 });
+    ).toEqual({ long: 1, interactive: 2, images: 4, compile: 1, background: 6 });
   });
 
   it("bounds finished jobs by age and by count", () => {
@@ -190,8 +237,21 @@ describe("booksAheadInLongLane", () => {
   it("is null for a book with nothing waiting or with work already running", () => {
     expect(booksAheadInLongLane([row("a", "long-start", "ACTIVE", 1)], "b")).toBeNull();
     expect(booksAheadInLongLane([row("b", "long-continuation", "ACTIVE", 1), row("b", "long-continuation", "QUEUED", 2)], "b")).toBeNull();
-    // Interactive work is not the long lane's to order.
+    // Interactive work is not the long lane's to order, and neither are pictures or the compile.
     expect(booksAheadInLongLane([row("b", "interactive", "QUEUED", 2)], "b")).toBeNull();
+    expect(booksAheadInLongLane([row("a", "long-start", "ACTIVE", 1), row("b", "image", "QUEUED", 2)], "b")).toBeNull();
+    expect(booksAheadInLongLane([row("a", "long-start", "ACTIVE", 1), row("b", "compile", "QUEUED", 2)], "b")).toBeNull();
+  });
+
+  it("does not count a book whose pictures or compile are all it has left, because it holds no long-lane slot", () => {
+    const rows = [
+      row("drawing", "image", "ACTIVE", 1),
+      row("drawing", "image", "QUEUED", 2),
+      row("typesetting", "compile", "ACTIVE", 3),
+      row("writing", "long-start", "ACTIVE", 4),
+      row("mine", "long-start", "QUEUED", 5)
+    ];
+    expect(booksAheadInLongLane(rows, "mine")).toBe(1);
   });
 
   it("puts a waiting start behind every book under way and every older start, counted in books", () => {
@@ -223,6 +283,19 @@ describe("booksAheadInLongLane", () => {
 
   it("answers zero for a book first in line", () => {
     expect(booksAheadInLongLane([row("mine", "long-start", "QUEUED", 1), row("next", "long-start", "QUEUED", 2)], "mine")).toBe(0);
+  });
+
+  it("counts the running books only past the slots beside them, once the lane runs several at once", () => {
+    const busy = ["a", "b", "c"].map((book, minute) => row(book, "long-start", "ACTIVE", minute));
+    const rows = [...busy, row("b", "long-continuation", "QUEUED", 4), row("older", "long-start", "QUEUED", 5), row("mine", "long-start", "QUEUED", 6)];
+    // One slot: every running book and every older start is ahead, as before the lane ran wider.
+    expect(booksAheadInLongLane(rows, "mine")).toBe(4);
+    expect(booksAheadInLongLane(rows, "mine", 1)).toBe(4);
+    // Three slots, all taken: the older start, then whichever running book lets a slot go first.
+    expect(booksAheadInLongLane(rows, "mine", 3)).toBe(2);
+    // A free slot: only the start queued before mine is ahead of it.
+    expect(booksAheadInLongLane(rows, "mine", 30)).toBe(1);
+    expect(booksAheadInLongLane([...busy, row("mine", "long-start", "QUEUED", 6)], "mine", 30)).toBe(0);
   });
 });
 

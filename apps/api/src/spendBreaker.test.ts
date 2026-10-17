@@ -19,7 +19,7 @@ const MIDNIGHT = new Date("2026-10-14T00:00:00.000Z");
 const NEXT_MONTH = new Date("2026-11-01T00:00:00.000Z");
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
-const KINDS: AiWorkKind[] = ["standard", "ultra", "voice", "audiobook"];
+const KINDS: AiWorkKind[] = ["standard", "ultra", "voice", "audiobook", "speculative"];
 const CAPS = { freeUserDailyCapUsd: 1.5, paidUserDailyCapUsd: 30 };
 const WINDOWS = { resetsAt: MIDNIGHT, monthResetsAt: NEXT_MONTH };
 
@@ -329,7 +329,8 @@ describe("SpendBreaker", () => {
     const client = fakeClient({ rows: [today("free-1", 6)] });
     const { breaker } = breakerFor(client, async (userId) => userId === "paid");
 
-    for (const kind of ["ultra", "voice", "audiobook"] as const) {
+    // `speculative` is the unbilled composition prep a plan door queues (harness redesign H4).
+    for (const kind of ["ultra", "voice", "audiobook", "speculative"] as const) {
       expect(await breaker.check("free", kind, log)).toEqual({ allowed: false, code: "AI_BUSY", resetsAt: MIDNIGHT });
       expect(await breaker.check("paid", kind, log)).toEqual({ allowed: true });
     }

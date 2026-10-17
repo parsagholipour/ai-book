@@ -25,8 +25,7 @@ it.each([
   "![Lantern](lantern.png)",
   "![Lantern][art]\n\n[art]: lantern.png",
   '<img src="lantern.png">',
-  '<svg><circle r="5" /></svg>',
-  '```figure\n{"kind":"bar","title":"Lanterns","categories":["A","B"],"series":[{"name":"Count","values":[1,2]}],"source":"Test data"}\n```'
+  '<svg><circle r="5" /></svg>'
 ])("counts embedded artwork without an image asset: %s", (markdown) => {
   const context = buildManuscriptCoverageContext({ input, plan, pages: [{ ...page, markdown }], images: [] });
   expect(context.mediaInventory?.storyPagesWithArtwork).toEqual([1]);
@@ -37,8 +36,11 @@ it.each([
   '`![Lantern](lantern.png)`',
   '```html\n<img src="lantern.png">\n```',
   '<!-- <img src="lantern.png"> -->',
-  '```figure\nnot a renderable figure\n```'
-])("does not mistake prose or code examples for artwork: %s", (markdown) => {
+  '```figure\nnot a renderable figure\n```',
+  // A chart is typeset from the book's numbers, not story-page artwork: two books with
+  // illustrations turned off were told their charts were "artwork prohibited" (2026-10-15).
+  '```figure\n{"kind":"bar","title":"Lanterns","categories":["A","B"],"series":[{"name":"Count","values":[1,2]}],"source":"Test data"}\n```'
+])("does not mistake prose, code examples or figures for artwork: %s", (markdown) => {
   const context = buildManuscriptCoverageContext({ input, plan, pages: [{ ...page, markdown }], images: [] });
   expect(context.mediaInventory?.storyPagesWithArtwork).toEqual([]);
 });

@@ -37,6 +37,9 @@ import { closeQueue, dispatchGenerationJob, isBullJobActive } from "./queue.js";
 
 const long = () => mocks.queues.get("book-maker")!;
 const interactive = () => mocks.queues.get("book-maker-interactive")!;
+const images = () => mocks.queues.get("book-maker-images")!;
+const compile = () => mocks.queues.get("book-maker-compile")!;
+const background = () => mocks.queues.get("book-maker-background")!;
 
 function row(type: string, payload: Record<string, unknown> = {}) {
   return { id: "gj-1", projectId: "project-1", attemptId: null, type, status: "QUEUED", bullJobId: null, dispatchAttempts: 0, payload };
@@ -54,8 +57,14 @@ beforeEach(() => {
 });
 
 describe("the API's enqueue side of the lanes", () => {
-  it("builds both lane queues with the shared retention on every job", () => {
-    expect([...mocks.queues.keys()].sort()).toEqual(["book-maker", "book-maker-interactive"]);
+  it("builds every lane's queue with the shared retention on every job", () => {
+    expect([...mocks.queues.keys()].sort()).toEqual([
+      "book-maker",
+      "book-maker-background",
+      "book-maker-compile",
+      "book-maker-images",
+      "book-maker-interactive"
+    ]);
     for (const queue of mocks.queues.values()) {
       expect(queue.opts.defaultJobOptions).toEqual(GENERATION_JOB_RETENTION);
     }
@@ -88,6 +97,26 @@ describe("the API's enqueue side of the lanes", () => {
     expect(interactive().add).toHaveBeenCalledWith("apply-book-edit", expect.anything(), expect.objectContaining({ jobId: "gj-1" }));
   });
 
+  it("sends a generation's pictures to the image lane and its compile to the compile lane, as the worker does", async () => {
+    mocks.findUnique.mockResolvedValueOnce(row("GENERATE_IMAGE", { planId: "plan-1", pageId: "page-1" }));
+    await dispatchGenerationJob("gj-1");
+    expect(images().add).toHaveBeenCalledWith("generate-image", expect.anything(), expect.objectContaining({ jobId: "gj-1" }));
+
+    mocks.findUnique.mockResolvedValueOnce(row("COMPILE_EXPORT", { planId: "plan-1", exportPublicationProjectStatus: "GENERATING" }));
+    await dispatchGenerationJob("gj-1");
+    expect(compile().add).toHaveBeenCalledWith("compile-export", expect.anything(), expect.objectContaining({ jobId: "gj-1" }));
+    expect(long().add).not.toHaveBeenCalled();
+    expect(compile().add.mock.calls[0]![2]).not.toHaveProperty("priority");
+  });
+
+  it("re-pushes a speculative composition prep into the background lane, as the worker queues it", async () => {
+    mocks.findUnique.mockResolvedValueOnce(row("PREPARE_COMPOSITION", { planId: "plan-1" }));
+    await dispatchGenerationJob("gj-1");
+    expect(background().add).toHaveBeenCalledWith("prepare-composition", expect.anything(), expect.objectContaining({ jobId: "gj-1" }));
+    expect(background().add.mock.calls[0]![2]).not.toHaveProperty("priority");
+    expect(interactive().add).not.toHaveBeenCalled();
+  });
+
   it("defers rather than adds while the row's previous delivery is live in the other lane", async () => {
     mocks.findUnique.mockResolvedValueOnce(row("APPLY_BOOK_EDIT", { operationId: "op-1" }));
     long().getJob.mockResolvedValue({ getState: async () => "active", remove: vi.fn() });
@@ -96,14 +125,16 @@ describe("the API's enqueue side of the lanes", () => {
     expect(mocks.update.mock.calls[0]![0].data).toMatchObject({ dispatchAttempts: 1, message: "Waiting for the generation queue" });
   });
 
-  it("answers active for a job running in either lane, and closes both", async () => {
+  it("answers active for a job running in any lane, and closes them all", async () => {
     interactive().getJob.mockResolvedValue({ getState: async () => "active", remove: vi.fn() });
     await expect(isBullJobActive("gj-1")).resolves.toBe(true);
     interactive().getJob.mockResolvedValue(undefined);
+    images().getJob.mockResolvedValue({ getState: async () => "active", remove: vi.fn() });
+    await expect(isBullJobActive("gj-1")).resolves.toBe(true);
+    images().getJob.mockResolvedValue(undefined);
     // A job retention removed reads as not running.
     await expect(isBullJobActive("gj-1")).resolves.toBe(false);
     await closeQueue();
-    expect(long().close).toHaveBeenCalled();
-    expect(interactive().close).toHaveBeenCalled();
+    for (const queue of mocks.queues.values()) expect(queue.close).toHaveBeenCalled();
   });
 });

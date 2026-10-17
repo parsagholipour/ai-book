@@ -72,22 +72,27 @@ describe("explicit illustration slots", () => {
       (input.mediaSettings as Record<string, unknown>).mobile = bookType ? { bookType } : {};
       return input;
     };
-    // A 12-page children's story is a picture book: a picture on every page.
+    // A children's story is a picture book: two pictures for every five
+    // pages, spread evenly across the story.
+    const drawn = (input: ReturnType<typeof appBook>) =>
+      Array.from({ length: input.targetPages }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(input, index));
+    expect(drawn(appBook("KIDS", 10, "short_story"))).toEqual([1, 3, 6, 8]);
     const story = appBook("KIDS", 12, "short_story");
-    const pages = Array.from({ length: 12 }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(story, index));
-    expect(pages).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(drawn(story)).toEqual([1, 3, 5, 8, 10]);
     expect(interiorIllustrationSlotCount(story)).toBe(estimateInteriorImageCount(story));
     // Never a page the quote did not cover.
     expect(pageGetsInteriorIllustration(story, 13)).toBe(false);
-    // Past twelve pages, twelve pictures spread across the whole story.
-    const longer = appBook("KIDS", 16, "short_story");
-    expect(Array.from({ length: 16 }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(longer, index)))
-      .toEqual([1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15]);
-    // Never fewer pictures for a longer book: 13 pages used to draw 7.
-    expect(interiorIllustrationSlotCount(appBook("KIDS", 13, "short_story"))).toBe(12);
-    const longest = appBook("KIDS", 24, "short_story");
-    expect(Array.from({ length: 24 }, (_, i) => i + 1).filter((index) => pageGetsInteriorIllustration(longest, index)))
-      .toEqual([1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23]);
+    expect(drawn(appBook("KIDS", 16, "short_story"))).toEqual([1, 3, 6, 9, 11, 14]);
+    expect(drawn(appBook("KIDS", 24, "short_story"))).toEqual([1, 3, 5, 8, 10, 13, 15, 17, 20, 22]);
+    // Never fewer pictures for a longer book: 13 pages once drew 7 where 12 drew 12.
+    for (let pages = 2; pages <= 40; pages++) {
+      expect(interiorIllustrationSlotCount(appBook("KIDS", pages, "short_story")), `${pages} pages`)
+        .toBeGreaterThanOrEqual(interiorIllustrationSlotCount(appBook("KIDS", pages - 1, "short_story")));
+    }
+    // From 29 pages on, a book draws the twelve the cap allows.
+    expect(interiorIllustrationSlotCount(appBook("KIDS", 28, "short_story"))).toBe(11);
+    expect(interiorIllustrationSlotCount(appBook("KIDS", 29, "short_story"))).toBe(12);
+    expect(interiorIllustrationSlotCount(appBook("KIDS", 40, "short_story"))).toBe(12);
     // An adult short story keeps its four.
     expect(estimateInteriorImageCount(appBook("STORY", 24, "short_story"))).toBe(4);
     expect(estimateInteriorImageCount(appBook("STORY", 40, "short_story", "every-page"))).toBe(4);

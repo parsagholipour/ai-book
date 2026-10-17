@@ -8,10 +8,8 @@ import { evidenceLedgerRules } from "./evidenceLedger.js";
 import { localStyleInstructions } from "./styleContract.js";
 import type { ReviewPageOptions } from "./pagesReview.js";
 import { READER_NAMING_REVIEW_RULE } from "./readerNaming.js";
-import { buildSentenceRepairReviewPrompt } from "./pageSentenceRepair.js";
 
 export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonOptions<PageQualityReport> {
-  if (options.sentenceRepair && !options.userRequest) return buildSentenceRepairReviewPrompt(options);
   // Everything this reviewer says about the book's opening, from the same call
   // that decides what its writer was told (`openingContractFields`,
   // pagesShared.ts): the ban when this is page 1 of a book the pipeline wrote,
@@ -53,7 +51,6 @@ export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonO
             "For a final page, reject vague closure unless it resolves the core promise with a concrete consequence or completed choice.",
             ...opening.rules,
             ...(options.userRequest ? ["userRequest is the approved reader edit intent and overrides stale pageBrief and voice expectations. Requested changes in tone, register, pacing, mood or content are intentional; judge only unintended defects and preserve the requested change."] : []),
-            ...(options.repairInstruction ? ["repairInstruction identifies concrete manuscript defects this candidate must fix. Evaluate those goals against the actual preceding and following prose. A necessary short bridge may override a conflicting old pageBrief; do not demand its removal merely for recalling where the characters just were. Still reject unnecessary repetition, invented facts or substantial performance of a reserved future scene. State whether the repair goals were achieved, and keep unresolved goals actionable."] : []),
             "Use pageScope to distinguish global page position from chapter-local position.",
             ...(citation.payload.researchNotes.length === 0
               ? [
@@ -104,12 +101,8 @@ export function buildPageReviewPrompt(options: ReviewPageOptions): GenerateJsonO
               pageScope: reviewPageScope,
               pageIndex: options.pageIndex,
               ...(options.userRequest ? { userRequest: options.userRequest } : {}),
-              ...(options.repairInstruction ? { repairInstruction: options.repairInstruction } : {}),
-              ...(options.sentenceRepair ? { sentenceRepair: options.sentenceRepair } : {}),
-              ...(options.repairOriginalMarkdown && options.repairOriginalMarkdown !== options.draft.markdown &&
-                options.repairOriginalMarkdown !== options.sentenceRepair?.originalMarkdown
+              ...(options.repairOriginalMarkdown && options.repairOriginalMarkdown !== options.draft.markdown
                 ? { repairOriginalMarkdown: options.repairOriginalMarkdown } : {}),
-              ...(options.retrievedResearch ? { retrievedResearch: options.retrievedResearch } : {}),
               draft: options.draft,
               previousPages: compactPriorPages(
                 options.previousPages,

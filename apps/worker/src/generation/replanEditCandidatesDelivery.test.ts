@@ -37,7 +37,6 @@ const mocks = vi.hoisted(() => ({
   reviewAndSaveGeneratedPage: vi.fn(),
   revisePageDraftWithRestart: vi.fn(),
   reviewAppliedBookEdit: vi.fn(),
-  extractStoryState: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
   maybeEnqueueCover: vi.fn(),
   enqueueReplanIllustrations: vi.fn(),
@@ -112,7 +111,6 @@ vi.mock("./replanPageIllustrationDispatch.js", () => ({
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: mocks.advanceJobStep }));
 vi.mock("@book-maker/core", async () => ({
   ...(await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core")),
-  extractStoryState: mocks.extractStoryState,
   reviewAppliedBookEdit: mocks.reviewAppliedBookEdit
 }));
 
@@ -146,18 +144,6 @@ const sourcePages = [1, 2].map((index) => ({
   imagePrompt: null,
   revision: 1
 }));
-const storyExtract = {
-  storyDelta: {
-    promisesOpened: [],
-    promisesPaid: [],
-    promisesBroken: [],
-    factsAdded: ["Mara found the red key."],
-    entities: {},
-    unansweredAdded: [],
-    unansweredResolved: []
-  },
-  contradictions: []
-};
 let leaseStatus = "ACTIVE";
 let operationClassifier: Record<string, unknown> = {};
 
@@ -216,7 +202,6 @@ beforeEach(() => {
     contradictions: [],
     pageIndexesToRevise: []
   });
-  mocks.extractStoryState.mockResolvedValue(storyExtract);
   mocks.tx.$executeRawUnsafe.mockResolvedValue(1);
   mocks.tx.chapter.createMany.mockResolvedValue({ count: 1 });
   mocks.tx.chapter.findMany.mockResolvedValue([{ id: "chapter-new", index: 1 }]);
@@ -354,7 +339,6 @@ describe("replanned book adherence verdicts it could not reach", () => {
   };
 
   it("re-asks the reviewer instead of redrafting every page", async () => {
-    mocks.qualityFeatures.add("storyExtractAudit");
     mocks.reviewAppliedBookEdit.mockResolvedValueOnce(failClosed).mockResolvedValue(satisfied);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
@@ -362,9 +346,6 @@ describe("replanned book adherence verdicts it could not reach", () => {
 
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
     expect(mocks.reviewAppliedBookEdit).toHaveBeenCalledTimes(2);
-    // No repaired candidate means no draft identity changed, so the drafting
-    // loop's extracts are still the publication's — one per page, not two.
-    expect(mocks.extractStoryState).toHaveBeenCalledTimes(2);
     expect(mocks.tx.page.createMany).toHaveBeenCalledTimes(1);
     expect(logged).toHaveBeenCalledWith(
       expect.stringContaining("could not be verified"),
@@ -480,65 +461,12 @@ describe("replanned book drafting progress", () => {
   });
 });
 
-describe("replanned book deferred page memory", () => {
-  it("asks for one story extract per page instead of re-buying every keeper's", async () => {
-    mocks.qualityFeatures.add("storyExtractAudit");
-
+describe("replanned book story state", () => {
+  it("briefs every page from the new plan's promises and extracts nothing (E6)", async () => {
     await generateReplannedBook(options());
 
-    expect(mocks.extractStoryState).toHaveBeenCalledTimes(2);
-    expect(mocks.extractStoryState.mock.calls.map(([call]) => call.pageIndex)).toEqual([1, 2]);
-  });
-
-  it("re-asks for a page an adherence repair rewrote, and for the page behind it", async () => {
-    mocks.qualityFeatures.add("storyExtractAudit");
-    mocks.reviewAppliedBookEdit
-      .mockResolvedValueOnce({
-        satisfied: false,
-        confidence: 0.6,
-        missingRequirements: ["The red key is absent."],
-        contradictions: [],
-        pageIndexesToRevise: [1]
-      })
-      .mockResolvedValue({
-        satisfied: true,
-        confidence: 1,
-        missingRequirements: [],
-        contradictions: [],
-        pageIndexesToRevise: []
-      });
-
-    await generateReplannedBook(options());
-
-    // Two from drafting, then page 1's repaired draft and page 2 behind it,
-    // whose incoming story state that repair moved.
-    expect(mocks.extractStoryState).toHaveBeenCalledTimes(4);
-  });
-});
-
-describe("replanned book chapter brief repair", () => {
-  it("briefs the chapter's later pages, and the published chapter row, from a repair the page kept", async () => {
-    const repaired = { pages: [{ pageIndex: 1, beat: "Mara refuses the key." }] };
-    mocks.reviewAndSaveGeneratedPage.mockImplementation(async (call: { draft: { index: number } }) => ({
-      ...(await approvedCandidate(call)),
-      ...(call.draft.index === 1 ? { repairedChapterBrief: repaired } : {})
-    }));
-
-    await generateReplannedBook(options());
-
-    expect(mocks.generatePageDraft).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ pageIndex: 1, chapterBrief })
-    );
-    expect(mocks.generatePageDraft).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ pageIndex: 2, chapterBrief: repaired })
-    );
-    // `Chapter.productionBrief` is what every later drafting job reads back as
-    // `previousChapterPageBriefs`, and this path has no other route to it:
-    // `chapterId` is null, so the loop's durable CAS never runs.
-    expect(mocks.tx.chapter.createMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ productionBrief: repaired })]
-    });
+    const briefed = mocks.generatePageDraft.mock.calls.map(([call]) => (call as { entityState: string[] }).entityState);
+    expect(briefed).toHaveLength(2);
+    expect(briefed[1]).toEqual(briefed[0]);
   });
 });

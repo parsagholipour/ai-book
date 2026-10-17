@@ -20,9 +20,7 @@ import {
   settleSkippedExactTextEdit,
   textExactEditWasSkipped
 } from "./applyBookEditNoop.js";
-import { keeperStoryExtractForSave } from "../generation/qualityEnrichment.js";
 import { loadQualityContext } from "../generation/qualitySettings.js";
-import { loadProjectStoryState } from "../generation/storyStateStore.js";
 import {
   assertTextEditLeaseTx,
   completeTextEditLease,
@@ -33,7 +31,6 @@ import {
 } from "../generation/textEditLease.js";
 import { UnownedTextEditDeliveryError } from "../runtime/jobTypes.js";
 import {
-  applyStoryDelta,
   bookPlanSchema,
   createProviders,
   type TextEditSkipReason,
@@ -373,48 +370,22 @@ export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletio
 
     await advanceJobStep(generationJobId, "export", 85, "Refreshing exports");
     await heartbeat.assertHeld();
-    // Embeddings and story extracts are provider work. Prepare every one before
-    // the short publication transaction so a refusal or timeout leaves the live
+    // Embeddings are provider work. Prepare every one before the short
+    // publication transaction so a refusal or timeout leaves the live
     // manuscript and its snapshots untouched.
     const seedPromises = plan.promises ?? [];
-    let currentState = await loadProjectStoryState(projectId, seedPromises);
     const prepared: Array<
-      TextEditCandidate & {
-        preparedEmbedding: Awaited<ReturnType<typeof prepareEmbedding>> | null;
-        storyExtract: Awaited<ReturnType<typeof keeperStoryExtractForSave>>;
-      }
+      TextEditCandidate & { preparedEmbedding: Awaited<ReturnType<typeof prepareEmbedding>> | null }
     > = [];
     for (const candidate of candidates) {
-      const { page, updated } = candidate;
+      const { updated } = candidate;
       const preparedEmbedding = strategyUsesSemanticMemory(strategy)
         ? await prepareEmbedding(updated.summary, providers.embedding)
         : null;
-      const draft = {
-        title: updated.title,
-        markdown: updated.markdown,
-        summary: updated.summary,
-        continuityNotes: updated.continuityNotes,
-        ...(updated.imagePrompt ? { imagePrompt: updated.imagePrompt } : {})
-      };
-      const storyExtract = await keeperStoryExtractForSave({
-        projectId,
-        pageIndex: page.index,
-        draft,
-        textModel: providers.text,
-        plan,
-        input,
-        previousExtract: null,
-        keeperWasRevised: true,
-        currentState,
-        quality
-      });
-      if (storyExtract) {
-        currentState = applyStoryDelta(currentState, storyExtract.storyDelta, page.index);
-      }
-      prepared.push({ ...candidate, preparedEmbedding, storyExtract });
+      prepared.push({ ...candidate, preparedEmbedding });
     }
     const publishedPages: TextEditPublicationPage[] = prepared.map(
-      ({ page, updated, preparedEmbedding, storyExtract }) => ({
+      ({ page, updated, preparedEmbedding }) => ({
         pageId: page.id,
         pageIndex: page.index,
         revisionBefore: page.revision,
@@ -429,7 +400,11 @@ export async function applyBookEdit(job: ApplyBookEditJob): Promise<JobCompletio
         summaryAfter: updated.summary,
         imagePromptAfter: updated.imagePrompt ?? page.imagePrompt,
         qualityReportAfter: updated.qualityReport,
-        storyDeltaAfter: storyExtract?.storyDelta ?? page.storyDelta,
+        // A rewritten page's old delta no longer describes its prose, and
+        // nothing extracts a new one since 2026-10-16 (E6), so the edit clears
+        // it rather than leave the page briefing later drafts with what the
+        // reader just paid to change. Undo restores `storyDeltaBefore`.
+        storyDeltaAfter: null,
         // The rewrite loop's verdict is saved honestly: a page whose best
         // candidate still failed review stays flagged, so a later full compile's
         // repair pass can target it instead of it passing silently.

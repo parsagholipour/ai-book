@@ -7,6 +7,10 @@ import { finalRepairQualityIssues } from "../handlers/compileRepairOutcome.js";
 import { parseStoredQualityIssue } from "../handlers/compileExportStoredQuality.js";
 import crossPage from "../../../../packages/core/src/generation/testing/crossPageQualityIssues.json" with { type: "json" };
 
+/** The ledger's charge: the reader's `score` counts only reader findings, and these are all diagnostics. */
+const ledgerScore = (report: ReturnType<typeof buildManuscriptQualityReport>) =>
+  Math.max(0, 100 - (report.findings ?? []).reduce((sum, finding) => sum + (finding.severity === "error" ? 18 : 5), 0));
+
 it("scores the actual final-QA, page-QA and repair producers once across stored-report reconstruction", () => {
   const [diagnosis, guidance, rejection, missing] = saved as ManuscriptQualityIssue[];
   const issues = [
@@ -19,11 +23,12 @@ it("scores the actual final-QA, page-QA and repair producers once across stored-
   ];
   expect(issues).toHaveLength(5);
   const initial = buildManuscriptQualityReport([], issues, { finalReviewRan: true });
-  expect(initial.score).toBe(90);
+  expect(ledgerScore(initial)).toBe(90);
+  expect(initial.score).toBe(100);
   const parsed = JSON.parse(JSON.stringify(initial)).issues.map(parseStoredQualityIssue);
   expect(parsed.every(Boolean)).toBe(true);
   const resumed = buildManuscriptQualityReport([], parsed, { finalReviewRan: true });
-  expect(resumed.score).toBe(90);
+  expect(ledgerScore(resumed)).toBe(90);
   expect(resumed.findings).toEqual(initial.findings);
 });
 
@@ -37,5 +42,5 @@ it("carries one cross-page identity through the real producers and stored report
   expect(new Set(rows.map(row => row.provenance?.findingId)).size).toBe(1);
   const parsed = JSON.parse(JSON.stringify(rows)).map(parseStoredQualityIssue);
   expect(parsed).toEqual(rows);
-  expect(buildManuscriptQualityReport([], parsed, { finalReviewRan: true }).score).toBe(95);
+  expect(ledgerScore(buildManuscriptQualityReport([], parsed, { finalReviewRan: true }))).toBe(95);
 });

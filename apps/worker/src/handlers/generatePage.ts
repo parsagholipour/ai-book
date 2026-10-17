@@ -11,29 +11,21 @@ import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generati
 import {
   pageReviewPassesFor,
   reviewPageWithQualityGates,
-  runPageQualityLoop
+  withoutPageReview
 } from "../generation/pageReview.js";
-import { pageRevisionMessage } from "../generation/pageReviewRecovery.js";
-import {
-  enrichPageQualityReport,
-  mergeEntityAndStoryStateLines,
-  persistKeeperStoryDelta
-} from "../generation/qualityEnrichment.js";
+import { mergeEntityAndStoryStateLines } from "../generation/qualityEnrichment.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualitySettings.js";
 import { loadProjectStoryState } from "../generation/storyStateStore.js";
 import { repairPageEmbeddings } from "../generation/embeddingRepair.js";
 import { storeEmbedding } from "../generation/embeddingWrites.js";
 import { loadEntityStateLines, updateEntityStateFromPage } from "../generation/entityState.js";
-import { retrieveSemanticResearchNotes } from "../generation/researchMemory.js";
 import { settleIndependentLoads } from "../generation/independentLoads.js";
-import { validateSemanticResearchNotes } from "../generation/researchSources.js";
 import {
   RECENT_PAGE_WINDOW,
   embedSemanticQuery,
   lexicalTermsForQuery,
   retrieveSemanticPageMemory
 } from "../generation/semanticRecall.js";
-import { pageQaCandidatesFor, pageQaRewriteAttemptsFor } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import {
   GeneratedPagePublicationClaimLostError,
@@ -43,16 +35,14 @@ import {
 } from "../generation/pagePublication.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { enqueueNextPageIfReady, parallelPageWaveSize } from "../runtime/dispatch.js";
+import { enqueueNextPageIfReady } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { nextPageVersion } from "../generation/pageIllustrationOwnership.js";
 import {
   bookPlanSchema,
   createProviders,
   formatStoryStateLines,
-  generateBestOfPageDrafts,
   generatePageDraftWithWriterTools,
-  pageCandidateCount,
   type PageDraftContextMode,
   type PriorPageContext
 } from "@book-maker/core";
@@ -149,7 +139,7 @@ export async function generatePage(job: GeneratePageJob) {
   // pg's connection acquisition has no timeout unless one is configured, so the
   // excess waits instead of erroring. Provider concurrency does not change at
   // all — one embedding call in flight, exactly as before.
-  const [previousPages, continuityNotes, semanticQueryVector, entityStateLines, quality, storyState] =
+  const [previousPages, continuityNotes, semanticQueryVector, entityStateLines, loadedQuality, storyState] =
     await settleIndependentLoads([
       prisma.page.findMany({
         // The window itself, not a number that happens to match it:
@@ -172,6 +162,8 @@ export async function generatePage(job: GeneratePageJob) {
       loadQualityContext(input).then((context) => quickDraftPageQuality(input, context)),
       loadProjectStoryState(projectId, plan.promises ?? [])
     ]);
+  // No model reviews or rewrites a generated page, on any tier (`withoutPageReview`).
+  const quality = withoutPageReview(loadedQuality);
   const orderedPreviousPages = previousPages.reverse();
   const priorPageContext = orderedPreviousPages.map(toPriorPageContext);
   applyPlanThinkingBoost(providers.text, quality.enabled("planThinkingBoost"));
@@ -225,16 +217,13 @@ export async function generatePage(job: GeneratePageJob) {
     quality
   });
 
-  const candidateCount = pageCandidateCount(input, page.index, quality.enabled("bestOfPolish"));
   const pageDraftContextMode: PageDraftContextMode = quality.enabled("compactPageDraftContext")
     ? "compact"
     : "excerpted";
-  await advanceJobStep(
-    generationJobId,
-    "draft",
-    30,
-    candidateCount > 1 ? `Drafting page ${page.index} (${candidateCount} candidates)` : `Drafting page ${page.index}`
-  );
+  // One draft per page on every tier: best-of drafting with a judge was removed on
+  // 2026-10-16 (E4) after blind readers preferred the judged pick 5 / 8 / 6 against
+  // the single draft over every recorded page-1 best-of.
+  await advanceJobStep(generationJobId, "draft", 30, `Drafting page ${page.index}`);
   const draftOptions = {
     input,
     plan,
@@ -298,21 +287,12 @@ export async function generatePage(job: GeneratePageJob) {
       fallback: () => strategy.generatePageDraft(options)
     });
   };
-  const initialDraft =
-    candidateCount > 1
-      ? await generateBestOfPageDrafts({
-          draftPage,
-          baseOptions: draftOptions,
-          candidateCount,
-          decisions: providers.decisions,
-          judgeModel: providers.text
-        })
-      : await draftPage(draftOptions);
+  const initialDraft = await draftPage(draftOptions);
   if (pageReviewPassesFor({ quality }).anyConfiguredPassEnabled) {
     await advanceJobStep(generationJobId, "qa", 55, `Reviewing page ${page.index}`);
   }
-  const initialReport = await reviewPageWithQualityGates({
-    decisions: providers.decisions,
+  // The deterministic local checks, and the page is saved as drafted.
+  const qualityReport = await reviewPageWithQualityGates({
     strategy,
     quality,
     reviewOptions: {
@@ -326,76 +306,11 @@ export async function generatePage(job: GeneratePageJob) {
       previousPages: priorPageContext,
       continuityNotes,
       researchNotes,
-      textModel: providers.text,
-      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+      textModel: providers.text
     }
   });
-  const enriched = await enrichPageQualityReport({
-    decisions: providers.decisions,
-    input,
-    plan,
-    pageIndex: page.index,
-    draft: initialDraft,
-    report: initialReport,
-    previousPages: priorPageContext,
-    researchNotes,
-    textModel: providers.text,
-    projectId,
-    quality,
-    storyState,
-    styleExcerpts
-  });
-
-  const outcome = await runPageQualityLoop({
-    decisions: providers.decisions,
-    projectId,
-    strategy,
-    input,
-    plan,
-    chapter: chapterPlan,
-    chapterBrief,
-    pageBrief,
-    chapterId: page.chapterId,
-    pageIndex: page.index,
-    draft: initialDraft,
-    report: enriched.report,
-    previousPages: priorPageContext,
-    continuityNotes,
-    researchNotes,
-    textModel: providers.text,
-    generationJobId,
-    maxCandidates: pageQaCandidatesFor(input),
-    repairBrief: true,
-    // This handler owns the page's terminal write, so a kept brief repair
-    // stays staged until both can be committed as one durable fact below.
-    deferBriefRepairPersistence: true,
-    reviseContext: `Page ${page.index}`,
-    reviseProgress: 70,
-    quality,
-    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
-    ...(quality.enabled("claimRetrieve")
-      ? {
-          retrieveResearch: async (draft) =>
-            validateSemanticResearchNotes(
-              await retrieveSemanticResearchNotes({
-                projectId,
-                queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
-                embedding: providers.embedding,
-                topK: 6
-              }),
-              researchNotes
-            )
-        }
-      : {}),
-    onRewrite: (nextRevision, recoveryRevision) =>
-      advanceJobStep(
-        generationJobId,
-        "revise",
-        70,
-        pageRevisionMessage(page.index, nextRevision, pageQaRewriteAttemptsFor(input), recoveryRevision)
-      )
-  });
-  const { draft, revision, report: qualityReport } = outcome;
+  const draft = initialDraft;
+  const revision = 1;
 
   const stageKeeper = async (status: "GENERATING" | "FAILED_QA") => {
     try {
@@ -407,7 +322,6 @@ export async function generatePage(job: GeneratePageJob) {
         revision,
         qualityReport,
         status,
-        pendingBriefRepair: outcome.pendingBriefRepair,
         existingPage: publicationSnapshot
       });
     } catch (error) {
@@ -424,25 +338,13 @@ export async function generatePage(job: GeneratePageJob) {
   if (!qualityReport.approved) {
     // Page-level failure isolation: keep the best draft with its honest
     // report, flag the page, and let the rest of the book continue. The page
-    // can be retried individually and the final review can still repair it.
+    // can be retried individually.
     const stagedPage = await stageKeeper("FAILED_QA");
     if (!stagedPage) {
       return;
     }
-    await persistKeeperStoryDelta({
-      projectId,
-      pageIndex: page.index,
-      draft,
-      textModel: providers.text,
-      plan,
-      input,
-      previousExtract: enriched.extract,
-      keeperWasRevised: revision > 1,
-      currentState: enriched.storyState,
-      quality
-    });
     await updateJobProgress(generationJobId, {
-      message: `Page ${page.index} kept its best draft but failed quality review; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
+      message: `Page ${page.index} kept its draft but failed its local checks; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
     });
     // No maybeEnqueueCompile here: this job's own row is still ACTIVE, so the
     // open-jobs gate can never pass from inside the handler. The compile check
@@ -454,7 +356,7 @@ export async function generatePage(job: GeneratePageJob) {
   await advanceJobStep(generationJobId, "save", 88, `Saving page ${page.index}`);
   const willIllustrate = Boolean(draft.imagePrompt) && strategy.shouldIllustratePage(input, plan, page.index);
   // Every approved keeper is durable but non-terminal before its fallible
-  // publication tail. A repaired brief joins the same conditional transaction.
+  // publication tail.
   // Illustrated pages additionally need this stage before their tokened job
   // can start and compare itself with the page it depicts.
   const stagedPage = await stageKeeper("GENERATING");
@@ -468,9 +370,6 @@ export async function generatePage(job: GeneratePageJob) {
     draft,
     stagedPage,
     willIllustrate,
-    ...(project.status === "GENERATING" && (input.mediaSettings.finalReview ||
-      (quality.enabled("finalBookQa") && parallelPageWaveSize(input) > 1))
-      ? { deferIllustrations: true } : {}),
     continuityTags: ["page", String(page.index)]
   });
   if (publication === "enqueue-declined") {
@@ -488,20 +387,8 @@ export async function generatePage(job: GeneratePageJob) {
   // database failures are recorded/degraded internally, and only a user stop
   // escapes (which processJob makes unrecoverable). They stay after the final
   // ownership CAS so a losing old delivery cannot write stale memory, while a
-  // Bull retry can only arise from the deduped fan-out below.
-  await persistKeeperStoryDelta({
-    projectId,
-    pageIndex: page.index,
-    draft,
-    textModel: providers.text,
-    plan,
-    input,
-    previousExtract: enriched.extract,
-    keeperWasRevised: revision > 1,
-    currentState: enriched.storyState,
-    quality
-  });
-
+  // Bull retry can only arise from the deduped fan-out below. No story
+  // extract: no generated page pays for story memory (E6, 2026-10-16).
   if (draft.continuityNotes.length > 0) {
     await updateEntityStateFromPage(projectId, page.index, draft.continuityNotes);
   }

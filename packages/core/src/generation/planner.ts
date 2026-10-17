@@ -1,6 +1,6 @@
 import { compactPictureBookPlanMessages, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
 import { generatePictureBookStoryPlan } from "./pictureBookStoryPlan.js";
-import type { JsonResult, ResearchAdapter, TextModelAdapter } from "../adapters/types.js";
+import type { JsonResult, ResearchAdapter, ResearchResult, TextModelAdapter } from "../adapters/types.js";
 import { uniqueStrings } from "../collections.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import { kidsReadingGuidanceLines, kidsReadingGuidancePayload } from "../prompting/readingLevel.js";
@@ -65,7 +65,21 @@ export type ExpandChapterResearchOptions = {
   plan: BookPlan;
   research: ResearchAdapter;
   cap: number;
+  /**
+   * Called as each query settles, with the rows it will contribute (none for a failed search), before the whole
+   * expansion returns: what lets a composed chapter start on its own research while other chapters' searches run.
+   */
+  onQuery?: ((query: string, sources: ResearchSource[]) => void) | undefined;
 };
+
+/** The search a chapter's research expansion makes for it: the plan's title, the chapter's title and summary, its first two beats. */
+export function chapterResearchQuery(plan: Pick<BookPlan, "title">, chapter: Pick<BookPlan["chapters"][number], "title" | "summary" | "keyBeats">): string {
+  // The plan's title, never `input.prompt`: for a chat-created book the
+  // prompt is the app's planning instruction ("Create the best-fitting book
+  // from the user's creation chat… Book type choice: Auto…"), and every
+  // chapter's research came back about lead magnets.
+  return [plan.title, chapter.title, chapter.summary, ...chapter.keyBeats.slice(0, 2)].filter(Boolean).join(" ");
+}
 
 export async function createPlanningPackage(options: CreatePlanOptions): Promise<BookPlan> {
   await options.onPhase?.("understand");
@@ -611,13 +625,7 @@ export async function expandChapterResearch(options: ExpandChapterResearchOption
   }
 
   const queries = [
-    ...options.plan.chapters.map((chapter) =>
-      // The plan's title, never `input.prompt`: for a chat-created book the
-      // prompt is the app's planning instruction ("Create the best-fitting book
-      // from the user's creation chat… Book type choice: Auto…"), and every
-      // chapter's research came back about lead magnets.
-      [options.plan.title, chapter.title, chapter.summary, ...chapter.keyBeats.slice(0, 2)].filter(Boolean).join(" ")
-    ),
+    ...options.plan.chapters.map((chapter) => chapterResearchQuery(options.plan, chapter)),
     ...options.plan.researchQueries
   ];
   // Every chapter is searched, and the cap bounds the sources kept *per
@@ -629,27 +637,36 @@ export async function expandChapterResearch(options: ExpandChapterResearchOption
   const uniqueQueries = uniqueStrings(queries);
   const perQuery = Math.max(3, Math.min(RESEARCH_SOURCES_PER_QUERY, cap));
   const results = await Promise.allSettled(
-    uniqueQueries.map((query) => options.research.search({ query, purpose: "chapter-research" }))
+    uniqueQueries.map(async (query) => {
+      const settled = await options.research.search({ query, purpose: "chapter-research" }).then(
+        (result) => expansionRows(result, perQuery),
+        (error: unknown) => {
+          options.onQuery?.(query, []);
+          throw error;
+        }
+      );
+      options.onQuery?.(query, settled);
+      return settled;
+    })
   );
 
-  return results.flatMap((result) => {
-    if (result.status !== "fulfilled") {
-      return [];
-    }
-    const brief = result.value.summary?.trim();
-    return [
-      // The brief first: what the search concluded across its sources, kept
-      // without a URL so it grounds the writer but is never cited as a source.
-      ...(brief ? [{ query: result.value.query, title: RESEARCH_BRIEF_TITLE, url: undefined, summary: brief, publishedAt: undefined }] : []),
-      ...result.value.sources.slice(0, perQuery).map((source) => ({
-        query: result.value.query,
-        title: source.title,
-        url: source.url,
-        summary: source.summary,
-        publishedAt: source.publishedAt
-      }))
-    ];
-  });
+  return results.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+}
+
+function expansionRows(result: Pick<ResearchResult, "query" | "summary" | "sources">, perQuery: number): ResearchSource[] {
+  const brief = result.summary?.trim();
+  return [
+    // The brief first: what the search concluded across its sources, kept
+    // without a URL so it grounds the writer but is never cited as a source.
+    ...(brief ? [{ query: result.query, title: RESEARCH_BRIEF_TITLE, url: undefined, summary: brief, publishedAt: undefined }] : []),
+    ...result.sources.slice(0, perQuery).map((source) => ({
+      query: result.query,
+      title: source.title,
+      url: source.url,
+      summary: source.summary,
+      publishedAt: source.publishedAt
+    }))
+  ];
 }
 
 /** Sources kept per chapter query; a search returns 20–30 and the writer reads about a dozen notes. */

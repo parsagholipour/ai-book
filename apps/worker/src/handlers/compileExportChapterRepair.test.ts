@@ -1,6 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Job } from "bullmq";
-import { pageQualityReportSchema } from "@book-maker/core";
 vi.mock("./compileFinalization.js", async () => (await import("./testing/compileExportMocks.js")).compileFinalizationModuleMock());
 vi.mock("../generation/finalizationIllustrations.js", async () => (await import("./testing/compileExportMocks.js")).finalizationIllustrationsModuleMock());
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
@@ -35,17 +34,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-// One export of one module, over the real rest of it: which pages the final-QA
-// repair redrafts is a test hook, while the per-message extractor behind the
-// reader's quality card and the page bound both questions are asked in stay
-// real, so the card assertions below measure the actual mapping.
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -76,16 +64,15 @@ const pages = Array.from({ length: 12 }, (_, i) => ({ id: `page-${i + 1}`, index
   markdown: `Page ${i + 1} prose about the walk home and everything seen along it.`, summary: `Page ${i + 1} summary.`,
   imagePrompt: null, status: "COMPLETED", images: [], chapter: null }));
 const job = (payload: Record<string, unknown>) => ({ data: { projectId: "project-1", planId: "plan-1", generationJobId: "gj-1", ...payload } }) as unknown as Job;
+// A Quick Draft book: the compile's one review (the defect screen) and its scoped repair run on it.
+// The chapter-transition sweep and the per-page repair loop went with the old final review (2026-10-16).
 const input = { title: "The Long Walk", prompt: "A book about walking home.", category: "KIDS", targetPages: 12,
-  // Exercise the retained explicit-strategy page repair path. Auto-selected
-  // short books now carry these findings through coordinated manuscript repair.
-  complexity: 3, temperature: 0.6, language: "en", mediaSettings: { finalReview: true, generationStrategy: "draft-then-polish" } };
+  complexity: 3, temperature: 0.6, language: "en", mediaSettings: { modelTier: "fast", generationStrategy: "draft-then-polish" } };
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.inputForPlanVersion.mockReturnValue(input);
   mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: { title: input.title, chapters: [], promises: [] }, inputSnapshot: null });
   mocks.prisma.project.findUnique.mockResolvedValue({ id: "project-1", status: "GENERATING", title: input.title, contentRevision: 4, mediaSettings: {}, pages, images: [], research: [] });
-  mocks.strategy.runFinalBookQa.mockResolvedValue({ approved: true, score: 95, issues: [], requiredFixes: [], repairPageIndexes: [] });
   mocks.strategy.compileMarkdown.mockReturnValue("# The Long Walk\n\nProse.\n");
   mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: [], source: "model" });
   mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
@@ -93,7 +80,7 @@ beforeEach(() => {
   mocks.pendingExportPaths.mockImplementation((path: string) => pendingExportPaths(path, "test"));
   mocks.publishCompiledExports.mockResolvedValue({ published: true, characterPreparationJobId: null });
   mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: isDefaultCompileQualityFeature });
-  mocks.pageReportFromFinalQa.mockReturnValue(pageQualityReportSchema.parse({ approved: false, score: 60, issues: [], requiredRevisions: [], notes: "Repair the handoff." }));
+  mocks.repairQuickDraftPages.mockReset();
 });
 function persistedQualityReport(): { issues: Array<{ code: string }> } {
   const call = mocks.prisma.generationJob.update.mock.calls.find(([arg]) => arg.data?.qualityReport);
@@ -101,44 +88,22 @@ function persistedQualityReport(): { issues: Array<{ code: string }> } {
   return call[0].data.qualityReport;
 }
 
-  it("repairs an actionable chapter handoff even when book QA approves and withdraws its old warning", async () => {
-    const transition = { code: "CHAPTER_TRANSITION", message: "The lantern changes hands off-page.",
-      guidance: "Show the handoff between the two scenes; the page 12 ending must stay unchanged.", affectedPageIndexes: [8, 9] };
-    mocks.generateJsonWithRetry.mockResolvedValueOnce({ data: { issues: [transition] } });
-    mocks.revisePageDraftWithRestart.mockImplementation(async ({ reviseOptions }) => ({ ...reviseOptions.draft,
-      markdown: `${reviseOptions.draft.markdown} The lantern passes safely to Turtle.` }));
-    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
-    mocks.loadPagesForExport.mockResolvedValue(pages.map((page) => [8, 9].includes(page.index)
-      ? { ...page, markdown: `${page.markdown} The lantern passes safely to Turtle.` } : page));
-    const reviewPageDraft = vi.fn().mockResolvedValue({ approved: true, score: 95, issues: [], requiredRevisions: [], notes: "" });
-    Object.assign(mocks.strategy, { reviewPageDraft });
-    try { await compileExport(job({ contentRevision: 4 })); }
-    finally { delete (mocks.strategy as { reviewPageDraft?: unknown }).reviewPageDraft; }
-    expect(mocks.revisePageDraftWithRestart.mock.calls.map(([call]) => call.reviseOptions.pageIndex)).toEqual([8, 9]);
-    for (const [call] of mocks.revisePageDraftWithRestart.mock.calls) {
-      expect(call.reviseOptions.report.requiredRevisions).toContain(transition.guidance);
-    }
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(2);
-    expect(persistedQualityReport().issues.map((issue) => issue.code)).not.toContain("CHAPTER_TRANSITION");
-  });
-
-it("carries a stored manuscript finding into repair and re-review when final book QA approves", async () => {
+it("carries a stored manuscript finding into the scoped repair when the screen approves", async () => {
   const guidance = "Add the brief walk from the entrance to the clearing and leave the neighbors waiting.";
   const failedPages = pages.map((page) => page.index === 5 ? { ...page, status: "FAILED_QA", qualityReport: {
     approved: false, score: 60, issues: ["The entrance-to-clearing transition is missing."], requiredRevisions: [guidance], notes: "Batch manuscript finding."
   } } : page);
   mocks.prisma.project.findUnique.mockResolvedValue({ id: "project-1", status: "GENERATING", title: input.title, contentRevision: 4, mediaSettings: {}, pages: failedPages, images: [], research: [] });
-  mocks.revisePageDraftWithRestart.mockImplementation(async ({ reviseOptions }) => ({ ...reviseOptions.draft, markdown: `${reviseOptions.draft.markdown} They walked down to the clearing.` }));
-  mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+  mocks.repairQuickDraftPages.mockImplementationOnce(async ({ pages: book }) =>
+    book.map((page) => page.index === 5 ? { ...page, markdown: `${page.markdown} They walked down to the clearing.` } : page));
   mocks.loadPagesForExport.mockResolvedValue(pages);
-  const reviewPageDraft = vi.fn().mockResolvedValue({ approved: true, score: 95, issues: [], requiredRevisions: [], notes: "Bridge preserved." });
-  Object.assign(mocks.strategy, { reviewPageDraft });
-  try { await compileExport(job({ contentRevision: 4 })); }
-  finally { delete (mocks.strategy as { reviewPageDraft?: unknown }).reviewPageDraft; }
-  expect(mocks.revisePageDraftWithRestart).toHaveBeenCalledWith(expect.objectContaining({ reviseOptions: expect.objectContaining({
-    report: expect.objectContaining({ requiredRevisions: expect.arrayContaining([guidance]) })
-  }) }));
-  expect(reviewPageDraft).toHaveBeenCalledWith(expect.objectContaining({ repairInstruction: expect.stringContaining(guidance) }));
+  await compileExport(job({ contentRevision: 4 }));
+  expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledOnce();
+  expect(mocks.repairQuickDraftPages).toHaveBeenCalledOnce();
+  expect(mocks.repairQuickDraftPages).toHaveBeenCalledWith(expect.objectContaining({
+    targetPageIndexes: [5], instruction: expect.stringContaining(guidance) }));
+  expect(mocks.prisma.page.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "page-5" },
+    data: expect.objectContaining({ markdown: expect.stringContaining("They walked down to the clearing.") }) }));
 });
 
 it("publishes unsupported evidence as warnings without buying a repair", async () => {
@@ -146,6 +111,6 @@ it("publishes unsupported evidence as warnings without buying a repair", async (
     qualityAdvisories: [{ check: "style", status: "unverified", message: "The critic requested another scene after the ending." }] } } : page);
   mocks.prisma.project.findUnique.mockResolvedValue({ id: "project-1", status: "GENERATING", title: input.title, contentRevision: 4, mediaSettings: {}, pages: advisedPages, images: [], research: [] });
   await compileExport(job({ contentRevision: 4 }));
-  expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+  expect(mocks.repairQuickDraftPages).not.toHaveBeenCalled();
   expect(persistedQualityReport().issues).toContainEqual(expect.objectContaining({ code: "STYLE_REVIEW_UNVERIFIED", severity: "warning", affectedPageIndexes: [5] }));
 });

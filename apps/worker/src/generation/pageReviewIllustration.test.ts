@@ -12,8 +12,8 @@ const mocks = vi.hoisted(() => ({
     chapter: { findUnique: vi.fn(), updateMany: vi.fn() }
   },
   enqueueWorkerJob: vi.fn(),
-  keeperStoryExtractForSave: vi.fn(),
-  persistStoryExtract: vi.fn(),
+  // The page's local checks: the only review a generated page gets (`withoutPageReview`).
+  reviewPage: vi.fn(),
   prepareEmbedding: vi.fn(),
   writePreparedEmbedding: vi.fn(),
   updateEntityStateFromPage: vi.fn()
@@ -35,14 +35,11 @@ vi.mock("./qualitySettings.js", () => ({
   applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("./qualityEnrichment.js", () => ({
-  enrichPageQualityReport: async ({ report }: { report: PageQualityReport }) => ({
-    report,
-    extract: null,
-    storyState: { promises: [], facts: [], entities: {}, unanswered: [] }
-  }),
-  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-  persistStoryExtract: mocks.persistStoryExtract,
   revisedDraftStyleAuditor: () => undefined
+}));
+vi.mock("./pageQualityGateReview.js", () => ({
+  reviewPageWithQualityGates: mocks.reviewPage,
+  pageReviewPassesFor: () => ({ localEnabled: true, smartUnslopEnabled: false, modelEnabled: false, anyConfiguredPassEnabled: true })
 }));
 vi.mock("./embeddingWrites.js", () => ({
   strategyUsesSemanticMemory: () => true,
@@ -82,7 +79,6 @@ const strategy = {
   executionMode: "sequential-pages",
   reviewPageDraft: vi.fn(),
   revisePageDraft: vi.fn(),
-  repairPageBrief: vi.fn(),
   shouldIllustratePage: vi.fn()
 };
 
@@ -117,9 +113,8 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
     mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.prisma.imageAsset.findMany.mockResolvedValue([]);
     mocks.enqueueWorkerJob.mockResolvedValue({ id: "image-job" });
-    mocks.keeperStoryExtractForSave.mockResolvedValue({ storyDelta: { facts: ["The robin flew."] } });
     mocks.prepareEmbedding.mockResolvedValue({ vectorLiteral: "[0.1,0.2]", error: null });
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport);
+    mocks.reviewPage.mockResolvedValue(approvedReport);
     strategy.shouldIllustratePage.mockReturnValue(false);
   });
 
@@ -163,23 +158,6 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
     expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledTimes(1);
   });
 
-  it("saves approved prose and continuity while postponing illustrations until finalization", async () => {
-    strategy.shouldIllustratePage.mockReturnValue(true);
-    await reviewAndSaveGeneratedPage({
-      ...baseOptions("A robin on a branch", ["The robin is named Pip."]),
-      deferIllustrations: true
-    });
-
-    expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ imagePrompt: "A robin on a branch" })
-    });
-    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
-    );
-    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledTimes(1);
-  });
-
   it("leaves the staged keeper non-terminal when durable enqueue is declined", async () => {
     strategy.shouldIllustratePage.mockReturnValue(true);
     mocks.enqueueWorkerJob.mockResolvedValueOnce(undefined);
@@ -188,7 +166,6 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
 
     expect(saved.page).toEqual(expect.objectContaining({ index: 3, markdown: "First text." }));
     expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
-    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
     expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
   });
 
@@ -228,7 +205,6 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
       data: expect.objectContaining({ status: "COMPLETED" })
     });
     expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
-    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
     expect(mocks.updateEntityStateFromPage).not.toHaveBeenCalled();
     expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
   });
@@ -750,11 +726,10 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
     const saved = await reviewAndSaveGeneratedPage(baseOptions("A stale prompt"));
 
     expect(saved.page).toMatchObject({ title: "Already saved", markdown: "Durable text." });
-    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(mocks.reviewPage).not.toHaveBeenCalled();
     expect(mocks.prisma.page.create).not.toHaveBeenCalled();
     expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
     expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
-    expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
   });
 
   it("replaces a completed page when its resumed generation unit explicitly opts in", async () => {
@@ -782,7 +757,7 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
     } as never);
 
     expect(saved.page).toMatchObject({ title: "First", markdown: "First text." });
-    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(1);
+    expect(mocks.reviewPage).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "page-row-1", index: 3, status: "COMPLETED", updatedAt: completedAt },
@@ -815,7 +790,7 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
     } as never);
 
     expect(saved.page).toMatchObject({ title: "New winner", markdown: "New durable text." });
-    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(mocks.reviewPage).not.toHaveBeenCalled();
     expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
   });
 
@@ -843,7 +818,7 @@ describe("reviewAndSaveGeneratedPage illustration publication", () => {
     } as never);
 
     expect(saved.page).toMatchObject({ title: "Old page", markdown: "Old text." });
-    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(mocks.reviewPage).not.toHaveBeenCalled();
     expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,33 @@ Before changing anything that affects typesetting or page breaks, use the `verif
 skill. Rendering the fixture corpus is the only way to see what a change does — `pdfDocument.test.ts`
 asserting a sha256 is the alarm, not the check.
 
+## Review stages earn their place
+
+- **A review, edit or critic stays only where blind readers prefer the book with it; E4 removed
+  the plan critic, form-plan repair, polish, best-of, the short-book reviews and the prose-arithmetic
+  screen on every tier.** The owner's rule (Parsa, 2026-10-16): "If reviews/edits add only 5-10%
+  improve or not improve at all, let's just disable them/get rid of them." Operationalised: a taste
+  stage stays only if blind Opus readers prefer stage-on over stage-off across a representative
+  sample of all books or chapters, with a decided-pair win share ≥ 60% and a Wilson 95% lower bound
+  above 50%; a model defect screen stays only if it finds and fixes real reader-visible defects in
+  at least 10% of books; deterministic code checks are not reviews and stay. Premium and Ultra are
+  not exempt for being unmeasured on their models. The E4 audit
+  (`.scratch/eval-data/reports/e4-review-audit.md`) measured, on stored Quick Draft and Balanced
+  books: per-page polish 1/1/6 against the draft; the short-book reviews (grouped and per-page,
+  compile review included) 7/19/2 and 3/7/7 against the draft; best-of 5/8/6 against its own
+  candidate 0; the plan critic 2/3/8 downstream; the form-plan repair 4/4/9 downstream; the prose
+  arithmetic screen fixed 0 of 48 books. Each removal deleted its code and moved its gate id to
+  `REMOVED_QUALITY_FEATURE_IDS`; the entries below that describe them say what replaced them. The
+  E5 sweep (`.scratch/eval-data/reports/e5-final-review-sweep.md`) finished the job: the page-map
+  critic (`critiquePageMap` and its picture-book scene development) lost 5 wins / 7 ties / 6 losses
+  over 41 logged short books — the whole book drafted from its patched map against the one drafted
+  from the map it was handed — and was deleted with its gate; and the per-page review chain (model
+  review, review-driven rewrites, Smart Unslop, the style audit and the story audit's page
+  rejection) came off every page generation drafts on every tier, continuations, inserts and replans
+  included, on E4's measurement of the same chain on the same writer. A reader's chat page rewrite is
+  the only page still reviewed (→ `apps/worker/src/generation/CLAUDE.md`). Add a review stage back
+  only with a measurement that clears the same bar.
+
 ## Reading the source of a cover
 
 Read the cover's source through `coverArtSourceFor` (`coverSource.ts`), never `includeCover`
@@ -44,7 +71,7 @@ holds the event loop open and vitest will never exit.
 - [Whole-set edit adherence](#whole-set-edit-adherence)
 - [Surgical page patches](#surgical-page-patches)
 - [Page seams](#page-seams)
-- [Best-of candidate sampling](#best-of-candidate-sampling)
+- [Best-of candidate sampling](#best-of-candidate-sampling) (removed 2026-10-16)
 - [Covers](#covers)
 - [PDF typesetting and the render transport](#pdf-typesetting-and-the-render-transport)
 - [Export provenance and scratch files](#export-provenance-and-scratch-files)
@@ -70,12 +97,12 @@ holds the event loop open and vitest will never exit.
   auto-router's choice for 12+ pages outside KIDS) composes a whole chapter in one prose call
   (`composeChapter`, `composedChapter.ts`) from an author stance — thesis, positions, refusals and a
   voice sample the writer imitates (`authorStance.ts`; the planner is asked for it, the pass
-  generates one when a plan lacks it) — and a chapter form plan; a line-editor call rewrites it
-  (`editChapter`); `paginateChapterMarkdown` (`chapterPagination.ts`) cuts it into exactly the
+  generates one when a plan lacks it) — and a chapter form plan; no line edit follows (removed
+  2026-10-16, below); `paginateChapterMarkdown` (`chapterPagination.ts`) cuts it into exactly the
   chapter's page count at paragraph boundaries, never inside a fence; `describeChapterPages`
   supplies each page's title, summary, continuity notes and, for illustration slots, its image
-  prompt; `readManuscript` reads the finished book once and returns notes, never prose, for at most
-  ⌈chapters/3⌉ (≤6) chapters to re-edit. The compose and edit prompts carry no `antiAiRules`, no
+  prompt; where a revision still opts in (no tier by default since 2026-10-16) `readManuscript` reads the finished book once and
+  returns notes, never prose, for at most ⌈chapters/3⌉ (≤6) chapters to cut. The compose and edit prompts carry no `antiAiRules`, no
   page brief, no evidence ledger and no reserved-beat rule, on purpose: the user's own prompt and
   the plan's `voiceGuide` ride along, the prohibition list does not. Each purpose uses its saved
   admin stage model and reasoning selection (`generationTextModelRouting.ts`); tier names never
@@ -95,12 +122,17 @@ holds the event loop open and vitest will never exit.
   most `MAX_CHAPTER_SECTIONS` (12). See the delivery entry below for why.
   `compositionVarietyIssues` is the contract: no form over half a chapter or 40% of the book, no
   form following itself, no two chapters with the same sequence, no two consecutive chapters
-  opening alike. It gets one repair call, then `rotateFormsForVariety`, and never blocks; a provider
-  failure drafts from the rotated fallback. The repair call is the `formPlanRepair` gate's, off for
-  Quick Draft only: it is 30–60 s of a book's preparation, the rotation settles forms but never
-  landings, and three Quick Draft books planned without it (2026-09-30) kept landings that
-  restated the thesis or one another. The one blind comparison went 4–2 to the round that had it,
-  inside run-to-run noise; Quick Draft takes the time and the other tiers the call. A resumed run re-plans the remaining chapters against
+  opening alike. A plan that breaks it is settled by `settleFormVariety` (forms, then positions) and never blocks; a
+  provider failure drafts from the rotated fallback. **There is no repair call, on any tier, since
+  2026-10-16** (E4, `.scratch/eval-data/reports/e4-review-audit.md`, and the `formPlanRepair` gate
+  is in `REMOVED_QUALITY_FEATURE_IDS`): the call re-emitted the whole plan — new wording in 232 of
+  299 Balanced chapters, ~54 s on the critical path — and chapters composed from the repaired plan
+  lost to the same chapters composed from the rotation alone, 4 wins / 4 ties / 9 losses over 17
+  Balanced books (toolkit books, planned by `planInstructionalForms`, were not replayed; Quick Draft
+  had already planned them without it since 2026-09-30). The rotation never rewrites a landing, and
+  landings never reach the writer (`compositionWriterLines`). The owner's rule (Parsa,
+  2026-10-16): a review, edit or critic that improves books by 5–10% or not at all is removed, on
+  every tier. A resumed run re-plans the remaining chapters against
   the `fixed` compositions the finished chapters stored. This is where a deterministic check on
   shape belongs — on the plan, where it is cheap and exact — not on the prose, where the 2026-09-02
   replay showed such rules fire on approved pages. `share` accepts any positive number and is
@@ -133,10 +165,11 @@ holds the event loop open and vitest will never exit.
   longest chapter in two only when the chapters cannot hold the book under the ceiling. The
   planner passes it for every book whose chapter is the unit of composition (`composesByChapter`,
   the same predicate the strategy router chooses by, in `compositionUnit.ts` so the router stays
-  light); per-page books' chapters are storage and keep their plan. The retry floor and the
-  editor's extension are the recovery, not the lever — and since 2026-10-01 the retry, the line
-  edit's length guard and the compile's length gate all read a minimum at `LENGTH_FLOOR_SHARE` of
-  it, measured as it prints (`printedLength.ts`; the calibration is in
+  light); per-page books' chapters are storage and keep their plan. The retry floor is the
+  recovery, not the lever (the line editor's extension was the other until the edit was removed,
+  2026-10-16, and it never lengthened a chapter on average) — and since 2026-10-01 the retry,
+  `editChapter`'s length guard and the compile's length gate all read a minimum at
+  `LENGTH_FLOOR_SHARE` of it, measured as it prints (`printedLength.ts`; the calibration is in
   `apps/worker/src/generation/CLAUDE.md`).
 - **Every rule about shape the writer or editor is shown is performed on schedule, and the blind
   panel names the performance; content assignments are the only lever that moved.** Twenty-one
@@ -151,7 +184,7 @@ holds the event loop open and vitest will never exit.
   per run: position rotation (−1.0 with the stripped editor), the read-driven deletion-only cut
   (kept as `cutChapter` + `deletionOnlyResult`, off), best-of-2 with a cross-family judge (settled
   2 of 15 chapters; the judge never picks the panel's worse book but ties on most pairs under a
-  one-point gap), 480 against 520 words a page (7.32 vs 7.31), voiceGuide/continuityRules/promises
+  one-point gap; its worker wiring was deleted on 2026-10-16 and `judgeChapterDrafts` stays), 480 against 520 words a page (7.32 vs 7.31), voiceGuide/continuityRules/promises
   out of the writer payload (7.08 vs 7.32). Reasoning effort on the writer does nothing (low /
   medium / high: 7.31 / 7.30 / 7.23). The writer *model* moves the panel — DeepSeek V4 Pro 7.67 and
   Gemini 3.7 Flash 7.57 with engagement 7 where luna gets 5–6 — and both under-fill the pages,
@@ -197,8 +230,7 @@ holds the event loop open and vitest will never exit.
   and the requirement ids it `covers`, plus a cast introduced in one chapter each, `caveats` each
   homed in one chapter, a few fixed-fact `rules`, and for a workbook one `runningCase` of input
   figures with their year. Coverage of the brief is checked in code before any prose
-  (`requirementCoverageIssues`; without a repair call `homeUncoveredRequirements` places what is
-  left), `deliverableCarriesLength` moves a chapter's long share off a situation (asked in words, the
+  (`requirementCoverageIssues`; `homeUncoveredRequirements` places what is left — there is no repair call since 2026-10-16), `deliverableCarriesLength` moves a chapter's long share off a situation (asked in words, the
   planner still gave one 43% of its chapter), the deliverable forms are never rotated
   (`PINNED_FORMS`) and the toolkit plan is not rotated at all (an objection rotated into an exercise
   left its subject behind). The writer gets `bookRules` and its own chapter's `cautions` in place of
@@ -227,29 +259,25 @@ holds the event loop open and vitest will never exit.
   to measure. The length checks used to read a table as its cells' words alone, so a table-heavy
   chapter read as short while filling its pages; `printedWordCount` adds `TABLE_ROW_ROOM_WORDS` a
   row, the conservative fit to sixteen guides and workbooks rendered with and without their tables.
-  `check-chapter-arithmetic` runs on these chapters and missed "$53,400 × 92.35% = $49,329.90" in
+  `check-chapter-arithmetic` (removed 2026-10-16, see the next entry) ran on these chapters and missed "$53,400 × 92.35% = $49,329.90" in
   three of three replays: the model never proposed it, so code never saw it.
-- **A chapter's prose arithmetic is proposed by a model and decided by code.** `arithmeticFindings`
-  reads only delimited math, so "from $800, after $1,200 rent and $110 electricity, only $290
-  remains", "$5.86 against 16 cents, a 39-fold saving" and a quarterly bill divided by four went
-  to print and to the blind panel. `proseArithmeticFindings` (`proseArithmetic.ts`, purpose
-  `check-chapter-arithmetic`, gate `proseArithmeticCheck`) asks for plainly wrong results with the
-  computation from the chapter's own numbers, and `verifiedFinding` keeps one only when its quote
-  is in the chapter, carries the stated number, and `evaluateExpression` (`+ - * /`, parentheses,
-  decimals, nothing else) disagrees beyond rounding — two percent where the quote says "about".
-  A second short call, shown the quote's paragraph and the two before it, checks whether the number is
-  *meant* as that computation. Only confirmed findings authorize automatic edits. A false or failed
-  intent check retains the finding as `reviewOnly`; cancellation still escapes. The 100-page
-  Balanced test found two real toy-hash errors which a false intent vote silently discarded.
-  Code checks the arithmetic, never the pairing: replayed over 32
-  stored chapters, one proposal paired "$300 left" with the wrong subtraction, and a result spelled
-  in words used to read as 0. That confirmation is told to ignore whether the arithmetic is right,
-  because asked about both it reasoned "−510 is not 290, so the sentence cannot mean that" and
-  turned down every real error. The replay then kept two findings, both real ("$2,400 above the
-  floor" of a $2,300 floor; "39-fold" for 36.6), and missed others a first pass had caught, so it
-  can miss an error and should not talk the editor into "correcting" a right number. The worker's
-  `repairChapterArithmetic` takes it as `proseFindings`, in the chapter's finish, which runs beside
-  the next compose. A chapter with fewer than four numbers is not asked about.
+- **No model reads a chapter's prose arithmetic; only the delimited math is checked, by code.**
+  `arithmeticFindings` (`arithmeticCheck.ts`) reads delimited math, so "from $800, after $1,200 rent
+  and $110 electricity, only $290 remains" is outside it. A model screen read that prose from
+  2026-09-30 (`proseArithmeticFindings`, purpose `check-chapter-arithmetic`, gate
+  `proseArithmeticCheck`): a call per chapter with numbers proposed wrong results with their
+  computation, `verifiedFinding` kept one only when `evaluateExpression` disagreed beyond rounding,
+  and a second call had to confirm the sentence *meant* that computation before an edit was
+  allowed. **It was removed on every tier on 2026-10-16** (E4,
+  `.scratch/eval-data/reports/e4-review-audit.md`): over the 48 Quick Draft and Balanced books whose
+  logs hold it (324 chapter checks, 19 proposals) it fixed a real error in **none** — code verified
+  six findings in five books, four of them real (a workbook's tax estimate, a hash example's letter
+  counts, a stated vote total, a monthly tax reserve), and the intent check refused all four, so
+  each stayed in print as a review-only flag. A defect screen stays only if it finds and fixes
+  real reader-visible defects in at least 10% of books (the owner's rule), and 0% — or 8% counting
+  the unfixed real ones — is under it. `verifiedFinding` and `evaluateExpression` remain because
+  `composedEvidenceResiduals` re-checks stored residuals with them; a stored `reviewOnly` residual
+  still reads as `ARITHMETIC_REVIEW_REQUIRED`.
 - **A book written from no source is a story, whatever its category and cue words said.**
   `inferWritingMode` reads `plan.authorStance.research` (`STANCE_RESEARCH_RULE`): `"none"` makes
   every mode but a children's book `narrative`. The category-and-cue-word guess had a fantasy novel
@@ -359,6 +387,37 @@ holds the event loop open and vitest will never exit.
   siblings; revisions keep the full schema so a stored arc survives the merge.
 - **Names and numbers do not prove that an edit preserves meaning.** Candidate 9's coupled rewrite garbled a clean sentence while preserving its anchors. The later audit also demonstrated polarity reversal. The rewrite and acceptance rules were removed; historical results remain in the experiment reports.
 
+- **A composed chapter is printed as drafted: no line edit, and no review of one, on any tier or
+  writing mode.** `editChapter` used to rewrite every composed chapter (741 calls in 20 days, 2,387
+  output tokens and 15.7 s each), and Balanced then sent the original and the candidate whole to
+  `review-chapter-edit-acceptance` at high effort (9–19k input, 23–31 s), which kept 39% of the
+  edits. E2 (2026-10-16, `.scratch/eval-data/reports/e2-chapter-edit.md`) put today's edit against
+  no edit before blind Opus readers, both orders, on 40 logged edits: fiction 6 wins, 11 ties, 13
+  losses for the edit (32% of decided pairs, [15–54]) — one edit deleted "The ground had never
+  agreed to stay there" and left the next line's "that disagreement" pointing at nothing — and
+  nonfiction 15/26/9 (62% [43–79], three readers), a tie, and a stage that ties is deleted. Its one
+  exception was exploratory, Quick Draft guides and workbooks at 8/1/1, where the edit had fixed
+  sums that disagreed with their own tables; a confirmatory run on 48 fresh toolkit-era chapters
+  (`.scratch/eval-data/reports/h2-instructional-confirm.md`) did not hold it. Quick Draft went
+  1/7/16 (6% [1–27]): told to extend almost every draft, the editor added recaps and restatements
+  of figures the chapter had already given, and dropped a worksheet table in 3 of 21 chapters.
+  Balanced went 8/5/11 (42% [23–64]) even with the edit split into hunks and each judged on its own,
+  the review E2 had found non-inferior to the whole-chapter one and keeping 58% of the editor's
+  hunks against 37% (prototype unported, in `scripts/eval/variants/chapterEditHunks.ts` and
+  `hunkAcceptance.ts`). One reader per order decided both, because no three-reader result could
+  have reached the pre-registered bar. Each chapter saves one call on Quick Draft (12–19 s,
+  1.7–2.8k output tokens) and two on Balanced (that plus the review), about 2–3 and 7–9 minutes of serial
+  `finishChapter` time a ten-chapter book; most of it ran beside the next compose, so the wall
+  clock gains mainly the last chapters' tail. Premium and Ultra write on other models and were
+  not measured; they lost the edit with the rest by decision. What stays: `editChapter` as the
+  repairs' editor —
+  `repairChapterArithmetic` and the dormant evidence repair send it a `factualCorrection`, judged
+  by `acceptsChapterEdit` against its computation or passages where `chapterEditAcceptance` is on —
+  and `cutChapter` with its whole-span review. `chapterEditorPass` is retired, not deleted:
+  revisions 73–75 list it on every tier, `qualityFeatureEnabled` answers false whatever they say,
+  and the console lists it under Removed with these numbers. The editor prompt keeps its extension
+  sentence (E2: without it the editor cut 6–7.5% and the floor refusals quadrupled), though a
+  repair, which always passes `allowExtension: false`, never reaches that branch.
 - **The chapter-edit gate is the contextual reviewer alone; the decision model that ran ahead of
   it was measured across four books and removed.** `acceptsChapterEdit`
   (`chapterEditAcceptance.ts`) sends the reviewer every byte — the whole original and candidate,
@@ -385,7 +444,8 @@ holds the event loop open and vitest will never exit.
   being cut or in the one the note named; scoped, the same eight payloads total 61% less. Notes
   that cite nothing recognisable keep every chapter in view. A factual correction reaches the
   reviewer with its evidence — a source passage, or an exact computation it is told it may redo —
-  and only a repair caller may supply one; a deletion-only cut carries none.
+  and only a repair caller may supply one; a deletion-only cut carries none. Since 2026-10-16 those
+  are the gate's only two callers: there is no line edit to review (above).
 - **A caveat is stated once, where it first matters, and the acceptance reviewer is told the rule
   the editor was.** Blind readers named hedging in 43 of 46 books and repetition in 41
   (2026-10-01), and the repetition was padding against the word minimum: "never state the same
@@ -401,7 +461,10 @@ holds the event loop open and vitest will never exit.
   discarded (0.885 of its minimum) now reaches print; judged three times per edit, the reviewer
   accepted 6 of 15 Balanced judgments on the new prompt and 5 of 15 on the old, none of its
   rejections was about a repeated caveat, and each of the five edits it judged drew both verdicts
-  across the six sittings — what it still costs these edits is the reviewer's noise.
+  across the six sittings — what it still costs these edits is the reviewer's noise. The 12/12 was
+  this rule against the old one inside the line edit, never the edit against no edit; that
+  comparison removed the line edit (above), so since 2026-10-16 the editor rule reaches a chapter
+  only through a repair's correction edit, and the reviewer's twin only through that edit's review.
 
 - **A chapter's arithmetic is redone before it is judged, and a wrong number is a factual correction
   whose evidence is the computation.** `arithmeticFindings` (`arithmeticCheck.ts`) parses every
@@ -441,10 +504,48 @@ holds the event loop open and vitest will never exit.
   (`chapterIntegrity.ts`) refuses a draft on any of three measures calibrated on the 231 chapters
   of every run to that date — ≥40% of sentences opening on one three-word template repeated six
   or more times (0.58 there, ≤0.26 anywhere else, a deliberate anaphora), more than 1.8× the
-  chapter's word maximum (2.8× there, ~1.3× at most elsewhere), more than two characters of a
-  script a Latin-script book is not written in (4 there, 0 elsewhere) — and the pass discards an
-  edited chapter that trips it for the draft. The fake adapter's canned chapter opens every
-  sentence on its turn number for this reason.
+  chapter's word maximum (2.8× there, ~1.3× at most elsewhere), more than forty characters of a
+  script a Latin-script book is not written in (4 there, 0 elsewhere then; it was two until
+  ladder-8 failed two paid books on a quoted Arabic and Greek word, 2026-09-04) — and the pass
+  discards an edited chapter that trips it for the draft. The fake adapter's canned chapter opens
+  every sentence on its turn number for this reason.
+- **A word in a script the book is not written in is recomposed once, the cleaner draft is kept,
+  and it never fails the job; a Latin-script book is held only to the fused shape.** E1c
+  (2026-10-16, `.scratch/eval-data/reports/e1c-gemini-fiction.md`): gpt-6-luna put three Armenian
+  words into a Persian chapter ("یک քայլ جلو آمد، բայց") and Gemini a Russian stem inside a
+  Persian word ("покрыیده"); the production draft of that chapter had carried "չէم", which the
+  line edit cleaned up until it was removed, and the forty-character rule above runs on Latin books
+  only. `findScriptLeaks` (`scriptLeaks.ts`) takes a book's scripts from its language
+  (`knownBookScript`, `prompting/script.ts`; a language it does not know is not checked) and allows
+  Latin everywhere. Two shapes are leaks: **fused**, another script inside one word with the
+  book's own or Latin letters, in any book; **inline**, in a non-Latin book, a word of two or more
+  letters standing bare between two of the book's own words on a line, nothing but a space, comma
+  or ZWNJ either side. Not leaks: a Greek run of up to three letters (φ(N), αˣ, *ulaγa*), the
+  Arabic honorific ligatures (ﷺ), code, math, URLs, and any script the brief is written in or
+  names the language of (a reader's Armenian name, a Persian primer of Russian). **Measured before
+  it shipped**, over every stored page (18,059: 17,977 English, 39 Portuguese, 43 Persian) and
+  every stored chapter draft and edit (5,663 from the run logs and the eval data, 28 Persian):
+  4 page hits and 8 chapter hits, every one a real leak — commander傅作义, the索取, with绞合,
+  allocation制度, sporadic征税, Ribاط-i Sharaf and E1c's three. The 31 other stored pages carrying a
+  foreign letter were all legitimate (ﷺ, *ulaγa*, φ and α in RSA, one 元朝秘史). The inline shape
+  on Latin books was measured and left out: it adds that 元朝秘史, quoted bare before its
+  transliteration (4 of 5, 80%), to catch "a blunt удар" and "al-Aziz بالله" in two drafts; the
+  E1c criterion's count (more than two letters of another script) flags 6 pages, 1 real. Known
+  misses: those two, and a lone letter (ನು, and जाएगा inside math, both reasoning spilled into an
+  English page). **The non-Latin sample is small and holds no legitimate foreign quote**, so the
+  inline shape's precision on one is unmeasured; a word the writer sets off with quotes, brackets
+  or emphasis passes. What it does: `chapterDegeneracy` reports `scriptLeaks` without calling the
+  chapter `degenerate` — a wrong word is not "not prose" — and `guardComposedDraft` composes a
+  leaked draft once more and keeps the one with fewer leaked words, because E1c's chapter leaked in
+  three of five draws and failing a paid book over a second one is worse than printing it; a kept
+  leak goes to the run log (`generation.composed_chapters.script_leak`). `editChapter` refuses an
+  edit that brings in a leak the draft did not have (`addsScriptLeaks`). The page rule in
+  `pagesLocalQa.ts` fails `promptLeakFree`, the integrity flag the composed finalize's revise,
+  Quick Draft's compile repair, the per-page review loop and a chat patch all act on, and never on
+  an author's manuscript. At compile a leak is a `FOREIGN_SCRIPT` warning on its page, for the
+  console. Nothing is replaced in place: no measured leak was a homoglyph (покры is a Russian stem,
+  the Armenian words mean step, but and high, the Han ones are words), so there is no exact mapping
+  to apply.
 - **The manuscript read returns notes, so a read that fails is a skipped read, never a failed
   book; and a provider's input filter refusing a chapter is a fallback, never a failed book.**
   Luna at effort high composed every chapter of composed-17 and then failed the whole book at the
@@ -455,7 +556,11 @@ holds the event loop open and vitest will never exit.
   final, and a paid fast-tier book failed at 62% with a fallback writer configured that runs a
   different filter: `isProviderContentFilterError` (`adapters/retry.ts`) makes that a fallback.
   Research notes reach the writer as "title: summary" and a search hit's title is often its bare
-  domain, so the writers are told never to name a website, domain or URL in prose.
+  domain, so the writers are told never to name a website, domain or URL in prose. Since 2026-10-16
+  the read runs on no tier by default: with its cuts it changed 0.75% of a Balanced book's
+  words, under the owner's 5–10% bar for keeping a stage (→ apps/worker/src/generation/CLAUDE.md,
+  "The manuscript read and its cuts run on no tier by default"). The compile's coverage read
+  shares the `read-manuscript` purpose and is not this read.
 - **Every chapter's research is its own, and the writer never says where a fact came from.**
   `expandChapterResearch` used to cap the query list and then the flattened result list at the same
   number, so a 15-chapter book searched 12 chapters and kept 12 sources — all from chapter 1's query —
@@ -470,12 +575,34 @@ holds the event loop open and vitest will never exit.
   composed-7's plan the inputs fix and the plan-level assignments below moved six replicates to
   7.20–7.60 (mean 7.45) from 7.17–7.43 at the same cost. Section counts are *assigned* per chapter
   (`assignedSectionCount`, walking the range) because the planner asked to vary them returned four or
-  five everywhere; `compositionShapeIssues` are advisory to the repair call only, since
-  `settleFormVariety` cannot change a count. Composed pages fail only the two integrity rules in the
+  five everywhere; `compositionShapeIssues` are advisory only (the repair call they fed was removed 2026-10-16), since `settleFormVariety` cannot change a count. Composed pages fail only the two integrity rules in the
   finalize review (`composedPageQualityReport`): a page is where the typesetter cut, and the dash rule
   was rewriting one cut per book in isolation. The prompt's stable block comes first and OpenAI calls
   carry a `prompt_cache_key`, correct for a prefix-caching provider; the gateway behind
   `gpt-5.6-luna` caches whole prompts only (measured), so no saving is claimed.
+- **A sourced chapter's research notes are its leads' answers, and only a chapter without lead
+  notes makes a chapter-research search.** H3b, 2026-10-16 (`.scratch/harness-redesign-2026-10-15/staging/H3b/`).
+  A sourced composed book paid two grounded fan-outs per chapter: `expandChapterResearch`'s
+  `chapter-research`, whose answer became the writer's brief and mostly missed the chapter's planned
+  cases, and one `case-source-search` per dossier lead, whose answer was paid for and thrown away.
+  On a book whose strategy expands research (`researchDepth`), `leadResearch.ts` keeps each lead's
+  answer as that chapter's research: one URL-less "Research brief" row per lead, its text opened by
+  the lead's title (the case, never a source) and stripped of every web address (the lead prompt
+  asks for document URLs and half its answers print them), beside the sources it cited, all under
+  `<chapter title>: <lead query>` so `loadResearchNotesForGeneration` ranks them as the chapter's
+  own. The expansion then owes only `researchScopeBeyondLeads`: the chapters no lead answered for
+  (5 of the 1,311 chapters of the 144 sourced books in the 45 days before had no planned leads, and
+  a chapter given the stand-in episode counts as having none), and each plan research query that
+  does not fold into a covered chapter (`researchQueriesByChapter`: three content words shared with
+  its title and summary; a Balanced planner restated all eight of its chapters). The lead prompt is
+  unchanged, so the dossier is too. Replayed on H3's four stored books (31 chapters, one draw):
+  grounded prompts 117 → 76 (a 60-page Balanced book 41 → 27), primary documents 86 against 73/78
+  for two draws of the old path, excerpts kept 150 against 169/157, no chapter without excerpts, and
+  blind Opus readers preferred the writer's notes 30/1/0 over the old ones. The leak rules stand
+  unchanged: the brief is handed over untitled, its opening names the case, and a truncated answer
+  keeps its sources and drops its text. A book on the plain composed strategy (no `researchDepth`,
+  56 of those 144) never expanded research and records no lead notes. The wiring is in
+  `apps/worker/src/generation/CLAUDE.md`.
 - **A quality gate names the pipelines it reaches, and the console shows a checkbox beside the
   books it changes.** Every `QUALITY_FEATURES` entry carries `pipelines` (`planning`, `per-page`,
   `composed`) and a `stage`; `pipelineStages.ts` lists each pipeline's stages with the provider
@@ -484,7 +611,20 @@ holds the event loop open and vitest will never exit.
   the console groups the rows by pipeline instead of listing them per tier alone — a row toggled
   for a pipeline a tier's books never take used to change nothing and say nothing.
   `pipelineStages.test.ts` holds the two lists to each other: a gate that names a pipeline appears
-  in one of that pipeline's stages, and a stage's gate names that pipeline.
+  in one of that pipeline's stages, and a stage's gate names that pipeline. **A gate measured off on
+  every tier is `shelved`, not offered per tier, and a gate with no reader is deleted, not
+  retired.** Five are shelved (2026-10-16): `chapterFocus`, `bookDevelopment`, `caseEvidence`,
+  `developmentalEdit` and `changedCandidateGrounding` (which rechecks a reader's chat page rewrite
+  only), each `[]` in the compiled defaults and in revision 73. The console lists them in a group of their own with no
+  tier boxes. `qualityFeatureEnabled` still reads a stored tier list for them, because a revision is
+  how an experiment opts one in (`scripts/dev-set-quality.ts`), and the row shows any it finds.
+  `chapterEditorPass` is the one gate retired rather than deleted (2026-10-16): its stage was
+  removed by a measurement, every stored revision still lists it, and its row in the console's
+  Removed group (`retired: true`, no tier boxes) says when and why, so that key reads as a decision
+  rather than a lost switch. `coupletRewrite` (2026-09-06) and `planCritic`, `bestOfPolish`, `formPlanRepair` and `proseArithmeticCheck` (the E4 review audit, 2026-10-16, with their code), and `pageMapCritic` (measured, with its code), `beatDedup` (no reader: the collision rewrite is mandatory integrity), `claimVerifier` and `claimRetrieve` (shelved, their only reader the per-page review chain) (E5, the same day) were deleted from the table; a stored revision
+  still carrying it parses (unknown ids are ignored), and the API neither serves it nor writes it
+  into the next revision (`REMOVED_QUALITY_FEATURE_IDS`), because served as an unknown id the
+  console would draw it as a newer server's gate.
 - **A figure is a fenced block the compose call alone is shown, every later pass reads around, and
   the exporters draw.** A bar, line or pie chart, or a flow diagram of a procedure, travels through
   the manuscript as a ```` ```figure ```` block holding one line of JSON (`figures/figureSpec.ts`),
@@ -531,8 +671,7 @@ holds the event loop open and vitest will never exit.
   deterministic rule that reads a page (`pagesLocalQa.ts` reads the figure-free body throughout,
   the final page's ending included; `readerChapters.ts` strips the figure fence and only the figure
   fence, since a code listing is page text).   A per-page draft carries no figure and no stand-in
-  from the moment it is parsed — `figureFreeDraft` in `generatePageDraft`, `polishPageDraft`,
-  `revisePageDraft` and the tools writer — because only the compose call is ever shown the syntax
+  from the moment it is parsed — `figureFreeDraft` in `generatePageDraft`, `revisePageDraft` and the tools writer — because only the compose call is ever shown the syntax
   and a strip at the end of a path leaves every review and revision between reading the invention;
   `RevisePageOptions.figures: "keep"` is the chat rewrite whose request names
   the figure, and `figures: "hold"` is the holdFiguresAside path (unnamed chat rewrite, final-QA
@@ -540,7 +679,13 @@ holds the event loop open and vitest will never exit.
   see the stand-in. Absent, `revisePageDraft` still returns `figureFreeDraft`. And *names* is `mentionsFigure` (`figures/figureMentions.ts`), biased toward precision because a miss keeps the
   block aside and puts it back unchanged (the chat can re-ask) while a false hit hands the model the
   JSON and lets it change or drop a figure nobody asked about. The free exact-replacement walk copies
-  fences byte for byte. A word that names a chart and nothing
+  fences byte for byte. **The Quick Draft compile screen reads the blocks as stored, and its repair is
+  shown one only where a finding is about it** — a quote inside the block, or a target finding that
+  names the chart — and may then patch the JSON, the prose around it, or remove the block, never add
+  one; `checkQuickDraftFigurePatch` (`quickDraftRepairScope.ts`) refuses a block that no longer
+  parses, changes kind or carries a number found neither in the block nor in the page's prose, and
+  holds every other figure byte for byte (→ `apps/worker/src/handlers/CLAUDE.md`, "Quick Draft reads
+  its book once"). A word that names a chart and nothing
   else fires alone (chart, graph, diagram, flowchart, infographic, histogram, and the qualified chart
   vocabulary: axis labels, tick labels, legend entries, data series); "figure" and "graphic" fire
   only as the head of an artifact phrase — a determiner, then the end of the text or a sentence, or
@@ -578,9 +723,9 @@ holds the event loop open and vitest will never exit.
   compile. The SVG carries no `id` and no `<marker>` (two figures in one book, and
   `neutralizeRenderedReservedIds`), self-closes every empty element (`toXhtml` closes six tag names
   and no more), and inherits the embedded display face. No gate reads a figure: the local checks,
-  the manuscript audit, the review packs, the reader chapterisation, the degeneracy guard and the
-  compile's bounded chapter-transition review (`compileExportChapterReview.ts` in the worker) are
-  fence-blind at one seam each, and none was added — a rule that fires on a figure would be a rule
+  the manuscript audit, the reader chapterisation and the degeneracy guard (and, until 2026-10-16,
+  the review packs and the compile's chapter-transition review) are fence-blind at one seam each,
+  and none was added — a rule that fires on a figure would be a rule
   on shipped pages nobody replayed, and a figure cannot fire a chapter-coherence rule. The corpus
   fixture `figures` renders every kind.
 
@@ -661,18 +806,14 @@ holds the event loop open and vitest will never exit.
 
 ## Style contract routing
 
-- **Page prompts take local style rules; distribution rules reach manuscript review only.** Mixing
+- **Page prompts take local style rules; distribution rules reach no prompt.** Mixing
   manuscript-wide “ask the same questions throughout” lines into `antiAiRules` taught every page to
   perform the same analytical grid. `styleContract.localRules` (and `pagePromptBookStyle`) are what
-  page drafts, page review, and the context-pack Avoid line see. `distributionRules` (and
-  `manuscriptPromptStyleFields`) are what targeted manuscript structural review sees. After plan
-  time that helper reads stored `distributionRules` instead of re-running the repetitive-guidance
-  rewrite without the user prompt — otherwise a preserved parallel-structure line becomes the
-  chapter-scoped house rewrite. `mergePlanCriticPatch` drops `styleGuidanceRewrites` whose `from` is
-  a USER_PARALLEL_INTENT line when the user prompt matches; those replacements run before
-  `applyPlanStyleContract`, so a preserve on the original wording never fires if the critic already
-  replaced it. `critiquePlan` is told not to emit them when that intent is present; the critic stays
-  on. Required factuality and prompt-leak ids merge by identity; a
+  page drafts, page review, and the context-pack Avoid line see. `distributionRules` were what the
+  targeted manuscript structural review saw (`manuscriptPromptStyleFields`); that review was removed
+  on 2026-10-16 (its findings fixed nothing: `apps/worker/src/handlers/CLAUDE.md`, "A compile's
+  verdict"), so they are still classified and stored but no prompt reads them. Never move them into a
+  page prompt to give them a reader. The plan critic that could rewrite these lines after planning (`mergePlanCriticPatch`) was removed with its gate on 2026-10-16 (E4). Required factuality and prompt-leak ids merge by identity; a
   planner that already returned six anti-AI lines cannot suppress them. Page-local `antiAiRules` routinely differ from `localRules`; classified
   extras merge into the stored contract by id and do not drop planner `distributionRules`. A
   non-Latin anti-AI line whose ASCII slug is empty hashes `foldCharacterName` (the
@@ -690,6 +831,26 @@ holds the event loop open and vitest will never exit.
   evaluation of the distilled corpus is `pnpm anti-slop:replay` (never `storage/` or live books).
 
 ## Repetition gates and the evidence ledger
+
+- **A finding reaches the reader only as a measured type with a page and a quote its detector
+  matched; everything else is the console's, and a detector's precision is fixed at the detector.**
+  `readerFindings.ts` holds the admission list as data (`READER_FINDING_ADMISSIONS`: `PROMPT_LEAKAGE`,
+  `ARITHMETIC_ERRORS`, `BOOK_PRINTED_SHORT`, none allowed to block) and `buildManuscriptQualityReport`
+  grades from it alone (→ `apps/worker/src/handlers/CLAUDE.md`, "A reader is shown"). A quote is
+  evidence of where a detector looked, never that a claim is true — whole-book review's quoted
+  findings verified 36/36 on their pages and were real 5/12 — so admitting a model-backed type takes
+  a labelled measurement of it, not a quote. The labelled set (`.scratch/harness-redesign-2026-10-15/h6-labels/`)
+  also named false positives that the console and the repair pass read, each fixed where it fires
+  and pinned by a test built from the labelled example: the manuscript leak table dropped the bare
+  `chain of thought` idiom and quotes the span it matched (`promptLeakSpan`, carried back through
+  the orthographic fold); page QA's source-packet patterns take "supplied/provided" only as an
+  adjective — after a determiner or after the packet noun — never the verb ("the recording supplied
+  material", 8 of 17,865 stored pages); a ```` ```figure ```` block is not story-page artwork
+  (`markdownHasArtwork`); `REPEATED_PHRASE` skips a name or title (`isNameOrTitle`);
+  `CROSS_CHAPTER_CONCEPT_REPETITION` does not run on a story (`narrative`); and a model's "this page
+  has no dialogue" is dropped when the page prints attributed speech (`findingCounterevidence.ts`).
+  A new reader type is one entry with its measurement; a new detector meant for the reader states
+  the span it matched as `evidence`.
 
 - **A deterministic rule that can veto the model reviewer is measured against shipped pages before
   it ships, and one that fires on pages the reviewer approved is removed, not tuned.** Three such
@@ -709,12 +870,6 @@ holds the event loop open and vitest will never exit.
   `SENTENCE_OPENING_CADENCE`) count literal matches and were not in question. The replay is the
   standard for the next such rule: dump the pages of shipped books, run the rule, count hits on
   approved pages. `pnpm anti-slop:replay` covers the distilled fixtures, never live books.
-- **A local QA message names an earlier page only after the word `from`, because the final-QA
-  repair harvests every other `page N` as a page to redraft.** `runLocalFinalQa` prefixes
-  `Page N:` and `extractRepairPageIndexesFromText` (`apps/worker/src/generation/finalQaPageTargets.ts`)
-  collects every `page <digits>` in a message except a lone reference behind "from". Spelled
-  "repeats page 7", the page that *established* a title or beat is redrafted beside the page that
-  repeated it. The title rule and the near-verbatim rule both say `(from page N)`.
 - **An analytical page owns its evidence anchors; a shared one is repaired like a near-duplicate
   beat and never blocks.** `claim` and `evidenceAnchors` on `PageProductionBeat` make the evidence
   a page argues from a property of the assignment (`evidenceLedger.ts`), asked of every brief
@@ -775,8 +930,7 @@ holds the event loop open and vitest will never exit.
   `revisePlanningPackage`'s "Preserve or improve openingHook" line is unconditional — so an import's
   hook is a sentence a model invented from a premise field, having never seen page 1. Leaving it
   ungated was justified as "a repair's replacement page is generated prose", which holds for the
-  brief producers and fails for every prompt this contract feeds: `revisePageDraft` and
-  `polishPageDraft` rewrite the page they are handed, in place, and a reader's own "make page 1
+  brief producers and fails for every prompt this contract feeds: `revisePageDraft` rewrites the page it is handed, in place, and a reader's own "make page 1
   sharper" reaches `revisePageDraft` through `rewritePageForUserRequest`
   (`apps/worker/src/generation/textEditRewrite.ts`). Which page is the author's cannot be asked — `Page`
   has no provenance column, so `isAuthorManuscript` reads the *project's* mediaSettings and both
@@ -784,10 +938,7 @@ holds the event loop open and vitest will never exit.
   (`resolveStructuralEdit` accepts `anchorPageIndex: 0`, so a generated page can sit at global index
   1) and is right anyway: the hook that page would deliver is the invented one, and hook-without-ban
   is the worst of the four combinations — a page told to make its opening striking with none of the
-  rules that say what a striking opening is. Eight prompts say something about that page:
-  the three bulk writers (`generateWholeBookDraft`, `generateChapterDraft`, `generateBatchDraft`),
-  the single-page draft, `polishPageDraft`, `revisePageDraft`, `reviewPageDraft` and
-  `runFinalBookQa`. Spelled per prompt, the halves came apart four times running, each one a
+  rules that say what a striking opening is. Six prompts say something about that page (eight until the polish and the compile's whole-book QA, `runFinalBookQa`, were removed, 2026-10-16): the three bulk writers (`generateWholeBookDraft`, `generateChapterDraft`, `generateBatchDraft`), the single-page draft, `revisePageDraft` and `reviewPageDraft`. Spelled per prompt, the halves came apart four times running, each one a
   different mismatch between the set of prompts *stating* a rule and the set applying its gate: the
   ban fused to the hook sentence in the bulk writers, so a plan with no hook — every `MOCK_AI` run,
   `makeFallbackPlan` itself, every plan stored before the field, any run where the model omits the
@@ -799,8 +950,7 @@ holds the event loop open and vitest will never exit.
   explicitly instructed to rewrite the author's opening after a failure with some unrelated cause;
   and local QA excusing categories the writer prompt banned outright; and the hook half left
   ungated after all four, so an import's page 1 — the author's own first sentence — was handed
-  "deliver the plan's `openingHook` in the page's own prose" by the reviser, the polisher and the
-  reviewer, after any QA failure with an unrelated cause and on any reader-requested rewrite of
+  "deliver the plan's `openingHook` in the page's own prose" by the reviser, the polisher (since removed) and the reviewer, after any QA failure with an unrelated cause and on any reader-requested rewrite of
   that page. Every one of those is a rule
   and its gate answered in different places, so the three questions are answered once —
   `openingContractForRange` (`pagesShared.ts`): does this call reach global page 1, may page 1's
@@ -818,8 +968,7 @@ holds the event loop open and vitest will never exit.
   opening for being the wrong shape. And because the writers are told to deliver the hook "without
   echoing its wording", the reviewer's hook sentence has to say so outright — an unlabelled
   `openingHook` beside `pageBrief` reads as "the page must match this", so a page that transformed
-  the hook correctly could be rejected for not reproducing it. `runFinalBookQa` asks the same contract over the whole book and sends the opening
-  pages only when `statesOpeningQuality` says it may judge them.
+  the hook correctly could be rejected for not reproducing it. (`runFinalBookQa` asked the same contract over the whole book until it was removed; the compile's defect screen judges no opening.)
   **The deterministic twin is the same ban, gated on provenance alone.** `hasWeakFirstPageOpening`
   (`pagesLocalQa.ts`) fires on `pageIndex === 1` for every book the pipeline wrote, with no category
   exemption: `firstPageOpeningRule` grants the signposting categories exactly one concession — "you
@@ -840,9 +989,10 @@ holds the event loop open and vitest will never exit.
   stating it at all, which the "every site states it" assertion is what catches.
 - **The page *brief* producers gate the hook and not the ban, and that split is the one deliberate
   asymmetry.** `firstPageBriefFieldsForRange` (`pageBriefContract.ts`) is the single entry point all
-  five brief producers reach the contract through — the whole-book map, the per-chapter brief,
-  `repairPageBrief`, `critiquePageMap`, and the deterministic `fallbackPageBeatFromChapter`, which
-  takes only the condition because it writes no prompt and has no payload key to emit — and it reads
+  three brief producers reach the contract through — the whole-book map, the per-chapter brief and
+  the deterministic `fallbackPageBeatFromChapter`, which takes only the condition because it writes
+  no prompt and has no payload key to emit (the QA brief repair, `repairPageBrief`, was the fourth
+  until it went with the per-page review chain on 2026-10-16) — and it reads
   its hook off the very same `openingContractForRange`, so an import's page 1 is never *assigned*
   the hook its prompts are no longer told to *deliver*. Leaving that half raw was the last door:
   `synthesizeImportedBookPlan` sets no `openingHook`, a `book_replan` invents one, and a later
@@ -851,17 +1001,17 @@ holds the event loop open and vitest will never exit.
   whole contract exists to prevent, arriving through the brief instead of the instruction.
   `FIRST_PAGE_IDENTITY_RULE`, the brief side's opening *ban*, stays ungated on purpose: the
   exemption protects an author's own sentence from being rejected and rewritten, and a brief is a
-  production assignment for prose about to be generated — a repair's replacement page included — so
+  production assignment for prose about to be generated, so
   the ban over-applies to an import's page 1 without ever reaching a sentence the author wrote. The
   halves part company because their over-application costs different things: a ban costs a
   regenerated page some freedom it was never going to use, a hook costs the author their opening.
   Two things keep that from drifting back. `PageBriefBookScope` **is** `OpeningContractSource` — an
   alias, not a twin — so a producer whose options satisfy one satisfies the other by construction;
   and the raw `(openingHook, lastPageIndex)` form is module-private, so no producer can answer the
-  provenance question at its own call site. `critiquePageMap` was the one that did — the worker
-  handed it `plan.openingHook` as a string — and it now takes the book like the other four, with
-  `apps/worker/src/generation/bookState.ts` passing `input` and `plan` over whole and only
-  `mergePageMapCriticPatch`, which states no rule, still taking a plain `lastPageIndex`.
+  provenance question at its own call site. The page-map critic was the one that did — the worker
+  handed it `plan.openingHook` as a string — until it took the book like the others; it was removed
+  on 2026-10-16 (E5), and `mergePageMapCriticPatch`, which states no rule, still takes a plain
+  `lastPageIndex` for the beat-dedup rewrite's patches.
 
 ## Whole-set edit adherence
 
@@ -1001,32 +1151,19 @@ holds the event loop open and vitest will never exit.
 
 ## Best-of candidate sampling
 
-- **No best-of candidate samples hotter than the pass would have run at without candidates, and a
-  band too narrow for the ladder compresses the step rather than widening the band.**
-  `bestOfCandidateTemperatures(top, count)` (`bestOf.ts`) is the only place a candidate temperature
-  is computed, and its ladder **descends**: candidate 0 sits exactly on `top`, each later one a
-  `CANDIDATE_TEMPERATURE_STEP` below. `top` is what the pass runs at with no candidates at all —
-  the book's own `input.temperature` on the draft path, `polishPageTemperature(input)` on the
-  polish path, which is the `REWRITE_TEMPERATURE_CEILING` clamp `polishPageDraft` already applies
-  to itself. Climbing from a base is what this replaced, and both paths were wrong in opposite
-  directions once `firstPageCandidateCount` made best-of the default for page 1 of every
-  balanced-and-up book rather than an ultra-only operator opt-in. On the draft path the ladder had
-  no ceiling: at the default 0.8 page 1 was sampled at 0.8, 0.95 and **1.1**, and page 1 is the
-  style lock `loadStyleLockPages` pins into every later page's draft prompt *and* into the review
-  that scores it — so the hottest sample, if the judge liked it, became the voice the whole book
-  was written and audited against. On the polish path the clamp flattened it instead: every
-  candidate landed on exactly 0.65, so the extra call and its judge bought sampling noise rather
-  than a spread. Lowering the base to fit fixed that and opened the mirror hole — a floor at zero
-  widened the band *above* the book's own temperature, so a project created at 0.2 sampled at 0.0,
-  0.15 and 0.30 with nothing to catch it, since 0.30 is under the ceiling. Descending closes both
-  and pays twice over: a book that never best-ofs is byte-identical, because the top rung *is* the
-  candidate-free temperature and `draftPage` receives that very `baseOptions` object; and the
-  judge's fallback (`drafts[0]`) is the draft the book would have got anyway rather than the
-  coldest sample. A book that asked for `temperature: 0` has no band, so its candidates would be
-  copies and the judge would be choosing between duplicates — `generateBestOfPageDrafts` refuses
-  that spend outright and makes one untouched call. A non-finite temperature reaches the same
-  guard and reads as that book, so an input that skipped the schema's `.default(0.8)` silently
-  loses best-of rather than failing.
+- **A page is drafted once: no tier samples best-of candidates or asks a judge to pick one, since
+  2026-10-16.** Best-of was page 1 of every per-page book on Balanced (2 candidates) and Premium
+  and Ultra (3), and every polished page on Ultra (`bestOfPolish`). The E4 review audit
+  (`.scratch/eval-data/reports/e4-review-audit.md`) put every recorded `judge-page-drafts` call
+  since 2026-09-01 — 19 page-1 judgements, Balanced and Premium — in front of blind Opus readers as
+  the judge's pick against candidate 0, the draft the pass makes without candidates: 5 wins, 8 ties
+  (7 of them the judge picking candidate 0), 6 losses, a decided share of 45% [21–72]. Under the
+  owner's rule (Parsa, 2026-10-16: a review, edit or critic that improves books by 5–10% or not at
+  all is removed, Premium and Ultra included) `bestOf.ts`, the judge, the temperature ladder and the
+  `bestOfPolish` gate were deleted (`REMOVED_QUALITY_FEATURE_IDS`). `mediaSettings.draftCandidates`
+  is accepted and no longer read by generation. The polish the Ultra gate sampled was removed in the
+  same audit (polish lost to the unpolished draft, 1 win / 1 tie / 6 losses), so nothing rewrites a
+  drafted page before its checks.
 
 ## Covers
 
@@ -1282,8 +1419,9 @@ holds the event loop open and vitest will never exit.
   `withRenderPage`). It holds a `Promise<Browser>`, not a `Browser`, and clears it on `disconnected`
   *and* on launch rejection under a **generation counter**, so a stale event cannot evict a newer
   browser. The semaphore is **2**, deliberately below worker concurrency
-  (the two job lanes summed, `workerLaneConcurrency` in `jobLanes.ts`; compiles run in both) —
-  four large books in one Chromium is an OOM that takes all four down.
+  (the four job lanes summed, `workerLaneConcurrency` in `jobLanes.ts`; book compiles run in the
+  compile and interactive lanes, cover typesetting in the image lane too) — four large books in
+  one Chromium is an OOM that takes all four down.
   Recycling after 50 renders **retires** the browser rather than closing it: it stops handing out
   pages and closes once its own last page comes back. Closing inline is only possible when no other
   render is in flight, and with the semaphore at 2 a busy worker always has one — so a close-now rule
@@ -1700,7 +1838,7 @@ again before deleting. Cleanup is single-flight; shutdown stops it before closin
 - **A prompt field present in every chapter is a template whatever it says, and withholding the
   thesis from a prompt is not withholding it from the prose.** Arm 1 of the "proposal-first"
   paradigm (`bookArc.ts`, `seams.ts`, `manuscriptRead.ts`, `cutChapterTail`; worker flags
-  `BOOK_ARC`, `SEAMS_TOGETHER`, `READ_SECOND_EDITS` in `composedChaptersState.ts`, all off) gave
+  `BOOK_ARC` and `SEAMS_TOGETHER` in `composedExperiments.ts`, both off) gave
   every chapter a kind, a job, a page count and — at first — a `dispute`; nine blind readers found
   a new move in every chapter of every book ("two named scholars, each partly right, their
   disagreement improves the question"), so the dispute reaches `argument` chapters only. With

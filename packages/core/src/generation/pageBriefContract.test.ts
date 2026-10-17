@@ -9,9 +9,9 @@ import {
 } from "./pageBriefContract.js";
 
 /**
- * The contract's own vocabulary, asserted without a model in the room. The five
- * producers that state it are covered where they live — the four in
- * pagesPageMap.test.ts, the critic in pageMapCritic.test.ts — and every one of
+ * The contract's own vocabulary, asserted without a model in the room. The
+ * producers that state it are covered where they live — pagesPageMap.test.ts,
+ * and the merge's substitution in pageMapCritic.test.ts — and every one of
  * those asserts the sentence that reached a prompt. These pin the thing they all
  * read: which contract a page is written under, and the rules-plus-payload pair
  * that has to travel together.

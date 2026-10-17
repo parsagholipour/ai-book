@@ -2,7 +2,7 @@ import type { BookGenerationStrategy, BookPlan, CreateProjectInput } from "@book
 import { prisma } from "@book-maker/db";
 import { dispatchWorkerGenerationJob } from "../runtime/dispatch.js";
 import { currentGenerationAttemptId } from "../runtime/generationAttemptContext.js";
-import { pageIllustrationKeeperToken } from "./pageIllustrationOwnership.js";
+import { pageIllustrationJobDedupeKey, pageIllustrationKeeperToken } from "./pageIllustrationOwnership.js";
 import { pageIllustrationVisualContract, reusablePageIllustration } from "./pageIllustrationVisualContract.js";
 
 export type FinalizationIllustrationsResult =
@@ -51,7 +51,9 @@ export async function enqueueFinalizationIllustrations(options: {
       const visualContract = pageIllustrationVisualContract({ prompt: page.imagePrompt, input: options.input, plan: options.plan, referenceAssets });
       if (reusablePageIllustration(page.images, keeper, visualContract)) continue;
       const keeperToken = pageIllustrationKeeperToken(keeper);
-      const baseKey = `generate-image:${page.id}:${options.planId}:${page.revision}:${keeperToken}`;
+      // The same key the draft-time enqueue and page publication use, so a picture
+      // already queued for this unchanged keeper is found here rather than redrawn.
+      const baseKey = pageIllustrationJobDedupeKey({ pageId: page.id, planId: options.planId, revision: page.revision, keeperToken });
       const dedupeKey = attemptId ? `${baseKey}:attempt:${attemptId}` : baseKey;
       const job = await tx.generationJob.upsert({
         where: { dedupeKey }, update: {},

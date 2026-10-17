@@ -6,10 +6,8 @@ import {
   generateImageBytes,
   generatePageDraft,
   generateWholeBookDraft,
-  repairPageBrief,
   reviewPageDraft,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage
 } from "../pages.js";
 import { WHOLE_BOOK_SINGLE_PASS_STRATEGY_ID } from "./ids.js";
@@ -27,9 +25,7 @@ export const wholeBookSinglePassStrategy = Object.freeze({
   generatePageDraft,
   generateWholeBookDraft,
   reviewPageDraft,
-  repairPageBrief,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage,
   generateImageBytes,
   compileMarkdown: compileBookMarkdown,

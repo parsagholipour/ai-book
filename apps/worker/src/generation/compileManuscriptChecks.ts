@@ -12,6 +12,8 @@ export function runCompileManuscriptChecks(options: {
   language?: string;
   /** Imported or Studio-written: content integrity only (`runDeterministicManuscriptChecks`). */
   authorManuscript: boolean;
+  /** A story: no cross-chapter concept-repetition sweep (`runDeterministicManuscriptChecks`' `narrative`). */
+  narrative?: boolean;
 }): ManuscriptQualityIssue[] {
   return runDeterministicManuscriptChecks({
     pages: options.pages.map(({ index, title, markdown, chapter }) => ({
@@ -22,6 +24,7 @@ export function runCompileManuscriptChecks(options: {
     })),
     expectedPageCount: options.expectedPageCount,
     ...(options.language ? { language: options.language } : {}),
-    ...(options.authorManuscript ? { authorManuscript: true } : {})
+    ...(options.authorManuscript ? { authorManuscript: true } : {}),
+    ...(options.narrative ? { narrative: true } : {})
   });
 }

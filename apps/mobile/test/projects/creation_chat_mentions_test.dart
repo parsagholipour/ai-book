@@ -170,9 +170,9 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('typing without an @ never fetches the library', (tester) async {
-    // Every keystroke resolves mentions; a bare read of the autoDispose
-    // library used to fetch it each time — one request per character typed.
+  testWidgets('typing shows saved characters and fetches the library once', (
+    tester,
+  ) async {
     final creation = MentionRecordingRepository();
     final characters = FakeCharactersRepository([
       libraryCharacter(id: 'lib-luna', name: 'Luna'),
@@ -181,14 +181,28 @@ void main() {
       mentionApp(creation: creation, characters: characters),
     );
     await tester.pumpAndSettle();
+    expect(characters.listCalls, 0);
 
     final field = find.byType(TextField).first;
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    final strip = find.byKey(const ValueKey('mention-suggestion-strip'));
+    expect(strip, findsOneWidget);
+    expect(
+      find.descendant(of: strip, matching: find.text('Luna')),
+      findsOneWidget,
+    );
     for (final text in ['A', 'A b', 'A book', 'A book about Luna']) {
       await tester.enterText(field, text);
       await tester.pump();
+      expect(strip, findsOneWidget);
     }
     await tester.pumpAndSettle();
-    expect(characters.listCalls, 0);
+    expect(characters.listCalls, 1);
+
+    tester.widget<TextField>(field).focusNode!.unfocus();
+    await tester.pumpAndSettle();
+    expect(strip, findsNothing);
 
     await tester.enterText(field, 'A book about @Lu');
     await tester.pumpAndSettle();
@@ -198,6 +212,135 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets('a picked character stays available for repeated mentions', (
+    tester,
+  ) async {
+    final creation = MentionRecordingRepository();
+    await tester.pumpWidget(
+      mentionApp(
+        creation: creation,
+        characters: FakeCharactersRepository([
+          libraryCharacter(id: 'lib-luna', name: 'Luna'),
+          libraryCharacter(id: 'lib-rabbit', name: 'Rabbit'),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final field = find.byType(TextField).first;
+    final strip = find.byKey(const ValueKey('mention-suggestion-strip'));
+    await tester.enterText(field, 'A story about @Ra');
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: strip, matching: find.text('Rabbit')));
+    await tester.pumpAndSettle();
+
+    final composer = tester.widget<TextField>(field);
+    expect(composer.controller!.text, 'A story about @Rabbit ');
+    expect(composer.focusNode!.hasFocus, isTrue);
+    expect(
+      find.descendant(of: strip, matching: find.text('Rabbit')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: strip, matching: find.text('Luna')),
+      findsOneWidget,
+    );
+    expect(find.text('Create a character'), findsNothing);
+
+    await tester.tap(find.descendant(of: strip, matching: find.text('Rabbit')));
+    await tester.pumpAndSettle();
+    expect(composer.controller!.text, 'A story about @Rabbit @Rabbit ');
+
+    await tester.tap(find.descendant(of: strip, matching: find.text('Luna')));
+    await tester.pumpAndSettle();
+    expect(composer.controller!.text, 'A story about @Rabbit @Rabbit @Luna ');
+    expect(strip, findsOneWidget);
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+    expect(creation.startedMentions.single, ['lib-rabbit', 'lib-luna']);
+    await tester.teardownScreen();
+  });
+
+  testWidgets(
+    'a single saved character stays available when inserted at the caret',
+    (tester) async {
+      await tester.pumpWidget(
+        mentionApp(
+          creation: MentionRecordingRepository(),
+          characters: FakeCharactersRepository([
+            libraryCharacter(id: 'lib-rabbit', name: 'Rabbit'),
+          ]),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byType(TextField).first;
+      final strip = find.byKey(const ValueKey('mention-suggestion-strip'));
+      await tester.enterText(field, 'About adventures');
+      final composer = tester.widget<TextField>(field);
+      composer.controller!.selection = const TextSelection.collapsed(offset: 6);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(of: strip, matching: find.text('Rabbit')),
+      );
+      await tester.pumpAndSettle();
+      expect(composer.controller!.text, 'About @Rabbit adventures');
+      expect(composer.controller!.selection.baseOffset, 14);
+      expect(strip, findsOneWidget);
+      final attached = find.byType(MentionChipsRow);
+      expect(
+        find.descendant(of: attached, matching: find.text('Rabbit')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(of: strip, matching: find.text('Rabbit')),
+      );
+      await tester.pumpAndSettle();
+      expect(composer.controller!.text, 'About @Rabbit @Rabbit adventures');
+
+      await tester.enterText(field, 'About @Rabbit adventures');
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: attached, matching: find.text('Rabbit')),
+        findsOneWidget,
+      );
+
+      await tester.enterText(field, 'About adventures');
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: attached, matching: find.text('Rabbit')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: strip, matching: find.text('Rabbit')),
+        findsOneWidget,
+      );
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets(
+    'an empty library only offers character creation for an explicit @',
+    (tester) async {
+      await tester.pumpWidget(
+        mentionApp(
+          creation: MentionRecordingRepository(),
+          characters: FakeCharactersRepository(const []),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = find.byType(TextField).first;
+      final strip = find.byKey(const ValueKey('mention-suggestion-strip'));
+      await tester.enterText(field, 'A story');
+      await tester.pumpAndSettle();
+      expect(strip, findsNothing);
+      await tester.enterText(field, 'A story about @');
+      await tester.pumpAndSettle();
+      expect(find.text('Create a character'), findsOneWidget);
+      await tester.teardownScreen();
+    },
+  );
 
   testWidgets('a name that is only part of a longer word is not a mention', (
     tester,

@@ -30,7 +30,8 @@ export const jobNames = {
   CONTINUE_BOOK: "continue-book",
   GENERATE_AUDIOBOOK: "generate-audiobook",
   GENERATE_CHARACTER_PORTRAIT: "generate-character-portrait",
-  WRITING_ASSIST: "writing-assist"
+  WRITING_ASSIST: "writing-assist",
+  PREPARE_COMPOSITION: "prepare-composition"
 } as const;
 
 export type GenerationJobType = keyof typeof jobNames;

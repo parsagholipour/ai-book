@@ -216,8 +216,8 @@ Terraform uses a **t3.medium (4 GiB RAM)** with a **2 GiB swapfile** and a **30 
 gp3 disk**. Every container's share of that memory, and the order the kernel kills
 them in if it still runs out, is in [Memory budget and swap](#memory-budget-and-swap);
 what moving from the earlier t3.small does to the running server is in
-[Changing the instance type](#changing-the-instance-type). Worker concurrency still
-defaults to one job. The OCR model container is not included on this host: it has
+[Changing the instance type](#changing-the-instance-type). The worker writes thirty
+books' text and typesets three books at once ([Job lanes](#job-lanes)). The OCR model container is not included on this host: it has
 no room in the memory budget. Set `GEMINI_API_KEY` in `PRODUCTION_ENV` to read scanned
 PDF pages and images using Google when no local OCR service is configured. If you
 also set `SOURCE_OCR_URL` to a private PaddleOCR service, the worker tries it first
@@ -470,7 +470,7 @@ either has a ceiling or is protected, and the order the kernel kills in is fixed
 
 | Service | Ceiling | Node heap | Own swap | `oom_score_adj` | Planned use |
 | --- | --- | --- | --- | --- | --- |
-| worker | 2 GiB (`mem_limit`) | 768 MiB | none | **+500** | ~0.3 GiB idle, 1–1.5 GiB in a large illustrated compile |
+| worker | 2 GiB (`mem_limit`) | 768 MiB | none | **+500** | ~0.3 GiB idle, 1–1.5 GiB in a large illustrated compile, ~0.2 GiB more with four pictures beside it, ~0.35 GiB more with thirty books' text runs (measured on dev, 2026-10-17) |
 | api | 1 GiB (`mem_limit`) | 512 MiB | none | 0 | ~0.3 GiB |
 | postgres | none | | host swap | **−900** | 0.3–0.6 GiB |
 | redis | `maxmemory 256mb` | | host swap | **−900** | far under 0.1 GiB at launch |
@@ -529,7 +529,7 @@ databases may get slower, never killed.
 - **OOM order if the whole host still runs out:** the worker (+500: a killed job is
   picked up again; a killed PostgreSQL backend resets every connection), then the
   API, then the small processes, and PostgreSQL and Redis last.
-- **Both job lanes run inside the worker container and share its 2 GiB** (see
+- **All four job lanes run inside the worker container and share its 2 GiB** (see
   [Job lanes](#job-lanes)). A second worker *container* is a new row in this table
   and a new sum, not a copy of the worker service.
 
@@ -567,49 +567,156 @@ after a large illustrated compile.
 
 ### Job lanes
 
-The worker consumes two BullMQ queues with one `Worker` each, in one process
+The worker consumes five BullMQ queues with one `Worker` each, in one process
 (`packages/core/src/jobLanes.ts`, `apps/worker/src/runtime/laneWorkers.ts`):
 
-- **`book-maker`, the long lane** — a book run (composed books are one 9–93 minute
-  job), its pages and pictures, the compile that ends a generation, narration and
-  imports. It keeps the original queue's name, so jobs an older release left in
-  Redis are still consumed after a deploy. Work that continues a book already
-  started runs before any new book starts, so a waiting book's place in line is
-  real; the app shows it as "Waiting in line — N books ahead of yours".
+- **`book-maker`, the long lane** — a book's text: its run (composed books are one
+  4–90 minute job), its pages, narration, imports and continuations, thirty at once. It keeps the
+  original queue's name, so jobs an older release left in Redis are still consumed
+  after a deploy. Work that continues a book already started runs before any new
+  book starts, so a waiting book's place in line is real; the app shows it as
+  "Waiting in line — N books ahead of yours".
+- **`book-maker-images`** — a generation's pictures and its cover, drawn beside
+  its text. Until 2026-10-15 they were long-lane work, so in production (long lane
+  at one) a book's pictures could not start until its text job let go of the
+  lane, then drew one at a time at 7–10 s each — two minutes for a twelve-picture
+  book — and another reader's book waited behind all of it.
+- **`book-maker-compile`** — the compile that ends a generation, three at a time. It
+  left the long lane with the pictures: once they draw elsewhere, the long lane
+  goes idle while a book's last pictures land and the next book's run takes it,
+  so a compile queued there by the last picture waited behind that whole run.
+  Here it waits only for another book's compile, and the next book's text is
+  written beside it.
 - **`book-maker-interactive`** — plans, chat edits, Writing Studio assists,
-  portraits, character personas, and compiles of a book that already exists (edit
-  recompiles, reprints, export repairs, Studio publishes). A chat edit that rewrites
-  more than 40 pages (`LONG_LANE_EDIT_PAGE_THRESHOLD`) is a book's worth of model
-  calls and waits in the long lane instead, as a start.
+  portraits, character personas, a revision's cover, and compiles of a book that
+  already exists (edit recompiles, reprints, export repairs, Studio publishes). A
+  chat edit that rewrites more than 40 pages (`LONG_LANE_EDIT_PAGE_THRESHOLD`) is
+  a book's worth of model calls and waits in the long lane instead, as a start.
+- **`book-maker-background`** — work nobody is waiting on that is not book work
+  either: the composition prep a composed book's plan queues while its reader
+  reads it (stance, brief inventory, episodes, form plan; about 90 s of provider
+  calls, unbilled). Until 2026-10-17 it waited in the interactive lane, one at a
+  time per process so a burst of plans could not hold both reader slots — about
+  40 plans an hour, and in a smoke round of three plans landing within a minute
+  the third prep never started before its book did. Four at once handle about 160
+  an hour, and none of them holds a slot a reader's plan or edit waits for. When
+  the lane is down every book still starts and plans those steps itself, a minute
+  or so slower to its first chapter, so it is an operator alert and not an
+  `/api/ready` check (below).
 
 | Setting | Production | Unset |
 | --- | --- | --- |
-| `WORKER_LONG_CONCURRENCY` | 1 | `max(MAX_PARALLEL_PAGE_JOBS, MAX_PARALLEL_IMAGE_JOBS)`, the single queue's old concurrency |
+| `WORKER_LONG_CONCURRENCY` | 30 | `MAX_PARALLEL_PAGE_JOBS` |
+| `WORKER_IMAGE_CONCURRENCY` | 4 | `MAX_PARALLEL_IMAGE_JOBS` |
+| `WORKER_COMPILE_CONCURRENCY` | 3 | 1 |
 | `WORKER_INTERACTIVE_CONCURRENCY` | 2 | 2 |
+| `WORKER_BACKGROUND_CONCURRENCY` | 4 | 4 |
 
-One long job and two interactive ones fit the 2 GiB because what they share is
-bounded separately: Chromium never runs more than two renderers whatever the lane
-count (`RENDER_CONCURRENCY` in `browserPool.ts`), and interactive jobs are a planner
-call, a handful of pages or one picture, tens of MiB of heap against the long job's
-manuscript. A second long job would double the largest working set and the
-provider spend running at once; measure a large illustrated compile with the
-**Measuring it** steps above before raising it. `MAX_PARALLEL_PAGE_JOBS` and
-`MAX_PARALLEL_IMAGE_JOBS` still size a book's page and picture waves; with the long
-lane at 1 those waves queue rather than run together, as they did before the lanes.
+`MAX_PARALLEL_PAGE_JOBS` still sizes a non-fiction book's page wave (a story's pages
+are drafted one after another whatever it says); `MAX_PARALLEL_IMAGE_JOBS` sizes
+the image lane only where `WORKER_IMAGE_CONCURRENCY` is unset, which in production
+it never is — a `MAX_PARALLEL_IMAGE_JOBS=1` left in `PRODUCTION_ENV` changes
+nothing. Page jobs stay in the long lane on purpose: a book's own pages gain
+nothing from a lane of their own, and the next book's text would start beside
+them.
 
-One account holds at most one book's long work at a time on the free tier and three
-on a plan (`apps/api/src/mobile/booksInProgress.ts`, 429 `BOOKS_IN_PROGRESS_LIMIT`).
+**Why this fits the 2 GiB.** What the lanes share is bounded separately from the
+lanes. Chromium never runs more than two renderers whatever the lane count
+(`RENDER_CONCURRENCY` in `browserPool.ts`), and it is most of a large compile's
+1–1.5 GiB. The compiles that typeset whole books are the compile lane's one and
+the interactive lane's two — at most three at once, as when the long lane held the
+generation's compile. What is new beside them is cheap: the next book's run (model
+calls over a manuscript held in memory, tens of MB) and four pictures. A picture is
+the provider's reply (a 1–3 MB image and its base64 string), the reference sheets
+read for the request (a few hundred KB each, base64-encoded), one sharp decode of
+the reply (about 6 MB of pixels off the heap, released after the re-encode), the
+~300 KB JPEG it stores and one S3 put: well under 25 MB each, about 0.1 GiB for
+four, and most of their time is spent waiting on the provider. A generation's
+cover also typesets its title in Chromium, so it waits for one of the same two
+render permits. The background lane's four preps add less than the pictures: a
+plan held as JSON (tens to hundreds of KB), the prompts and replies of a few model
+calls, and nothing rendered — well under 0.1 GiB for four. The estimate is not a
+production measurement: read `memory.peak`
+(**Measuring it** above) after the first illustrated books run with the pictures
+in parallel, and lower `WORKER_IMAGE_CONCURRENCY` before raising `mem_limit`. Two
+other limits sit closer than memory: the worker's database pool is ten
+connections for twelve concurrent jobs, and four picture calls at once is four
+requests at the image provider (one it rate-limits fails over to the other
+provider). The pool holds because a job takes a connection only for each query or
+short transaction, never for a provider call, and a prep's writes are a handful
+of compare-and-set updates over its 90 s; four preps are also up to eight text
+calls at once, since each runs its stance and inventory side by side. Raising the
+interactive lane instead was the alternative: it holds the compiles that
+re-typeset a whole book, so every slot added there is another possible
+whole-book compile against the 2 GiB, and the preps would still hold slots a
+reader's edit waits for.
+
+**Thirty book runs and three compiles, measured.** Until 2026-10-17 the long lane ran
+one book at a time, so every reader waited for every book ahead of theirs: a third
+reader behind two novels waited ten minutes before their own started. A book run is
+model calls over a manuscript held in memory, so on the dev stack thirty real books
+were started at once (twenty 30-page novels and ten 60-page non-fiction books, Quick
+Draft and Balanced; `.scratch/concurrency/`). The worker's heap peaked at 243 MB
+(125 MB idle, against the 768 MiB flag), its resident memory at 684 MB, and its event
+loop was busy 26% of the time on average. Nothing failed: no pool timeout on the
+ten connections, no provider rate limit, no job error. Writing was no slower than
+alone, because the text provider was not: compose calls ran at a median of 31.5 s
+against 29.8 s over the three days before (p90 43 s against 46 s), and the books took
+4.6–4.9 minutes (novels) and 8 minutes (non-fiction, whose web searches failed on an
+empty Gemini account and so ran without them). The queue then moved to the compile
+lane: a generation compile is mostly the defect screen's model call (36 s of an
+average 45; the render is about 5), so thirty compiles at one would take about 16 minutes,
+while at three, 27 of them drained in 6.9 minutes and the container peaked at
+1.16 GiB. Chromium renders two books at most however many compiles run
+(`RENDER_CONCURRENCY`), which is why a compile beside another adds a manuscript and
+not a renderer. The image lane stays at four: thirty picture books finishing
+together would queue about 150 pictures behind it (roughly six minutes), and the
+image provider's rate, not memory, is its next limit. **Still unmeasured**: an
+illustrated compile beside thirty runs; it is the worst combination the table
+above allows, about 1.85 GiB by the sum. Read `memory.peak` after the first busy
+day, and lower `WORKER_LONG_CONCURRENCY` before raising `mem_limit` if it nears the
+ceiling. A killed worker loses nothing: every job is reclaimed and resumes.
+
+One account holds at most one book in progress at a time on the free tier and three
+on a plan (`apps/api/src/mobile/booksInProgress.ts`, 429 `BOOKS_IN_PROGRESS_LIMIT`);
+a book whose pictures or compile are all it has left still counts.
 
 The worker's compose healthcheck (`scripts/worker-healthcheck.sh`) passes only while
-both lanes' heartbeat keys exist and were last written by that container, so a new
-worker is not reported healthy on the beat its drained predecessor left behind. It
+every lane's heartbeat key exists and was last written by that container, so a new
+worker is not reported healthy on the beat its drained predecessor left behind. The
+background lane is in it although `/api/ready` leaves it out: the healthcheck gates
+a deploy, and a release whose background `Worker` never starts is a broken one. It
 is bash over `/dev/tcp`, about 10 ms of CPU a run, where the Node check it replaced
-cost about 0.55 s every 15 s. **Rolling back to a release
-older than the lanes:** that release's worker consumes only `book-maker`, so jobs
-still waiting in `book-maker-interactive` would sit until its lost-delivery sweep
-fails and refunds them two hours later. Roll back only once that queue is empty —
-`LLEN bull:book-maker-interactive:wait` and `LLEN bull:book-maker-interactive:active`
-both 0 in `docker compose exec redis redis-cli` — or redeploy this release.
+cost about 0.55 s every 15 s.
+
+**Deploying the image and compile lanes.** A forward deploy needs nothing: the
+worker drains alone first (see [Release behavior](#release-behavior)), the new API
+and worker start together, and the new worker consumes every queue an older release
+added to. Pictures and compiles the old release left in `book-maker` run there, in
+a long-lane slot, one last time; a row a sweep re-pushes is held back while that
+copy is still live, so nothing runs twice. An older API beside a new worker is
+therefore safe too; the unsafe pair is the other one, an older worker beside a new
+API, which this deploy's order never runs.
+
+**Rolling back past the lanes.** A release older than the interactive lane
+consumes only `book-maker`; one older than the image and compile lanes consumes
+`book-maker` and `book-maker-interactive`; one older than the background lane
+consumes every queue but `book-maker-background`. Jobs waiting in a queue the older
+worker does not read sit until its lost-delivery sweep fails and refunds them two
+hours later. Roll back only once those queues are empty, or redeploy this release.
+`book-maker-background` is the exception: what waits there is a speculative,
+unbilled prep that the book run redoes itself, so it need not be empty.
+
+```bash
+for q in book-maker-interactive book-maker-images book-maker-compile book-maker-background; do
+  docker compose --env-file .env -f docker-compose.production.yml exec -T redis \
+    redis-cli eval "return {redis.call('LLEN', KEYS[1]..':wait'), redis.call('LLEN', KEYS[1]..':active'), redis.call('ZCARD', KEYS[1]..':delayed')}" 1 "bull:$q"
+done
+```
+
+All three numbers must be 0 for each queue the older release does not consume.
+Nothing will say so afterwards: an older release's API, readiness probe and
+healthcheck know only their own lanes.
 
 ## Changing the instance type
 
@@ -713,7 +820,7 @@ Three layers, from the outside in. Each sees something the other two cannot.
 | Layer | Watches | Reaches you through | Set up |
 | --- | --- | --- | --- |
 | An external uptime monitor | `https://tomeza.ravanix.app/api/ready` from the internet: DNS, TLS, Caddy, Nginx, the API and everything readiness checks, outgoing mail included | the monitor's own email or app | a free account ([below](#point-an-uptime-monitor-at-apiready)) |
-| The API's alert sweep | the application: PostgreSQL, Redis, S3, outgoing mail, both worker lanes, queue backlog, failed jobs, disk, AI spend, open child-safety reports | email to `OPERATOR_ALERT_EMAIL`, through `SMTP_URL` | `PRODUCTION_ENV`, then [send a test alert](#send-a-test-alert-after-every-deploy) |
+| The API's alert sweep | the application: PostgreSQL, Redis, S3, outgoing mail, every worker lane, queue backlog, failed jobs, disk, AI spend, open child-safety reports, a provider account out of credit or quota | email to `OPERATOR_ALERT_EMAIL`, through `SMTP_URL` | `PRODUCTION_ENV`, then [send a test alert](#send-a-test-alert-after-every-deploy) |
 | CloudWatch alarms (`monitoring.tf`) | the instance: an AWS host fault, a hung OS, CPU credits | SNS email to the `ALERT_EMAIL` repository variable | the variable, then confirm the subscription |
 
 The sweep runs inside the API, so when the API or the whole host is down it is silent — and when
@@ -738,8 +845,15 @@ mail itself is broken its emails cannot leave. That is what the other two are fo
 | `redis` | Redis is not connected, or `PING` takes over 3 s |
 | `storage` | an S3 `HeadBucket` on the assets bucket fails or takes over 3 s |
 | `mail` | the last SMTP check failed: the API connects and logs in to `SMTP_URL` (sending nothing) right after it starts and every 10 minutes, and caches the answer, so this check opens no connection itself. A test alert that fails counts too, and so does a reader's password-reset or verification code that cannot be sent (a refused *recipient* address does not count — that address came from a reader). A wrong password, host or port shows up here within 10 minutes of a deploy, while password-reset codes and every alert email are failing; the reason is in the API log as `email.verify_failed` |
-| `worker_long`, `worker_interactive` | that lane's heartbeat key has expired. The worker writes one per lane every 30 s with a 90 s TTL, from a timer on its own event loop, so a dead, crash-looping or wedged worker all stop beating. BullMQ's consumer list (what the compose healthcheck asked until 2026-10) cannot see a wedged one |
-| `queue_long`, `queue_interactive` | the oldest waiting (`QUEUED`) job in that lane has waited over **3 hours** (long) or **15 minutes** (interactive). A composed book is one job of up to ~93 minutes on a one-job lane, so 3 hours is about two maximum-length books ahead; interactive work takes seconds to minutes on two slots with a reader watching |
+| `worker_long`, `worker_interactive`, `worker_images`, `worker_compile` | that lane's heartbeat key has expired. The worker writes one per lane every 30 s with a 90 s TTL, from a timer on its own event loop, so a dead, crash-looping or wedged worker all stop beating. BullMQ's consumer list (what the compose healthcheck asked until 2026-10) cannot see a wedged one. A worker image older than the image and compile lanes beats on the first two only, so the other two fail (see [Job lanes](#job-lanes)) |
+| `queue_long`, `queue_interactive`, `queue_images`, `queue_compile` | the oldest waiting (`QUEUED`) job in that lane has waited over **3 hours** (long), **15 minutes** (interactive), **30 minutes** (images) or **1 hour** (compile). A composed book is one job of up to ~93 minutes on a one-job lane, so 3 hours is about two maximum-length books ahead; interactive work takes seconds to minutes on two slots with a reader watching; a picture takes seconds on four slots, and a generation compile minutes on one |
+
+The background lane is measured the same way — `worker_background` (its heartbeat) and
+`queue_background` (a prep waiting over **15 minutes**; a prep takes about 90 s on four slots and
+exits unrun once it is ten minutes old, so that is a lane nothing consumes) — but neither is in the
+body or decides `ok`. They reach you only as alert emails: while the lane is down every book still
+starts and plans the prep's steps itself, and readiness is binary, so a 503 there would report the
+deployment down over a minute's delay ([Job lanes](#job-lanes)).
 
 Right after a deploy `/api/ready` can answer 503 for a minute while the new worker writes its first
 heartbeat, so let a monitor confirm a failure before it alerts.
@@ -781,12 +895,14 @@ in `/opt/book-maker/current` as in [Operations](#operations).
 | Redis (the job queue) | `redis` fails 3 minutes running | `… logs --tail 100 redis`; `… exec redis redis-cli info memory` — at `maxmemory` Redis refuses every write ([Memory budget](#memory-budget-and-swap)) |
 | Object storage (S3) | `storage` fails 3 minutes running | the bucket error in `… logs --tail 100 api`; the instance role, the bucket and `S3_REGION`; AWS's health dashboard |
 | Worker, long lane / interactive lane | that lane's heartbeat missing 3 minutes running (so about 4–5 minutes after the worker stopped) | `… ps worker` (restarting? exit code?), `… logs --tail 200 worker`, `docker inspect --format '{{.State.OOMKilled}}' book-maker-worker-1`, `journalctl -k \| grep -i oom`. Both lanes at once is the process; one lane alone is that lane's BullMQ worker, whose error is in the log |
+| Worker, background lane / background lane backlog | `worker_background` or `queue_background` fails 3 minutes running. Not an `/api/ready` check: books still start while it fires, each planning the prep's steps itself, about a minute slower to its first chapter | the same as for the other lanes; for a backlog, the `ACTIVE` `PREPARE_COMPOSITION` rows (a hung prep) and the text provider's key and quota. Nothing waiting there is owed: a prep older than ten minutes exits unrun |
 | Long / interactive lane backlog | that lane's `queue_*` check fails 3 minutes running | the running jobs: `… exec -T postgres psql -U bookmaker -d bookmaker -c "SELECT id, type, \"startedAt\", message FROM \"GenerationJob\" WHERE status = 'ACTIVE' ORDER BY \"startedAt\""`. One running for hours is hung: restart the worker (its job is redelivered). Several legitimate long books is capacity — see [Job lanes](#job-lanes) before raising concurrency |
 | Free-account AI spend past the soft / hard daily cap | the [spend breaker](#spend-controls)'s free spend (free readers plus unattributed calls) reaches a cap; at most once per cap per UTC day | `/admin/spend`: today's top spenders (several new free accounts is a farm), then raise the cap or pause. Clears at 00:00 UTC or when the cap is raised |
 | Free-account AI spend past the monthly ceiling | the month's free spend reaches the ceiling; free accounts start no new AI work | `/admin/spend`: the month against the budget, then raise the ceiling or leave it until the 1st. Clears on the 1st or when it is raised |
 | Paid-plan AI spend past the paid daily cap | paying readers' spend today reaches the paid cap; paying readers start no new AI work | `/admin/spend`: today's top spenders (a stolen account or a stuck client), every provider's billing page, then raise the cap. Clears at 00:00 UTC or when it is raised |
 | Generation jobs failing | 5 or more jobs `FAILED` in the last hour, a reader's own Stop excluded | `SELECT type, error, "finishedAt" FROM "GenerationJob" WHERE status = 'FAILED' ORDER BY "finishedAt" DESC LIMIT 20`, then that book's run log ([storage.md](storage.md)); a provider key, its credit balance or its status page |
 | Low free disk on the host | under 15% free (or 10% of inodes) two minutes running; clears at 17% | `df -h /`, `docker system df`, then [Image retention and the disk guard](#image-retention-and-the-disk-guard). 15% of 30 GiB is just above the 4 GiB a deploy needs to pull, so this arrives before a deploy is refused |
+| *Provider* account out of credit or quota (one alert per account: OpenAI, Gemini, DeepSeek, DeepInfra, OpenRouter, Alibaba, Jev) | two sweeps running in which that account's latest call refused for an empty account (its cost row carries `metadata.errorClass = 'provider_quota_exhausted'`) is newer than its latest answered call. Where routing names a fallback, that provider is writing the books meanwhile, so readers may notice nothing — which is why this is an email and not a `/api/ready` check. It clears on the first call the account answers after the refusals, never on silence: a night with no calls to it leaves it firing | the provider's billing page: add credit, or raise its spend or quota limit. The calls it refused: `… exec -T postgres psql -U bookmaker -d bookmaker -c "SELECT \"createdAt\", model, purpose FROM \"ProviderCallLog\" WHERE metadata->>'errorClass' = 'provider_quota_exhausted' ORDER BY \"createdAt\" DESC LIMIT 20"` |
 | Open child-safety or sexual-content reports | on the **first** sweep that finds a `PENDING` report a reader filed as child safety or sexual content — from a share's public page, a book, a picture, a voice call, a chat reply or any AI output — or a live share the sexual-content screen held because it could not decide part of the book's text (`book_text_review`). The email says how many of each are open and when the oldest arrived. More reports while it fires are the same alert, not more email; it clears on the first sweep with none open, and an hour must pass before it can fire again | `/admin/moderation`, child safety first: take the share down, or suspend the account (or turn its sharing off) from `/admin/users`, then Action or Dismiss the report. "Mark reviewed" also counts as an answer. A held book text is closed by *Approve book text* (or *Approve caption*) or a take-down |
 
 The disk is read from the API container's own `/`: Docker builds it as an overlay filesystem, and an

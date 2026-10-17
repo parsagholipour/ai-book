@@ -15,12 +15,13 @@ vi.mock("../generation/qualitySettings.js", async () => (await import("./testing
 import { compileExport } from "./compileExport.js";
 import { mocks } from "./testing/compileExportMocks.js";
 
+// The defect screen is the one review that opens a finalization lease, so these run a Quick Draft book.
 describe("compile entry after waiting for its durable lease", () => {
   const pages = [{ id: "page-1", index: 1, title: "Opening", markdown: "Original prose.", summary: "An opening.", status: "COMPLETED", images: [], chapter: null, revision: 1 }];
   const job = { data: { projectId: "project-1", planId: "plan-1", generationJobId: "compile-1", contentRevision: 4 } } as unknown as Job;
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.inputForPlanVersion.mockReturnValue({ title: "Book", prompt: "A book.", category: "KIDS", targetPages: 1, mediaSettings: { finalReview: true } });
+    mocks.inputForPlanVersion.mockReturnValue({ title: "Book", prompt: "A book.", category: "KIDS", targetPages: 1, mediaSettings: { modelTier: "fast" } });
     mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", planningPackage: { title: "Book", chapters: [], promises: [] }, inputSnapshot: {} });
     mocks.prisma.project.findUnique.mockResolvedValue({ id: "project-1", status: "GENERATING", title: "Book", contentRevision: 4, pages, images: [], research: [], mediaSettings: {} });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
@@ -33,15 +34,15 @@ describe("compile entry after waiting for its durable lease", () => {
     await expect(compileExport(job)).resolves.toEqual({});
     expect(mocks.loadLeasedPagesForExport).toHaveBeenCalledWith("project-1", pages);
     expect(mocks.checkLeasedExportOwnership).toHaveBeenCalledOnce();
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
-    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
+    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
   });
 
   it("propagates a failed post-lease manuscript read instead of reviewing stale pages", async () => {
     mocks.loadLeasedPagesForExport.mockRejectedValueOnce(new Error("post-lease database unavailable"));
     await expect(compileExport(job)).rejects.toThrow("post-lease database unavailable");
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
   });
 });

@@ -39,7 +39,8 @@ const ENGLISH_WORD = /[a-z][a-z'’-]*/g;
  */
 export function structuralSlopIssues(
   cached: readonly CachedManuscriptPage[],
-  options: { englishPhraseDetectors: boolean }
+  /** `conceptRepetition: false` for a story: see `runDeterministicManuscriptChecks`' `narrative`. */
+  options: { englishPhraseDetectors: boolean; conceptRepetition?: boolean }
 ): ManuscriptQualityIssue[] {
   const contexts = cached.map(
     (page): StructuralPage => ({
@@ -57,7 +58,7 @@ export function structuralSlopIssues(
   const english = options.englishPhraseDetectors
     ? englishStructuralIssues(contexts, cached)
     : [];
-  return [...english, ...crossChapterConceptRepetitionIssues(contexts, cached)];
+  return [...english, ...(options.conceptRepetition === false ? [] : crossChapterConceptRepetitionIssues(contexts, cached))];
 }
 
 function englishStructuralIssues(

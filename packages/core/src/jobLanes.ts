@@ -13,26 +13,48 @@ import {
  * so a composed-chapter book (one `generate-book` job, 9–93 minutes measured)
  * held the whole product: a plan, a chat edit, a portrait, a writing assist all
  * waited behind it, and behind every other book queued before them. Now there
- * are two lanes, each its own queue and its own `Worker` in the one process
- * (`apps/worker/src/index.ts`), sized separately (`workerLaneConcurrency`):
+ * are five lanes, each its own queue and its own `Worker` in the one process
+ * (`apps/worker/src/runtime/laneWorkers.ts`), sized separately
+ * (`workerLaneConcurrency`):
  *
- * - **long** — the minutes-long and bulk work: a book's run, its pages and
- *   pictures, the compile that ends a generation, narration, imports. It keeps
- *   the old queue's name, `book-maker`, so a job the previous release left in
- *   Redis at deploy time is still consumed by a worker of this one.
+ * - **long** — a book's text: its run, its pages, narration, imports,
+ *   continuations. It keeps the old queue's name, `book-maker`, so a job the
+ *   previous release left in Redis at deploy time is still consumed by a worker
+ *   of this one.
+ * - **images** — a generation's pictures and its cover. They were long-lane
+ *   work until 2026-10-15, and at the long lane's production concurrency of one
+ *   that meant a book's pictures could not start until its text job let go of
+ *   the lane, then drew one at a time (7–10 s each), and another reader's book
+ *   waited behind all of it. A picture is a provider call, a few MB of bytes, a
+ *   sharp re-encode and a put: network-bound and light, so they run several at
+ *   once beside the text.
+ * - **compile** — the compile that ends a generation: the memory-heavy job,
+ *   a few at a time. It left the long lane with the pictures, because once they
+ *   draw elsewhere the long lane goes idle while a book's last pictures land,
+ *   the next book's run takes it, and this book's compile — queued by the last
+ *   picture — would wait behind that whole run (9–93 minutes). In a lane of its
+ *   own it waits only for another book's compile, and the next book's text runs
+ *   beside it.
  * - **interactive** — what a reader is waiting on with the app open: planning,
- *   edits, assists, portraits, personas, and the compiles that only re-typeset
- *   a book that already exists.
+ *   edits, assists, portraits, personas, a revision's cover, and the compiles
+ *   that only re-typeset a book that already exists.
+ * - **background** — work nobody is waiting on that is not book work either:
+ *   the speculative composition prep a plan queues while its reader reads it.
+ *   Minutes of provider calls over a plan held in memory, so several run at
+ *   once, and never in a slot a reader's plan or edit waits for. Its outage is
+ *   an operator alert, never a readiness failure (`apps/worker/CLAUDE.md`).
  *
  * Inside the long lane, work already under way goes first. A job that *starts*
  * long work (a book run, an import, a narration, a continuation) is added with
- * `LONG_LANE_START_PRIORITY`; everything that continues it (pages, pictures, the
- * generation's own compile) is added with none, and BullMQ hands out unprioritized
- * jobs before any prioritized one. Without that, book A's compile was queued
- * behind books B–E's whole runs the moment A's writing finished, so its reader
- * waited five books instead of one; with it, the lane finishes one book before
- * it starts the next, which is also what makes "N books ahead of yours" a number
- * worth showing (`booksAheadInLongLane`).
+ * `LONG_LANE_START_PRIORITY`; everything that continues it (its pages) is added
+ * with none, and BullMQ hands out unprioritized jobs before any prioritized one.
+ * Without that, book A's compile was queued behind books B–E's whole runs the
+ * moment A's writing finished, so its reader waited five books instead of one;
+ * with it, the lane finishes one book's text before it starts the next, which is
+ * also what makes "N books ahead of yours" a number worth showing
+ * (`booksAheadInLongLane`). Pictures and the generation's compile still
+ * *continue* a book (`JobLaneClass`), which is what the per-account share
+ * counts; they simply wait in lanes of their own.
  *
  * Both enqueue sides — the API's `dispatchGenerationJob` and the worker's
  * `dispatchWorkerGenerationJob` — are the only two `queue.add` calls in the repo,
@@ -44,13 +66,49 @@ import {
 /** The long lane keeps the original queue's name, which is what drains the previous release. */
 export const LONG_JOB_QUEUE = "book-maker";
 export const INTERACTIVE_JOB_QUEUE = "book-maker-interactive";
-export const GENERATION_JOB_QUEUES = [LONG_JOB_QUEUE, INTERACTIVE_JOB_QUEUE] as const;
+/**
+ * Only a worker of this release or later consumes the two below — a rollback
+ * past them waits for both to empty (docs/deployment.md, "Job lanes"). An
+ * older API beside this worker is safe, because this worker still consumes
+ * every queue the older one adds to; an older worker beside this API is not,
+ * and the deploy never runs that pair (the worker drains first, and the new
+ * API and worker start together).
+ */
+export const IMAGE_JOB_QUEUE = "book-maker-images";
+export const COMPILE_JOB_QUEUE = "book-maker-compile";
+/**
+ * The same holds for this one, a release later. What waits in it is
+ * speculative and unbilled, so a rollback past it need not wait for it.
+ */
+export const BACKGROUND_JOB_QUEUE = "book-maker-background";
+/** Every lane's queue, in `JOB_LANE_NAMES` order — the heartbeat keys and the healthcheck read them in it. */
+export const GENERATION_JOB_QUEUES = [
+  LONG_JOB_QUEUE,
+  INTERACTIVE_JOB_QUEUE,
+  IMAGE_JOB_QUEUE,
+  COMPILE_JOB_QUEUE,
+  BACKGROUND_JOB_QUEUE
+] as const;
 export type GenerationJobQueueName = (typeof GENERATION_JOB_QUEUES)[number];
 
-export type JobLane = "long" | "interactive";
+export const JOB_LANE_NAMES = ["long", "interactive", "images", "compile", "background"] as const;
+export type JobLane = (typeof JOB_LANE_NAMES)[number];
 
-/** A long job either starts a unit of long work or continues one already started. */
-export type JobLaneClass = "interactive" | "long-start" | "long-continuation";
+const LANE_QUEUES: Readonly<Record<JobLane, GenerationJobQueueName>> = Object.freeze({
+  long: LONG_JOB_QUEUE,
+  interactive: INTERACTIVE_JOB_QUEUE,
+  images: IMAGE_JOB_QUEUE,
+  compile: COMPILE_JOB_QUEUE,
+  background: BACKGROUND_JOB_QUEUE
+});
+
+/**
+ * Where a row waits and what it is to the book. A long job either starts a
+ * unit of long work or continues one already started; a generation's pictures
+ * (`image`) and its own compile (`compile`) continue that book too, in lanes
+ * of their own. Everything but `interactive` and `background` is a book being made.
+ */
+export type JobLaneClass = "interactive" | "background" | "long-start" | "long-continuation" | "image" | "compile";
 
 /** Any positive BullMQ priority sorts after every unprioritized job; all starts share one, so they stay FIFO. */
 export const LONG_LANE_START_PRIORITY = 1;
@@ -65,24 +123,25 @@ type JobLaneRule = JobLaneClass | ((payload: unknown) => JobLaneClass);
  * presentation reprint, an export repair, a Studio publish or an import
  * (COMPLETE / REVIEW_REQUIRED), and none of those may wait behind someone
  * else's 90-minute book. A structural edit's compile runs the final review too
- * and still takes the interactive lane, because its reader is in the chat.
+ * and still takes the interactive lane, because its reader is in the chat. The
+ * generation's own compile takes the compile lane: it is the memory-heavy job,
+ * and in the long lane it would queue behind the next book.
  */
 function compileLane(payload: unknown): JobLaneClass {
   if (skipsFinalReview(payload)) return "interactive";
   const expected = exportPublicationProjectStatusFromPayload(payload);
-  return expected === null || expected === "GENERATING" ? "long-continuation" : "interactive";
+  return expected === null || expected === "GENERATING" ? "compile" : "interactive";
 }
 
 /**
- * Pictures a generation draws are bulk and continue that book. A cover queued
+ * Pictures a generation draws — its pages' and its cover — are bulk and
+ * continue that book, in the image lane, several at once. A cover queued
  * for one revision of a book that already exists — a Studio publish, a cover
  * change — is one render its author is waiting on, and a re-typeset makes no
  * model call at all.
  */
 function imageLane(payload: unknown): JobLaneClass {
-  return isRevisionOwnedCoverPayload(payload) || isCoverRetypesetPayload(payload)
-    ? "interactive"
-    : "long-continuation";
+  return isRevisionOwnedCoverPayload(payload) || isCoverRetypesetPayload(payload) ? "interactive" : "image";
 }
 
 /**
@@ -135,7 +194,12 @@ export const JOB_LANES: Readonly<Record<GenerationJobType, JobLaneRule>> = Objec
   REVISE_PLAN: "interactive",
   /** The book run itself — composed chapters run inside this one job. */
   GENERATE_BOOK: "long-start",
-  /** One page of a run that is already under way. */
+  /**
+   * One page of a run that is already under way. It stays with the run rather
+   * than moving beside the pictures: a story's pages are drafted one after
+   * another anyway (`parallelPageWaveSize`), so a lane of their own would buy
+   * this book nothing and only let the next book's text start beside it.
+   */
   GENERATE_PAGE: "long-continuation",
   GENERATE_IMAGE: imageLane,
   COMPILE_EXPORT: compileLane,
@@ -156,7 +220,16 @@ export const JOB_LANES: Readonly<Record<GenerationJobType, JobLaneRule>> = Objec
   /** One drawing the reader asked for on the character screen. */
   GENERATE_CHARACTER_PORTRAIT: "interactive",
   /** A Writing Studio suggestion the author is waiting to apply. */
-  WRITING_ASSIST: "interactive"
+  WRITING_ASSIST: "interactive",
+  /**
+   * Nobody is waiting on it — it plans a composed book's stance, episodes and
+   * forms while its reader reads the plan — but it is not book work either:
+   * no charge, no slot in the per-account share, and the long lane would put
+   * it behind whole books. About 90 s of provider calls, and a burst of plans
+   * queues one each, so it gets a lane of its own, several at once, where it
+   * holds no slot a reader's plan or edit waits for.
+   */
+  PREPARE_COMPOSITION: "background"
 });
 
 /** Null for a type `jobNames` does not know — such a row is never dispatched anyway. */
@@ -167,17 +240,34 @@ export function jobLaneClass(type: string, payload: unknown): JobLaneClass | nul
 }
 
 export function laneOfClass(laneClass: JobLaneClass): JobLane {
-  return laneClass === "interactive" ? "interactive" : "long";
+  switch (laneClass) {
+    case "interactive":
+      return "interactive";
+    case "background":
+      return "background";
+    case "image":
+      return "images";
+    case "compile":
+      return "compile";
+    case "long-start":
+    case "long-continuation":
+      return "long";
+  }
+}
+
+/** Whether a row is part of a book being made — what the per-account share counts. */
+export function isBookWork(laneClass: JobLaneClass): boolean {
+  return laneClass !== "interactive" && laneClass !== "background";
 }
 
 export function queueNameForLane(lane: JobLane): GenerationJobQueueName {
-  return lane === "long" ? LONG_JOB_QUEUE : INTERACTIVE_JOB_QUEUE;
+  return LANE_QUEUES[lane];
 }
 
 export type GenerationJobPlacement = {
   lane: JobLane;
   queueName: GenerationJobQueueName;
-  /** Present only for a long-lane start; absent means "before every start". */
+  /** Present only for a long-lane start; absent means "before every prioritized job". */
   priority?: number;
 };
 
@@ -194,10 +284,13 @@ export function generationJobPlacement(type: string, payload: unknown): Generati
   };
 }
 
-/** Types a row of which can sit in the long lane — the set a database read filters on. */
-export const LONG_LANE_CAPABLE_JOB_TYPES: readonly GenerationJobType[] = Object.freeze(
+/**
+ * Types a row of which can be book work (`isBookWork`) — in the long, image or
+ * compile lane — and so the set a database read of the share or the line filters on.
+ */
+export const BOOK_WORK_JOB_TYPES: readonly GenerationJobType[] = Object.freeze(
   (Object.entries(JOB_LANES) as Array<[GenerationJobType, JobLaneRule]>)
-    .filter(([, rule]) => rule !== "interactive")
+    .filter(([, rule]) => typeof rule === "function" || isBookWork(rule))
     .map(([type]) => type)
 );
 
@@ -209,23 +302,51 @@ export const PAYLOAD_LANED_JOB_TYPES: readonly GenerationJobType[] = Object.free
 );
 
 /**
+ * The compile lane runs one generation compile at a time unless told otherwise:
+ * it is the job that typesets a whole illustrated book. Production runs three
+ * (docs/deployment.md, "Job lanes"): most of a compile is the defect screen's
+ * model call, and Chromium renders two books at most whatever the lanes add up
+ * to (`RENDER_CONCURRENCY` in `browserPool.ts`), so a compile beside it adds a
+ * manuscript's worth of memory, not a renderer. Measured on 2026-10-17, thirty
+ * books finishing together drained in 7 minutes at three against about 16 at one.
+ */
+export const DEFAULT_COMPILE_LANE_CONCURRENCY = 1;
+
+/**
+ * The background lane runs four preps at once unless told otherwise. A prep is
+ * about 90 s of provider calls over a plan held in memory (a few MB) and a
+ * handful of short writes, so one at a time handled some 40 plans an hour and
+ * left most of a burst's preps to start after their readers had approved; four
+ * handle about 160, for well under 0.1 GiB and at most eight requests at once
+ * at the text provider, since a prep's stance and inventory run side by side
+ * (docs/deployment.md, "Job lanes").
+ */
+export const DEFAULT_BACKGROUND_LANE_CONCURRENCY = 4;
+
+/**
  * How many of each lane's jobs one worker process runs at once.
  *
- * The long lane defaults to `max(MAX_PARALLEL_PAGE_JOBS, MAX_PARALLEL_IMAGE_JOBS)`
- * — exactly the single queue's old concurrency — because those two settings
- * size the page and picture waves a book fans out, and a lane narrower than
- * the wave would queue what they say may run together. Production sets it
- * outright (docker-compose.production.yml).
+ * Unset, the long lane runs `MAX_PARALLEL_PAGE_JOBS` and the image lane
+ * `MAX_PARALLEL_IMAGE_JOBS`, because those two settings size the page and
+ * picture waves a book fans out, and a lane narrower than its wave would queue
+ * what they say may run together. Production sets every lane outright
+ * (docker-compose.production.yml).
  */
 export function workerLaneConcurrency(config: {
   MAX_PARALLEL_PAGE_JOBS: number;
   MAX_PARALLEL_IMAGE_JOBS: number;
   WORKER_LONG_CONCURRENCY?: number | undefined;
   WORKER_INTERACTIVE_CONCURRENCY: number;
+  WORKER_IMAGE_CONCURRENCY?: number | undefined;
+  WORKER_COMPILE_CONCURRENCY?: number | undefined;
+  WORKER_BACKGROUND_CONCURRENCY?: number | undefined;
 }): Record<JobLane, number> {
   return {
-    long: config.WORKER_LONG_CONCURRENCY ?? Math.max(config.MAX_PARALLEL_PAGE_JOBS, config.MAX_PARALLEL_IMAGE_JOBS),
-    interactive: config.WORKER_INTERACTIVE_CONCURRENCY
+    long: config.WORKER_LONG_CONCURRENCY ?? config.MAX_PARALLEL_PAGE_JOBS,
+    interactive: config.WORKER_INTERACTIVE_CONCURRENCY,
+    images: config.WORKER_IMAGE_CONCURRENCY ?? config.MAX_PARALLEL_IMAGE_JOBS,
+    compile: config.WORKER_COMPILE_CONCURRENCY ?? DEFAULT_COMPILE_LANE_CONCURRENCY,
+    background: config.WORKER_BACKGROUND_CONCURRENCY ?? DEFAULT_BACKGROUND_LANE_CONCURRENCY
   };
 }
 
@@ -274,7 +395,10 @@ export function isLiveBullState(state: string): boolean {
  * Every lane's copy of one job id. A row is one Bull id (`jobId` is the row's
  * id), but a requeue can place it in a different lane than its last delivery —
  * a payload rewrite, or a row the previous release queued in `book-maker` — so
- * a lookup that read one lane could miss the copy still running in the other.
+ * a lookup that read one lane could miss the copy still running in another.
+ * That is exactly what a deploy of the image and compile lanes leaves behind:
+ * a picture the previous release queued in `book-maker` whose row a sweep
+ * now places in `book-maker-images`.
  */
 async function laneJobCopies(lanes: readonly LaneJobLookup[], id: string) {
   const copies: Array<{ job: LaneJob; state: string }> = [];
@@ -355,20 +479,39 @@ export type LongLaneRow = {
  * waiting job continues its own run is behind what is running and the
  * continuations queued before it. Counted in books, not jobs: a book ahead of
  * yours is one book however many pages it has left.
+ *
+ * Only long-lane rows take part. A book whose pictures or compile are all it
+ * has left holds nothing of the long lane, so it is ahead of nobody, and a book
+ * waiting only on those is not waiting in this line at all: both lanes run
+ * beside the long one and drain in seconds to minutes.
+ *
+ * `slots` is the lane's concurrency (`workerLaneConcurrency`). A waiting book
+ * is behind every book queued before it, but the books already running hold it
+ * up only once every slot is taken, and then only until one of them lets a slot
+ * go: they count as `running − (slots − 1)`, never below zero. At one slot that
+ * is every running book, which is how the count read before the lane ran wider.
  */
-export function booksAheadInLongLane(rows: readonly LongLaneRow[], projectId: string): number | null {
-  const open = rows.filter((row) => row.laneClass !== "interactive" && (row.status === "QUEUED" || row.status === "ACTIVE"));
+export function booksAheadInLongLane(rows: readonly LongLaneRow[], projectId: string, slots = 1): number | null {
+  const open = rows.filter(
+    (row) => laneOfClass(row.laneClass) === "long" && (row.status === "QUEUED" || row.status === "ACTIVE")
+  );
   const own = open.filter((row) => row.projectId === projectId);
   if (own.length === 0 || own.some((row) => row.status === "ACTIVE")) return null;
   const waiting = own.reduce((oldest, row) => (row.createdAt < oldest.createdAt ? row : oldest));
-  const ahead = new Set<string>();
+  const running = new Set<string>();
+  const queuedAhead = new Set<string>();
   for (const row of open) {
     if (!row.projectId || row.projectId === projectId) continue;
+    if (row.status === "ACTIVE") {
+      running.add(row.projectId);
+      continue;
+    }
     const before =
-      row.status === "ACTIVE" ||
       (row.laneClass === "long-continuation" && (waiting.laneClass === "long-start" || row.createdAt < waiting.createdAt)) ||
       (row.laneClass === "long-start" && waiting.laneClass === "long-start" && row.createdAt < waiting.createdAt);
-    if (before) ahead.add(row.projectId);
+    if (before) queuedAhead.add(row.projectId);
   }
-  return ahead.size;
+  // A running book with more work queued is one book under way, counted with the running ones.
+  for (const book of running) queuedAhead.delete(book);
+  return queuedAhead.size + Math.max(0, running.size - (Math.max(1, Math.floor(slots)) - 1));
 }

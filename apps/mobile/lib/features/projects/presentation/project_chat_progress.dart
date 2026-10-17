@@ -5,6 +5,7 @@ import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
 import 'plan_build_progress.dart';
 import 'progress_step_row.dart';
+import 'time_left_note.dart';
 import 'waiting_in_line_note.dart';
 
 // What the book chat draws while the worker is busy with the book: the card in
@@ -133,6 +134,15 @@ class _ChatOperationProgressCardState extends State<ChatOperationProgressCard> {
             semanticLabel: status.currentAction,
             trackColor: colors.surface.withValues(alpha: 0.6),
           ),
+          // A plan revision asked for in this chat says how long it has left,
+          // as the plan footer and the book page do for the same run.
+          if (liveSecondsLeft(status) != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            TimeLeftNote(
+              secondsLeft: liveSecondsLeft(status),
+              color: colors.onPrimaryContainer.withValues(alpha: 0.85),
+            ),
+          ],
           if (steps.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm - 2),
             // With the detail line: an edit's steps carry counts ("3 of 7
@@ -154,6 +164,14 @@ class _ChatOperationProgressCardState extends State<ChatOperationProgressCard> {
     );
   }
 }
+
+/// The server's time-left estimate for the run this card is drawing: the
+/// plan's while planning, the book's while it is written, none for an edit.
+int? liveSecondsLeft(MobileProjectStatus status) => switch (status.status) {
+  'planning' => status.planningProgress?.estimatedSecondsLeft,
+  'generating' => status.generationProgress?.estimatedSecondsLeft,
+  _ => null,
+};
 
 /// The status's own percent for whatever it is doing, clamped to a percentage.
 int livePercent(MobileProjectStatus status) =>

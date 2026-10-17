@@ -137,13 +137,15 @@ describe("the welcome grant and the first book", () => {
   });
 
   it("covers every illustrated picture book up to the free page cap, and grows with every page", () => {
-    // min(pages, 12) pictures: twelve pages draw twelve and every longer book
-    // draws twelve too, so the price only climbs by the page rate. At 1,150 the
-    // grant left out every picture book of 22 pages or more.
+    // Two pictures for every five pages, at most twelve: the picture count
+    // never falls as a book grows, so the price climbs with every page and the
+    // free cap's 30 pages, twelve pictures, is the largest. Under
+    // min(pages, 12), at 1,150 the grant left out every picture book of 22
+    // pages or more.
     expect(DEFAULT_CREDIT_COSTS.welcomeCredits).toBe(1_250);
-    expect(firstBookCredits(firstBook("KIDS", "short_story", 12))).toBe(1_071);
-    expect(firstBookCredits(firstBook("KIDS", "short_story", 16))).toBe(1_103);
-    expect(firstBookCredits(firstBook("KIDS", "short_story", 24))).toBe(1_167);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 12))).toBe(756);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 16))).toBe(833);
+    expect(firstBookCredits(firstBook("KIDS", "short_story", 24))).toBe(1_077);
     expect(firstBookCredits(firstBook("KIDS", "short_story", DEFAULT_CREDIT_COSTS.freeMaxBookPages))).toBe(1_215);
     let previous = 0;
     for (let pages = 1; pages <= DEFAULT_CREDIT_COSTS.freeMaxBookPages; pages++) {

@@ -8,6 +8,10 @@ import { serializeError } from "../runtime/serialization.js";
 import type { Prisma } from "@book-maker/db";
 import type { CompileExportJob } from "../runtime/jobPayloads.js";
 
+/** The client the repair's publication transaction hands its fence, so the claim binds atomically with the page writes. */
+export type FinalQaOwnershipClient = Pick<Prisma.TransactionClient, "project"> & Partial<Pick<Prisma.TransactionClient, "generationJob">>;
+export type FinalQaOwnershipClaim = (client?: FinalQaOwnershipClient) => Promise<void>;
+
 /**
  * The fence a compile's final-QA repair is held to, the three things it can
  * answer, and the note a pass leaves when it stops early. Split out of
@@ -27,9 +31,9 @@ import type { CompileExportJob } from "../runtime/jobPayloads.js";
  * Raised by the final-QA repair's ownership fence when the manuscript moved on
  * mid-pass.
  *
- * It exists to be *distinguishable*. The fence is called from inside
- * `runPageQualityLoop`, so its throw travels back through two modules that both
- * treat an unrecognised error as a real failure — and a compile that fails is a
+ * It exists to be *distinguishable*. The fence's throw travels back through
+ * code that treats an unrecognised error as a real failure (until 2026-10-16 it
+ * was asked from inside the per-page repair loop, two modules deep) — and a compile that fails is a
  * compile that reaches `markFailed`, which for a verdict-owning row marks a
  * finished, fully paid book FAILED and refunds `FULL_BOOK_GENERATION`. That is
  * a far worse answer than the one this condition already has at the compile's
@@ -49,9 +53,8 @@ export class ExportRepairSupersededError extends Error {
  * Raised when the fence's own read will not answer, which is a different fact
  * about the world than either answer it was asked for.
  *
- * The fence is two indexed barriers *per repaired page* and one more for any
- * page that reaches a brief repair, across the several minutes a long book's repair
- * takes, and a pool that is momentarily
+ * The fence is indexed barriers around the repair's provider work, across the
+ * minutes a long book's repair takes, and a pool that is momentarily
  * exhausted or a failover mid-pass makes one of them throw. That throw is not
  * an `ExportRepairSupersededError`, so before this class existed it travelled
  * the whole way out of the handler and settled the compile as a failure: a book
@@ -84,13 +87,10 @@ export class ExportRepairFenceUnreadableError extends Error {
      * It is kept because it is the one number that exists even when nothing has
      * been written yet — a fence that goes dark on its very first ask says so
      * with a zero — and because it cannot drift from the read that produced it.
-     * What it may not be used for is arithmetic about pages. There are two asks
-     * per repaired page and three for the few that reach recovery:
-     * `repairPagesFromFinalQa` asks at the loop top and claims atomically beside
-     * the writes, while `repairPageBriefForRecovery` asks once after its planner
-     * call. An operator
-     * dividing by two read a 15-page pass that stopped on page 7 as one that
-     * stopped around page 6. Where the pass actually got is `repairProgress`,
+     * What it may not be used for is arithmetic about pages: the old per-page
+     * loop asked two or three times per page (three for a page that reached a
+     * brief repair), and an operator dividing by two read a 15-page pass that
+     * stopped on page 7 as one that stopped around page 6. Where the pass actually got is `repairProgress`,
      * counted in pages by the only thing that counts pages.
      */
     readonly barriersCleared: number,

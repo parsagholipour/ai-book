@@ -48,7 +48,6 @@ export type Project = {
     includeCover?: boolean;
     coverArtSource?: string;
     coverTemplate?: string;
-    finalReview?: boolean;
     audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
     parallelPageGeneration?: boolean;
@@ -115,7 +114,6 @@ export type ProjectInputSnapshot = {
     includeCover?: boolean;
     coverArtSource?: string;
     coverTemplate?: string;
-    finalReview?: boolean;
     audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
     parallelPageGeneration?: boolean;
@@ -465,10 +463,37 @@ export type JobImageFallbackDetails = {
   occurredAt?: string;
 };
 
+/** One finding on a compile's quality report, as the operator status route serves it. */
+export type QualityFinding = {
+  code: string;
+  severity: "error" | "warning";
+  source: "deterministic" | "model";
+  message: string;
+  guidance: string;
+  affectedPageIndexes: number[];
+  evidence?: Array<{ pageIndex: number; excerpt: string }>;
+};
+
+/**
+ * The book's quality verdict. On a report graded since the reader/diagnostics
+ * split (`readerPolicy` set) `issues` is what the reader is shown and
+ * `diagnosticIssues` is everything else the compile measured; on an older
+ * report `issues` is every finding and there is no console half.
+ */
+export type ProjectQuality = {
+  state: "pending" | "passed" | "review_recommended" | "blocked";
+  score: number | null;
+  issues: QualityFinding[];
+  affectedPageIndexes: number[];
+  diagnosticIssues?: QualityFinding[];
+  readerPolicy?: string;
+};
+
 export type ProjectStatus = {
   project: Project & {
     jobs: GenerationJobRow[];
   };
+  quality?: ProjectQuality;
   progress: {
     pages: { complete: number; target: number };
     images: number;

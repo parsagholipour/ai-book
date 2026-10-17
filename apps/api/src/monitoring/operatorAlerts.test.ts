@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mailer, MailMessage } from "../mailer.js";
 import type { AlertSources, DiskSnapshot } from "./alertConditions.js";
 import type { AlertState } from "./alertState.js";
+import type { ProviderCallOutcome } from "./providerQuota.js";
 import {
   composeAlertEmail,
   createOperatorAlertSweep,
@@ -9,19 +10,21 @@ import {
   SWEEP_CLAIM_KEY,
   type AlertStore
 } from "./operatorAlerts.js";
-import { READINESS_CHECKS, type ReadinessCheck, type ReadinessReport } from "./readiness.js";
+import { MONITORED_CHECKS, READINESS_CHECKS, type MonitoredCheck, type ReadinessReport } from "./readiness.js";
 
 const MINUTE = 60_000;
 const START = Date.parse("2026-10-13T12:00:00.000Z");
 
 type World = {
-  failing: Partial<Record<ReadinessCheck, string>>;
-  unmeasured: ReadinessCheck[];
+  failing: Partial<Record<MonitoredCheck, string>>;
+  unmeasured: MonitoredCheck[];
   /** Free-account spend today; the month and paid spend stay quiet. */
   spendUsd: number;
   failedJobs: string[];
   disk: DiskSnapshot;
   childSafetyReports: number;
+  /** What the last hour's provider call rows say, per provider spelling. */
+  providerCalls: ProviderCallOutcome[];
 };
 
 function world(): World {
@@ -31,7 +34,8 @@ function world(): World {
     spendUsd: 1,
     failedJobs: [],
     disk: { freeBytes: 20 * 1024 ** 3, totalBytes: 30 * 1024 ** 3, freeInodes: 900, totalInodes: 1000 },
-    childSafetyReports: 0
+    childSafetyReports: 0,
+    providerCalls: []
   };
 }
 
@@ -39,13 +43,13 @@ function sourcesFor(state: World): AlertSources {
   return {
     async readiness(): Promise<ReadinessReport> {
       const results = Object.fromEntries(
-        READINESS_CHECKS.map((check) => {
+        MONITORED_CHECKS.map((check) => {
           const reason = state.failing[check];
           if (reason === undefined) return [check, { ok: true }];
           return [check, state.unmeasured.includes(check) ? { ok: false, reason, unmeasured: true } : { ok: false, reason }];
         })
       ) as ReadinessReport["results"];
-      return { ok: Object.keys(state.failing).length === 0, checkedAt: new Date(), results };
+      return { ok: READINESS_CHECKS.every((check) => state.failing[check] === undefined), checkedAt: new Date(), results };
     },
     spend: async () => ({
       freeSpendUsd: state.spendUsd,
@@ -58,7 +62,8 @@ function sourcesFor(state: World): AlertSources {
     }),
     failedJobsSince: async () => state.failedJobs.map((type) => ({ type })),
     disk: async () => state.disk,
-    openSafetyReports: async () => ({ childSafety: state.childSafetyReports, sexualContent: 0, heldBookText: 0, oldestAt: null })
+    openSafetyReports: async () => ({ childSafety: state.childSafetyReports, sexualContent: 0, heldBookText: 0, oldestAt: null }),
+    providerCallOutcomesSince: async () => state.providerCalls
   };
 }
 
@@ -136,6 +141,33 @@ function harness(options: { store?: ReturnType<typeof memoryStore>; recipient?: 
 }
 
 describe("the operator alert sweep", () => {
+  it("tells the owner once that a provider account is empty, holds it through a quiet hour, and clears on its first answer", async () => {
+    const { state, mailer, minutes } = harness();
+    const refusedAt = new Date(START - MINUTE);
+    state.providerCalls = [{ provider: "openai", exhaustedAt: refusedAt, refusals: 41, answeredAt: new Date(START - 30 * MINUTE) }];
+
+    await minutes(1);
+    expect((mailer as ReturnType<typeof recordingMailer>).sent).toHaveLength(0);
+    await minutes(1);
+    const sent = (mailer as ReturnType<typeof recordingMailer>).sent;
+    expect(sent.map((message) => message.subject)).toEqual(["[Tomeza] ALERT: OpenAI account out of credit or quota"]);
+    expect(sent[0]!.text).toContain("41 calls to OpenAI refused in the last hour");
+    expect(sent[0]!.text).toContain("First check: the provider's billing page");
+
+    // The refusals age out of the window with nothing calling OpenAI: not a recovery.
+    state.providerCalls = [];
+    await minutes(90);
+    expect(sent).toHaveLength(1);
+
+    // The first answered call after the top-up.
+    state.providerCalls = [{ provider: "openai", exhaustedAt: null, refusals: 0, answeredAt: new Date(START + 95 * MINUTE) }];
+    await minutes(1);
+    expect(sent.map((message) => message.subject)).toEqual([
+      "[Tomeza] ALERT: OpenAI account out of credit or quota",
+      "[Tomeza] Recovered: OpenAI account out of credit or quota"
+    ]);
+  });
+
   it("emails once, naming the check and what to look at, after three failing minutes", async () => {
     const { state, mailer, minutes } = harness();
     state.failing.worker_long = "no heartbeat from the long lane for over 90 s";

@@ -39,13 +39,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -70,17 +63,14 @@ vi.mock("@book-maker/core", async () => {
 import { compileExport } from "./compileExport.js";
 import { pendingExportPaths } from "../generation/exportArtifacts.js";
 import {
-  CORROBORATED_STRUCTURAL_DUPLICATION,
   DETACHED_FROM_PROJECT_LIFECYCLE,
   EXPORT_REPAIR_FORMAT,
   bandhaRecapPages,
-  MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
   PRESENTATION_ONLY_RECOMPILE,
   PRESENTATION_RECOMPILE_FALLBACK_STATUS,
   compilePolicyPayload,
   freeEditRecompilePolicy
 } from "@book-maker/core";
-import { StopRequestedError } from "../runtime/jobTypes.js";
 import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
 describe("compileExport publication policy", () => {
@@ -145,12 +135,6 @@ describe("compileExport publication policy", () => {
       inputSnapshot: null
     });
     mocks.prisma.project.findUnique.mockResolvedValue(projectRecord());
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: true,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: []
-    });
     mocks.strategy.compileMarkdown.mockReturnValue("# The Long Walk\n\nProse.\n");
     mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: modelChapters, source: "model" });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
@@ -211,8 +195,20 @@ describe("compileExport publication policy", () => {
     await compileExport(job({ contentRevision: 4 }));
     expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledTimes(1);
     expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledWith(expect.objectContaining({ pages }));
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
+    expect(mocks.publishCompiledExports).toHaveBeenCalled();
+  });
+
+  it("screens a Balanced book composed by chapters the way it screens Quick Draft, and only behind finalBookQa", async () => {
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: { modelTier: "balanced", finalReview: false } });
+    mocks.strategy.executionMode = "composed-chapters";
+    await compileExport(job({ contentRevision: 4 }));
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledTimes(1);
+    vi.clearAllMocks();
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced",
+      enabled: (feature: string) => isDefaultCompileQualityFeature(feature) && feature !== "finalBookQa" });
+    await compileExport(job({ contentRevision: 4 }));
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).toHaveBeenCalled();
   });
 
@@ -220,66 +216,31 @@ describe("compileExport publication policy", () => {
     mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: { modelTier: "fast", finalReview: true } });
     await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
     expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
   });
 
-  it("passes the local-page gate through to final book QA", async () => {
-    mocks.loadQualityContext.mockResolvedValue({
-      settings: {},
-      tier: "balanced",
-      enabled: (feature: string) =>
-        isDefaultCompileQualityFeature(feature) && feature !== "pageLocalQa"
-    });
+  // 2026-10-16: a short or per-page book off Quick Draft is printed as drafted. Neither the retired
+  // `finalReview` flag nor parallel-wave drafting buys it a model review any more (H7b).
+  it.each([
+    { executionMode: "whole-book", finalReview: true, waves: 1 },
+    { executionMode: "sequential-pages", finalReview: true, waves: 4 },
+    { executionMode: "sequential-pages", finalReview: false, waves: 4 },
+    { executionMode: "draft-then-polish", finalReview: undefined, waves: 1 }
+  ])("runs no model review on a Balanced $executionMode book (finalReview $finalReview, waves $waves)", async ({ executionMode, finalReview, waves }) => {
+    mocks.strategy.executionMode = executionMode;
+    mocks.parallelPageWaveSize.mockReturnValue(waves);
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: finalReview === undefined ? {} : { finalReview } });
 
     await compileExport(job({ contentRevision: 4 }));
 
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledWith(
-      expect.objectContaining({ skipLocalChecks: true })
-    );
-  });
-
-  it("honors an explicit final review even when the preset disables automatic final QA", async () => {
-    mocks.strategy.executionMode = "sequential-pages";
-    mocks.parallelPageWaveSize.mockReturnValue(4);
-    mocks.loadQualityContext.mockResolvedValue({
-      settings: {},
-      tier: "balanced",
-      enabled: (feature: string) =>
-        isDefaultCompileQualityFeature(feature) && feature !== "finalBookQa"
-    });
-
-    await compileExport(job({ contentRevision: 4 }));
-
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
-    expect(mocks.generateJsonWithRetry).toHaveBeenCalledTimes(1);
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
+    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
-    expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
     expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalledWith(
       expect.objectContaining({ language: "en", expectedPageCount: 12 })
     );
     expect(mocks.strategy.generatePdf).toHaveBeenCalled();
-  });
-
-  it("lets the preset disable automatic final QA when the project did not request it", async () => {
-    mocks.strategy.executionMode = "sequential-pages";
-    mocks.parallelPageWaveSize.mockReturnValue(4);
-    mocks.inputForPlanVersion.mockReturnValue({
-      ...input,
-      mediaSettings: { ...input.mediaSettings, finalReview: false }
-    });
-    mocks.loadQualityContext.mockResolvedValue({
-      settings: {},
-      tier: "balanced",
-      enabled: (feature: string) =>
-        isDefaultCompileQualityFeature(feature) && feature !== "finalBookQa"
-    });
-
-    await compileExport(job({ contentRevision: 4 }));
-
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
-    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
-    expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 
   it("compiles a free edit's recompile exactly as the edit recompile it used to be", async () => {
@@ -311,7 +272,7 @@ describe("compileExport publication policy", () => {
       })
     );
 
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
     expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -341,8 +302,9 @@ describe("compileExport publication policy", () => {
   }
 
   // Three pages that restate one establishment with explicit recap cues, so
-  // the deterministic audit raises a RECAP_BACKTRACKING cluster for the
-  // structural review to adjudicate.
+  // the deterministic audit raises a RECAP_BACKTRACKING cluster. No model
+  // adjudicates it since 2026-10-16: the defect screen reads for duplication,
+  // and the adjudicator's findings fixed nothing (console only).
   function withRecapManuscript(): void {
     const recapPages = bandhaRecapPages().map((page) => ({
       id: `page-${page.index}`,
@@ -362,66 +324,29 @@ describe("compileExport publication policy", () => {
     });
   }
 
-  function mockJsonByPurpose(structural: Record<string, unknown>): void {
-    mocks.generateJsonWithRetry.mockImplementation(async (_model: unknown, options?: { purpose?: string }) => {
-      if (options?.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
-        return { data: structural };
-      }
-      return { data: { issues: [] } };
-    });
-  }
+  it.each([{ skipFinalReview: false }, { skipFinalReview: true }])(
+    "keeps a deterministic structural cluster on the console with no model adjudication (skip $skipFinalReview)",
+    async ({ skipFinalReview }) => {
+      withRecapManuscript();
 
-  const duplicatedWeightsCluster = {
-    canonicalPageIndex: 1,
-    duplicatePageIndexes: [2, 3],
-    repeatedSubject: "The bandha check dam as the same Bundelkhand irrigation store",
-    repeatedEvidence: "The stacked stone channels, the Banda dam, and the crest walk recur on each page",
-    repeatedConclusion: "Each page closes on the bandha as a local store rather than a royal canal",
-    confidence: "high" as const,
-    recommendedAction: "review" as const
-  };
+      await compileExport(job({ contentRevision: 4, ...(skipFinalReview ? { skipFinalReview } : {}) }));
 
-  it("still produces exports when a corroborated structural issue blocks publication", async () => {
-    withRecapManuscript();
-    mockJsonByPurpose({ clusters: [duplicatedWeightsCluster] });
-
-    await compileExport(job({ contentRevision: 4 }));
-
-    const report = persistedQualityReport();
-    expect(report.state).toBe("blocked");
-    expect(report.issues.map((issue) => issue.code)).toContain(CORROBORATED_STRUCTURAL_DUPLICATION);
-    expect(mocks.strategy.generatePdf).toHaveBeenCalled();
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "REVIEW_REQUIRED" })
-    );
-  });
-
-  it("keeps advisory structural findings COMPLETE with review_recommended", async () => {
-    withRecapManuscript();
-    mockJsonByPurpose({
-      clusters: [{ ...duplicatedWeightsCluster, confidence: "medium" }]
-    });
-
-    await compileExport(job({ contentRevision: 4 }));
-
-    expect(persistedQualityReport().state).toBe("review_recommended");
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "COMPLETE" })
-    );
-  });
-
-  it("makes no structural-review call on a clean manuscript", async () => {
-    await compileExport(job({ contentRevision: 4 }));
-
-    const purposes = mocks.generateJsonWithRetry.mock.calls.map(
-      (call) => (call[1] as { purpose?: string } | undefined)?.purpose
-    );
-    expect(purposes).not.toContain(MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE);
-  });
+      const purposes = mocks.generateJsonWithRetry.mock.calls.map(
+        (call) => (call[1] as { purpose?: string } | undefined)?.purpose
+      );
+      expect(purposes).not.toContain("review-manuscript-structure");
+      const report = persistedQualityReport();
+      expect(report.issues.map((issue) => issue.code)).toContain("RECAP_BACKTRACKING");
+      // Kept for the console; a recap cluster is not a reader finding.
+      expect(report.state).toBe("passed");
+      expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "COMPLETE" })
+      );
+    }
+  );
 
   it("runs manuscript integrity when every optional quality feature is disabled", async () => {
     withRecapManuscript();
-    mockJsonByPurpose({ clusters: [duplicatedWeightsCluster] });
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
@@ -431,56 +356,7 @@ describe("compileExport publication policy", () => {
     await compileExport(job({ contentRevision: 4 }));
 
     expect(mocks.runDeterministicManuscriptChecks).toHaveBeenCalled();
-    const purposes = mocks.generateJsonWithRetry.mock.calls.map(
-      (call) => (call[1] as { purpose?: string } | undefined)?.purpose
-    );
-    expect(purposes).toContain(MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE);
-    expect(persistedQualityReport().issues.map((issue) => issue.code)).toContain(CORROBORATED_STRUCTURAL_DUPLICATION);
-  });
-
-  it("skips structural review when skipFinalReview is set", async () => {
-    withRecapManuscript();
-    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
-
-    const purposes = mocks.generateJsonWithRetry.mock.calls.map(
-      (call) => (call[1] as { purpose?: string } | undefined)?.purpose
-    );
-    expect(purposes).not.toContain(MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE);
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "COMPLETE" })
-    );
-  });
-
-  it("preserves deterministic findings when structural review fails and still exports", async () => {
-    withRecapManuscript();
-    mocks.generateJsonWithRetry.mockImplementation(async (_model: unknown, options?: { purpose?: string }) => {
-      if (options?.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
-        throw new Error("model outage");
-      }
-      return { data: { issues: [] } };
-    });
-
-    await compileExport(job({ contentRevision: 4 }));
-
-    const report = persistedQualityReport();
-    expect(report.issues.map((issue) => issue.code)).toContain("RECAP_BACKTRACKING");
-    expect(report.issues.map((issue) => issue.code)).not.toContain(CORROBORATED_STRUCTURAL_DUPLICATION);
-    expect(report.state).not.toBe("passed");
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "COMPLETE" })
-    );
-  });
-
-  it("lets a structural-review stop request escape", async () => {
-    withRecapManuscript();
-    mocks.generateJsonWithRetry.mockImplementation(async (_model: unknown, options?: { purpose?: string }) => {
-      if (options?.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
-        throw new StopRequestedError();
-      }
-      return { data: { issues: [] } };
-    });
-
-    await expect(compileExport(job({ contentRevision: 4 }))).rejects.toBeInstanceOf(StopRequestedError);
-    expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
+    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
+    expect(persistedQualityReport().issues.map((issue) => issue.code)).toContain("RECAP_BACKTRACKING");
   });
 });

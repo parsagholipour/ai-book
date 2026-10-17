@@ -32,11 +32,13 @@ void main() {
   );
 
   test('a picture book is priced as its writing and pictures alone', () {
-    // Balanced, drawn cover: base + pages, a picture a page up to 12, then 12
-    // spread across the book. No export line, whoever approves it.
-    expect(kids(12), 350 + 12 * 8 + 12 * 45 + 45);
-    expect(kids(16), 350 + 16 * 8 + 12 * 45 + 45);
-    expect(kids(24), 350 + 24 * 8 + 12 * 45 + 45);
+    // Balanced, drawn cover: base + pages, two pictures for every five pages,
+    // at most 12. No export line, whoever approves it.
+    expect(kids(5), 350 + 5 * 8 + 2 * 45 + 45);
+    expect(kids(10), 350 + 10 * 8 + 4 * 45 + 45);
+    expect(kids(12), 350 + 12 * 8 + 5 * 45 + 45);
+    expect(kids(16), 350 + 16 * 8 + 6 * 45 + 45);
+    expect(kids(24), 350 + 24 * 8 + 10 * 45 + 45);
     expect(kids(30), 350 + 30 * 8 + 12 * 45 + 45);
   });
 
@@ -59,21 +61,26 @@ void main() {
     expect(kids(12, creditCosts: const {'exportUnlock': 0}), kids(12));
   });
 
-  test('a picture book draws min(pages, 12) pictures', () {
-    // min(pages, 12), as core's freeBookQuote.test.ts spells it: a longer book
-    // never draws fewer (13 pages used to draw 7).
+  test('a picture book draws two pictures for every five pages', () {
+    // Rounded to the nearest, at least 1 and at most 12, as core's
+    // freeBookQuote.test.ts spells it.
     const table = {
       1: 1,
-      5: 5,
-      11: 11,
-      12: 12,
-      13: 12,
-      14: 12,
-      16: 12,
-      20: 12,
-      22: 12,
-      23: 12,
-      24: 12,
+      2: 1,
+      3: 1,
+      4: 2,
+      5: 2,
+      8: 3,
+      9: 4,
+      10: 4,
+      11: 4,
+      12: 5,
+      13: 5,
+      16: 6,
+      20: 8,
+      24: 10,
+      28: 11,
+      29: 12,
       30: 12,
       40: 12,
     };
@@ -85,5 +92,13 @@ void main() {
       );
     }
     expect(pictureBookIllustrationCount(0), 0);
+    // A longer book never draws fewer (13 pages once drew 7 where 12 drew 12).
+    for (var pages = 1; pages <= 600; pages++) {
+      expect(
+        pictureBookIllustrationCount(pages),
+        greaterThanOrEqualTo(pictureBookIllustrationCount(pages - 1)),
+        reason: '$pages pages',
+      );
+    }
   });
 }

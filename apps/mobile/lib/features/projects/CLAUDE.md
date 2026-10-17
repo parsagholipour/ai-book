@@ -108,6 +108,27 @@ nothing is coming.
   start one more book than the account may have (`BOOKS_IN_PROGRESS_LIMIT`) needs nothing here:
   every door shows the server's sentence through `userFacingError`.
 
+## Time left
+
+- **A time-left estimate is seconds left, rounded so the stream does not churn, and null whenever
+  a number would be a guess.** The server sends `estimatedSecondsLeft` on `planningProgress` and
+  `generationProgress` (read into `MobilePlanningProgress` / `MobileGenerationProgress`); the count
+  is the server's and the words are the app's — `formatTimeLeft` (`generation_duration.dart`):
+  "About 4 min left" (minutes rounded up), "Less than a minute left" under 60 s, and "Almost done"
+  once the count has run out with the work still going. `TimeLeftNote` draws it under the bar in
+  the plan footer (`_PlanBuildingFooter`), the chat's writing bubble (`_GenerationProgressBubble`),
+  the book page (`GenerationProgressOverviewCard`) and the book chat's operation card (a plan
+  revision there), as a calm line: the retry hint's schedule icon and quiet `bodySmall` text, no
+  colour of its own. The server sends a status only when it changed, so the note counts down by
+  itself every 10 s from the moment a *different* value arrived (`Timer.tick`, which also counts
+  the ticks a backgrounded app slept through). A status that resends the same value must not
+  restart it — the count would wind back up to where the server last left it — and nothing but a
+  new value from the server may raise it. Null draws nothing; the writing bubble and the book page
+  also hide it once the work has stopped or failed, and the plan footer once every step is done,
+  whatever the payload says. When there is a number at
+  all is the server's rule (`apps/api/src/mobile/CLAUDE.md`). `test/projects/time_left_test.dart`,
+  `test/projects/creation_chat_time_left_test.dart`.
+
 ## Quoting credits in the app
 
 The Effort picker quotes the **plan now** and a **writing rate**, not one blended total
@@ -134,9 +155,9 @@ quote carried the 150-credit export unlock and a free reader's did not (`exportU
 `estimateFullBookCreditCost`, which has no `EXPORT_UNLOCK` line at all. The server still sends
 `creditCosts.exportUnlock` (as 0) and the app never reads it, so even a price list that stored 150
 adds nothing. A children's story is a picture book, quoted `pictureBookIllustrationCount` pictures
-(`min(pages, 12)`: a picture on every page, never past 12) and described that way in the
-illustrations switch. `book_quote_test.dart` spells the totals out against core's
-`freeBookQuote.test.ts`.
+(two for every five pages, rounded to the nearest, at least 1 and never past 12; it was
+`min(pages, 12)` until 2026-10-17) and described that way in the illustrations switch.
+`book_quote_test.dart` spells the totals out against core's `freeBookQuote.test.ts`.
 
 ## Taking a book's file out
 

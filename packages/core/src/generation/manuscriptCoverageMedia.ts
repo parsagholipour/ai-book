@@ -1,5 +1,4 @@
 import { marked } from "marked";
-import { findFigureFences } from "./figures/figureBlocks.js";
 
 export type CoverageMediaScope = "story_pages" | "cover" | "all" | "character_references";
 type MediaScope = CoverageMediaScope;
@@ -68,8 +67,17 @@ export function buildCoverageMediaInventory(pages: readonly { index: number; mar
   } : {}) };
 }
 
+/**
+ * Pictures in the page's text. A ```figure block is not one: a bar, line or pie
+ * chart or a flow diagram is typeset from the book's own numbers, with no image
+ * asset and no illustration slot. Counted as story-page artwork, a reader who
+ * turned illustrations off got "artwork prohibited by the request" on books
+ * whose only pictures were their charts (2 of 2 such findings false,
+ * 2026-10-15). An explicit "no charts" is not a media scope here
+ * (`mediaAbsenceScopes` returns undefined for it), so it stays a requirement
+ * the coverage review reads like any other.
+ */
 function markdownHasArtwork(markdown: string): boolean {
-  if (findFigureFences(markdown).some((figure) => figure.spec)) return true;
   let found = false;
   marked.walkTokens(marked.lexer(markdown), (token) => {
     if (token.type === "image") found = true;

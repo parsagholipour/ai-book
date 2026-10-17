@@ -614,7 +614,7 @@ String _illustrationsSubtitle(
   }
   final each = imageCredits == null ? '' : ', $imageCredits credits each';
   final base = bookTypeChoice == 'children_story'
-      ? 'A picture on every page, up to $pictureBookMaxPictures '
+      ? 'About 2 pictures for every 5 pages, up to $pictureBookMaxPictures '
             'pictures$each.'
       : 'Up to ${visualLimitFor(bookType)} in-book illustrations$each.';
   if (quota == null) {

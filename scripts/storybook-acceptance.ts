@@ -88,7 +88,7 @@ async function localPreflight(allowedProjects: string[] = []) {
   if (!endpoint || !["minio", "localhost", "127.0.0.1"].includes(new URL(endpoint).hostname)) throw new Error("A local MinIO endpoint is required");
   await objectStore().ready();
   execFileSync("pdfinfo", ["-v"], { stdio: "pipe", timeout: 5000 });
-  // One worker process consumes both lanes, so each lane has exactly one consumer.
+  // One worker process consumes every lane, so each lane has exactly one consumer.
   const laneWorkers = await Promise.all(generationQueues.map((queue) => queue.getWorkers()));
   const workers = laneWorkers[0]!;
   if (laneWorkers.some((lane) => lane.length !== 1)) {

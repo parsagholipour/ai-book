@@ -416,7 +416,7 @@ function styleProfileExcerpts(profile: Record<string, unknown>): string[] {
  * What a page prompt needs to know to talk about the book's opening: the book,
  * the plan that may have committed to a hook, and which page is being written.
  * Every option type in the drafting and review layers already satisfies it —
- * `GeneratePageOptions`, `PolishPageOptions`, `ReviewPageOptions` and
+ * `GeneratePageOptions`, `ReviewPageOptions` and
  * `RevisePageOptions` — so a prompt passes its own `options` straight through.
  */
 export type PageInstructionSource = OpeningContractSource & {
@@ -531,8 +531,8 @@ export type OpeningContractSource = {
  * as covering the ban alone, on the grounds that "a repair's replacement page is
  * generated prose" — and round five found that justification true of the *brief*
  * producers, which assign work for prose about to be written, and false of every
- * prompt this contract feeds: `revisePageDraft` and `polishPageDraft`
- * rewrite the page they are handed, in place, and `rewritePageForUserRequest`
+ * prompt this contract feeds: `revisePageDraft` (and the page polish, since
+ * removed) rewrite the page they are handed, in place, and `rewritePageForUserRequest`
  * (`apps/worker/src/generation/textEditRewrite.ts`) routes a reader's "make page 1
  * sharper" through that same `revisePageDraft`. On an import's page 1 all three
  * therefore carried "deliver the plan's openingHook in the page's own prose" —

@@ -9,11 +9,8 @@ import {
   generatePageDraft,
   generateWholeBookDraft,
   generateWholeBookPageMap,
-  polishPageDraft,
-  repairPageBrief,
   reviewPageDraft,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage
 } from "../pages.js";
 import {
@@ -32,9 +29,7 @@ const sharedGeneration = {
   generateChapterBrief,
   generatePageDraft,
   reviewPageDraft,
-  repairPageBrief,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage,
   generateImageBytes,
   compileMarkdown: compileBookMarkdown,
@@ -84,7 +79,6 @@ export const draftThenPolishStrategy = Object.freeze({
   executionMode: "draft-then-polish",
   createChapterBriefs: generateWholeBookPageMap,
   generateWholeBookDraft,
-  polishPageDraft,
   ...sharedGeneration
 } satisfies BookGenerationStrategy);
 
@@ -108,6 +102,5 @@ export const researchMapDraftPolishStrategy = Object.freeze({
   researchDepth: 12,
   createChapterBriefs: generateWholeBookPageMap,
   generateWholeBookDraft,
-  polishPageDraft,
   ...sharedGeneration
 } satisfies BookGenerationStrategy);

@@ -10,6 +10,7 @@ import {
   GENERATION_PIPELINE_STAGES,
   PLANNING_STAGES,
   QUALITY_FEATURES,
+  REMOVED_QUALITY_FEATURE_IDS,
   autoStrategyRoutingMatrix,
   bookGenerationStrategies,
   pipelineForStrategy,
@@ -739,13 +740,14 @@ async function withRevisionConflictReply<T>(
  * future tier on a known feature disappear when an operator changes some other
  * gate. Existing known ids that are absent still receive their compiled
  * defaults, so revisions from before a feature was introduced retain the same
- * read behaviour.
+ * read behaviour. A gate this build deleted is not a future one: it is dropped.
  */
 function mergeQualityFeatureSettings(
   stored: unknown,
   assignments: QualityFeatureAssignments
 ): Record<string, Prisma.InputJsonValue> {
   const settings = isJsonObject(stored) ? { ...stored } : {};
+  for (const id of REMOVED_QUALITY_FEATURE_IDS) delete settings[id];
   for (const id of QUALITY_FEATURE_IDS) {
     // `[]` is a real assignment — it is how a feature is switched off — so the
     // test is presence, never truthiness.
@@ -817,7 +819,8 @@ function serializeGenerationQuality(
  * Keep the response shape consumable by old consoles while exposing compatible
  * future settings. Known ids always serialize as string arrays (falling back to
  * the normal parser for malformed legacy data); unknown ids are included only
- * when their value is the same tier-list shape the console understands.
+ * when their value is the same tier-list shape the console understands, and
+ * never a gate this build deleted, which the console would draw as a new one.
  */
 function serializeQualityFeatureSettings(stored: unknown): Record<string, string[]> {
   const record = isJsonObject(stored) ? stored : {};
@@ -828,7 +831,7 @@ function serializeQualityFeatureSettings(stored: unknown): Record<string, string
     settings[id] = isStringArray(value) ? [...value] : [...known[id]];
   }
   for (const [id, value] of Object.entries(record)) {
-    if (!isQualityFeatureId(id) && isStringArray(value)) {
+    if (!isQualityFeatureId(id) && !REMOVED_QUALITY_FEATURE_IDS.includes(id) && isStringArray(value)) {
       settings[id] = [...value];
     }
   }

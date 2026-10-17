@@ -203,7 +203,7 @@ function coveringChapters(compositions: readonly ToolkitComposition[]): Map<stri
   return homes;
 }
 
-/** Requirements no section covers, as messages the repair call can act on. */
+/** Requirements no section covers, as messages: diagnostics on the result, and what `homeUncoveredRequirements` places. */
 export function requirementCoverageIssues(compositions: readonly ToolkitComposition[], requirements: readonly RequirementRef[]): string[] {
   const homes = coveringChapters(compositions);
   return requirements
@@ -226,8 +226,8 @@ function contentWords(value: string): Set<string> {
 }
 
 /**
- * Without a repair call (Quick Draft's `formPlanRepair` is off) an uncovered
- * requirement is homed by code: the section sharing the most words with it,
+ * There is no repair call (removed 2026-10-16 with `formPlanRepair`), so an
+ * uncovered requirement is homed by code: the section sharing the most words with it,
  * a word in the section counting twice a word in its chapter's plan, ties to
  * a deliverable section. It is named in that section's owns so the writer sees it.
  */

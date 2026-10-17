@@ -1,7 +1,8 @@
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import type { ImageAdapterCapabilities } from "../adapters/types.js";
 import { coverArtSourceFor } from "./coverSource.js";
-import { coverConceptText } from "./coverText.js";
+import { cleanText, coverConceptText } from "./coverText.js";
+import { shouldIllustratePage } from "./illustrationSlots.js";
 import {
   libraryCharactersFromMediaSettings,
   matchLibraryCharacter,
@@ -62,7 +63,10 @@ export function coverCastCharacters(input: CreateProjectInput, plan: BookPlan): 
  * settled pass has to answer for, and the only set a pass renders.
  *
  * A book with interior illustrations draws its whole cast: every page may
- * need anyone. A cover-only book draws only who its cover depicts. It used to
+ * need anyone. (A short book whose draft decided who its pictures show draws
+ * that cast instead — `characterReferenceCastFromDraft`, stored on the plan
+ * version by the worker; this is the answer wherever nothing was decided.)
+ * A cover-only book draws only who its cover depicts. It used to
  * draw everyone too — "Tiko and the Quiet Sea" (2026-10-01) rendered four
  * sheets, then attached three of them, to a cover whose concept showed one
  * tortoise: five image calls ($0.195) against the 45 credits the cover is
@@ -80,6 +84,85 @@ export function characterReferenceCast(input: CreateProjectInput, plan: BookPlan
   }
   const portraits = new Set(coverPortraitCharacters(input, plan).map(({ character }) => character));
   return coverCastCharacters(input, plan).filter((character) => !portraits.has(character));
+}
+
+/** How many of a book's drawn pictures have to name a character before a sheet is drawn for them. */
+export const CHARACTER_REFERENCE_MIN_PICTURES = 2;
+
+/** A page of a whole-book draft, as far as what its picture shows. */
+export type DraftPictureSource = { index: number; imagePrompt?: string | null | undefined };
+
+/**
+ * The cast an illustrated book's whole-book draft decides its sheets for: the
+ * plan characters (in plan order) named in at least
+ * `CHARACTER_REFERENCE_MIN_PICTURES` of the pictures the book will draw, plus
+ * every one the reader saved with artwork. `undefined` when there is nothing to
+ * decide — no sheets at all, or a book whose pages are not illustrated, whose
+ * cover cast `characterReferenceCast` already answers — and `[]` is a decision
+ * to draw none.
+ *
+ * A sheet is a consistency aid: it keeps a character looking like itself from
+ * one picture to the next, so a character drawn once has nothing to be
+ * consistent with. The whole plan cast is what an illustrated book drew, and
+ * sheets are $0.039 image calls drawn before any page picture: a 10-page
+ * children's story at four pictures (pages 1, 3, 6, 8) named its otter in all
+ * four and a frog, a heron and a beaver in one each, and drew four sheets for
+ * it; over 45 days books drew four sheets for two pictures and three for one.
+ *
+ * The drawn pictures are the draft pages that get an interior illustration —
+ * `illustratesPage` with a prompt, exactly what `enqueueDraftPageIllustrations`
+ * queues, so a page outside the billed cap counts for nothing — and the cover
+ * when it is drawn by a model, since an illustrated book's cover attaches the
+ * same sheets: as a picture of whom its concept names (`coverCastCharacters`),
+ * or of the lead alone when that concept is only the brief
+ * (`coverConceptIsBrief`). Names are matched by `characterNamedIn`, the
+ * test the cover cast and the page selection already use. A character matching
+ * a library snapshot with saved artwork always keeps their sheet, because a
+ * page render attaches the reader's face only beside that character's own sheet
+ * (`libraryFacesForSheets` in the worker): without it, their saved face would
+ * reach no picture at all.
+ *
+ * Only the short-book pass asks this, and only once per plan version: its
+ * answer is stored so every later caller computes the identical cast.
+ */
+export function characterReferenceCastFromDraft(
+  input: CreateProjectInput,
+  plan: BookPlan,
+  pages: readonly DraftPictureSource[],
+  illustratesPage: (input: CreateProjectInput, plan: BookPlan, pageIndex: number) => boolean = shouldIllustratePage
+): Character[] | undefined {
+  if (!shouldGenerateCharacterReferences(input, plan) || !input.mediaSettings.fullIllustrations) {
+    return undefined;
+  }
+  const pictures = pages.flatMap((page) => {
+    const prompt = page.imagePrompt?.trim();
+    return prompt && illustratesPage(input, plan, page.index) ? [prompt] : [];
+  });
+  const coverCast = coverArtSourceFor(input.mediaSettings) !== "ai"
+    ? []
+    : coverConceptIsBrief(input, plan) ? plan.characters.slice(0, 1) : coverCastCharacters(input, plan);
+  const snapshots = libraryCharactersFromMediaSettings(input.mediaSettings);
+  return plan.characters.filter(
+    (character) =>
+      Boolean(matchLibraryCharacter(character.name, snapshots)?.portraitFile) ||
+      pictures.filter((picture) => characterNamedIn(character, picture)).length + (coverCast.includes(character) ? 1 : 0) >=
+        CHARACTER_REFERENCE_MIN_PICTURES
+  );
+}
+
+/**
+ * Whether an AI cover's concept is only the book's brief: the planner wrote none, so
+ * `makeFallbackPlan`'s `Cover illustration for <title>: <prompt>` stands (or the bare prompt, which
+ * `coverConceptText` falls back to). 145 of 172 plans with characters in the 45 days to 2026-10-17
+ * carried it. A brief names everyone the story has, not who the cover shows, so counting it as a
+ * picture of each of them gave every one-off friend a second picture and kept every sheet; read
+ * that way it shows the lead (`plan.characters[0]`), which keeps the cover consistent with the
+ * pages without drawing a sheet for a character one page shows.
+ */
+function coverConceptIsBrief(input: CreateProjectInput, plan: BookPlan): boolean {
+  const concept = cleanText(plan.illustrationPlan.coverPrompt);
+  const brief = cleanText(input.prompt);
+  return !concept || (brief.length > 0 && concept.startsWith("Cover illustration for ") && concept.endsWith(brief));
 }
 
 /**

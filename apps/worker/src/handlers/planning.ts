@@ -21,12 +21,14 @@ import {
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, editOperationIdFromJob } from "../runtime/jobLifecycle.js";
-import { isStopRequestedError, type JobCompletion } from "../runtime/jobTypes.js";
+import type { JobCompletion } from "../runtime/jobTypes.js";
 import { jsonPayloadToRecord } from "../runtime/serialization.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualitySettings.js";
 import { claimPlanningCompletion } from "../runtime/planningCompletion.js";
 import { preparePlanningResearch, savePlanningResearch } from "./planningResearch.js";
-import { bookPlanSchema, createProviders, critiquePlan, explicitLanguageRequest, mergePlanCriticPatch, mediaSettingsRowWriteback, normalizeProjectLanguage, seedStoryStateFromPromises } from "@book-maker/core";
+import { prepareCompositionDedupeKey, withoutPreparedFields } from "../generation/composedPrepRecord.js";
+import { enqueueWorkerJob } from "../runtime/dispatch.js";
+import { bookPlanSchema, createProviders, explicitLanguageRequest, isRecord, mediaSettingsRowWriteback, normalizeProjectLanguage, seedStoryStateFromPromises, type BookGenerationStrategy } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import type { PlanBookJob, RevisePlanJob } from "../runtime/jobPayloads.js";
 
@@ -42,7 +44,7 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const quality = await loadQualityContext(input);
   applyPlanThinkingBoost(providers.text, quality.enabled("planThinkingBoost"));
-  let plan = await strategy.createPlan({
+  const plan = await strategy.createPlan({
     // Planning sees pasted notes and uploaded-file digests; the stored
     // snapshot below stays clean so page generation input is unchanged.
     input: inputWithMobileSourceMaterial(input),
@@ -63,26 +65,12 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
       }
     }
   });
-  if (quality.enabled("planCritic")) {
-    try {
-      const patch = await critiquePlan({ textModel: providers.text, plan, userPrompt: input.prompt });
-      plan = mergePlanCriticPatch(plan, patch, {
-        input,
-        userPrompt: input.prompt
-      });
-    } catch (error) {
-      if (isStopRequestedError(error)) {
-        throw error;
-      }
-      console.warn(`Plan critic skipped for project ${projectId}`, error);
-    }
-  }
   const version = await nextPlanVersion(projectId);
   const research = strategyUsesSemanticMemory(strategy)
     ? await preparePlanningResearch(projectId, plan.researchNotes, providers.embedding)
     : new Map();
 
-  await prisma.$transaction(async (tx) => {
+  const planVersionId = await prisma.$transaction(async (tx) => {
     // Output, readiness and the paid verdict are indivisible. A crash after
     // this commit is handled by the processor's existing COMPLETED replay.
     await claimPlanningCompletion(tx, job, {
@@ -135,11 +123,38 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
     }
 
     await savePlanningResearch(tx, projectId, plan.researchNotes, research);
+    return planVersion.id;
   });
-  return { durableCompletionCommitted: true };
+  return {
+    durableCompletionCommitted: true,
+    ...(job.data.prepareComposition ? { afterJobCompleted: () => queueCompositionPrep(projectId, planVersionId, strategy) } : {})
+  };
 }
 
-export async function revisePlan(job: RevisePlanJob) {
+/**
+ * Queues the speculative composition prep for a plan a reader is about to read (harness redesign H4,
+ * `handlers/prepareComposition.ts`): only for a composed book, only while the plan is still the project's
+ * current one, and never as part of the plan's own paid attempt. Best-effort: a plan without a prep is a plan
+ * whose book run makes those calls itself.
+ */
+async function queueCompositionPrep(projectId: string, planId: string, strategy: BookGenerationStrategy): Promise<void> {
+  if (strategy.executionMode !== "composed-chapters") return;
+  try {
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { status: true, currentPlanId: true } });
+    if (project?.status !== "PLAN_READY" || project.currentPlanId !== planId) return;
+    await enqueueWorkerJob({
+      projectId,
+      type: "PREPARE_COMPOSITION",
+      payload: { planId },
+      dedupeKey: prepareCompositionDedupeKey(planId),
+      attemptIdOverride: null
+    });
+  } catch (error) {
+    console.warn("Speculative composition prep was not queued", { event: "generation.speculative_prep.not_queued", projectId, planId, error });
+  }
+}
+
+export async function revisePlan(job: RevisePlanJob): Promise<JobCompletion> {
   const { projectId, planId, message, generationJobId } = job.data;
   const operationId = editOperationIdFromJob(job);
   const respondedQuestionPrompts = job.data.respondedQuestionPrompts;
@@ -217,7 +232,9 @@ export async function revisePlan(job: RevisePlanJob) {
   if (requestedLanguage) input.language = normalizeProjectLanguage(requestedLanguage);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
-  const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
+  // What the speculative composition prep stored was planned for this version's chapters, not the revision's:
+  // a revision merges onto the current plan, so it is taken off first.
+  const currentPlan = bookPlanSchema.parse(isRecord(planVersion.planningPackage) ? withoutPreparedFields(planVersion.planningPackage) : planVersion.planningPackage);
   await advanceJobStep(generationJobId, "revise", 35);
   const revised = await strategy.revisePlan({
     currentPlan,
@@ -233,7 +250,7 @@ export async function revisePlan(job: RevisePlanJob) {
   const version = await nextPlanVersion(projectId);
   const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];
 
-  await prisma.$transaction(async (tx) => {
+  const revisedPlanId = await prisma.$transaction(async (tx) => {
     // CAS, not a blind write: an approval that committed while this revision
     // was being drafted owns the plan now. Superseding it here would silently
     // demote a committed approval and yank the project back to PLAN_READY
@@ -283,6 +300,8 @@ export async function revisePlan(job: RevisePlanJob) {
     if (claimedProject.count !== 1) {
       throw new Error("Plan revision lost to a concurrent approval");
     }
+    return newPlan.id;
   });
   await advanceJobStep(generationJobId, "save", 90);
+  return job.data.prepareComposition ? { afterJobCompleted: () => queueCompositionPrep(projectId, revisedPlanId, strategy) } : {};
 }

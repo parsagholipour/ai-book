@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PageQualityReport, pageQualityReportSchema, createProjectSchema, makeFallbackPlan, JEV_SELECTION } from "@book-maker/core";
-import { stubbedEnrichment, mocks, BALANCED_CANDIDATES, report, draftNamed, qualityGates, anchorPage } from "./testing/pageReviewHarness.js";
+import { PageQualityReport, createProjectSchema, makeFallbackPlan, JEV_SELECTION } from "@book-maker/core";
+import { mocks, LOOP_CANDIDATES, report, draftNamed, qualityGates } from "./testing/pageReviewHarness.js";
 import { reviewAndSaveGeneratedPage, runPageQualityLoop, reviewPageWithQualityGates } from "./pageReview.js";
 
 describe("runPageQualityLoop style audit", () => {
@@ -34,7 +34,7 @@ describe("runPageQualityLoop style audit", () => {
       previousPages: [],
       continuityNotes: [],
       textModel: {} as never,
-      maxCandidates: BALANCED_CANDIDATES,
+      maxCandidates: LOOP_CANDIDATES,
       reviseContext: "Page 4",
       quality: qualityGates("styleAuditor"),
       styleExcerpts: excerpts,
@@ -46,35 +46,18 @@ describe("runPageQualityLoop style audit", () => {
 
   beforeEach(() => vi.clearAllMocks());
 
-  it("stops a final repair after two candidates fail to improve and keeps its strongest draft", async () => {
+  it("spends its whole budget on a page that never improves and keeps its strongest draft", async () => {
     const strategy = {
       revisePageDraft: vi.fn(async () => draftNamed("No improvement")),
       reviewPageDraft: vi.fn(async () => report(40))
     };
-    const outcome = await loopWith({ strategy, maxCandidates: 5, stopAfterNoImprovement: 2, quality: qualityGates() });
+    const outcome = await loopWith({ strategy, maxCandidates: 3, quality: qualityGates() });
     expect(strategy.revisePageDraft).toHaveBeenCalledTimes(2);
     expect(outcome.attempts).toBe(3);
+    expect(outcome.approved).toBe(false);
+    expect(outcome.revision).toBe(1);
     expect(outcome.draft.title).toBe("Initial");
     expect(outcome.report.score).toBe(50);
-  });
-
-  it("retains the saved manuscript when every automatic repair scores worse", async () => {
-    const strategy = { revisePageDraft: vi.fn(async () => draftNamed("Worse")), reviewPageDraft: vi.fn(async () => report(30)) };
-    const outcome = await loopWith({ strategy, quality: qualityGates(), maxCandidates: 3,
-      initialKeeper: { draft: draftNamed("Saved"), report: report(60) } });
-    expect(outcome.draft.title).toBe("Saved");
-    expect(outcome.revision).toBe(0);
-    expect(outcome.attempts).toBe(3);
-    expect(outcome.approved).toBe(false);
-    expect(outcome.pendingBriefRepair).toBeUndefined();
-  });
-
-  it("preserves the manuscript bridge goal during later rewrites and reviews", async () => {
-    const repairInstruction = "Keep the neighbors waiting and bridge the walk into the clearing.";
-    const strategy = strategyRejectingOnce();
-    await loopWith({ strategy, quality: qualityGates(), repairInstruction });
-    for (const [request] of strategy.revisePageDraft.mock.calls) expect(request).toMatchObject({ pageEditGuidance: repairInstruction });
-    for (const [request] of strategy.reviewPageDraft.mock.calls) expect(request).toMatchObject({ repairInstruction });
   });
 
   it.each([false, true])("keeps the original naming baseline across repair candidates (caller original: %s)", async (callerOriginal) => {
@@ -219,7 +202,7 @@ describe("runPageQualityLoop conditional Smart unslop", () => {
       projectId: "project-1", strategy: strategy as never, input, plan, pageIndex: 4,
       draft: candidate, report: { ...initialReport }, previousPages: [], continuityNotes: [],
       textModel: {} as never, decisions, userRequest, quality: qualityGates(),
-      maxCandidates: BALANCED_CANDIDATES, reviseContext: "Page 4"
+      maxCandidates: LOOP_CANDIDATES, reviseContext: "Page 4"
     });
     expect(outcome.approved).toBe(true);
     expect(choose).toHaveBeenCalledTimes(1);
@@ -266,7 +249,7 @@ describe("runPageQualityLoop conditional Smart unslop", () => {
       previousPages: [],
       continuityNotes: [],
       textModel: {} as never,
-      maxCandidates: BALANCED_CANDIDATES,
+      maxCandidates: LOOP_CANDIDATES,
       reviseContext: "Page 4",
       quality: qualityGates()
     } as never);
@@ -285,7 +268,6 @@ describe("reviewAndSaveGeneratedPage", () => {
     executionMode: "sequential-pages",
     reviewPageDraft: vi.fn(),
     revisePageDraft: vi.fn(),
-    repairPageBrief: vi.fn(),
     shouldIllustratePage: vi.fn()
   };
 
@@ -303,7 +285,6 @@ describe("reviewAndSaveGeneratedPage", () => {
       generationJobId: "gj-1"
     }) as never;
 
-  const storyExtract = { storyDelta: { facts: ["The robin flew."] }, contradictions: [] };
   const preparedVector = { vectorLiteral: "[0.1,0.2]", error: null };
 
   beforeEach(() => {
@@ -317,12 +298,11 @@ describe("reviewAndSaveGeneratedPage", () => {
     mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.enqueueWorkerJob.mockResolvedValue({ id: "image-job" });
     strategy.shouldIllustratePage.mockReturnValue(false);
-    mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
     mocks.prepareEmbedding.mockResolvedValue(preparedVector);
   });
 
   it("stages and completes an approved first draft at revision 1", async () => {
-    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
+    mocks.reviewPage.mockResolvedValue(report(90, { approved: true }));
 
     const context = await reviewAndSaveGeneratedPage(baseOptions());
 
@@ -348,8 +328,6 @@ describe("reviewAndSaveGeneratedPage", () => {
       preparedVector
     );
     expect(context.page).toEqual({ index: 3, title: "First", markdown: "First text.", summary: "First summary." });
-    // Nothing repaired its brief, so the caller's copy of the chapter is left alone.
-    expect(context.repairedChapterBrief).toBeUndefined();
   });
 
   it("replays a settled row for an ordinary caller and refuses it for a deferred one", async () => {
@@ -357,7 +335,7 @@ describe("reviewAndSaveGeneratedPage", () => {
     // A `deferPublication` caller publishes the page itself, so the same fact is
     // a lost claim: returning `{ page }` with no candidate left four call sites
     // each inventing "returned no candidate" for a row another delivery owns.
-    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
+    mocks.reviewPage.mockResolvedValue(report(90, { approved: true }));
     mocks.prisma.page.findUnique.mockResolvedValue({
       id: "page-row-1",
       status: "COMPLETED",
@@ -384,271 +362,19 @@ describe("reviewAndSaveGeneratedPage", () => {
     expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
   });
 
-  it("forwards Jev routing and the requested edit into initial enrichment", async () => {
-    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
-    const decisions = { resolve: vi.fn() };
-    await reviewAndSaveGeneratedPage({
-      ...(baseOptions() as object), providers: { text: {}, embedding: {}, decisions },
-      editInstruction: "Use a formal register."
-    } as never);
-    expect(mocks.enrichPageQualityReport).toHaveBeenCalledWith(expect.objectContaining({
-      decisions, userRequest: "Use a formal register."
-    }));
-  });
-
-  it("keeps the best draft, not the last, when no rewrite is approved", async () => {
-    // Scores 40 → 70 → 55…: the sixth-rewrite-worse-than-second shape. The
-    // page must be saved FAILED_QA at the score-70 draft, and the flagged page
-    // must skip continuity, embedding, and illustration until it is repaired.
-    let rewrite = 1;
-    strategy.revisePageDraft.mockImplementation(async () => draftNamed(`Rewrite ${(rewrite += 1)}`));
-    strategy.reviewPageDraft
-      .mockResolvedValueOnce(report(40))
-      .mockResolvedValueOnce(report(70))
-      .mockResolvedValue(report(55));
+  it("saves a failing draft as drafted, FAILED_QA, with no rewrite and nothing published for later pages", async () => {
+    mocks.reviewPage.mockResolvedValue(report(40));
 
     const context = await reviewAndSaveGeneratedPage(baseOptions());
 
-    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(BALANCED_CANDIDATES);
-    expect(mocks.prisma.page.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: "FAILED_QA",
-          revision: 2,
-          title: "Rewrite 2",
-          qualityReport: expect.objectContaining({ score: 70 })
-        })
-      })
-    );
+    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
+    expect(strategy.revisePageDraft).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "FAILED_QA", revision: 1, title: "First", qualityReport: expect.objectContaining({ score: 40 }) })
+    }));
     expect(mocks.prepareEmbedding).not.toHaveBeenCalled();
-    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
     expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
     expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
-    // A flagged page still publishes its story delta: the final review rewrites
-    // the page and needs the state the keeper actually left behind.
-    expect(mocks.persistStoryExtract).toHaveBeenCalledTimes(1);
-    expect(context.page).toMatchObject({ index: 3, title: "Rewrite 2" });
-  });
-
-  it("bounds non-improving initial generation and publishes its strongest failed candidate", async () => {
-    strategy.reviewPageDraft.mockResolvedValueOnce(report(70)).mockResolvedValue(report(40));
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Worse"));
-    const result = await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), maxCandidates: 7 } as never);
-    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(2);
-    expect(result.page.title).toBe("First");
-    expect(mocks.prisma.page.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
-      status: "FAILED_QA", qualityReport: expect.objectContaining({ score: 70 })
-    }) }));
-  });
-
-  it("publishes simultaneous batch and local findings without losing the repair goal", async () => {
-    const markdown = "Here's the thing: the sample changed. At its core, the test is mechanical. The outcome serves as a testament to calibration.";
-    const indexedDraft = { ...draftNamed("Batch"), index: 3, markdown };
-    const batchReport = pageQualityReportSchema.parse({ approved: false, score: 65, issues: ["Turtle's arc is missing."], requiredRevisions: ["Show Turtle accept help."] });
-    const parsedInput = createProjectSchema.parse({ prompt: "A story about cooperation.", category: "KIDS", targetPages: 8 });
-    const precomputedReview = { draftMarkdown: markdown, report: batchReport, storyExtract: null, styleAudit: null,
-      completedChecks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false }, manuscriptPages: [indexedDraft] };
-    await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), input: parsedInput,
-      plan: makeFallbackPlan(parsedInput), draft: indexedDraft, precomputedReview, deferRepairsUntilFinalization: true } as never);
-    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
-    expect(strategy.revisePageDraft).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "FAILED_QA",
-      qualityReport: expect.objectContaining({ issues: expect.arrayContaining(["Turtle's arc is missing."]), requiredRevisions: expect.arrayContaining(["Show Turtle accept help."]) }) }) }));
-  });
-
-  it("saves an unverified draft without restarting its exhausted review or keeper extraction", async () => {
-    const indexedDraft = { ...draftNamed("Unavailable"), index: 3 };
-    const unavailable = pageQualityReportSchema.parse({ approved: false, score: 100, scoreBasis: "screened_unscored", notes: "Review unavailable." });
-    mocks.qualityEnabled.mockImplementation(feature => feature === "storyExtractAudit");
-    await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), draft: indexedDraft, deferRepairsUntilFinalization: true,
-      precomputedReview: { draftMarkdown: indexedDraft.markdown, report: unavailable, reviewUnavailable: true, storyExtract: null, styleAudit: null,
-        completedChecks: { pageModelReview: false, storyExtractAudit: false, styleAuditor: false }, manuscriptPages: [indexedDraft] } } as never);
-    expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
-    expect(strategy.revisePageDraft).not.toHaveBeenCalled();
-    expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
-      status: "FAILED_QA", markdown: indexedDraft.markdown, qualityReport: expect.objectContaining({ approved: false, scoreBasis: "screened_unscored" })
-    }) }));
-  });
-
-  it("falls back to normal review and repairs when a deferred batch verdict is stale", async () => {
-    const indexedDraft = { ...draftNamed("Current"), index: 3 };
-    strategy.reviewPageDraft.mockResolvedValueOnce(report(50)).mockResolvedValue(report(95, { approved: true }));
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Fixed"));
-    await reviewAndSaveGeneratedPage({ ...(baseOptions() as object), draft: indexedDraft, deferRepairsUntilFinalization: true,
-      precomputedReview: { draftMarkdown: "Older manuscript.", report: report(95, { approved: true }), storyExtract: null, styleAudit: null,
-        completedChecks: { pageModelReview: true, storyExtractAudit: false, styleAuditor: false }, manuscriptPages: [indexedDraft] } } as never);
-    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(2);
-    expect(strategy.revisePageDraft).toHaveBeenCalledOnce();
-  });
-
-  it("keeps URL-less semantic hits out of the shared page-review revision prompt", async () => {
-    const citeable = "Boundary papers: Commission records.";
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "claimRetrieve");
-    mocks.loadResearchNotesForGeneration.mockResolvedValue([citeable]);
-    mocks.retrieveSemanticResearchNotes.mockResolvedValue([
-      "Grounding summary: URL-less bootstrap claim.",
-      citeable
-    ]);
-    strategy.reviewPageDraft
-      .mockResolvedValueOnce(report(40, { groundedOk: false, issues: ["Needs revision."] }))
-      .mockResolvedValue(report(90, { approved: true }));
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
-
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    expect(mocks.retrieveSemanticResearchNotes).toHaveBeenCalledTimes(1);
-    expect(strategy.revisePageDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ retrievedResearch: [citeable] })
-    );
-  });
-
-  /** The book's opening pages, which is what a style lock is. */
-  const lockPages = [anchorPage(1, "opening-voice"), anchorPage(2, "second-voice")];
-  const pinned = lockPages.map((page) => page.markdown.trim());
-
-  /** The recency window a continuation hands in: pages 23–24, not the opening. */
-  const continuationWindow = [anchorPage(23, "late-voice"), anchorPage(24, "later-voice")];
-
-  const savedReport = () =>
-    (mocks.prisma.page.create.mock.calls[0]![0] as { data: { qualityReport: Record<string, unknown> } }).data
-      .qualityReport;
-
-  /** The style lock the loop's first rewrite was anchored to. */
-  const revisedWith = () => (strategy.revisePageDraft.mock.calls[0]![0] as { styleExcerpts?: string[] }).styleExcerpts;
-
-  /** The pin the enrichment pass was handed — the one array everything reads. */
-  const enrichedWith = () =>
-    (mocks.enrichPageQualityReport.mock.calls[0]![0] as { styleExcerpts?: string[] }).styleExcerpts;
-
-  const withStyleLock = () => {
-    mocks.loadStyleLockPages.mockResolvedValue(lockPages);
-    strategy.reviewPageDraft.mockResolvedValueOnce(report(50)).mockResolvedValue(report(85, { approved: true }));
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
-  };
-
-  it("pins the book's opening voice, not the window the caller drafted from", async () => {
-    // This path loaded no style lock at all, so the enrichment pass fell back to
-    // pinning from `previousPages` — and `continueBook` hands in the last
-    // eighteen pages, so a continuation at page 41 was anchored to pages 23 and
-    // 24. Every other rewrite path takes the real lock; this was the one left.
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleExcerpts");
-    withStyleLock();
-    const options = { ...(baseOptions() as object), previousPages: continuationWindow } as never;
-
-    await reviewAndSaveGeneratedPage(options);
-
-    expect(mocks.loadStyleLockPages).toHaveBeenCalledWith("project-1", 3, continuationWindow);
-    expect(enrichedWith()).toEqual(pinned);
-    expect(enrichedWith()!.join(" ")).not.toMatch(/late-voice|later-voice/);
-    // One derivation, three readers: the first review, the enrichment pass and
-    // the loop's own anchor are the same array rather than copies that happen
-    // to agree. The first review used to omit the lock entirely.
-    expect(strategy.reviewPageDraft.mock.calls[0]![0].styleExcerpts).toBe(enrichedWith());
-    expect(revisedWith()).toBe(enrichedWith());
-  });
-
-  it("loads no style lock at all when the excerpts gate is off", async () => {
-    withStyleLock();
-
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    expect(mocks.loadStyleLockPages).not.toHaveBeenCalled();
-    expect(enrichedWith()).toEqual([]);
-    expect(strategy.reviewPageDraft.mock.calls[0]![0].styleExcerpts).toBeUndefined();
-    expect(revisedWith()).toBeUndefined();
-  });
-
-  it("audits an approved revision against the very array the loop revised with", async () => {
-    // The auditor is the loop's, built out of the excerpts the loop was handed,
-    // and the assertion is by reference: deriving them a second way fails here
-    // even where the two derivations agree today.
-    mocks.qualityEnabled.mockImplementation(
-      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
-    );
-    withStyleLock();
-
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(1);
-    const audited = mocks.auditPageStyle.mock.calls[0]![0] as { markdown: string; styleExcerpts: string[] };
-    expect(audited.markdown).toBe("Rewrite text.");
-    expect(audited.styleExcerpts).toEqual(pinned);
-    expect(audited.styleExcerpts).toBe(revisedWith());
-    // Zero rather than absent: it is what marks the report as audited at all.
-    expect(savedReport().stylePenalty).toBe(0);
-  });
-
-  it("builds no auditor with the gate off, or with nothing pinned to compare against", async () => {
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleExcerpts");
-    withStyleLock();
-
-    // Excerpts pinned, auditor gate off: the rewrite is still anchored to them.
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
-    expect(revisedWith()).toEqual(pinned);
-    expect(savedReport()).not.toHaveProperty("stylePenalty");
-
-    // Auditor gate on, excerpts gate off: nothing is even loaded to pin.
-    vi.clearAllMocks();
-    mocks.prisma.page.findUnique.mockResolvedValue(null);
-    mocks.prisma.page.create.mockResolvedValue({ id: "page-row-1", revision: 1 });
-    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
-    mocks.enrichPageQualityReport.mockImplementation(stubbedEnrichment);
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleAuditor");
-    withStyleLock();
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    expect(mocks.loadStyleLockPages).not.toHaveBeenCalled();
-    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
-  });
-
-  it("carries a failed audit's penalty and issues into the report it saves", async () => {
-    mocks.qualityEnabled.mockImplementation(
-      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
-    );
-    mocks.loadStyleLockPages.mockResolvedValue(lockPages);
-    // The reviewer approves the first rewrite and rejects the rest, so the
-    // audited draft is the keeper and its report is what the page is saved on.
-    strategy.reviewPageDraft
-      .mockResolvedValueOnce(report(50))
-      .mockResolvedValueOnce(report(85, { approved: true }))
-      .mockResolvedValue(report(40));
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
-    mocks.auditPageStyle.mockResolvedValue({
-      styleOk: false,
-      styleIssues: ["Register drifts into lecture mode.", "Rhythm ignores the opening."]
-    });
-
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    expect(mocks.prisma.page.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED_QA" }) })
-    );
-    expect(savedReport()).toMatchObject({ score: 85, stylePenalty: 30 });
-    expect(savedReport().issues).toContain("Register drifts into lecture mode.");
-  });
-
-  it("spends at most two re-audits on a page, and starts the next page with a fresh budget", async () => {
-    // The reviewer approves every rewrite and the audit rejects every one, so
-    // nothing but the counter can stop the two gates trading provider calls.
-    mocks.qualityEnabled.mockImplementation(
-      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
-    );
-    withStyleLock();
-    mocks.auditPageStyle.mockResolvedValue({ styleOk: false, styleIssues: ["Register drifts."] });
-
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    // Two, then the third approval stands unaudited and ends the loop.
-    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(2);
-    expect(savedReport()).not.toHaveProperty("stylePenalty");
-
-    // The closure is built once per call, so the next page pays for its own.
-    strategy.reviewPageDraft.mockResolvedValueOnce(report(50)).mockResolvedValue(report(85, { approved: true }));
-    await reviewAndSaveGeneratedPage(baseOptions());
-
-    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(4);
+    expect(context.page).toMatchObject({ index: 3, title: "First" });
   });
 });

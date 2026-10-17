@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { hasResearchIntent } from "./researchIntent.js";
+import { modelTierForInput } from "../adapters/modelTiers.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { firstPageBriefFieldsForRange } from "./pageBriefContract.js";
 import { decodeGeneratedChapterBrief } from "./generatedChapterBriefAcceptance.js";
@@ -16,9 +17,11 @@ import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
 import { generationPageCountBounds, requestedGenerationPages } from "./pageCountAllowance.js";
 
 export function usesCompactPictureBookPlanning(input: CreateProjectInput): boolean {
-  // Page-count and prose requirements select the workflow; artwork is optional.
+  // Page-count and prose requirements select the workflow; artwork is optional. Quick Draft plans
+  // without the requirement contract's extra call. This read `mediaSettings.finalReview`, which only
+  // the Quick Draft preset left off; that flag controls nothing since 2026-10-16, so the tier says it.
   return input.category === "KIDS" && requestedGenerationPages(input) >= 5 && requestedGenerationPages(input) <= 40 &&
-    input.mediaSettings.finalReview === true &&
+    modelTierForInput(input) !== "fast" &&
     (!input.mediaSettings.generationStrategy || input.mediaSettings.generationStrategy === "auto") && !hasResearchIntent(input) &&
     !mediaSettingsMobileRecord(input.mediaSettings).import;
 }

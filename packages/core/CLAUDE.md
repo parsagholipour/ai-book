@@ -31,12 +31,12 @@ zod, and a runtime import here would reach it. `./modelTiers` is
 the same shape one step further: both of its own imports are statement-level `import type` as well,
 and `./libraryMentions` carries no import statement at all — so those three measure the same, a
 runtime closure of zero modules and zero packages. It carries `modelTierForInput`, which used to live in `billing.ts` — a pricing module
-whose closure is twelve files and zod. The worker's `generation/tuning.ts` and
-`generation/qualitySettings.ts` ask only which models a book runs, spend no credits, and are both
-`vi.mock`ed with `vi.importActual`, so taking that one property lookup off the barrel dragged
-puppeteer, sharp and `node:fs` into their mock factories — and a suite mocking core with a bare
-factory would have left `modelTierForInput` undefined *inside the real module*, blowing up in
-`pageQaRewriteAttemptsFor` rather than in the code under test. Moving the accessor was the price of
+whose closure is twelve files and zod. The worker's `generation/qualitySettings.ts` (and
+`generation/tuning.ts`, until its tier-scaled page-QA budgets were deleted on 2026-10-16) asks only
+which models a book runs, spends no credits, and is `vi.mock`ed with `vi.importActual`, so taking
+that one property lookup off the barrel dragged puppeteer, sharp and `node:fs` into its mock
+factories — and a suite mocking core with a bare factory would have left `modelTierForInput`
+undefined *inside the real module*, blowing up there rather than in the code under test. Moving the accessor was the price of
 the subpath, and it is the right home anyway: a tier is what routes the models, not what prices
 them. `./jobSteps` is the fourth, and the one a consumer had been asking for by name: the console's
 fallback step labels in `apps/web/src/jobsDisplay.ts` were a second per-job-type table kept by hand
@@ -359,26 +359,33 @@ arrive with one.
   `creditCostForOperation("EXPORT_UNLOCK")` is 0 whatever a price list says; the operation stays so
   old ledger rows keep their title. No migration: the ceiling is the whole retirement.
   `freeBookQuote.test.ts` spells the totals out for the Dart twin.
-- **A children's picture book draws `min(pages, 12)` pictures: one a page up to twelve pages, and
-  twelve spread across any longer book.** It was capped at four pictures whatever its length; the
-  next rule (a picture a page to twelve, then one per two pages) stepped *down* at thirteen — 12
-  pages drew 12, 13 drew 7 — so it was replaced by the monotonic one (coordinator's decision,
-  2026-10-13). `pictureBookIllustrationCap` (`generation/illustrationSlots.ts`) is the cap for a
-  KIDS book the app made as a children's story (`short_story`) or with no app type; an Auto book
-  keeps Auto's ⌈pages/8⌉ because the app quotes Auto before its lane is known. The slots it picks
-  are the existing even spread, so 24 pages draw pages 1, 3 … 23. The typesetter already gives
-  each KIDS scene its own sheet from 5 to 40 pages and caps a picture scene's picture
-  (`pdfStoryPages.ts`), so no layout changed. The image rate is the tier's `imageGeneration`; the
-  free tier's illustrated-book slot rules are unchanged. Mirrored by `estimatedInteriorImageCount`
-  / `pictureBookIllustrationCount` in the app. **The welcome grant is sized to it**: with a drawn
-  cover on Balanced, a free reader's 12-page book is 1,031 and its plan 40 (1,071), a 16-page
-  1,103 with its plan, a 24-page 1,167, a 30-page — the free cap — 1,215, so the grant is 1,250
-  (migration 000110 moves an installation still on 1,150, which left out every picture book of 22
-  pages or more). `welcomeCredits.test.ts` walks every free length; raise the grant with any price
-  that would push one past it. The dashboard's revenue projection (`admin/pricingDrivers.ts`)
-  counts a charged book's pictures off the quote its charge stored (`estimatedInteriorImages`,
-  `includesCover`), and re-estimates with today's rule only a charge that stored none, so books
-  charged under an earlier rule do not project pictures nobody paid for.
+- **A children's picture book draws two pictures for every five pages, rounded to the nearest, at
+  least one and at most twelve, and the count never falls as a book grows.** 5 pages draw 2, 10
+  draw 4, 12 draw 5, 16 draw 6, 24 draw 10, 29 and longer 12 (`PICTURE_BOOK_MAX_PICTURES`). The
+  owner's decision (Parsa, 2026-10-17: "for a 10 page book I think 4 image max is enough"), because
+  pictures are about 99% of an illustrated book's provider cost — a 10-page Quick Draft children's
+  book spent $0.585 on 15 image calls and $0.006 on all its text. History: a flat four whatever the
+  length; then a picture a page to twelve and one per two pages after, which stepped *down* at
+  thirteen (12 pages drew 12, 13 drew 7) and was rejected for it; then `min(pages, 12)`
+  (coordinator's decision, 2026-10-13), which this replaced. It is integer arithmetic —
+  `min(12, max(1, floor((4p + 5) / 10)))`, round(2p/5) with no tie possible — so the Dart twin
+  agrees on every length. `pictureBookIllustrationCap` (`generation/illustrationSlots.ts`) is the
+  cap for a KIDS book the app made as a children's story (`short_story`) or with no app type; an
+  Auto book keeps Auto's ⌈pages/8⌉ because the app quotes Auto before its lane is known. The slots
+  it picks are the existing even spread, so 10 pages draw pages 1, 3, 6 and 8. The typesetter gives
+  each KIDS scene its own sheet from 5 to 40 pages, caps a picture scene's picture and centres a
+  text-only scene (`pdfStoryPages.ts`), so no layout changed. The image rate is the tier's
+  `imageGeneration`; the free tier's illustrated-book slot rules are unchanged. Mirrored by
+  `estimatedInteriorImageCount` / `pictureBookIllustrationCount` in the app, and both sides spell
+  the same table out (`freeBookQuote.test.ts`, `book_quote_test.dart`). **The welcome grant is
+  sized to it**: with a drawn cover on Balanced, a free reader's 12-page book is 716 and its plan 40
+  (756), a 16-page 833 with its plan, a 24-page 1,077, a 30-page — the free cap — 1,215, so the grant is 1,250 (migration 000110 moves an installation
+  still on 1,150, which under `min(pages, 12)` left out every picture book of 22 pages or more).
+  `welcomeCredits.test.ts` walks every free length; raise the grant with any price that would push
+  one past it. The dashboard's revenue projection (`admin/pricingDrivers.ts`) counts a charged
+  book's pictures off the quote its charge stored (`estimatedInteriorImages`, `includesCover`), and
+  re-estimates with today's rule only a charge that stored none, so books charged under an earlier
+  rule do not project pictures nobody paid for.
 - **Credit prices are operator-editable, not constants.** Read them with `creditPricing()` from
   `packages/core/src/creditPricing.ts` — never capture a price at module load, which is why
   `VOICE_CALL_POLICY` no longer carries `creditsPerMinute`. The compiled `DEFAULT_CREDIT_COSTS` are

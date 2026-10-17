@@ -7,15 +7,6 @@ import {
   STRUCTURAL_OCCURRENCE_SPAN_BLOCKING_MIN_OCCURRENCES
 } from "./manuscriptQualityPolicy.js";
 import { replayDeterministicManuscriptChecks } from "./manuscriptReplay.js";
-import {
-  MANUSCRIPT_REVIEW_MAX_CALLS,
-  MANUSCRIPT_REVIEW_MAX_OUTPUT_TOKENS,
-  MANUSCRIPT_REVIEW_PACKS_PER_CALL,
-  MANUSCRIPT_REVIEW_PACK_MAX_PAGES,
-  MANUSCRIPT_REVIEW_PACK_MAX_PROSE_CHARS,
-  MANUSCRIPT_REVIEW_TEMPERATURE
-} from "./manuscriptReviewPacks.js";
-import { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE } from "./manuscriptStructuralReview.js";
 import { PRODUCTION_MAP_AUDIT_VERSION, auditProductionMap, productionMapContractFromRanges } from "./productionMapAudit.js";
 import { STYLE_CONTRACT_VERSION } from "./styleContract.js";
 import {
@@ -41,19 +32,8 @@ export const ANTI_SLOP_STYLE_CONTRACT_VERSION = STYLE_CONTRACT_VERSION;
 
 export const ANTI_SLOP_PROVIDER_PURPOSES = [
   "generate-chapter-brief",
-  "dedupe-page-beats",
-  "review-manuscript-structure"
+  "dedupe-page-beats"
 ] as const;
-
-export const ANTI_SLOP_STRUCTURAL_REVIEW_BOUNDS = {
-  packsPerCall: MANUSCRIPT_REVIEW_PACKS_PER_CALL,
-  maxCalls: MANUSCRIPT_REVIEW_MAX_CALLS,
-  maxPagesPerPack: MANUSCRIPT_REVIEW_PACK_MAX_PAGES,
-  maxProseChars: MANUSCRIPT_REVIEW_PACK_MAX_PROSE_CHARS,
-  maxOutputTokens: MANUSCRIPT_REVIEW_MAX_OUTPUT_TOKENS,
-  temperature: MANUSCRIPT_REVIEW_TEMPERATURE,
-  purpose: MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE
-} as const;
 
 export const ANTI_SLOP_THRESHOLD_STATUS = "unchanged, provisional" as const;
 
@@ -138,7 +118,6 @@ export type AntiSlopCalibrationReport = {
   productionMapIntegrityEnv: typeof BOOK_MAKER_PRODUCTION_MAP_INTEGRITY_ENV;
   productionMapIntegrityRemovalPlan: string;
   thresholdStatus: typeof ANTI_SLOP_THRESHOLD_STATUS;
-  structuralReviewBounds: typeof ANTI_SLOP_STRUCTURAL_REVIEW_BOUNDS;
   automaticRepairExclusions: typeof ANTI_SLOP_AUTOMATIC_REPAIR_EXCLUSIONS;
   corpusCalibrationOwner: typeof ANTI_SLOP_CORPUS_CALIBRATION_OWNER;
   corpusCalibrationCadence: typeof ANTI_SLOP_CORPUS_CALIBRATION_CADENCE;
@@ -268,7 +247,6 @@ export async function replayAntiSlopCalibration(): Promise<AntiSlopCalibrationRe
     productionMapIntegrityEnv: BOOK_MAKER_PRODUCTION_MAP_INTEGRITY_ENV,
     productionMapIntegrityRemovalPlan: ANTI_SLOP_FLAG_REMOVAL_PLAN.removeAfter,
     thresholdStatus: ANTI_SLOP_THRESHOLD_STATUS,
-    structuralReviewBounds: ANTI_SLOP_STRUCTURAL_REVIEW_BOUNDS,
     automaticRepairExclusions: ANTI_SLOP_AUTOMATIC_REPAIR_EXCLUSIONS,
     corpusCalibrationOwner: ANTI_SLOP_CORPUS_CALIBRATION_OWNER,
     corpusCalibrationCadence: ANTI_SLOP_CORPUS_CALIBRATION_CADENCE,

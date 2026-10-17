@@ -287,51 +287,11 @@ export function localStyleInstructions(plan: BookPlan): string[] {
   return resolveStyleContract(plan).localRules.map((rule) => rule.instruction);
 }
 
-export function distributionStyleInstructions(plan: BookPlan): string[] {
-  return manuscriptPromptStyleFields(plan).distributionRules;
-}
-
 /** Page drafts and page review: local rules only. */
 export function pagePromptBookStyle(plan: BookPlan): { voiceGuide: string[]; antiAiRules: string[] } {
   return {
     voiceGuide: plan.voiceGuide,
     antiAiRules: localStyleInstructions(plan)
-  };
-}
-
-/**
- * Manuscript structural model review: distribution rules only.
- *
- * Plan-time `applyPlanStyleContract` already rewrote or preserved optional
- * distribution wording (including USER_PARALLEL_INTENT). Re-applying that
- * rewrite here without the user prompt would turn a stored "Ask the same
- * questions throughout…" line into the chapter-scoped house rewrite. Read
- * stored `distributionRules` when they exist; only a legacy plan with no
- * stored contract still goes through apply.
- */
-export function manuscriptPromptStyleFields(plan: BookPlan): {
-  distributionRules: string[];
-  writingMode?: WritingMode;
-} {
-  const stored = parseStyleContract(plan.styleContract);
-  if (stored && stored.distributionRules.length > 0) {
-    const writingMode = isWritingMode(plan.writingMode)
-      ? plan.writingMode
-      : inferWritingMode(undefined, plan);
-    const required = requiredStyleRulesFor(writingMode);
-    return {
-      distributionRules: mergeStyleRulesById(
-        required.distributionRules,
-        stored.distributionRules,
-        MAX_DISTRIBUTION_STYLE_RULES
-      ).map((rule) => rule.instruction),
-      ...(writingMode ? { writingMode } : {})
-    };
-  }
-  const resolved = applyPlanStyleContract(plan);
-  return {
-    distributionRules: (resolved.styleContract?.distributionRules ?? []).map((rule) => rule.instruction),
-    ...(resolved.writingMode ? { writingMode: resolved.writingMode } : {})
   };
 }
 

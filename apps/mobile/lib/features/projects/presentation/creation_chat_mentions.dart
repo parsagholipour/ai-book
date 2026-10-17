@@ -39,6 +39,7 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
   /// appears in the composer are ever sent.
   final Map<String, String> _insertedMentionTextById = <String, String>{};
   _MentionQuery? _mentionQuery;
+  bool _composerHasFocus = false;
 
   /// What the message would be sent with right now, in the order the text
   /// names them — what the `MentionChipsRow` above the composer draws, so what
@@ -58,10 +59,12 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
 
   void _attachMentionListener() {
     _composerController.addListener(_syncMentionsFromComposer);
+    _composerFocusNode.addListener(_syncMentionsFromComposer);
   }
 
   void _detachMentionListener() {
     _composerController.removeListener(_syncMentionsFromComposer);
+    _composerFocusNode.removeListener(_syncMentionsFromComposer);
     _characterLibraryWatch?.close();
     _characterLibraryWatch = null;
   }
@@ -77,8 +80,13 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
     final caret = selection.isValid && selection.isCollapsed
         ? selection.baseOffset
         : -1;
-    final query = caret < 0 ? null : _mentionQueryAt(text, caret);
     final attached = _resolveMentions(text);
+    final typedQuery = caret < 0 ? null : _mentionQueryAt(text, caret);
+    final query =
+        typedQuery != null && _isCompletedMentionQuery(typedQuery, attached)
+        ? null
+        : typedQuery;
+    final hasFocus = _composerFocusNode.hasFocus;
     final queryChanged =
         query?.start != _mentionQuery?.start ||
         query?.query != _mentionQuery?.query;
@@ -86,21 +94,23 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
       [for (final mention in attached) mention.id],
       [for (final mention in _attachedMentions) mention.id],
     );
-    if (queryChanged || attachedChanged) {
+    if (queryChanged || attachedChanged || hasFocus != _composerHasFocus) {
       _updateState(() {
         _mentionQuery = query;
         _attachedMentions = attached;
+        _composerHasFocus = hasFocus;
       });
     }
   }
 
-  /// The library is fetched only once the composer holds an `@`. This screen
-  /// opens far more often than a character is mentioned, and the suggestion
-  /// strip has always been what triggered the request — keeping that true means
-  /// nothing pays for the library until the reader reaches for it. It is never
-  /// torn down again: an `@` deleted mid-word is routinely retyped.
+  /// Fetch once the reader starts composing, then keep the library between
+  /// keystrokes. Programmatically restored @mentions also need to resolve
+  /// before the field receives focus.
   void _watchCharacterLibraryFor(String text) {
-    if (_characterLibraryWatch != null || !text.contains('@')) return;
+    if (_characterLibraryWatch != null ||
+        (!_composerFocusNode.hasFocus && !text.contains('@'))) {
+      return;
+    }
     _characterLibraryWatch = ref.listenManual(charactersProvider, (_, _) {
       // A name typed before the list arrived resolves the moment it does.
       if (mounted) _syncMentionsFromComposer();
@@ -111,7 +121,7 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
   /// autoDispose, so a read with nothing subscribed created it, fetched the
   /// library and dropped it again — once per keystroke, since every keystroke
   /// resolves mentions. Typing a 150-character brief sent 150 requests. No
-  /// subscription means no `@` yet, and so nothing to resolve.
+  /// subscription means the reader has not started composing yet.
   List<LibraryCharacter> get _loadedCharacters =>
       _characterLibraryWatch?.read().asData?.value.characters ??
       const <LibraryCharacter>[];
@@ -134,22 +144,48 @@ mixin _ComposerMentions on ConsumerState<CreationChatScreen> {
     );
   }
 
+  /// After a complete name and a space, the reader is writing prose again.
+  /// A typed prefix may still extend to a longer saved name; a tapped pick is
+  /// already complete even when another character shares that prefix.
+  bool _isCompletedMentionQuery(
+    _MentionQuery query,
+    List<MobileCreationCharacterRef> attached,
+  ) {
+    final typed = query.query.toLowerCase();
+    for (final mention in attached) {
+      if (!typed.startsWith('${mention.name.toLowerCase()} ')) continue;
+      if (_insertedMentionTextById.containsKey(mention.id) ||
+          !_loadedCharacters.any(
+            (character) => character.name.toLowerCase().startsWith(typed),
+          )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _insertMention(LibraryCharacter character) {
     final query = _mentionQuery;
-    if (query == null) return;
     final text = _composerController.text;
     final selection = _composerController.selection;
-    final caret = selection.isValid && selection.isCollapsed
-        ? selection.baseOffset
-        : text.length;
+    final start =
+        query?.start ?? (selection.isValid ? selection.start : text.length);
+    final end = selection.isValid ? selection.end : text.length;
+    final before = text.substring(0, start);
+    final after = text.substring(end);
     final mentionText = '@${character.name}';
-    final replaced = '$mentionText ';
-    final next =
-        text.substring(0, query.start) + replaced + text.substring(caret);
+    final leadingSpace = before.isNotEmpty && !RegExp(r'\s$').hasMatch(before)
+        ? ' '
+        : '';
+    final trailingSpace = after.isEmpty || !RegExp(r'^\s').hasMatch(after)
+        ? ' '
+        : '';
+    final replaced = '$leadingSpace$mentionText$trailingSpace';
+    final next = before + replaced + after;
     _insertedMentionTextById[character.id] = mentionText;
     _composerController.value = TextEditingValue(
       text: next,
-      selection: TextSelection.collapsed(offset: query.start + replaced.length),
+      selection: TextSelection.collapsed(offset: start + replaced.length),
     );
     _composerFocusNode.requestFocus();
   }
@@ -249,8 +285,8 @@ _MentionQuery? _mentionQueryAt(String text, int caret) {
       : _MentionQuery(start: query.start, query: query.query);
 }
 
-/// Horizontal strip of matching library characters, shown while an `@token`
-/// is being typed. Rendered above whichever footer is active.
+/// Available saved characters while composing, optionally filtered by an
+/// unfinished @mention. Rendered above whichever footer is active.
 class _MentionSuggestionStrip extends ConsumerWidget {
   const _MentionSuggestionStrip({
     required this.query,
@@ -258,7 +294,7 @@ class _MentionSuggestionStrip extends ConsumerWidget {
     required this.onManage,
   });
 
-  final String query;
+  final String? query;
   final ValueChanged<LibraryCharacter> onSelect;
   final VoidCallback onManage;
 
@@ -268,7 +304,10 @@ class _MentionSuggestionStrip extends ConsumerWidget {
     final library = ref.watch(charactersProvider);
     final characters =
         library.asData?.value.characters ?? const <LibraryCharacter>[];
-    final needle = query.trim().toLowerCase();
+    if (characters.isEmpty && query == null) {
+      return const SizedBox.shrink();
+    }
+    final needle = query?.trim().toLowerCase() ?? '';
     final matches = [
       for (final character in characters)
         if (needle.isEmpty || character.name.toLowerCase().contains(needle))
@@ -307,11 +346,13 @@ class _MentionSuggestionStrip extends ConsumerWidget {
             else
               ActionChip(
                 avatar: Icon(
-                  matches.isEmpty ? Icons.person_add_alt : Icons.people_outline,
+                  characters.isEmpty
+                      ? Icons.person_add_alt
+                      : Icons.people_outline,
                   size: 18,
                 ),
                 label: Text(
-                  matches.isEmpty ? 'Create a character' : 'My characters',
+                  characters.isEmpty ? 'Create a character' : 'My characters',
                 ),
                 onPressed: onManage,
               ),

@@ -72,6 +72,7 @@ import 'plan_approval.dart';
 import 'plan_build_progress.dart';
 import 'plan_revision_retry.dart';
 import 'progress_step_row.dart';
+import 'time_left_note.dart';
 import 'generation_retry_confirmation.dart';
 import 'generation_duration.dart';
 import 'project_chat_bubbles.dart';
@@ -612,9 +613,9 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       MentionChipsRow(mentions: _attachedMentions),
                       // Above whichever footer is active: the same composer
                       // serves both stages, so one strip serves both too.
-                      if (_mentionQuery != null)
+                      if (_composerHasFocus)
                         _MentionSuggestionStrip(
-                          query: _mentionQuery!.query,
+                          query: _mentionQuery?.query,
                           onSelect: _insertMention,
                           onManage: () => unawaited(_openCharacterLibrary()),
                         ),

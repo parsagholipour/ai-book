@@ -25,6 +25,11 @@ export async function retrieveChapterSources(options: Omit<Parameters<typeof bui
   fetch?: Parameters<typeof buildChapterDossier>[0]["fetch"] | undefined;
   /** Claim recovery owns coverage-driven rounds; ordinary dossiers retain their fallback round. */
   maxRounds?: 1 | 2 | undefined;
+  /**
+   * The web discovery told which lead each query was searched for, in place of `searchSources`, so the
+   * search's answer can be kept as that lead's research note (`createLeadResearch`, core `leadResearch.ts`).
+   */
+  leadSearch?: ((query: string, lead: string | undefined) => Promise<Array<{ title: string; url: string }>>) | undefined;
 }): Promise<BookDossier> {
   const trace = createDossierRunTrace(options.runLog, {
     projectId: options.projectId, chapterIndex: options.chapter.index, retrievalStage: "chapter_sources"
@@ -36,7 +41,12 @@ export async function retrieveChapterSources(options: Omit<Parameters<typeof bui
       const episodes: ChapterEpisode[] = options.episodes.map((episode) => ({ ...episode,
         searchQueries: [episode.searchQueries[round] || `${episode.title} ${options.chapter.title} original source documentation`]
       }));
-      const result = await buildChapterDossier({ ...options, episodes, queryOffset: 0,
+      const { leadSearch } = options;
+      // A round searches each lead by its own query (`buildChapterDossier`), so the query names the lead.
+      const searchSources = leadSearch
+        ? (query: string) => leadSearch(query, episodes.find((episode) => episode.searchQueries[0] === query)?.title)
+        : options.searchSources;
+      const result = await buildChapterDossier({ ...options, episodes, searchSources, queryOffset: 0,
         fetch: options.fetch ?? fetchSourceDocument,
         log: (event, detail) => trace.log(event, { ...detail, round: round + 1 }) });
       found.push({ ...result, excerpts: result.excerpts.map((excerpt) => ({ ...excerpt,

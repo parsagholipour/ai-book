@@ -70,7 +70,7 @@ function beatTexts(briefs: ChapterBrief[]): string[] {
 }
 
 describe("dry-run page beats", () => {
-  // `beatDedup` is on for every effort tier, so a templated map made every
+  // Beat dedup is mandatory map integrity on every tier, so a templated map made every
   // MOCK_AI book — the documented default way to work — pay for a rewrite call
   // and draft every page against a bogus "stay distinct from page 1" note.
   it("gives the whole-book map no near-duplicate beats to find", async () => {
@@ -314,22 +314,5 @@ describe("dry-run rotation tables", () => {
       pageIndex: 0,
       purpose: "Repair what was broken by a silver thread."
     });
-  });
-});
-
-describe("manuscript structural review dry-run", () => {
-  it("returns an empty keep result so MOCK_AI books are not blocked", async () => {
-    const { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE, structuralReviewResultSchema } = await import(
-      "../generation/manuscriptStructuralReview.js"
-    );
-    const result = await textModel.generateJson({
-      purpose: MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE,
-      schema: structuralReviewResultSchema,
-      messages: [
-        { role: "system", content: "structural review" },
-        { role: "user", content: "{}" }
-      ]
-    });
-    expect(result.data).toEqual({ clusters: [] });
   });
 });

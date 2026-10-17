@@ -1,14 +1,31 @@
 import {
-  bookArcSchema, type BookArc, bookPlanSchema, bookDevelopmentIssues, caseEvidenceIssues, developBookPlan, isRecord, supportsBookDevelopment,
+  bookArcSchema, type BookArc, bookPlanSchema, bookDevelopmentIssues, caseEvidenceIssues, developBookPlan, isRecord, planAuthorStance, supportsBookDevelopment,
   type AuthorStance, type BookPlan, type CreateProjectInput, type TextModelAdapter, type PrimarySourceSearch
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { config } from "../runtime/config.js";
-import { prepareBookMaterial, recordDossierSources } from "./composedChaptersMaterial.js";
+import { persistPlanField, prepareBookMaterial, recordDossierSources } from "./composedChaptersMaterial.js";
 import { prepareVerifiedCases } from "./composedEvidence.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { loadQualityContext } from "./qualitySettings.js";
 import type { RunLogger } from "../providers/runLogging.js";
+
+/**
+ * Whether `prepareComposedDevelopment` will research and replan this book — the
+ * shelved development arms, which rewrite the plan's chapters and episodes.
+ * The speculative prep plans nothing past the stance for such a book, and the
+ * book run fences the prep before the development reads the plan it compares.
+ */
+export function composedDevelopmentWillRun(options: {
+  input: CreateProjectInput;
+  plan: BookPlan;
+  quality: Awaited<ReturnType<typeof loadQualityContext>>;
+  hasPages: boolean;
+}): boolean {
+  if (!supportsBookDevelopment(options.input, options.plan) || options.plan.bookDevelopment) return false;
+  if (options.hasPages || config.MOCK_AI) return false;
+  return options.quality.enabled("bookDevelopment") || options.quality.enabled("caseEvidence");
+}
 
 /** Freeze the research and new structure together before any page can use either. */
 export async function prepareComposedDevelopment(options: {
@@ -71,8 +88,13 @@ export async function persistPreparedComposedPlan(projectId: string, planId: str
       episodes: plan.episodes, dossier: plan.dossier,
       ...(plan.bookDevelopment ? { bookDevelopment: plan.bookDevelopment } : {})
     };
-    // An old arc refers to the old chapter indexes. It cannot ride the replacement structure.
-    if (plan.bookDevelopment) delete next.bookArc;
+    // An old arc refers to the old chapter indexes. It cannot ride the replacement structure, and neither can a
+    // form plan or a guide's setting the speculative composition prep stored for the old chapters.
+    if (plan.bookDevelopment) {
+      delete next.bookArc;
+      delete next.compositions;
+      delete next.instructionalSetting;
+    }
     const written = await tx.planVersion.updateMany({
       where: { id: planId, planningPackage: { equals: row.planningPackage as Prisma.InputJsonValue } },
       data: { planningPackage: next as unknown as Prisma.InputJsonValue }
@@ -107,24 +129,17 @@ export async function persistBookArc(planId: string, arc: BookArc, chapters: Boo
   }
 }
 
+/**
+ * Never over a stance the plan already carried that the pass can write from, and a compare-and-swap like every
+ * other plan field, so a field the speculative composition prep wrote meanwhile is never written over
+ * (`persistPlanField`). A stored stance the pass cannot write from (`planAuthorStance` refuses it) is the one it
+ * just replaced in memory, so the generated one takes its place: a resume composes from the stance its finished
+ * chapters were written to, and the book run adopts the one the prep generated.
+ */
 export async function persistGeneratedAuthorStance(planId: string, stance: AuthorStance): Promise<void> {
-  try {
-    const row = await prisma.planVersion.findUnique({ where: { id: planId }, select: { planningPackage: true } });
-    if (!row || !isRecord(row.planningPackage) || isRecord(row.planningPackage.authorStance)) {
-      return;
-    }
-    await prisma.planVersion.update({
-      where: { id: planId },
-      data: { planningPackage: { ...row.planningPackage, authorStance: stance } as unknown as Prisma.InputJsonValue }
-    });
-  } catch (error) {
-    if (error instanceof Error && /stop/i.test(error.name)) {
-      throw error;
-    }
-    console.warn("Generated author stance was not persisted onto the plan", {
-      event: "generation.composed_chapters.stance_not_persisted",
-      planId,
-      error
-    });
-  }
+  await persistPlanField(planId, "authorStance", stance, storedStanceUsable);
+}
+
+export function storedStanceUsable(stored: unknown): boolean {
+  return isRecord(stored) && planAuthorStance({ authorStance: stored } as unknown as BookPlan) !== undefined;
 }

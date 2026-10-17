@@ -60,8 +60,8 @@ export type PreparedEmbedding = { vectorLiteral: string | null; error: string | 
  * exponentially deferred for a reason that has nothing to do with the provider,
  * while the loop spent the rest of its batch on a run already settling. The
  * swallow was also the odd one out: `writePreparedEmbedding` already lets a stop
- * out of the insert, and `keeperStoryExtractForSave` — the model call directly
- * above this one in `pageReview.ts` — swallows every failure but this one.
+ * out of the insert, and the story extract that sat directly above this call in
+ * `pageReview.ts` (removed 2026-10-16) swallowed every failure but this one.
  */
 export async function prepareEmbedding(text: string, embedding: EmbeddingAdapter): Promise<PreparedEmbedding> {
   try {

@@ -10,15 +10,14 @@ vi.mock("./composedChaptersMaterial.js", () => ({ persistPlanField: mocks.persis
 import { createProjectSchema, makeFallbackPlan, FakeTextModelAdapter } from "@book-maker/core";
 import { planComposedForms } from "./composedFormPlan.js";
 
-it("asks for the form plan's repair call only where the formPlanRepair gate is on", async () => {
+it("asks the form planner for no repair call on any tier (removed 2026-10-16)", async () => {
   const input = createProjectSchema.parse({ prompt: "A guide to one-on-one meetings.", category: "BUSINESS", targetPages: 24 });
   const plan = makeFallbackPlan(input);
   const stance = { thesis: "Meetings are for the employee.", positions: [], refusals: [], voiceSample: "" };
-  for (const repair of [true, false]) {
-    const quality = { enabled: (feature: string) => feature === "formPlanRepair" && repair } as Parameters<typeof planComposedForms>[0]["quality"];
-    await planComposedForms({ projectId: "p", planId: "v", input, plan, stance, arc: undefined, setups: [], fixed: [], episodes: undefined, quality, textModel: new FakeTextModelAdapter(input) });
-    expect(mocks.plan).toHaveBeenLastCalledWith(expect.objectContaining({ repair, figures: false }));
-  }
+  const quality = { enabled: () => false } as unknown as Parameters<typeof planComposedForms>[0]["quality"];
+  await planComposedForms({ projectId: "p", planId: "v", input, plan, stance, arc: undefined, setups: [], fixed: [], episodes: undefined, quality, textModel: new FakeTextModelAdapter(input) });
+  expect(mocks.plan).toHaveBeenLastCalledWith(expect.objectContaining({ figures: false }));
+  expect(mocks.plan.mock.lastCall?.[0]).not.toHaveProperty("repair");
 });
 
 it("hands the planner the brief's asks, and plans a cast only for a guide, storing a new one and keeping a stored one", async () => {

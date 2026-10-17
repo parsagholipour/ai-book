@@ -501,7 +501,10 @@ what each alert means, the uptime monitor, the CloudWatch alarms in `monitoring.
   never queued behind a disconnected client), the bucket (`HeadBucket`), outgoing mail (the cached
   SMTP verification, next bullet — it opens no connection), each worker lane's
   heartbeat key (`apps/worker/CLAUDE.md`) and the oldest `QUEUED` row per lane against 15 minutes
-  (interactive) and 3 hours (long). Each check has a 3 s timeout, they run together, and one report
+  (interactive), 3 hours (long), 30 minutes (images) and an hour (compile). The background lane's
+  pair (`worker_background`, `queue_background` at 15 minutes) is measured too but is
+  `ADVISORY_CHECKS`: alerted on, never in `ok` or the public body, because its work is optional
+  (`apps/worker/CLAUDE.md`, "Work nobody waits on has a lane of its own"). Each check has a 3 s timeout, they run together, and one report
   is cached for 10 s and shared single-flight, so the public URL costs one round of checks per window
   however hard it is polled. **The public body is `ok`/`fail` per check and nothing else**; the
   reasons go to the log (`readiness.failing`, only when the failing set changes) and the alert
@@ -551,6 +554,32 @@ what each alert means, the uptime monitor, the CloudWatch alarms in `monitoring.
   screen's banner counts them), and it clears on the first sweep with none PENDING — Action,
   Dismiss or Mark reviewed on each, or *Approve book text* / *Approve caption* / a take-down for a
   held book text (`routes/adminShares.ts`).
+- **A provider account out of credit is an alert per account that holds until the account answers
+  again, and it is never a readiness check.** On 2026-10-16 the OpenAI account ran dry, every
+  gpt-6-luna call answered `429 insufficient_quota`, and the owner learned it from an eval agent:
+  with a fallback writing the books nothing failed fast enough for `failed_jobs`, and nothing else
+  looked. The worker now marks the cost row of every call an empty account refused —
+  text, decision, search, image and embedding alike — with `metadata.errorClass:
+  "provider_quota_exhausted"` (`isProviderQuotaExhaustedError` in core, `providerErrorClassMetadata`
+  and `recordProviderQuotaRefusal` in `apps/worker/src/providers/usageAccounting.ts`; images and
+  embeddings write a failed row for this refusal only, where they write none for any other failure),
+  and `monitoring/providerQuota.ts` reads the last hour of `ProviderCallLog` in one grouped query on
+  the `createdAt` index: per `provider` spelling, the latest refusal, their count, and the latest
+  call that *answered* (settled, or an image/audio row with no `liveStatus`, and not a refusal —
+  an answer the caller then rejected counts, because the account served it). Spellings fold onto
+  the account (`gemini_tts` and `gemini_live` are Gemini's), and there is one condition per billed
+  account in `PROVIDER_CREDENTIALS` (`provider_quota_openai`, `provider_quota_gemini`, …; not the
+  local server), so a second account running dry while the first is firing is its own email. An
+  account fails while its latest refusal is newer than its latest answer, and **silence never clears
+  it**: a firing account with no row in the window is unmeasured, because a quiet night is not a
+  paid bill — the first call it answers after the top-up is the recovery. `confirmSweeps: 2` lets
+  one misread refusal be answered by the next success, `clearSweeps: 1` because an answer is
+  decisive, and the hourly repeat holds a flapping account to one email. It stays off `/api/ready`
+  on purpose: readiness is binary, one failing check is a 503 the uptime monitor reports as the
+  deployment down, and an empty primary with a fallback configured is still writing every book.
+  Speech calls are not marked (their failures write no row and carry no provider), and the API's
+  own inline calls (chat, assists) write no failure rows, so an outage they alone meet shows only in
+  the API log; both accounts are the ones books use, so a book's calls find it.
 - **Mail is verified, not assumed, and a broken mailer is a readiness failure because it cannot be
   an email.** The production preflight reads only `SMTP_URL`'s scheme, so a wrong password booted
   fine and then failed every reset code and every alert with one log line each (launch review,

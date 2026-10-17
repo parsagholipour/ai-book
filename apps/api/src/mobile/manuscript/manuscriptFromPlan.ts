@@ -107,7 +107,6 @@ export async function convertPlanToManuscript(options: {
         ...settings,
         fullIllustrations: false,
         illustrationCadence: "manual",
-        finalReview: false,
         coverArtSource: "design",
         includeCover: includeCoverForSource("design"),
         mobile: {

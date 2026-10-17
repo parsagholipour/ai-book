@@ -5,7 +5,8 @@
  *
  * Two callers share this: `runLocalPageQualityChecks` in pagesLocalQa.ts (page
  * QA, which flags the page for a rewrite) and the manuscript integrity pass in
- * manuscriptQuality.ts (the publish gate, which blocks the export). They kept
+ * manuscriptQuality.ts (`PROMPT_LEAKAGE`, which the export repair rewrites and
+ * the reader is shown with the matched span as its quote). They kept
  * copy-pasted copies of the same regexes under the same comment, so the
  * non-Latin ones were wrong in two places at once and had to be fixed twice.
  * Their English tables stay separate on purpose — one is about *our* page
@@ -207,22 +208,34 @@ export const PAGE_PROMPT_LEAK_PATTERNS: readonly RegExp[] = [
   /\b(?:the )?research (?:brief|record|dossier|packet)\b/i,
   /\b(?:according to|in|from) the (?:provided |supplied )?research notes\b/i,
   /\b(?:provided|supplied) research notes\b/i,
-  /\b(?:the )?(?:supplied|provided) (?:evidence|record|material|estimate|figures?|notes|sources?)\b/i,
-  /\b(?:evidence|record|material|estimates?|figures?) (?:supplied|provided) for\b/i,
+  // The participle as an adjective — after its determiner ("the supplied
+  // figures", "other supplied notes") or after the packet noun it describes
+  // ("the evidence supplied for broad comparisons") — never the main verb:
+  // "the meeting recording supplied material that could be examined",
+  // "witnesses supplied evidence", "graves provided material evidence". With
+  // nothing required before the participle, 8 such pages of 17,865 stored
+  // ones were sent back for a rewrite; the 5 adjectival ones still fire
+  // (replayed 2026-10-15).
+  /\b(?:the|a|an|one|this|that|these|those|each|another|other|some|any|all|such)\s+(?:supplied|provided)\s+(?:evidence|record|material|estimates?|figures?|notes|sources?)\b/i,
+  /\b(?:evidence|record|material|estimates?|figures?|notes|sources?) (?:supplied|provided) for\b/i,
   /\bmaterial for this (?:discussion|chapter|book)\b/i,
   ...MODEL_SELF_REFERENCE_PATTERNS,
   ...DRAFTING_NOTE_PATTERNS
 ].map(folded);
 
 /**
- * The publish gate's table: the shapes that mean a page is quoting the
+ * The manuscript audit's table: the shapes that mean a page is quoting the
  * conversation rather than being the book.
+ *
+ * `chain of thought` is not in it. It fired once in 17,865 stored pages, on
+ * prose ("…within the same chain of thought"), and none of the leaks that did
+ * reach a reader used it; a book about language models says "chain-of-thought
+ * prompting" as an ordinary term, the way it says "as a language model grows".
  */
 export const MANUSCRIPT_PROMPT_LEAK_PATTERNS: readonly RegExp[] = [
   /system\s+prompt/i,
   /developer\s+message/i,
   /ignore\s+(?:all\s+)?previous\s+instructions/i,
-  /chain[- ]of[- ]thought/i,
   /private\s+source\s+material\s+from\s+the\s+user/i,
   ...MODEL_SELF_REFERENCE_PATTERNS,
   ...DRAFTING_NOTE_PATTERNS
@@ -232,4 +245,36 @@ export const MANUSCRIPT_PROMPT_LEAK_PATTERNS: readonly RegExp[] = [
 export function containsPromptLeak(value: string, patterns: readonly RegExp[]): boolean {
   const text = foldOrthography(value);
   return patterns.some((pattern) => pattern.test(text));
+}
+
+/**
+ * The first span of `value` one of `patterns` matched, exactly as `value`
+ * spells it — the quote a reader is shown and can find on the page. The match
+ * is made on the folded form, so its offsets are carried back through the
+ * fold, which only rewrites or deletes single code points; a page the fold
+ * leaves unchanged (any Latin page) needs no map at all.
+ */
+export function promptLeakSpan(value: string, patterns: readonly RegExp[]): string | undefined {
+  const text = foldOrthography(value);
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    if (text === value) return match[0];
+    const origin = foldedOrigins(value);
+    return value.slice(origin[match.index]!, origin[match.index + match[0].length]!);
+  }
+  return undefined;
+}
+
+/** For each UTF-16 unit of the folded text, where its code point starts in `value`; one past the end last. */
+function foldedOrigins(value: string): number[] {
+  const origin: number[] = [];
+  let offset = 0;
+  for (const character of value) {
+    const folded = foldOrthography(character);
+    for (let unit = 0; unit < folded.length; unit += 1) origin.push(offset);
+    offset += character.length;
+  }
+  origin.push(offset);
+  return origin;
 }

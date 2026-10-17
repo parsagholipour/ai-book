@@ -5,8 +5,9 @@ import type { Job } from "bullmq";
  * What a compile does when the manuscript moves out from under its final-QA
  * repair.
  *
- * The repair's ownership fence throws from inside `runPageQualityLoop`, two
- * modules below the handler, and a compile that lets an unrecognised error
+ * The repair's ownership fence throws from inside the scoped repair's
+ * publication transaction, or from the fence the compile asks right after it,
+ * and a compile that lets an unrecognised error
  * travel reaches `markFailed` — which for a verdict-owning row marks a
  * finished, fully paid book FAILED and refunds `FULL_BOOK_GENERATION`. So the
  * properties here are a set: the superseded case stands down the way the
@@ -57,17 +58,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-// One export of one module, over the real rest of it: which pages the final-QA
-// repair redrafts is a test hook, while the per-message extractor behind the
-// reader's quality card and the page bound both questions are asked in stay
-// real, so the card assertions below measure the actual mapping.
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -125,13 +115,14 @@ describe("compileExport final-QA repair stand-down", () => {
     complexity: 3,
     temperature: 0.6,
     language: "en",
-    mediaSettings: { finalReview: true }
+    // A Quick Draft book: the defect screen is the compile's one review and its scoped repair the one repair.
+    mediaSettings: { modelTier: "fast" }
   };
 
   /**
-   * Page 2 carries a chapter because the durable write is what the fence
-   * guards: a page in no chapter reaches no `casUpdateChapterProductionBrief`,
-   * so there would be nothing to stand down from.
+   * Page 2 carries a chapter, as a page of a chaptered book does. (It used to
+   * matter to the fence: the old per-page repair loop's brief repair wrote the
+   * chapter row, and a page in no chapter reached no such write.)
    */
   const compilePage = (index: number) => ({
     id: `page-${index}`,
@@ -181,29 +172,33 @@ describe("compileExport final-QA repair stand-down", () => {
       data: { projectId: "project-1", planId: "plan-1", generationJobId: "gj-1", contentRevision: 4, ...payload }
     }) as unknown as Job;
 
-  /**
-   * The cheapest route into the superseded catch: the reader's edit lands as
-   * page 1's repair is saved, so the fence throws at the next page's barrier
-   * with no brief repair to stage. `onSaved` runs at that same instant, which
-   * is the only place a suite can break the writes *after* the fence without
-   * breaking the ones the repair pass makes on its way to it.
-   *
-   * Returns the cleanup for the reviewer it puts on the shared strategy mock.
-   */
-  const supersedeOnFirstRepairedPageSave = (onSaved?: () => void) => {
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
+  /** The screen's verdict: a grounded finding on page 1, which its scoped repair targets, plus any other messages. */
+  const screenFindsPageOne = (otherIssues: string[] = []) =>
+    mocks.reviewQuickDraftManuscript.mockResolvedValue({
       approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: "Repaired",
-      markdown: "A repaired page the reviewer accepts first time.",
-      summary: "Repaired summary.",
-      imagePrompt: null,
-      continuityNotes: []
-    });
+      score: 60,
+      notes: "Focused screen.",
+      issues: ["Page 1: The walk starts twice.", ...otherIssues],
+      requiredFixes: ["Page 1: Start it once."],
+      focusedReview: { rejectedFindings: 0, repairGroups: [[1]], findings: [{ targets: [1], kind: "duplicate",
+        problem: "The walk starts twice.", fix: "Start it once.",
+        evidence: [{ pageIndex: 1, quote: "Page 1 prose" }, { pageIndex: 2, quote: "Page 2 prose" }] }] }
+    } as never);
+
+  /**
+   * The cheapest route into the superseded catch with pages written: the
+   * scoped repair publishes page 1, and the reader's edit lands the instant it
+   * is saved, so the fence the compile asks right after the repair sees it.
+   * `onSaved` runs at that same instant, which is the only place a suite can
+   * break the writes *after* the fence without breaking the ones the repair
+   * makes on its way to it.
+   *
+   * Returns a cleanup, kept so the call sites read alike; the scoped repair needs none.
+   */
+  const supersedeOnFirstRepairedPageSave = (onSaved?: () => void, otherIssues: string[] = []) => {
+    screenFindsPageOne(otherIssues);
+    mocks.repairQuickDraftPages.mockImplementation(async ({ pages: book }) =>
+      book.map((page) => page.index === 1 ? { ...page, markdown: "A repaired page the reviewer accepts first time." } : page));
     mocks.prisma.page.update.mockImplementation(
       async ({ where, data }: { where: { id: string }; data: object }) => {
         // The reader's edit lands the instant page 1's repair is saved: their
@@ -214,32 +209,12 @@ describe("compileExport final-QA repair stand-down", () => {
         return { ...pages.find((page) => page.id === where.id), ...data };
       }
     );
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: vi.fn().mockResolvedValue({
-        approved: true,
-        score: 88,
-        issues: [],
-        requiredRevisions: [],
-        notes: "",
-        checks: { repetitionOk: true, progressionOk: true }
-      })
-    });
-    return () => {
-      delete (mocks.strategy as Record<string, unknown>).reviewPageDraft;
-    };
+    return () => undefined;
   };
 
   /** What Prisma raises for a row a retention sweep has already retired. */
   const retiredRowError = () => Object.assign(new Error("Record to update not found."), { code: "P2025" });
 
-  /** Final QA flags page 2, so the repair pass runs. */
-  const flagPageTwo = () =>
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [2]
-    });
 
   /** The verdict this compile left on its own durable row. */
   type RecordedReport = { state: string; issues: Array<{ code: string; message: string }> };
@@ -276,98 +251,35 @@ describe("compileExport final-QA repair stand-down", () => {
     });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
+    mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+    mocks.repairQuickDraftPages.mockReset();
   });
 
   it("stands down instead of failing when the book moves on during the repair", async () => {
-    flagPageTwo();
-    // A real model finding for the verdict assertion at the end: the bounded
-    // chapter sweep is half of what this compile paid for, and only a full
-    // review can produce one.
-    mocks.generateJsonWithRetry.mockResolvedValue({
-      data: {
-        issues: [
-          {
-            code: "CHAPTER_COHERENCE",
-            message: "The chapter loses its thread halfway through.",
-            guidance: "Reconnect the second half to the walk home.",
-            affectedPageIndexes: [2]
-          }
-        ]
-      }
-    });
-    // A page whose reviewer keeps blaming its brief is what drives the loop
-    // into `repairPageBriefForRecovery`, the one caller of the fence.
-    mocks.parseChapterBrief.mockReturnValue({
-      chapterIndex: 1,
-      title: "One",
-      summary: "S",
-      continuityFocus: [],
-      pages: [{ pageIndex: 2, purpose: "Repeat", beat: "Repeat", requiredContinuity: [], endingPressure: "" }]
-    });
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: "Page 2",
-      markdown: "A rewrite the reviewer keeps rejecting for repeating an earlier page.",
-      summary: "Page 2 summary.",
-      imagePrompt: null,
-      continuityNotes: []
-    });
-    // Held locally: the `finally` takes them back off the shared strategy before
-    // the assertions run.
-    const repairPageBrief = vi.fn().mockResolvedValue({
-      pageIndex: 2,
-      purpose: "Fresh",
-      beat: "Fresh",
-      requiredContinuity: [],
-      endingPressure: ""
-    });
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: vi.fn().mockResolvedValue({
-        approved: false,
-        score: 40,
-        issues: [],
-        requiredRevisions: [],
-        notes: "",
-        checks: { repetitionOk: false, progressionOk: true }
-      }),
-      revisePageDraft: vi.fn().mockResolvedValue({
-        title: "Page 2",
-        markdown: "Another rejected rewrite.",
-        summary: "Page 2 summary.",
-        imagePrompt: null,
-        continuityNotes: []
-      }),
-      repairPageBrief
-    });
-    // An edit landed while the repair was inside its model call — the brief
-    // repair's own call, so the pass gets past the barrier that opens each page
-    // and stands down at the compare-and-swap.
-    repairPageBrief.mockImplementation(async () => {
-      mocks.exportPublicationSuperseded.mockResolvedValue(true);
-      return { pageIndex: 2, purpose: "Fresh", beat: "Fresh", requiredContinuity: [], endingPressure: "" };
-    });
+    // The screen's model finding is what the verdict assertion at the end is about: the
+    // screen is the whole of what this compile paid a model for.
+    screenFindsPageOne(["Page 2: The chapter loses its thread halfway through."]);
+    mocks.repairQuickDraftPages.mockImplementation(async ({ pages: book }) =>
+      book.map((page) => page.index === 1 ? { ...page, markdown: "A repaired page." } : page));
+    // An edit landed while the repair was inside its model call, so the publication
+    // transaction's revision claim misses and nothing is written.
+    mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     try {
       await expect(compileExport(job())).resolves.toEqual({});
     } finally {
-      for (const key of ["reviewPageDraft", "revisePageDraft", "repairPageBrief"]) {
-        delete (mocks.strategy as Record<string, unknown>)[key];
-      }
       logged.mockRestore();
     }
 
     // It stood down *inside* the repair, not at the compile's own supersede read
-    // further down: the brief repair's model call ran, and everything the loop
-    // does after it did not. A repair allowed to finish would have saved page 2
-    // and re-run final QA over the result.
-    expect(repairPageBrief).toHaveBeenCalled();
+    // further down: the repair's model call ran, and its publication did not.
+    expect(mocks.repairQuickDraftPages).toHaveBeenCalledOnce();
     expect(mocks.prisma.page.update).not.toHaveBeenCalled();
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
-    // And nothing durable of this compile's opinion of the *book* survives:
-    // not the chapter's beats, not the export it never got as far as rendering.
-    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledTimes(1);
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
-    // Its verdict does, and that is the one thing standing down may not throw
+    // Its verdict survives, and that is the one thing standing down may not throw
     // away. This compile ran the whole review; the compile that supersedes it
     // is an edit's recompile with `finalReviewRan: false`, or an image move
     // that owns no verdict at all, so nothing else is going to say what a model
@@ -377,9 +289,13 @@ describe("compileExport final-QA repair stand-down", () => {
       where: { id: "gj-1" },
       data: {
         qualityReport: expect.objectContaining({
-          state: "review_recommended",
+          // The model's complaint is a console diagnostic, so the reader's grade is a
+          // measured pass; the finding is still on the row for the operator.
+          state: "passed",
+          readerFindings: [],
           issues: expect.arrayContaining([
-            expect.objectContaining({ code: "CHAPTER_COHERENCE", source: "model" })
+            expect.objectContaining({ code: "WHOLE_BOOK_REVIEW", source: "model",
+              message: "Page 2: The chapter loses its thread halfway through." })
           ])
         })
       }
@@ -387,12 +303,10 @@ describe("compileExport final-QA repair stand-down", () => {
   });
 
   it("stops writing pages the moment the reader's edit takes the book, and keeps the ones it wrote", async () => {
-    // The repair pass is not only an opinion-writer: it rewrites the manuscript
-    // itself, off a `pages` snapshot taken minutes earlier. A page whose loop
-    // approves before its third rewrite reaches no brief repair, so with the
-    // fence threaded only into `runPageQualityLoop` this pass never asked
-    // anything and carried on saving pages over a chat edit the reader had just
-    // paid for.
+    // The repair is not only an opinion-writer: it rewrites the manuscript
+    // itself, off a `pages` snapshot taken minutes earlier. Its group publishes
+    // whole behind the revision claim, and the fence asked right after it is
+    // what stops the compile from grading and publishing over the reader's edit.
     const restoreStrategy = supersedeOnFirstRepairedPageSave();
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
@@ -404,11 +318,10 @@ describe("compileExport final-QA repair stand-down", () => {
     }
 
     // Page 1 stays written — it is an improvement to the manuscript the newer
-    // compile is about to publish, not this compile's to take back. Page 2 is
-    // the reader's now.
+    // compile is about to publish, not this compile's to take back.
     expect(mocks.prisma.page.update.mock.calls.map((call) => (call[0] as { where: { id: string } }).where.id))
       .toEqual(["page-1"]);
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledTimes(1);
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
   });
 
@@ -428,7 +341,7 @@ describe("compileExport final-QA repair stand-down", () => {
     // histories the cleanup below wipes along with these implementations.
     const attempted: string[] = [];
     const restoreStrategy = supersedeOnFirstRepairedPageSave(() => {
-      // Broken at the save rather than in `beforeEach`, because the repair pass
+      // Broken at the save rather than in `beforeEach`, because the compile
       // writes progress of its own on the way to the fence.
       vi.mocked(updateJobProgress).mockImplementation(async () => {
         attempted.push("progress");
@@ -527,14 +440,8 @@ describe("compileExport final-QA repair stand-down", () => {
       pageText({ ...compilePage(1), markdown: "Page 1 prose the repair pass rewrote without the placeholder." }),
       pageText(compilePage(2))
     ]);
-    const restoreStrategy = supersedeOnFirstRepairedPageSave();
-    // After the helper, which stages a verdict of its own.
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: ["Page 1 still reads as a placeholder.", "Page 2 drifts from its chapter."],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
+    const restoreStrategy = supersedeOnFirstRepairedPageSave(undefined,
+      ["Page 1 still reads as a placeholder.", "Page 2 drifts from its chapter."]);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     try {
@@ -545,8 +452,9 @@ describe("compileExport final-QA repair stand-down", () => {
     }
 
     const report = recordedReport();
-    // Not `blocked`: the error named a page whose prose this pass replaced.
-    expect(report.state).toBe("review_recommended");
+    // The error named a page whose prose this pass replaced; what is left is a console
+    // diagnostic, so the reader's grade is the pass this compile measured.
+    expect(report.state).toBe("passed");
     expect(report.issues.map((issue) => issue.code)).not.toContain("PLACEHOLDER_TEXT");
     // The same rule over the model half — a complaint about page 1 is exactly
     // as stale as a deterministic one — and no further: page 2 is untouched
@@ -575,13 +483,8 @@ describe("compileExport final-QA repair stand-down", () => {
       pageText({ ...compilePage(1), markdown: "Page 1 prose the repair pass rewrote without the placeholder." }),
       pageText(compilePage(2))
     ]);
-    const restoreStrategy = supersedeOnFirstRepairedPageSave();
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: ["The ending never pays off the central promise.", "Page 2 drifts from its chapter."],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
+    const restoreStrategy = supersedeOnFirstRepairedPageSave(undefined,
+      ["The ending never pays off the central promise.", "Page 2 drifts from its chapter."]);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     try {
@@ -651,58 +554,13 @@ describe("compileExport final-QA repair stand-down", () => {
     ).toBe(true);
   });
 
-  it("reports unverified continuity payoffs without asserting that they are missing", async () => {
-    // The stand-down composed its deterministic half out of the integrity sweep
-    // alone, so a whole check the shipping report always carries was missing
-    // from the one report a superseded compile leaves — the same book, graded
-    // with one fewer question asked. The state is folded from the pages this
-    // compile reviewed rather than rebuilt onto the project, because this
-    // compile has just disclaimed the book and may not write anything about it.
-    const opensThePromise = [
-      { ...compilePage(1), storyDelta: { promisesOpened: [{ id: "gate", text: "Who left the gate open?" }] } },
-      compilePage(2)
-    ];
-    mocks.prisma.project.findUnique.mockResolvedValue(projectRecord(opensThePromise));
-    mocks.loadPageTextSnapshot.mockResolvedValue(opensThePromise.map(pageText));
-    mocks.loadQualityContext.mockResolvedValue({
-      settings: {},
-      tier: "balanced",
-      enabled: (feature: string): boolean =>
-        isDefaultCompileQualityFeature(feature) || feature === "storyExtractAudit"
-    });
-    const restoreStrategy = supersedeOnFirstRepairedPageSave();
-    const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    try {
-      await expect(compileExport(job())).resolves.toEqual({});
-    } finally {
-      restoreStrategy();
-      logged.mockRestore();
-    }
-
-    // Not the rebuild that writes the fold back onto a book this compile has
-    // just disclaimed. And not the project's rows either: the reader-facing
-    // fold of those answers empty here (it is the repair pass's own read, kept
-    // at its default), so the finding can only have come from the reviewed
-    // snapshot's deltas.
-    expect(mocks.rebuildProjectStoryState).not.toHaveBeenCalled();
-    expect(await mocks.rebuildStoryStateFromPages()).toMatchObject({ promises: [] });
-    expect(recordedReport().issues.map((issue) => issue.code)).toContain("BRIEF_COVERAGE_UNVERIFIED");
-    // The gate is open here, so the fold really is paid for — which is what
-    // makes the test below a statement about the gate rather than about a check
-    // somebody quietly deleted.
-    expect(storyDeltaParses).toHaveBeenCalled();
-  });
-
-  it("folds no story state at all when the audit that would read it is off", async () => {
-    // The fold is a zod parse per page plus a rebuild over the result, and
-    // `unpaidPromiseQualityIssues` returns `[]` on its first line whenever
-    // `storyExtractAudit` is off — which is every book on a tier without it.
-    // Evaluated as an argument, a 300-page manuscript was folded synchronously
-    // on the worker's event loop and handed to a function that never looked at
-    // it, on the one path documented as needing to be cheap: the compile that
-    // superseded this one is rendering and publishing against the same
-    // database. The state is a thunk now, and the gate is in front of it.
+  it("folds no story state at all, however many deltas the pages carry", async () => {
+    // The fold is a zod parse per page plus a rebuild over the result, and the
+    // unpaid-promise check that read it went with story memory on 2026-10-16
+    // (E6). Folded anyway, a 300-page manuscript would be parsed synchronously
+    // on the worker's event loop, on the one path documented as needing to be
+    // cheap: the compile that superseded this one is rendering and publishing
+    // against the same database.
     const withDeltas = [
       { ...compilePage(1), storyDelta: { promisesOpened: [{ id: "gate", text: "Who left the gate open?" }] } },
       { ...compilePage(2), storyDelta: { promisesOpened: [] } }
@@ -719,15 +577,14 @@ describe("compileExport final-QA repair stand-down", () => {
       logged.mockRestore();
     }
 
-    // Not one page of it, and the deltas were there to be folded: the pages
-    // carry exactly the promise the enabled case above reports.
+    // Not one page of it, and the deltas were there to be folded.
     expect(storyDeltaParses).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
   });
 
   it("leaves no verdict at all when its own repair has answered every finding it had", async () => {
     // The withdrawal's own edge, at the door where nothing is on the row yet.
-    // This book's single finding is an error on the page the pass repaired, so
+    // This book's single reader finding is a leak on the page the pass repaired, so
     // filtering it out leaves an empty report — and an empty report is not
     // silence, it is `passed`, score 100: "Quality checks passed" for a book
     // whose only graded prose is the prose that moved. The compile that
@@ -735,7 +592,7 @@ describe("compileExport final-QA repair stand-down", () => {
     // sentence. Saying nothing is the honest answer, and it is the same one a
     // compile that cannot re-read the manuscript gives.
     const placeholderPages = [
-      { ...compilePage(1), markdown: "Page 1 prose with a TODO still sitting in it." },
+      { ...compilePage(1), markdown: "Page 1 prose with an ignore all previous instructions line still sitting in it." },
       compilePage(2)
     ];
     mocks.prisma.project.findUnique.mockResolvedValue(projectRecord(placeholderPages));
@@ -838,14 +695,7 @@ describe("compileExport final-QA repair stand-down", () => {
       enabled: (feature: string): boolean =>
         isDefaultCompileQualityFeature(feature) || feature === "storyExtractAudit"
     });
-    const restoreStrategy = supersedeOnFirstRepairedPageSave();
-    // After the helper, which stages a verdict of its own.
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: ["Page 2 drifts from its chapter."],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
+    const restoreStrategy = supersedeOnFirstRepairedPageSave(undefined, ["Page 2 drifts from its chapter."]);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     try {
@@ -867,8 +717,8 @@ describe("compileExport final-QA repair stand-down", () => {
     // The narrowness of the catch is the safety property: it takes one class,
     // so a `StopRequestedError` — the one error a handler may never swallow —
     // and every real fault travel out to settlement as they always did.
-    flagPageTwo();
-    mocks.revisePageDraftWithRestart.mockRejectedValue(new StopRequestedError());
+    screenFindsPageOne();
+    mocks.repairQuickDraftPages.mockRejectedValue(new StopRequestedError());
 
     await expect(compileExport(job())).rejects.toBeInstanceOf(StopRequestedError);
   });

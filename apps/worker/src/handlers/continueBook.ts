@@ -27,7 +27,6 @@ import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generati
 import {
   persistPreparedDeferredPageMemory,
   prepareDeferredPageMemory,
-  prepareDeferredPageStoryContext,
   type PreparedDeferredPageMemory
 } from "../generation/deferredPageMemory.js";
 import { loadEntityStateLines } from "../generation/entityState.js";
@@ -269,8 +268,10 @@ export async function continueBook(job: ContinueBookJob): Promise<JobCompletion>
     const previousSummaries = earlierSummaries.map((page) => page.summary).filter(Boolean).slice(-40);
     const previousPages = trailingPages.map(toPriorPageContext);
     const inMemoryContinuityNotes = [...continuityNotes];
-    const baseStoryState = await loadProjectStoryState(projectId, extendedPlan.promises ?? []);
-    let inMemoryStoryState = baseStoryState;
+    // The book's story state as stored: the plan's promises seeded as open
+    // (nothing extracts story state since 2026-10-16, E6), or the fold an older
+    // Premium/Ultra book's pages were extracted with.
+    const storyStateLines = formatStoryStateLines(await loadProjectStoryState(projectId, extendedPlan.promises ?? []));
     const durableEntityStateLines = await loadEntityStateLines(projectId, extendedPlan);
 
     let drafted = 0;
@@ -307,16 +308,14 @@ export async function continueBook(job: ContinueBookJob): Promise<JobCompletion>
           previousPages: priorPageContext,
           continuityNotes: pageContinuityNotes,
           researchNotes,
-          entityState: mergeEntityAndStoryStateLines(
-            durableEntityStateLines,
-            formatStoryStateLines(inMemoryStoryState)
-          ),
+          entityState: mergeEntityAndStoryStateLines(durableEntityStateLines, storyStateLines),
           textModel: providers.text,
           ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
         });
-        // The same review → revise loop, honest FAILED_QA status, continuity
-        // notes and entity state every generated page gets — a continuation
-        // used to skip all of it and save drafts sight unseen. Illustration
+        // The local checks, honest FAILED_QA status, continuity notes and entity
+        // state every generated page gets — and, like every generated page since
+        // 2026-10-16, no model review (`withoutPageReview`). The whole-set
+        // adherence review below is the reader's edit being checked. Illustration
         // stays off: the continuation charge never priced images.
         const saved = await reviewAndSaveGeneratedPage({
           projectId,
@@ -333,8 +332,6 @@ export async function continueBook(job: ContinueBookJob): Promise<JobCompletion>
           illustrate: false,
           deferPublication: true,
           editInstruction,
-          ...(characterContext ? { characterContext } : {}),
-          maxCandidates: 1,
           assertOwnership: heartbeat.assertHeld
         });
         if (!saved.candidate) {
@@ -351,17 +348,6 @@ export async function continueBook(job: ContinueBookJob): Promise<JobCompletion>
           researchNotes
         });
         inMemoryContinuityNotes.push(...saved.candidate.draft.continuityNotes);
-        inMemoryStoryState = (
-          await prepareDeferredPageStoryContext({
-            projectId,
-            input,
-            plan: extendedPlan,
-            providers,
-            quality,
-            currentStoryState: inMemoryStoryState,
-            candidate: { pageIndex, draft: saved.candidate.draft }
-          })
-        ).nextStoryState;
         previousPages.push(saved.page);
         drafted += 1;
       }
@@ -396,13 +382,8 @@ export async function continueBook(job: ContinueBookJob): Promise<JobCompletion>
       throw new ReaderEditFailure(NEW_PAGES_ADHERENCE_FAILED);
     }
     const preparedMemory = await prepareDeferredPageMemory({
-      projectId,
-      input,
-      plan: extendedPlan,
       providers,
       strategy,
-      quality,
-      initialStoryState: baseStoryState,
       candidates: [...candidates.values()],
       assertOwnership: heartbeat.assertHeld
     });
@@ -825,8 +806,6 @@ async function reviewContinuationCandidates(options: {
         illustrate: false,
         deferPublication: true,
         editInstruction: options.editInstruction,
-        ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-        maxCandidates: 1,
         assertOwnership: options.assertLease
       });
       if (!reviewed.candidate) {

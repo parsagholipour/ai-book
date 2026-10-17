@@ -1,13 +1,12 @@
 import {
-  INTERACTIVE_JOB_QUEUE,
+  JOB_LANE_NAMES,
   JOB_LANES,
-  LONG_JOB_QUEUE,
-  LONG_LANE_CAPABLE_JOB_TYPES,
   PAYLOAD_LANED_JOB_TYPES,
   WORKER_HEARTBEAT_TTL_MS,
   jobLaneClass,
   laneOfClass,
   parseWorkerHeartbeat,
+  queueNameForLane,
   workerHeartbeatKey,
   type GenerationJobType,
   type JobLane,
@@ -31,9 +30,13 @@ import type { Prisma } from "@book-maker/db";
  * Each check has its own timeout, all run together, and one report is cached
  * for a few seconds and shared by every caller (single-flight), so a monitor
  * polling every minute — or anyone hammering the public URL — costs at most one
- * `SELECT 1`, one PING, one MGET, one S3 HeadBucket and three small queries per
- * cache window. The `mail` check opens no connection at all: it reads the SMTP
+ * `SELECT 1`, one PING, one MGET, one S3 HeadBucket and six small queries per
+ * cache window (one per lane with a fixed type, and one bounded scan per
+ * payload-laned type, which is all the image and compile lanes hold). The `mail` check opens no connection at all: it reads the SMTP
  * verification `mailHealth.ts` caches every ten minutes.
+ *
+ * The probe measures one lane more than it answers for: the background lane's
+ * pair is `ADVISORY_CHECKS`, read by the alert sweep and never by `ok`.
  */
 
 export const READINESS_CHECKS = [
@@ -43,10 +46,34 @@ export const READINESS_CHECKS = [
   "mail",
   "worker_long",
   "worker_interactive",
+  "worker_images",
+  "worker_compile",
   "queue_long",
-  "queue_interactive"
+  "queue_interactive",
+  "queue_images",
+  "queue_compile"
 ] as const;
 export type ReadinessCheck = (typeof READINESS_CHECKS)[number];
+
+/**
+ * Measured with the checks above and alerted on like them
+ * (`alertConditions.ts`), but never part of `ok` or the public body. The
+ * background lane holds only the speculative composition prep, and while it is
+ * down every book still starts: its run plans the stance, episodes and forms
+ * itself, as it did before the prep existed, about a minute slower to its first
+ * chapter. Readiness is binary — one failing check is a 503 the uptime monitor
+ * reports as the deployment down — so, like a provider account out of credit,
+ * this is an email and not a check (`apps/worker/CLAUDE.md`, "Work nobody
+ * waits on has a lane of its own").
+ */
+export const ADVISORY_CHECKS = ["worker_background", "queue_background"] as const;
+export type AdvisoryCheck = (typeof ADVISORY_CHECKS)[number];
+
+/** Everything the probe measures — what the alert sweep reads. Every lane's pair is in exactly one of the two lists. */
+export const MONITORED_CHECKS: readonly MonitoredCheck[] = Object.freeze([...READINESS_CHECKS, ...ADVISORY_CHECKS]);
+export type MonitoredCheck = ReadinessCheck | AdvisoryCheck;
+type WorkerCheck = `worker_${JobLane}`;
+type QueueCheck = `queue_${JobLane}`;
 
 /**
  * `unmeasured` marks a check that failed only because another one did — a
@@ -57,9 +84,10 @@ export type ReadinessCheck = (typeof READINESS_CHECKS)[number];
 export type CheckResult = { ok: true } | { ok: false; reason: string; unmeasured?: true };
 
 export type ReadinessReport = {
+  /** Every `READINESS_CHECKS` result passes; the advisory ones never decide it. */
   ok: boolean;
   checkedAt: Date;
-  results: Record<ReadinessCheck, CheckResult>;
+  results: Record<MonitoredCheck, CheckResult>;
 };
 
 /** All the internet sees: no hostnames, no error text, no numbers to probe with. */
@@ -74,11 +102,22 @@ export type PublicReadiness = { ok: boolean; checks: Record<ReadinessCheck, "ok"
  * up to ~93 minutes, so a start can legitimately wait behind the running book
  * and one more; three hours is about two maximum-length books ahead, past which
  * the lane is either stuck behind a hung job or short of capacity, and a reader
- * has waited longer for their book to begin than it takes to write two.
+ * has waited longer for their book to begin than it takes to write two. A
+ * picture takes seconds on four slots and only one book's text is written at a
+ * time, so half an hour of a waiting picture is a lane nothing consumes or a
+ * provider refusing every call. A generation compile takes minutes on one slot
+ * and the next one can only come from the book written after it, so an hour is
+ * a compile hung or a lane without a consumer. A background prep takes about
+ * 90 s on four slots and exits unrun once it is ten minutes old, so a prep
+ * waiting fifteen is a lane nothing consumes, and every prep queued since is
+ * wasted.
  */
 export const QUEUE_WAIT_THRESHOLDS_MS: Readonly<Record<JobLane, number>> = Object.freeze({
   interactive: 15 * 60_000,
-  long: 3 * 60 * 60_000
+  long: 3 * 60 * 60_000,
+  images: 30 * 60_000,
+  compile: 60 * 60_000,
+  background: 15 * 60_000
 });
 
 export const READINESS_CACHE_MS = 10_000;
@@ -133,7 +172,7 @@ export function createReadinessProbe(
       mail: settledCheck(mail),
       ...heartbeatChecks(heartbeats, redis.status === "fulfilled", at),
       ...queueChecks(waiting, db.status === "fulfilled", at)
-    } as Record<ReadinessCheck, CheckResult>;
+    } as Record<MonitoredCheck, CheckResult>;
     const report = { ok: READINESS_CHECKS.every((check) => results[check].ok), checkedAt: new Date(at), results };
     const failing = READINESS_CHECKS.filter((check) => !results[check].ok);
     if (options.log && failing.join(",") !== loggedFailing) {
@@ -190,7 +229,7 @@ function heartbeatChecks(
   result: PromiseSettledResult<Record<JobLane, WorkerHeartbeat | null>>,
   redisAnswered: boolean,
   at: number
-): Record<"worker_long" | "worker_interactive", CheckResult> {
+): Record<WorkerCheck, CheckResult> {
   const lane = (name: JobLane): CheckResult => {
     if (result.status === "rejected") {
       const reason = `heartbeat unreadable: ${failureReason(result.reason)}`;
@@ -206,14 +245,14 @@ function heartbeatChecks(
     }
     return { ok: true };
   };
-  return { worker_long: lane("long"), worker_interactive: lane("interactive") };
+  return Object.fromEntries(JOB_LANE_NAMES.map((name) => [`worker_${name}`, lane(name)])) as Record<WorkerCheck, CheckResult>;
 }
 
 function queueChecks(
   result: PromiseSettledResult<Record<JobLane, Date | null>>,
   databaseAnswered: boolean,
   at: number
-): Record<"queue_long" | "queue_interactive", CheckResult> {
+): Record<QueueCheck, CheckResult> {
   const lane = (name: JobLane): CheckResult => {
     if (result.status === "rejected") {
       const reason = `waiting jobs unreadable: ${failureReason(result.reason)}`;
@@ -227,7 +266,7 @@ function queueChecks(
       ? { ok: false, reason: `the oldest waiting ${name}-lane job has waited ${duration(waited)} (limit ${duration(threshold)})` }
       : { ok: true };
   };
-  return { queue_long: lane("long"), queue_interactive: lane("interactive") };
+  return Object.fromEntries(JOB_LANE_NAMES.map((name) => [`queue_${name}`, lane(name)])) as Record<QueueCheck, CheckResult>;
 }
 
 class ReadinessTimeoutError extends Error {}
@@ -283,11 +322,23 @@ type ReadinessDatabase = {
   generationJob: Pick<Prisma.TransactionClient["generationJob"], "findFirst" | "findMany">;
 };
 
-const payloadLaned = new Set<string>(PAYLOAD_LANED_JOB_TYPES);
-const longCapable = new Set<string>(LONG_LANE_CAPABLE_JOB_TYPES);
-const FIXED_LONG_TYPES = LONG_LANE_CAPABLE_JOB_TYPES.filter((type) => !payloadLaned.has(type));
-const FIXED_INTERACTIVE_TYPES = (Object.keys(JOB_LANES) as GenerationJobType[]).filter((type) => !longCapable.has(type));
-/** A memory bound on the one read that has to classify rows by payload. */
+/** The types each lane holds whatever their payload says; the rest are classified row by row. */
+const FIXED_LANE_TYPES: Readonly<Record<JobLane, readonly GenerationJobType[]>> = (() => {
+  const lanes: Record<JobLane, GenerationJobType[]> = { long: [], interactive: [], images: [], compile: [], background: [] };
+  for (const [type, rule] of Object.entries(JOB_LANES) as Array<[GenerationJobType, (typeof JOB_LANES)[GenerationJobType]]>) {
+    if (typeof rule !== "function") lanes[laneOfClass(rule)].push(type);
+  }
+  return Object.freeze(lanes);
+})();
+/**
+ * A memory bound on each read that has to classify rows by payload. One scan
+ * per type, never one over them all: the scan is oldest-first, so a shared one
+ * filled by 200 older rows of another type — a burst of pictures, a queue of
+ * edits — never reached the compile behind them, and `queue_compile` read ok.
+ * Within one type the 200 oldest still decide, so a compile or picture can hide
+ * only behind 200 older interactive rows of its own type, which have then
+ * waited past the interactive lane's shorter threshold and fail it first.
+ */
 const PAYLOAD_LANED_SCAN = 200;
 
 /**
@@ -334,22 +385,28 @@ export function readinessDeps(input: {
     mailReady: input.mailReady,
     async readHeartbeats() {
       redisReady();
-      const [long, interactive] = await redis.mget(workerHeartbeatKey(LONG_JOB_QUEUE), workerHeartbeatKey(INTERACTIVE_JOB_QUEUE));
-      return { long: parseWorkerHeartbeat(long), interactive: parseWorkerHeartbeat(interactive) };
+      const beats = await redis.mget(...JOB_LANE_NAMES.map((lane) => workerHeartbeatKey(queueNameForLane(lane))));
+      return Object.fromEntries(JOB_LANE_NAMES.map((lane, index) => [lane, parseWorkerHeartbeat(beats[index])])) as Record<
+        JobLane,
+        WorkerHeartbeat | null
+      >;
     },
     async oldestWaitingJobs() {
-      const [long, interactive, laned] = await Promise.all([
-        oldestOf(FIXED_LONG_TYPES),
-        oldestOf(FIXED_INTERACTIVE_TYPES),
-        db.generationJob.findMany({
-          where: { status: "QUEUED", type: { in: [...PAYLOAD_LANED_JOB_TYPES] } },
+      const [fixed, laned] = await Promise.all([
+        // A lane with no fixed type (the image and compile lanes) costs no query here.
+        Promise.all(JOB_LANE_NAMES.map((lane) => oldestOf(FIXED_LANE_TYPES[lane]))),
+        Promise.all(PAYLOAD_LANED_JOB_TYPES.map((type) => db.generationJob.findMany({
+          where: { status: "QUEUED", type: { in: [type] } },
           orderBy: { updatedAt: "asc" },
           take: PAYLOAD_LANED_SCAN,
           select: { type: true, payload: true, updatedAt: true }
-        })
+        })))
       ]);
-      const oldest: Record<JobLane, Date | null> = { long, interactive };
-      for (const row of laned) {
+      const oldest = Object.fromEntries(JOB_LANE_NAMES.map((lane, index) => [lane, fixed[index] ?? null])) as Record<
+        JobLane,
+        Date | null
+      >;
+      for (const row of laned.flat()) {
         const lane = laneOfClass(jobLaneClass(row.type, row.payload) ?? "long-start");
         const current = oldest[lane];
         if (!current || row.updatedAt < current) oldest[lane] = row.updatedAt;

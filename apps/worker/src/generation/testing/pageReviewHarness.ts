@@ -20,8 +20,6 @@ const mocks = vi.hoisted(() => ({
   loadContinuityNotes: vi.fn(),
   loadResearchNotesForGeneration: vi.fn(),
   retrieveSemanticResearchNotes: vi.fn(),
-  keeperStoryExtractForSave: vi.fn(),
-  persistStoryExtract: vi.fn(),
   // Controllable: `reviewAndSaveGeneratedPage` pins its excerpts out of
   // whatever this returns, and the whole of finding C is that it used to load
   // nothing at all.
@@ -32,23 +30,14 @@ const mocks = vi.hoisted(() => ({
       _recencyPages?: Array<Record<string, unknown>>
     ): Promise<Array<Record<string, unknown>>> => []
   ),
-  enrichPageQualityReport: vi.fn(),
+  // The gate review, real by default (`beforeEach`). A generated page's save
+  // (`reviewAndSaveGeneratedPage`) runs only its local checks, so a suite about
+  // what happens after the verdict stubs it with the verdict it needs.
+  reviewPage: vi.fn(),
   // The style audit's provider boundary. `withStyleAudit` above it stays real.
   auditPageStyle: vi.fn(),
   qualityEnabled: vi.fn((_feature: string): boolean => false)
 }));
-
-/**
- * The enrichment pass is stubbed, but the excerpts it is *handed* are not
- * incidental: they are the pin this function derives once and hands to the
- * enrichment pass and the review loop alike, so the tests below read them off
- * the call rather than off the answer.
- */
-const stubbedEnrichment = async ({ report }: { report: unknown }) => ({
-  report,
-  extract: null,
-  storyState: { promises: [], facts: [], entities: {}, unanswered: [] }
-});
 
 vi.mock("@book-maker/db", async () => ({
   prisma: mocks.prisma,
@@ -77,15 +66,16 @@ vi.mock("../qualitySettings.js", () => ({
     balancedPagePipelineQualityContext({ otherFeatureEnabled: mocks.qualityEnabled }),
   applyPlanThinkingBoost: vi.fn()
 }));
+vi.mock("../pageQualityGateReview.js", async () => {
+  const actual = await vi.importActual<typeof import("../pageQualityGateReview.js")>("../pageQualityGateReview.js");
+  return { ...actual, reviewPageWithQualityGates: mocks.reviewPage };
+});
 vi.mock("../qualityEnrichment.js", async () => {
   const actual = await vi.importActual<typeof import("../qualityEnrichment.js")>("../qualityEnrichment.js");
   return {
-    enrichPageQualityReport: mocks.enrichPageQualityReport,
     // The real factory: whether the handler builds an auditor at all, and out
     // of which excerpts, is exactly what the style-audit tests below measure.
     revisedDraftStyleAuditor: actual.revisedDraftStyleAuditor,
-    keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-    persistStoryExtract: mocks.persistStoryExtract
   };
 });
 vi.mock("@book-maker/core", async () => {
@@ -125,10 +115,12 @@ vi.mock("../bookHelpers.js", async () => {
   };
 });
 
-import { pageQaCandidatesFor } from "../tuning.js";
-
-/** The candidate budget the fixtures run under: no tier recorded is balanced. */
-const BALANCED_CANDIDATES = pageQaCandidatesFor({ mediaSettings: {} } as never);
+/**
+ * The candidate budget the loop fixtures run under: the seed plus three
+ * rewrites. (It used to be Balanced's page-QA budget, read from `tuning.ts`;
+ * the tier budgets went with the generated-page review loop on 2026-10-16.)
+ */
+const LOOP_CANDIDATES = 4;
 
 const report = (score: number, overrides: Partial<PageQualityReport> = {}): PageQualityReport =>
   ({
@@ -157,11 +149,12 @@ const anchorPage = (index: number, voice: string) => ({
   summary: `Summary ${index}`
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  const actualGateReview = await vi.importActual<typeof import("../pageQualityGateReview.js")>("../pageQualityGateReview.js");
+  mocks.reviewPage.mockImplementation(actualGateReview.reviewPageWithQualityGates);
   // Set here rather than in each suite's own `beforeEach`, which clears calls
   // but keeps implementations: one test's excerpts or verdict would otherwise
   // be the next one's default.
-  mocks.enrichPageQualityReport.mockImplementation(stubbedEnrichment);
   mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
   mocks.qualityEnabled.mockReturnValue(false);
   mocks.loadStyleLockPages.mockResolvedValue([]);
@@ -169,4 +162,4 @@ beforeEach(() => {
   mocks.retrieveSemanticResearchNotes.mockResolvedValue([]);
 });
 
-export { stubbedEnrichment, mocks, BALANCED_CANDIDATES, report, draftNamed, qualityGates, anchorPage };
+export { mocks, LOOP_CANDIDATES, report, draftNamed, qualityGates, anchorPage };

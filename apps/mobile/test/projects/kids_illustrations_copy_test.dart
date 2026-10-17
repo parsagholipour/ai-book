@@ -4,9 +4,11 @@ import 'package:tomeza/shared/ui/app_components.dart';
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
 
-// A children's story is drawn a picture per page and never past 12
-// (`pictureBookIllustrationCount`, core's `min(pages, 12)`). The switch used to
-// describe the old rule — every page to 12 pages, then every other page.
+// A children's story draws two pictures for every five pages, never past 12
+// (`pictureBookIllustrationCount`, core's `pictureBookIllustrationCap`). The
+// switch has described two older rules — every page to 12 pages then every
+// other page, and a picture on every page up to 12 — and must not promise
+// either.
 void main() {
   testWidgets('the illustrations switch states the picture-book rule', (
     tester,
@@ -33,12 +35,13 @@ void main() {
       find.descendant(
         of: illustrations,
         matching: find.textContaining(
-          'A picture on every page, up to 12 pictures',
+          'About 2 pictures for every 5 pages, up to 12 pictures',
         ),
       ),
       findsOneWidget,
     );
     expect(find.textContaining('every other page'), findsNothing);
+    expect(find.textContaining('A picture on every page'), findsNothing);
 
     await tester.teardownScreen();
   });

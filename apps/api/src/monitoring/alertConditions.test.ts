@@ -14,7 +14,8 @@ import {
   type SpendSnapshot
 } from "./alertConditions.js";
 import { freshAlertState } from "./alertState.js";
-import { READINESS_CHECKS } from "./readiness.js";
+import { PROVIDER_QUOTA_ACCOUNTS, providerQuotaConditionKey } from "./providerQuota.js";
+import { ADVISORY_CHECKS, MONITORED_CHECKS, READINESS_CHECKS } from "./readiness.js";
 
 const GIB = 1024 ** 3;
 const disk = (freeRatio: number, inodeRatio = 0.9) => ({
@@ -39,9 +40,20 @@ function spendAt(spend: Partial<SpendSnapshot>): SpendSnapshot {
 }
 
 describe("the alert conditions", () => {
-  it("cover every readiness check, the spend breaker's four caps, failed jobs, the disk and open safety reports, once each", () => {
+  it("cover every readiness and advisory check, the spend breaker's four caps, failed jobs, the disk, open safety reports and each provider account, once each", () => {
     expect(ALERT_CONDITIONS.map((condition) => condition.key).sort()).toEqual(
-      [...READINESS_CHECKS, "spend_soft", "spend_hard", "spend_monthly", "spend_paid", "failed_jobs", "disk", "safety_reports"].sort()
+      [
+        ...READINESS_CHECKS,
+        ...ADVISORY_CHECKS,
+        "spend_soft",
+        "spend_hard",
+        "spend_monthly",
+        "spend_paid",
+        "failed_jobs",
+        "disk",
+        "safety_reports",
+        ...PROVIDER_QUOTA_ACCOUNTS.map(providerQuotaConditionKey)
+      ].sort()
     );
   });
 
@@ -87,12 +99,16 @@ describe("observeAlertConditions", () => {
     readiness: async () => ({
       ok: true,
       checkedAt: new Date(),
-      results: Object.fromEntries(READINESS_CHECKS.map((check) => [check, { ok: true }])) as never
+      results: Object.fromEntries(MONITORED_CHECKS.map((check) => [check, { ok: true }])) as never
     }),
     spend: async () => spendAt({ freeSpendUsd: 4.99, monthFreeSpendUsd: 149.99, paidSpendUsd: 59.99 }),
     failedJobsSince: async () => [{ type: "GENERATE_BOOK" }],
     disk: async () => disk(0.5),
-    openSafetyReports: async () => ({ childSafety: 0, sexualContent: 0, heldBookText: 0, oldestAt: null })
+    openSafetyReports: async () => ({ childSafety: 0, sexualContent: 0, heldBookText: 0, oldestAt: null }),
+    providerCallOutcomesSince: async () => [
+      { provider: "openai", exhaustedAt: null, refusals: 0, answeredAt: new Date() },
+      { provider: "deepseek", exhaustedAt: null, refusals: 0, answeredAt: new Date() }
+    ]
   };
 
   it("passes everything on a quiet day", async () => {
@@ -107,7 +123,8 @@ describe("observeAlertConditions", () => {
       spend: async () => Promise.reject(new Error("db")),
       failedJobsSince: async () => Promise.reject(new Error("db")),
       disk: async () => Promise.reject(new Error("EACCES")),
-      openSafetyReports: async () => Promise.reject(new Error("db"))
+      openSafetyReports: async () => Promise.reject(new Error("db")),
+      providerCallOutcomesSince: async () => Promise.reject(new Error("db"))
     };
     const observations = await observeAlertConditions(broken, new Map(), new Date());
     expect([...observations.values()].every((observation) => observation === null)).toBe(true);
@@ -142,6 +159,27 @@ describe("observeAlertConditions", () => {
     const runaway = await observe({ paidSpendUsd: 60 });
     expect(runaway.get("spend_paid")).toMatchObject({ failing: true, detail: expect.stringContaining("$60.00 paid cap") });
     expect(runaway.get("spend_hard")).toEqual({ failing: false });
+  });
+
+  it("alerts on a failing advisory check while readiness itself still passes", async () => {
+    const reason = "no heartbeat from the background lane for over 90 s";
+    const observations = await observeAlertConditions(
+      {
+        ...healthy,
+        readiness: async () => ({
+          ok: true,
+          checkedAt: new Date(),
+          results: {
+            ...Object.fromEntries(MONITORED_CHECKS.map((check) => [check, { ok: true }])),
+            worker_background: { ok: false, reason }
+          } as never
+        })
+      },
+      new Map(),
+      new Date()
+    );
+    expect(observations.get("worker_background")).toEqual({ failing: true, detail: reason });
+    expect(observations.get("worker_long")).toEqual({ failing: false });
   });
 
   it("reads the disk's hysteresis off the previous state", async () => {

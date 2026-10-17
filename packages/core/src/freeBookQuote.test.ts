@@ -60,9 +60,11 @@ describe("a book's quote", () => {
 
   it.each([
     // pages, pictures, total (Balanced, drawn cover)
-    [12, 12, 350 + 12 * 8 + 12 * 45 + 45],
-    [16, 12, 350 + 16 * 8 + 12 * 45 + 45],
-    [24, 12, 350 + 24 * 8 + 12 * 45 + 45],
+    [5, 2, 350 + 5 * 8 + 2 * 45 + 45],
+    [10, 4, 350 + 10 * 8 + 4 * 45 + 45],
+    [12, 5, 350 + 12 * 8 + 5 * 45 + 45],
+    [16, 6, 350 + 16 * 8 + 6 * 45 + 45],
+    [24, 10, 350 + 24 * 8 + 10 * 45 + 45],
     [30, 12, 350 + 30 * 8 + 12 * 45 + 45]
   ])("quotes a %i-page illustrated picture book with %i pictures", (pages, pictures, total) => {
     const input = kidsBook(pages);
@@ -90,15 +92,17 @@ describe("a book's quote", () => {
     const stored = normalizeCreditPricing({ ...DEFAULT_CREDIT_COSTS, exportUnlock: 150 });
     expect(stored.exportUnlock).toBe(0);
     expect(creditCostForOperation("EXPORT_UNLOCK", stored)).toBe(0);
-    expect(estimateFullBookCreditCost(kidsBook(12), stored).totalCredits).toBe(350 + 12 * 8 + 12 * 45 + 45);
+    expect(estimateFullBookCreditCost(kidsBook(12), stored).totalCredits).toBe(350 + 12 * 8 + 5 * 45 + 45);
   });
 });
 
 describe("the picture book's picture budget", () => {
-  // min(pages, 12): a picture a page to twelve, then twelve spread across the
-  // book — never fewer for a longer book (13 pages used to draw 7).
+  // Two pictures for every five pages, rounded to the nearest, at least one and
+  // at most twelve (2026-10-17; it was min(pages, 12)). The app's
+  // `pictureBookIllustrationCount` spells the same table.
   it.each([
-    [1, 1], [5, 5], [11, 11], [12, 12], [13, 12], [14, 12], [16, 12], [20, 12], [22, 12], [23, 12], [24, 12], [30, 12], [40, 12]
+    [1, 1], [2, 1], [3, 1], [4, 2], [5, 2], [8, 3], [9, 4], [10, 4], [11, 4], [12, 5], [13, 5], [16, 6],
+    [20, 8], [24, 10], [28, 11], [29, 12], [30, 12], [40, 12]
   ])("draws %i pages with %i pictures", (pages, pictures) => {
     expect(pictureBookIllustrationCap(pages)).toBe(pictures);
     expect(estimateInteriorImageCount(kidsBook(pages))).toBe(pictures);
@@ -106,5 +110,13 @@ describe("the picture book's picture budget", () => {
 
   it("draws nothing for no pages", () => {
     expect(pictureBookIllustrationCap(0)).toBe(0);
+  });
+
+  it("never draws fewer pictures for a longer book", () => {
+    // A picture a page to twelve, then one per two pages, drew 12 at twelve
+    // pages and 7 at thirteen.
+    for (let pages = 1; pages <= 600; pages++) {
+      expect(pictureBookIllustrationCap(pages), `${pages} pages`).toBeGreaterThanOrEqual(pictureBookIllustrationCap(pages - 1));
+    }
   });
 });

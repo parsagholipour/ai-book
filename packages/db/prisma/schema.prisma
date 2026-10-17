@@ -65,6 +65,7 @@ enum JobType {
   GENERATE_AUDIOBOOK
   GENERATE_CHARACTER_PORTRAIT
   WRITING_ASSIST
+  PREPARE_COMPOSITION
 }
 
 enum AudiobookStatus {
@@ -1269,6 +1270,16 @@ model PlanVersion {
   /// settled answer instead of paying to be refused again. See
   /// apps/worker/src/generation/characterReferences.ts.
   characterReferenceRefusals Json?
+
+  /// The plan characters this plan version draws reference sheets for, as an
+  /// array of plan character names, when its own short-book draft decided it:
+  /// the characters named in at least two of the book's drawn pictures, plus
+  /// any the reader saved with artwork. Written once, where still NULL, before
+  /// the first sheet is drawn, so every later page, cover and retry computes
+  /// the same cast. NULL is "no decision": the whole cast, as before. `[]` is a
+  /// decision to draw no sheets. A new plan version starts NULL. See
+  /// apps/worker/src/generation/characterReferenceCastDecision.ts.
+  characterReferenceCast Json?
 
   /// Who is currently rendering this plan's reference sheets, and until when.
   /// The renders happen with no transaction and no lock held, so this column

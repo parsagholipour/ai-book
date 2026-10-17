@@ -16,6 +16,7 @@ import { optionalMaxRetries } from "./optionalMaxRetries.js";
 import { PartialOutputPreview } from "./partialOutputPreview.js";
 import { JsonOutputRepetitionError, JsonOutputRepetitionGuard } from "./jsonOutputRepetition.js";
 import { WhitespaceRunawayGuard } from "./whitespaceRunaway.js";
+import { TextStallWatchdog } from "./textStallDeadline.js";
 import { isCancellationError, ProviderHttpError, ProviderStreamInterruptedError } from "./retry.js";
 import type {
   ChatMessage,
@@ -209,16 +210,22 @@ export class OpenAITextAdapter implements TextModelAdapter {
     const toolArguments = new Map<number, { name: string; argumentsText: string }>();
     let usage: Usage | undefined;
     let model = this.model;
+    // The stall deadline (textStallDeadline.ts): idle between events, and a pace
+    // floor on visible output. Held while the caller's own code runs.
+    let stall: TextStallWatchdog | undefined;
+    const aside = <T>(work: () => T | Promise<T>) => (stall ? stall.aside(work) : work());
     try {
       const request = this.request(options, input, { stream: true, ...extra });
       await reportTextProviderRequest(options, PROVIDER_ID, this.model, request.max_output_tokens);
+      stall = TextStallWatchdog.start(this.model, { pace: !options.afterStall });
       const stream = await this.client.responses.create(
         request as never,
-        openAiRequestOptions(options)
+        openAiRequestOptions(stall ? { ...options, signal: stall.signalFor(options.signal) } : options)
       );
       let completed: ResponseRecord | undefined;
       const whitespace = new WhitespaceRunawayGuard();
       for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
+        stall?.event();
         if (event.type === "response.output_item.added" && isRecord(event.item) &&
             event.item.type === "function_call" && typeof event.output_index === "number") {
           toolArguments.set(event.output_index, {
@@ -229,9 +236,10 @@ export class OpenAITextAdapter implements TextModelAdapter {
         if (event.type === "response.function_call_arguments.delta" && typeof event.output_index === "number" &&
             typeof event.delta === "string") {
           const call = toolArguments.get(event.output_index);
+          stall?.output(event.delta);
           if (call) {
             call.argumentsText += event.delta;
-            await options.onToolCallProgress?.({ type: "arguments", index: event.output_index, ...call });
+            await aside(() => options.onToolCallProgress?.({ type: "arguments", index: event.output_index as number, ...call }));
           }
         }
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
@@ -245,13 +253,21 @@ export class OpenAITextAdapter implements TextModelAdapter {
           }
           partialOutput.append(event.delta);
           jsonGuard?.append(event.delta);
-          if (options.onToolCallProgress) await options.onOutputTextChunk?.(event.delta);
-          yield event.delta;
+          stall?.output(event.delta);
+          const delta = event.delta;
+          if (options.onToolCallProgress) await aside(() => options.onOutputTextChunk?.(delta));
+          stall?.hold();
+          try {
+            yield delta;
+          } finally {
+            stall?.release();
+          }
         }
         if (isRecord(event.response)) {
           usage = usageFromOpenAIResponse(event.response.usage) ?? usage;
           model = typeof event.response.model === "string" ? event.response.model : model;
-          await reportTextProviderUsage(options, usageFromOpenAIResponse(event.response.usage));
+          const reported = usageFromOpenAIResponse(event.response.usage);
+          await aside(() => reportTextProviderUsage(options, reported));
         }
         const terminal = completedResponseFromEvent(event, this.model, numberValue(request.max_output_tokens), partialOutput);
         if (terminal) {
@@ -263,6 +279,13 @@ export class OpenAITextAdapter implements TextModelAdapter {
       }
       return completed;
     } catch (error) {
+      // An abort reaches here as a rejected request or as a stream the SDK ended
+      // quietly, which reads as an interruption. The caller's stop is answered as
+      // the cancellation it is, so no layer retries it or hops on it; a fired
+      // stall deadline the caller did not also stop is the deadline's 504.
+      if (options.signal?.aborted && !isCancellationError(error)) throw options.signal.reason ?? error;
+      const stalled = stall?.failure(options.signal);
+      if (stalled) throw stalled;
       // Throwing inside for-await closes the SDK iterator, which aborts its
       // request. This is malformed output, not a user cancellation or a timeout.
       // Early termination may have no provider usage; leave it unknown.
@@ -270,7 +293,9 @@ export class OpenAITextAdapter implements TextModelAdapter {
         Object.assign(error, { context: { reason: "repeated_property_without_value", partialOutput: partialOutput.snapshot() } });
         throwWithProviderUsage(error, { provider: PROVIDER_ID, model, usage });
       }
-      rethrowOpenAiHttpError(error);
+      return rethrowOpenAiHttpError(error);
+    } finally {
+      stall?.dispose();
     }
   }
 
@@ -286,11 +311,18 @@ export class OpenAITextAdapter implements TextModelAdapter {
       model: this.model,
       input,
       store: false,
-      // Every prose call of a book shares a long system prefix; without a
-      // routing key consecutive calls landed on different cache shards and
-      // 0 of 48 calls hit (composed-22). The key is the prefix's own digest,
-      // so it needs no plumbing and differs between books.
-      prompt_cache_key: promptCacheKey(input),
+      // The key routes a request to the cache that may hold its prefix, and a
+      // fresh key per call never hit, so calls sharing a prefix must share it.
+      // It digests the first message's first 2,500 characters: a text call's
+      // own system message (compose's names the book), but for every JSON
+      // call the fixed JSON_SYSTEM_MESSAGE, so all JSON calls of every book
+      // share one key. The layout decides hits, not the key: gpt-6-luna caches
+      // the leading identical system messages (>= 1,024 tokens) and whole
+      // repeated prompts only (H12 probe, 2026-10-15; see adapters CLAUDE.md).
+      // The key also steers which machine serves the request, so the request
+      // after a stall takes another one: the same key put a compose retry on
+      // the machine that had just trickled, and it trickled again.
+      prompt_cache_key: promptCacheKey(input, options.afterStall ? "after-stall" : undefined),
       ...(this.thinkingEffort !== "none" ? { include: ["reasoning.encrypted_content"] } : {}),
       ...(this.thinkingEffort ? { reasoning: { effort: this.thinkingEffort } } : {}),
       ...(options.temperature !== undefined && this.thinkingEffort === "none"
@@ -445,11 +477,13 @@ function responseText(response: ResponseRecord): string {
     .trim();
 }
 
-export function promptCacheKey(input: unknown[]): string {
+export function promptCacheKey(input: unknown[], route?: string): string {
   const first = input[0];
   const content = isRecord(first) ? first.content : undefined;
   const text = typeof content === "string" ? content : JSON.stringify(content ?? "");
-  return createHash("sha256").update(text.slice(0, 2500)).digest("hex").slice(0, 24);
+  const hash = createHash("sha256");
+  if (route) hash.update(`${route}\n`);
+  return hash.update(text.slice(0, 2500)).digest("hex").slice(0, 24);
 }
 
 function usageFromOpenAIResponse(usage: unknown): Usage | undefined {
@@ -607,10 +641,21 @@ function rethrowOpenAiHttpError(error: unknown): never {
     throw error;
   }
   const retryAfterMs = retryAfterMsFromOpenAiSdkError(error);
+  const code = openAiSdkErrorCode(error);
+  const type = openAiSdkErrorType(error);
   throw new ProviderHttpError(error instanceof Error ? error.message : String(error), {
     status,
-    ...(retryAfterMs === undefined ? {} : { retryAfterMs })
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    // `insufficient_quota` / `credit_balance_exhausted` is how an empty
+    // account is told from a TPM window (isProviderQuotaExhaustedError).
+    ...(code ? { code } : {}),
+    ...(type ? { type } : {})
   });
+}
+
+function openAiSdkErrorType(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  return stringValue(error.type) ?? (isRecord(error.error) ? stringValue(error.error.type) : undefined);
 }
 
 function httpStatusFromOpenAiSdkError(error: unknown): number | undefined {

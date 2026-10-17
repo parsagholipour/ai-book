@@ -40,17 +40,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-// One export of one module, over the real rest of it: which pages the final-QA
-// repair redrafts is a test hook, while the per-message extractor behind the
-// reader's quality card and the page bound both questions are asked in stay
-// real, so the card assertions below measure the actual mapping.
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -196,12 +185,7 @@ describe("compileExport reader chapters", () => {
       inputSnapshot: null
     });
     mocks.prisma.project.findUnique.mockResolvedValue(projectRecord());
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: true,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: []
-    });
+    mocks.repairQuickDraftPages.mockReset();
     mocks.strategy.compileMarkdown.mockReturnValue("# The Long Walk\n\nProse.\n");
     mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: modelChapters, source: "model" });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
@@ -451,7 +435,7 @@ describe("compileExport reader chapters", () => {
   it("skips the model quality review on a repair, whose verdict nothing reads", async () => {
     await compileExport(repairJob());
 
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
   });
 
@@ -578,7 +562,7 @@ describe("compileExport reader chapters", () => {
 
     expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
     expect(compiledChapters()).toEqual(modelChapters.map((chapter) => ({ ...chapter, summary: "" })));
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
     expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCharacterCandidatePreparation).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
@@ -644,23 +628,22 @@ describe("compileExport reader chapters", () => {
   }
 
 
-  it("lets initial deterministic warnings recommend review when model QA is disabled", async () => {
+  it("records the brief read's warnings for the console without re-grading the reader's card", async () => {
+    // A Balanced per-page book has no model review (2026-10-16); a revision that lists the
+    // brief coverage gate still reads it, and what the read finds stays on the console.
     withUnpaidPromise();
-    mocks.inputForPlanVersion.mockReturnValue({
-      ...input,
-      mediaSettings: { ...input.mediaSettings, finalReview: false }
-    });
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
-      enabled: (feature: string) => feature === "storyExtractAudit"
+      enabled: (feature: string) => feature === "storyExtractAudit" || feature === "briefCoverageReview"
     });
 
     await compileExport(job({ contentRevision: 4 }));
 
-    expect(mocks.strategy.runFinalBookQa).not.toHaveBeenCalled();
+    expect(mocks.reviewQuickDraftManuscript).not.toHaveBeenCalled();
     expect(persistedQualityReport()).toMatchObject({
-      state: "review_recommended",
+      state: "passed",
+      readerFindings: [],
       issues: expect.arrayContaining([expect.objectContaining({ code: "UNPAID_PROMISE" })])
     });
   });
@@ -669,18 +652,20 @@ describe("compileExport reader chapters", () => {
     // The card draws one page list under each message and opens Edit Mode at
     // its first page, so a page borrowed from a neighbouring complaint sends
     // the reader to prose nobody complained about. One verdict, three
-    // complaints, three different answers.
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
+    // complaints, three different answers. Through the defect screen, on a Quick Draft book.
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: { modelTier: "fast" } });
+    mocks.reviewQuickDraftManuscript.mockResolvedValueOnce({
       approved: false,
+      score: 60,
+      notes: "Focused screen.",
       issues: [
         "The opening on page 1 is generic scene-setting.",
         "Chapter 4 restates the same argument twice on page 9.",
         "The pacing sags throughout."
       ],
-      requiredFixes: [],
-      // Nothing to redraft, so the repair pass stands down and this verdict is
-      // the one the card is built from.
-      repairPageIndexes: []
+      // No "Page N:" target, so the repair finds nothing to redraft and this
+      // verdict is the one the card is built from.
+      requiredFixes: []
     });
 
     await compileExport(job({ contentRevision: 4 }));
@@ -705,13 +690,15 @@ describe("compileExport reader chapters", () => {
       ...projectRecord(),
       pages: Array.from({ length: 20 }, (_, position) => compilePage(position + 1))
     });
-    // Approved, so the repair pass stands down and this verdict's required fix
-    // is the whole of what the card is built from.
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
+    // Approved, so nothing is redrafted and this verdict's required fix is the
+    // whole of what the card is built from.
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: { modelTier: "fast" } });
+    mocks.reviewQuickDraftManuscript.mockResolvedValueOnce({
       approved: true,
+      score: 100,
+      notes: "Focused screen.",
       issues: [],
-      requiredFixes: ["Page 19 trails off mid-thought."],
-      repairPageIndexes: []
+      requiredFixes: ["Page 19 trails off mid-thought."]
     });
 
     await compileExport(job({ contentRevision: 4 }));
@@ -744,9 +731,8 @@ describe("compileExport reader chapters", () => {
   it.each([
     ["a full compile", {}],
     ["a deterministic-only recompile", { skipFinalReview: true }]
-  ])("blocks %s on an integrity error", async (_label, payload) => {
-    // Publication integrity is never bypassed by an edit: the warning gate
-    // above must not reach errors.
+  ])("files %s's unmeasured integrity error for the console and blocks nothing", async (_label, payload) => {
+    // Nothing blocks unless measured at ≥ 0.99 (`readerFindings.ts`); it stays a console error.
     mocks.prisma.project.findUnique.mockResolvedValue({
       ...projectRecord(),
       pages: pages.map((page) => (page.index === 2 ? { ...page, markdown: "TODO: write this page." } : page))
@@ -754,22 +740,32 @@ describe("compileExport reader chapters", () => {
 
     await compileExport(job({ contentRevision: 4, ...payload }));
 
-    expect(persistedQualityReport().state).toBe("blocked");
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "REVIEW_REQUIRED" })
-    );
+    const report = persistedQualityReport();
+    expect(report.state).toBe("passed");
+    expect(report.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "PLACEHOLDER_TEXT", severity: "error" })]));
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 
+  const screenFindsPageTwo = () => {
+    mocks.inputForPlanVersion.mockReturnValue({ ...input, mediaSettings: { modelTier: "fast" } });
+    mocks.reviewQuickDraftManuscript.mockResolvedValueOnce({ approved: false, score: 60, notes: "Focused screen.",
+      issues: ["Page 2: The walk starts twice."], requiredFixes: ["Page 2: Start it once."],
+      focusedReview: { rejectedFindings: 0, repairGroups: [[2]], findings: [{ targets: [2], kind: "duplicate",
+        problem: "The walk starts twice.", fix: "Start it once.",
+        evidence: [{ pageIndex: 2, quote: "Page 2 prose" }, { pageIndex: 1, quote: "Page 1 prose" }] }] } } as never);
+  };
+  const repairedMarkdown = "Repaired page 2 prose about the walk home and everything seen along it.";
+  const stageRepairOfPageTwo = () => mocks.repairQuickDraftPages.mockImplementationOnce(async ({ pages: book }) =>
+    book.map((page) => page.index === 2 ? { ...page, markdown: repairedMarkdown } : page));
+
   it("publishes saved prose with a durable warning when final repair exhausts its provider budget", async () => {
-    mocks.strategy.runFinalBookQa.mockResolvedValueOnce({ approved: false, score: 60,
-      issues: ["Page 2 needs repair."], requiredFixes: [], repairPageIndexes: [2] });
-    mocks.revisePageDraftWithRestart.mockRejectedValueOnce(Object.assign(
+    screenFindsPageTwo();
+    mocks.repairQuickDraftPages.mockRejectedValueOnce(Object.assign(
       new Error("OpenAI response was incomplete: max_output_tokens."), { name: "OpenAIResponseError" }));
-    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.loadPagesForExport.mockResolvedValue(pages);
     await expect(compileExport(job({ contentRevision: 4 }))).resolves.toMatchObject({ durableCompletionCommitted: true });
     expect(mocks.prisma.page.update).not.toHaveBeenCalled();
-    expect(persistedQualityReport()).toMatchObject({ state: "review_recommended", issues: expect.arrayContaining([
+    expect(persistedQualityReport()).toMatchObject({ state: "passed", issues: expect.arrayContaining([
       expect.objectContaining({ code: "FINAL_QA_REPAIR_UNAVAILABLE", affectedPageIndexes: [2] })
     ]) });
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
@@ -780,13 +776,15 @@ describe("compileExport reader chapters", () => {
     // tab between the two loads split one compile across two revisions: the
     // pages rewritten under one gate set, the report that ships them under
     // another. The second revision here enables nothing, so either half
-    // reading it drops its assertion below.
+    // reading it drops its assertion below. A Balanced book composed by
+    // chapters: the screen and its repair run on it, and so does the brief
+    // read a revision lists.
     mocks.loadQualityContext
       .mockResolvedValueOnce({
         settings: {},
         tier: "balanced",
         enabled: (feature: string) =>
-          isDefaultCompileQualityFeature(feature) || feature === "styleExcerpts" || feature === "storyExtractAudit"
+          isDefaultCompileQualityFeature(feature) || feature === "storyExtractAudit"
       })
       .mockResolvedValue({
         settings: {},
@@ -799,72 +797,32 @@ describe("compileExport reader chapters", () => {
       entities: {},
       unanswered: []
     });
-    // Flagged once, so the repair pass runs; the rerun after it approves.
-    mocks.strategy.runFinalBookQa.mockResolvedValueOnce({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [2]
-    });
-    const repairedMarkdown = "Repaired page 2 prose about the walk home and everything seen along it.";
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: "Page 2",
-      markdown: repairedMarkdown,
-      summary: "Page 2 summary.",
-      imagePrompt: null,
-      continuityNotes: []
-    });
-    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+    screenFindsPageTwo();
+    mocks.inputForPlanVersion.mockReturnValue(input);
+    stageRepairOfPageTwo();
     mocks.prisma.page.update.mockResolvedValue({ ...compilePage(2), markdown: repairedMarkdown });
     mocks.loadPagesForExport.mockResolvedValue(pages);
-    const reviewPageDraft = vi.fn().mockResolvedValue({
-      approved: true,
-      score: 90,
-      issues: [],
-      requiredRevisions: [],
-      notes: ""
-    });
-    Object.assign(mocks.strategy, { reviewPageDraft });
+    mocks.strategy.executionMode = "composed-chapters";
 
     try {
       await compileExport(job({ contentRevision: 4 }));
     } finally {
-      delete (mocks.strategy as { reviewPageDraft?: unknown }).reviewPageDraft;
+      mocks.strategy.executionMode = "whole-book";
     }
 
-    // The repair pass read the first revision: `styleExcerpts` was on, so the
-    // rewrite of page 2 was anchored to the book's opening page.
-    const revise = mocks.revisePageDraftWithRestart.mock.calls[0]![0] as {
-      reviseOptions: { styleExcerpts?: string[] };
-    };
-    expect(revise.reviseOptions.styleExcerpts).toEqual([pages[0]!.markdown]);
-    // And so did the integrity pass after it: `storyExtractAudit` was on, so
-    // the plan's unpaid promise reached the report the compile publishes.
-    const qualityUpdate = mocks.prisma.generationJob.update.mock.calls.find(
-      (call) => (call[0] as { data?: { qualityReport?: unknown } }).data?.qualityReport
-    );
-    const report = (qualityUpdate![0] as { data: { qualityReport: { issues: Array<{ code: string }> } } }).data
-      .qualityReport;
-    expect(report.issues.map((issue) => issue.code)).toContain("UNPAID_PROMISE");
+    // The repair read the first revision: `pageQaRewrite` was on there.
+    expect(mocks.repairQuickDraftPages).toHaveBeenCalledOnce();
+    expect(mocks.prisma.page.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "page-2" }, data: expect.objectContaining({ markdown: repairedMarkdown }) }));
+    // And so did the integrity pass after it: the brief read was on, so the
+    // plan's unpaid promise reached the report the compile publishes.
+    expect(persistedQualityReport().issues.map((issue) => issue.code)).toContain("UNPAID_PROMISE");
     expect(mocks.loadQualityContext).toHaveBeenCalledTimes(1);
   });
 
-  it("stands down before spending on repaired-book QA when an edit lands after repair", async () => {
-    mocks.strategy.runFinalBookQa.mockResolvedValueOnce({
-      approved: false,
-      issues: ["Page 2 needs repair."],
-      requiredFixes: ["Repair page 2."],
-      repairPageIndexes: [2]
-    });
-    const repairedMarkdown = "Repaired page 2 prose about the walk home and everything seen along it.";
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: "Page 2",
-      markdown: repairedMarkdown,
-      summary: "Page 2 summary.",
-      imagePrompt: null,
-      continuityNotes: []
-    });
-    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+  it("stands down without publishing when an edit lands after the repair", async () => {
+    screenFindsPageTwo();
+    stageRepairOfPageTwo();
     let repairPublished = false;
     mocks.prisma.page.update.mockImplementation(async () => {
       repairPublished = true;
@@ -872,26 +830,13 @@ describe("compileExport reader chapters", () => {
     });
     mocks.loadPagesForExport.mockResolvedValue(pages);
     mocks.exportPublicationSuperseded.mockImplementation(async () => repairPublished);
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: vi.fn().mockResolvedValue({
-        approved: true,
-        score: 90,
-        issues: [],
-        requiredRevisions: [],
-        notes: ""
-      })
-    });
 
-    try {
-      await compileExport(job({ contentRevision: 4 }));
-    } finally {
-      delete (mocks.strategy as { reviewPageDraft?: unknown }).reviewPageDraft;
-    }
+    await compileExport(job({ contentRevision: 4 }));
 
     expect(repairPublished).toBe(true);
-    // The first call graded the pre-repair book. The exact fence observes the
-    // edit before a second provider call can grade or spend on obsolete pages.
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
+    // The book was read once, before the repair; the fence after it observes the edit,
+    // and the verdict derived for the repaired pages is never published over it.
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledTimes(1);
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
     expect(mocks.strategy.generatePdf).not.toHaveBeenCalled();
   });

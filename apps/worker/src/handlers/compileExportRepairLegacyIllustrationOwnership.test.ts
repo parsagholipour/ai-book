@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FinalBookQa, PageQualityReport } from "@book-maker/core";
+import type { FinalBookQa } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 
 /** Legacy numeric illustration ownership across structural page reindexing. */
@@ -36,13 +36,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -71,15 +64,6 @@ import {
   stampLegacyGeneratedIllustrationOwnership
 } from "@book-maker/db/pageIllustrationOwnership";
 import { mocks } from "./testing/compileExportMocks.js";
-
-const approvedReport = {
-  approved: true,
-  score: 90,
-  issues: [],
-  requiredRevisions: [],
-  notes: "",
-  checks: { repetitionOk: true, progressionOk: true }
-} as unknown as PageQualityReport;
 
 const draft = {
   title: "Repaired",
@@ -111,22 +95,19 @@ const input = {
   complexity: 3,
   temperature: 0.6,
   language: "en",
-  mediaSettings: { finalReview: true }
+  mediaSettings: { modelTier: "fast" }
 };
 const plan = { title: "Book", premise: "A book.", audience: "adults", chapters: [] };
+// The defect screen's verdict names the page it repairs (`quickDraftQaTargets`).
 const finalQa = {
   approved: false,
   score: 40,
-  issues: [],
-  requiredFixes: [],
-  notes: "",
-  repairPageIndexes: [1]
+  issues: ["Page 1: A drafting note was left in the prose."],
+  requiredFixes: ["Page 1: Remove the drafting note."],
+  notes: ""
 } as unknown as FinalBookQa;
 const strategy = {
   executionMode: "whole-book",
-  reviewPageDraft: vi.fn(),
-  revisePageDraft: vi.fn(),
-  repairPageBrief: vi.fn(),
   shouldIllustratePage: vi.fn(() => false)
 };
 const repairOptions = (bookPage: ExportPageForRepair, overrides: Record<string, unknown> = {}) =>
@@ -153,10 +134,9 @@ describe("compile final-QA repair legacy illustration ownership", () => {
     mocks.loadPagesForExport.mockResolvedValue([page()]);
     mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: (): boolean => false });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
-    mocks.revisePageDraftWithRestart.mockResolvedValue(draft);
-    strategy.revisePageDraft.mockResolvedValue(draft);
-    strategy.reviewPageDraft.mockResolvedValue(approvedReport);
-    strategy.repairPageBrief.mockReset();
+    // The scoped repair's verified candidate: only the target's prose changes.
+    mocks.repairQuickDraftPages.mockReset().mockImplementation(async ({ pages, targetPageIndexes }) =>
+      pages.map((page) => targetPageIndexes.includes(page.index) ? { ...page, markdown: draft.markdown, summary: draft.summary } : page));
     strategy.shouldIllustratePage.mockReturnValue(false);
     mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       ...page(),
@@ -258,7 +238,8 @@ describe("compile final-QA repair legacy illustration ownership", () => {
       repairPagesFromFinalQa(
         repairOptions(original, {
           planId: "plan-1",
-          finalQa: { ...finalQa, repairPageIndexes: [3] }
+          finalQa: { ...finalQa, issues: ["Page 3: A drafting note was left in the prose."],
+            requiredFixes: ["Page 3: Remove the drafting note."] }
         })
       )
     ).resolves.toEqual([expect.objectContaining({ index: 3, markdown: "Repaired prose." })]);

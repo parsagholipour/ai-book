@@ -1,12 +1,10 @@
 import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import type { IndexedPageDraft } from "../runtime/jobTypes.js";
-import { reviewPageWithQualityGates } from "./pageReview.js";
+import { reviewPageWithQualityGates, withoutPageReview } from "./pageReview.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
-  hasSmartUnslopCandidates, smartUnslopResolved,
   isCancellationError,
-  type DecisionModelRoute,
   CASE_EVIDENCE_WRITER_RULES,
   type BookGenerationStrategy,
   type BookPlan,
@@ -24,30 +22,36 @@ export type ReviewedWholeBookPage = {
   revision: number;
 };
 
-/** Keep whole-book generation's established local-only check and one-rewrite cap. */
+/**
+ * The deterministic local checks on a whole-book draft's pages (the
+ * single-pass strategy under five pages) and on a composed book's cut pages.
+ * No model reviews either, on any tier (`withoutPageReview`). A composed page
+ * whose integrity checks fail — a prompt leak or a placeholder, the two rules
+ * `composedPageQualityReport` keeps — gets one revise under `pageQaRewrite`:
+ * the repair of a deterministic finding, the way `arithmeticFindings` is
+ * repaired. A whole-book draft's page is saved as drafted with its report, as a
+ * short book's is (E4); its old one rewrite on any local failure went in E5.
+ */
 export async function reviewWholeBookDraftPages(options: {
   input: CreateProjectInput;
   plan: BookPlan;
   strategy: BookGenerationStrategy;
   textModel: TextModelAdapter;
-  decisions?: DecisionModelRoute | undefined;
   pages: IndexedPageDraft[];
   generationJobId?: string | undefined;
 }): Promise<ReviewedWholeBookPage[]> {
-  const quality = quickDraftPageQuality(options.input, await loadQualityContext(options.input));
+  const loadedQuality = quickDraftPageQuality(options.input, await loadQualityContext(options.input));
+  const quality = withoutPageReview(loadedQuality);
+  const composed = strategyComposesChapters(options.strategy);
   const reviewed: ReviewedWholeBookPage[] = [];
   const previousPages: PriorPageContext[] = [];
-  // Composed finalize never rewrites for Smart Unslop, so Jev confirmation is inert.
-  const decisions = strategyComposesChapters(options.strategy) ? undefined : options.decisions;
 
   for (const pageDraft of options.pages) {
     let draft: IndexedPageDraft = pageDraft;
     let revision = 1;
     let report = await reviewPageWithQualityGates({
-      ...(decisions ? { decisions } : {}),
       strategy: options.strategy,
       quality,
-      allowModelReview: false,
       reviewOptions: {
         input: options.input,
         plan: options.plan,
@@ -58,11 +62,11 @@ export async function reviewWholeBookDraftPages(options: {
         textModel: options.textModel
       }
     });
-    if (strategyComposesChapters(options.strategy)) {
+    if (composed) {
       report = composedPageQualityReport(report);
     }
 
-    if (!report.approved && quality.enabled("pageQaRewrite")) {
+    if (!report.approved && composed && loadedQuality.enabled("pageQaRewrite")) {
       await updateJobProgress(options.generationJobId, {
         message: `Page ${pageDraft.index} failed local quality checks; revising.`
       });
@@ -83,11 +87,8 @@ export async function reviewWholeBookDraftPages(options: {
           textModel: options.textModel
         });
         const revisedReport = await reviewPageWithQualityGates({
-          ...(decisions ? { decisions } : {}),
           strategy: options.strategy,
           quality,
-          allowModelReview: false,
-          allowSmartUnslop: !smartUnslopResolved(report) && !hasSmartUnslopCandidates(report as PageQualityReport),
           reviewOptions: {
             input: options.input,
             plan: options.plan,

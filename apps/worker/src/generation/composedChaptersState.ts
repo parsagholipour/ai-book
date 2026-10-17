@@ -170,6 +170,11 @@ export type ComposedChapterReport = {
   draftWords: number;
   editedWords: number;
   editorChanged: boolean;
+  /**
+   * False since the composed line edit was removed (2026-10-16): the draft is the chapter and
+   * `editorChanged` is always false. Absent on a report written before, when the editor ran.
+   */
+  lineEdited?: boolean | undefined;
   readNotes: string[];
   secondEditApplied: boolean;
   wordBudget: { min: number; target: number; max: number };
@@ -177,8 +182,6 @@ export type ComposedChapterReport = {
   paragraphCv: number;
   /** Whether the deterministic shape check sent the chapter back to the editor once. */
   shapePassApplied: boolean;
-  /** Best-of-two: which draft the cross-family judge chose and whether both orders agreed. */
-  bestOf?: { pick: number; agreed: boolean; reasons: string[] };
   /** Material-first: the opening scene composed for the chapter. */
   scene?: { words: number; episodeTitle: string } | undefined;
   /** Material-first: what the dossier held for the chapter. */
@@ -187,10 +190,6 @@ export type ComposedChapterReport = {
   quotes?: { checked: number; verbatim: number; misattributed: number; stripped: number } | undefined;
   /** Which contract the writer wrote under. */
   contract?: "grounded" | "creative" | undefined;
-  /** The couplet rewrite: pairs found in the edited chapter and pairs the editor's replacement was accepted for. */
-  couplets?: { found: number; rewritten: number } | undefined;
-  /** The paragraph-final disclaimer cap: candidates found, sentences deleted and the words they took. */
-  disclaimers?: { found: number; removed: number; words: number } | undefined;
   /** Whether an epigraph from the dossier was set at the chapter's head. */
   epigraph?: boolean | undefined;
   /** The arithmetic check: wrong numeric statements found, repair edits spent, and the statements still wrong. */
@@ -225,27 +224,6 @@ export async function recordChapterSourceClaims(projectId: string, chapterIndex:
   await prisma.chapter.update({ where: { id: chapter.id },
     data: { productionBrief: { ...brief, report: { ...report, sourceClaims } } as unknown as Prisma.InputJsonValue } });
 }
-
-/**
- * The book arc (core `bookArc.ts`): planned once per book, the pages re-cut
- * by kind, the thesis withheld from the middle chapters. Arm 1 of the
- * paradigm shift (spec.md, composed-24/25, 2026-09-03): nine readers scored
- * it 7.39 against 7.46 for this default, engagement and pacing unmoved, and
- * the read reported the answer stated in nearly every chapter regardless —
- * the writer reconstructs it from the question. Off; the modules stay for
- * the next arm.
- */
-export const BOOK_ARC = false;
-/** Every chapter's first and last paragraph rewritten together after the read (core `seams.ts`); same arm, same verdict. */
-export const SEAMS_TOGETHER = false;
-/** Two drafts and a judge settled 2 of composed-7's 15 chapters at double the compose spend; the code path stays for a tier that earns it. */
-export const COMPOSE_CANDIDATES = 1;
-/** Paragraph-shape numbers to the editor: off for composed-8/9, which scored lower on the same plan; back on with composed-7's editor. */
-export const SHAPE_NOTES_TO_EDITOR = true;
-/** Measured notes to the editor: off for the subtraction ablation (composed-21, 6.6 against 7.3), back on. */
-export const MEASUREMENT_NOTES_TO_EDITOR = true;
-/** How much hotter the second candidate samples than the book's own temperature. */
-export const SECOND_CANDIDATE_TEMPERATURE_STEP = 0.25;
 
 /**
  * The brief every page-scoped consumer reads is derived from what was

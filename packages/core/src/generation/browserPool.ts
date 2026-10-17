@@ -43,14 +43,15 @@ import { terminateBrowserProcess } from "./browserProcess.js";
  */
 
 /**
- * Deliberately below the worker's job concurrency, which is the sum of its two
- * lanes (`workerLaneConcurrency` in `jobLanes.ts`: one long and two interactive
- * in production, the long lane `max(MAX_PARALLEL_PAGE_JOBS,
- * MAX_PARALLEL_IMAGE_JOBS)` when unset) — and compiles run in both lanes. Four
- * large books typesetting inside one Chromium is an out-of-memory kill that takes
- * all four down together, so renders queue here instead, whatever the lanes add
- * up to. Raising this without raising the container's memory is how that outage
- * comes back.
+ * Deliberately below the worker's job concurrency, which is the sum of its five
+ * lanes (`workerLaneConcurrency` in `jobLanes.ts`: in production thirty long,
+ * four image, three compile, two interactive and four background) — and book
+ * compiles run in the compile and interactive lanes, cover typesetting in the
+ * image and interactive lanes.
+ * Four large books typesetting inside one Chromium is an out-of-memory kill that
+ * takes all four down together, so renders queue here instead, whatever the
+ * lanes add up to. Raising this without raising the container's memory is how
+ * that outage comes back.
  */
 const RENDER_CONCURRENCY = 2;
 

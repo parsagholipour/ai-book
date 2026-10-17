@@ -2,11 +2,11 @@ import type { TextModelThinkingEffort } from "../schemas/book.js";
 import type { GenerateTextOptions } from "./types.js";
 
 const SHORT_STRUCTURED_PURPOSES = new Set([
-  "extract-story-state", "describe-pages", "critique-plan", "select-cover-design",
-  "review-dossier-provenance", "extract-excerpts", "review-chapter-edit-acceptance", "review-page", "check-chapter-arithmetic", "extract-chapter-facts",
-  "critique-page-map", "generate-chapter-brief", "book.final_qa.chapter_transitions",
-  "final-book-qa", "audit-page-style", "review-manuscript-structure",
-  "generate-page", "polish-page", "revise-page", "repair-page-brief", "judge-page-drafts",
+  "describe-pages", "select-cover-design",
+  "review-dossier-provenance", "extract-excerpts", "review-chapter-edit-acceptance", "review-page", "extract-chapter-facts",
+  "generate-chapter-brief",
+  "final-book-qa", "audit-page-style",
+  "generate-page", "revise-page",
   "author-assist-rewrite", "author-assist-proofread", "author-assist-continue", "author-assist-describe",
   "author-assist-brainstorm", "author-assist-ask", "author-chapter-feedback", "author-consistency", "author-outline",
   "extract-voice-character-candidates", "build-voice-character-persona"

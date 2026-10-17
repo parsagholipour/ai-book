@@ -13,7 +13,6 @@ import {
 import { DEFAULT_TTS_CHANNELS, DEFAULT_TTS_SAMPLE_RATE, pcm16DurationMs } from "../audio/pcm.js";
 import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../generation/coverDesigns.js";
 import { COPYRIGHT_SAFE_IMAGE_PROMPT_PURPOSE } from "../generation/copyrightSafeImagePrompt.js";
-import { MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE } from "../generation/manuscriptStructuralReview.js";
 import { dryRunDetail, dryRunPageBeat, rotate } from "./fakeDryRunBeats.js";
 import { fakeChapterForms, fakeComposedChapter, fakeDescribedPages, fakeBookArc, fakeCutChapter, fakeSeams, fakeDetemplatedChapter } from "./fakeComposedChapters.js";
 import { fakeEditAdherence } from "./fakeEditAdherence.js";
@@ -154,21 +153,6 @@ export class FakeTextModelAdapter implements TextModelAdapter {
           index: span.index, meaning: "pass", join: "pass", retainedEvidence: "Mock retained evidence.", joinReason: "Mock coherent join."
         })) } : {}) };
     }
-    if (options.purpose === "extract-story-state") {
-      return {
-        storyDelta: {
-          promisesOpened: [],
-          promisesPaid: [],
-          promisesBroken: [],
-          factsAdded: [],
-          entities: {},
-          unansweredAdded: [],
-          unansweredResolved: []
-        },
-        contradictions: []
-      };
-    }
-
     if (options.purpose === "architect-book") {
       return fakeBookArc(options);
     }
@@ -177,15 +161,6 @@ export class FakeTextModelAdapter implements TextModelAdapter {
     }
     if (options.purpose === "judge-chapter-drafts") {
       return { winner: "A", reason: "Fake judge keeps the first draft." };
-    }
-
-    if (options.purpose === "critique-plan") {
-      return {
-        promisesToAdd: [],
-        chapterMergeNotes: [],
-        reorderNotes: [],
-        repeatedBeatWarnings: []
-      };
     }
 
     if (options.purpose === "review-dossier-provenance") {
@@ -198,20 +173,6 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
     if (options.purpose === "audit-page-style") {
       return { styleOk: true, styleIssues: [] };
-    }
-
-    if (options.purpose === "critique-page-map") {
-      const development = schema.safeParse({ sceneRevisions: [], flowAudit: {
-        stateDependencies: [], setupPayoffs: [], sceneProgression: []
-      } });
-      if (development.success && development.data && typeof development.data === "object" && "sceneRevisions" in development.data)
-        return development.data;
-      return {
-        beatPatches: [],
-        duplicatePurposeWarnings: [],
-        missingEndingPressure: [],
-        unscheduledPromises: []
-      };
     }
 
     if (options.purpose === "dedupe-page-beats") {
@@ -424,12 +385,6 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         requiredFixes: [],
         notes: "Fake final QA approved the deterministic dry-run book."
       };
-    }
-
-    if (options.purpose === "review-picture-book-continuity") return { findings: [] };
-
-    if (options.purpose === MANUSCRIPT_STRUCTURAL_REVIEW_PURPOSE) {
-      return { clusters: [] };
     }
 
     if (options.purpose === "author-stance") {
@@ -830,8 +785,8 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
  * them 630 pages apart, which is longer than any book anyone dry-runs.
  *
  * That spread is a correctness property of `MOCK_AI` runs rather than
- * decoration. `beatDedup` (`generation/qualityGates.ts`) is on for **every**
- * effort tier, and `findDuplicatePageBeats` (`generation/pageBeatDedup.ts`)
+ * decoration. Beat dedup is mandatory map integrity on **every** effort tier,
+ * and `findDuplicatePageBeats` (`generation/pageBeatDedup.ts`)
  * scores `purpose + beat` with the same token overlap rule the page reviewer
  * uses. The beats here used to be one sentence apiece with the page number and
  * one rotating noun interpolated into them — and the shared tokenizer drops

@@ -1,6 +1,8 @@
 import { pictureBookRequirementContract, WRITER_REQUIREMENT_SCOPE_GUIDANCE } from "./pictureBookRequirementContract.js";
 import { writerArtworkContext } from "./writerArtworkContext.js";
 import { PICTURE_BOOK_STORY_OBLIGATIONS, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
+import { evidenceLedgerFields, evidenceLedgerRules } from "./evidenceLedger.js";
+import { pagePromptBookStyle } from "./styleContract.js";
 import { generationPageCountBounds } from "./pageCountAllowance.js";
 import { z } from "zod";
 import type { ImageAdapter, ImageCopyrightRewrite, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
@@ -18,20 +20,18 @@ import {
   type ChapterBrief,
   type ChapterPlan,
   type CreateProjectInput,
-  type PageDraft,
-  type PageProductionBeat
+  type PageDraft
 } from "../schemas/book.js";
 import { codeBlockRules } from "./codeBlockRules.js";
 import { figureFreeDraft } from "./figures/figureBlocks.js";
 import { finalizePageDraft, pageDraftSummary } from "./figures/figureDraftSummary.js";
-import { buildPageDraftMessages, pageDraftImagePromptGuidance } from "./pageDraftMessages.js";
+import { buildPageDraftMessages } from "./pageDraftMessages.js";
 import {
   GROUNDED_FACTUALITY_RULE,
   IMAGE_PROMPT_CHARACTER_RULE,
   INTERNAL_PAGE_TITLE_RULE,
   READER_FACING_PAGE_BRIEF_RULES,
   arrayLikeField,
-  buildPageInstruction,
   citationContractFields,
   compactPriorPages,
   isRecord,
@@ -46,10 +46,8 @@ import {
   type GeneratePageOptions,
   type PriorPageContext
 } from "./pagesShared.js";
-import { pagePromptBookStyle } from "./styleContract.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
-import { evidenceLedgerFields, evidenceLedgerRules } from "./evidenceLedger.js";
-import { REWRITE_TEMPERATURE_CEILING, pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
+import { pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
 
 export { shouldIllustratePage } from "./illustrationSlots.js";
 export { skippedPageQualityReport } from "./pagesSkippedQualityReport.js";
@@ -68,13 +66,10 @@ export {
   reviewPageDraftForSmartUnslop
 } from "./smartUnslop.js";
 export {
-  REWRITE_TEMPERATURE_CEILING,
   generateChapterBrief,
   generateWholeBookPageMap,
-  repairPageBrief,
   type GenerateChapterBriefOptions,
-  type GeneratePageMapOptions,
-  type RepairPageBriefOptions
+  type GeneratePageMapOptions
 } from "./pagesPageMap.js";
 export {
   PageMapResponseInvalidError,
@@ -86,8 +81,6 @@ export {
 export {
   reviewPageDraft,
   revisePageDraft,
-  runFinalBookQa,
-  type FinalBookQaOptions,
   type FinalQaPage,
   type ReviewPageOptions,
   type RevisePageOptions
@@ -199,21 +192,6 @@ export type GenerateBatchDraftOptions = {
   researchNotes: string[];
   /** Pinned accepted-page excerpts, separate from recency. */
   styleExcerpts?: string[] | undefined;
-  textModel: TextModelAdapter;
-};
-
-export type PolishPageOptions = {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  chapter?: ChapterPlan | undefined;
-  chapterBrief?: ChapterBrief | undefined;
-  pageBrief?: PageProductionBeat | undefined;
-  pageIndex: number;
-  draft: PageDraft;
-  previousPages: PriorPageContext[];
-  nextPages: PriorPageContext[];
-  continuityNotes: string[];
-  researchNotes: string[];
   textModel: TextModelAdapter;
 };
 
@@ -515,98 +493,6 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
       allowPartialPrefix: true
     })
   };
-}
-
-/**
- * **What one polish call samples at — and therefore the top of the ladder the
- * polish path hands best-of.**
- *
- * The polish pass rewrites a page that already exists, so it runs cooler than
- * the draft that produced it: `REWRITE_TEMPERATURE_CEILING` (`pagesPageMap.ts`,
- * shared with `repairPageBrief` for the same reason) is absolute — nothing on
- * this path may sample above it — while a book configured below it keeps its own
- * temperature.
- *
- * That makes this the temperature a candidate-free polish runs at, which is
- * exactly what `generateBestOfPageDrafts` (`bestOf.ts`) needs handed to it: its
- * ladder descends from the temperature the pass would have used on its own, so
- * no candidate samples hotter than the book asked for. Handing it the book's
- * raw `temperature` instead would clamp the hottest rungs back onto the ceiling
- * and buy sampling noise for the extra polish calls and the judge — the corner
- * that was invisible while `bestOfPolish` was ultra-only, and became the default
- * the day `firstPageCandidateCount` gave every balanced-and-up book a best-of
- * page 1.
- */
-export function polishPageTemperature(input: CreateProjectInput): number {
-  return Math.min(REWRITE_TEMPERATURE_CEILING, input.temperature);
-}
-
-export async function polishPageDraft(options: PolishPageOptions): Promise<PageDraft> {
-  const pageInstruction = buildPageInstruction(options, "rewrite");
-  const citation = citationContractFields(options.researchNotes.slice(0, 18));
-  const result = await generateJsonWithRetry(options.textModel, {
-    purpose: "polish-page",
-    temperature: polishPageTemperature(options.input),
-    maxTokens: 3400,
-    schema: pageDraftSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "Polish one drafted book page into final reader-facing prose.",
-          "Keep the same page-level event and continuity unless it conflicts with nearby pages.",
-          "Improve specificity, prose rhythm, continuity, and progression.",
-          "Return a complete replacement page, not notes.",
-          INTERNAL_PAGE_TITLE_RULE,
-          GROUNDED_FACTUALITY_RULE,
-          ...citation.rules,
-          "Do not mention AI, prompts, JSON, schemas, generation, or production instructions.",
-          ...READER_FACING_PAGE_BRIEF_RULES,
-          ...evidenceLedgerRules(options.input, options.plan, "writer"),
-          ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
-          ...targetLanguageGenerationGuidance(options.input.language),
-          ...writerToneRules(options.input),
-          ...codeBlockRules(options.input, options.plan)
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            language: targetLanguagePayload(options.input.language),
-            book: {
-              title: options.plan.title,
-              premise: options.plan.premise,
-              audience: options.plan.audience,
-              category: options.input.category,
-              subcategory: options.input.subcategory,
-              ...pagePromptBookStyle(options.plan),
-              styleGuidance: styleGuidancePayload(options.input)
-            },
-            pageIndex: options.pageIndex,
-            chapter: options.chapter,
-            chapterBrief: sanitizedChapterBriefForCitation(options.chapterBrief, options.researchNotes.slice(0, 18)),
-            pageBrief: options.pageBrief
-              ? sanitizePageBriefForCitationContract(options.pageBrief, options.researchNotes.slice(0, 18))
-              : options.pageBrief,
-            ...pageInstruction.payload,
-            characters: options.plan.characters,
-            ...writerArtworkContext(options.input, options.plan),
-            draft: options.draft,
-            previousPages: compactPriorPages(options.previousPages, 4, 800),
-            nextPages: compactPriorPages(options.nextPages, 3, 800),
-            continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
-            ...citation.payload,
-            instruction: pageInstruction.text
-          },
-          null,
-          2
-        )
-      }
-    ]
-  });
-
-  return finalizePageDraft(figureFreeDraft(result.data));
 }
 
 function sanitizedChapterBriefForCitation(

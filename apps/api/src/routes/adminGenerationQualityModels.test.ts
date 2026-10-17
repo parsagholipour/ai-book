@@ -359,7 +359,7 @@ describe("admin generation model routing", () => {
     });
     const create = createdSettings(0);
     expect(create.models).toMatchObject({ balanced: { writer: { thinkingEffort: "high" } } });
-    expect(create.planCritic).toEqual(QUALITY_FEATURE_DEFAULTS.planCritic);
+    expect(create.writerTools).toEqual(QUALITY_FEATURE_DEFAULTS.writerTools);
     await app.close();
   });
 

@@ -1,7 +1,8 @@
 # Worker
 
-Consumes the two BullMQ lanes — `book-maker` (long) and `book-maker-interactive` — with one
-`Worker` each, in one process. All book generation happens here; the API never generates.
+Consumes the five BullMQ lanes — `book-maker` (long), `book-maker-interactive`,
+`book-maker-images`, `book-maker-compile` and `book-maker-background` — with one `Worker` each, in
+one process. All book generation happens here; the API never generates.
 
 ## Adding a job type
 
@@ -17,7 +18,11 @@ Consumes the two BullMQ lanes — `book-maker` (long) and `book-maker-interactiv
    there if the worker fans it out.
 6. Give it a lane in `JOB_LANES` (`packages/core/src/jobLanes.ts`) — an exhaustive `Record`, so the
    compiler asks. "Is a reader waiting on this with the app open?" picks interactive; minutes of
-   bulk work is long, and within long, "does it start a book's work or continue one?".
+   bulk work is long, and within long, "does it start a book's work or continue one?". A
+   generation's pictures are `image` and its own compile `compile`; a new job that continues a
+   book *after* its text belongs with them, never in the long lane (below). Work nobody waits on
+   that is not book work either — today only the composition prep — is `background`, and only if
+   it is light: that lane runs four at once and its outage is never a readiness failure.
 
 The full cross-workspace footprint is about fourteen files — the four lists above are only the
 worker's share. Use the `add-job-type` skill, which walks the rest.
@@ -81,7 +86,9 @@ cost accounting and the progress UI.
 
 Text settlement merges exact result usage with usage observed on the same physical request.
 Missing counts remain unpriced, with `costStatus: unknown_usage`; a blank-line early stop records
-`usageUnavailableReason: whitespace_runaway`. Project summaries preserve that unknown status.
+`usageUnavailableReason: whitespace_runaway`. A grounded search that fails writes a failed row too,
+`provider_error` with `groundedPrompt: "unknown"` and no allowance claim
+(`apps/api/src/admin/CLAUDE.md`). Project summaries preserve that unknown status.
 Character-count estimates are diagnostic counts, never a substitute for missing billing usage.
 
 Note that `providers/` holds **no model adapters** — only these logging and accounting wrappers.
@@ -299,9 +306,9 @@ settlement this runtime makes of that charge obeys the stamp (`packages/db/CLAUD
   `dispatchGenerationJob` and this side's `dispatchWorkerGenerationJob` are the repo's only two
   `queue.add` calls, and both read the durable row's type and payload, so one row cannot land in
   two lanes and BullMQ's job-id dedupe keeps holding. Three types are laned by payload because each
-  is two jobs: a compile that ends a generation (full review, expected GENERATING) is long, every
-  other compile is a reader waiting; a generation's pictures are long, a revision's cover or a
-  re-typeset is interactive; and a chat edit is interactive until it rewrites more than
+  is two jobs: a compile that ends a generation (full review, expected GENERATING) takes the
+  compile lane, every other compile is a reader waiting; a generation's pictures take the image
+  lane, a revision's cover or a re-typeset is interactive; and a chat edit is interactive until it rewrites more than
   `LONG_LANE_EDIT_PAGE_THRESHOLD` (40) pages, when it starts long work like a continuation — a
   whole-book rewrite of a 200-page book held one of the two interactive slots for tens of minutes
   while every reader's plan queued behind it (pre-launch review, 2026-10-13). That count is
@@ -315,11 +322,87 @@ settlement this runtime makes of that charge obeys the stamp (`packages/db/CLAUD
   compile no longer queues behind books B–E's whole runs, and the reader's "N books ahead"
   (`booksAheadInLongLane`) is the order the lane really runs in. The long lane keeps the name
   `book-maker`, which is what drains a previous release's jobs; the reverse is not true, so a
-  rollback past the lanes waits for `book-maker-interactive` to empty (`docs/deployment.md`, "Job
-  lanes"). Every lookup of a Bull job by id — `prepareDurableJobId`, the API's requeue, stop and
+  rollback past the lanes waits for the queues the older release does not read to empty
+  (`docs/deployment.md`, "Job lanes"). Every lookup of a Bull job by id — `prepareDurableJobId`, the API's requeue, stop and
   `isBullJobActive`, the lost-delivery sweep — asks every lane (`clearLaneJobIdForAdd`,
   `removeIdleLaneJobs`, `laneJobForSweep`), because a requeue can put a row in a different lane
-  from its last delivery and a lookup of one lane would miss the copy still running in the other.
+  from its last delivery and a lookup of one lane would miss the copy still running in another.
+- **Work nobody waits on has a lane of its own, and its outage is an alert, never a readiness
+  failure.** The speculative composition prep (`handlers/prepareComposition.ts`) plans a composed
+  book its reader has not approved yet: about 90 s of provider calls, unbilled. It is not book work
+  (no charge, no place in the per-account share, and the long lane would put it behind whole
+  books), and no reader is waiting on it. It first waited in the interactive lane behind every
+  reader's job (a BullMQ priority) and at most one per process (a cap in the delivery guard), so a
+  burst of plans could not hold both production slots. That ran some 40 preps an hour: in the
+  2026-10-16/17 smoke rounds three plans landed within a minute and the third prep never started
+  before its book did, while a prep that finished first had the book composing 0 s after approval.
+  Raising the interactive lane and scaling the cap was the other way out, and the lane rules refuse
+  it: that lane holds the compiles that re-typeset a whole book, so each slot added is another
+  possible whole-book compile against the 2 GiB (`docs/deployment.md`, "Job lanes"), and a running
+  prep still holds a slot a reader's edit then waits for, because a priority orders only what is
+  waiting. So `PREPARE_COMPOSITION` is class `background` in `book-maker-background`
+  (`WORKER_BACKGROUND_CONCURRENCY`, four), unprioritized, with the cap and the priority deleted. It
+  follows every rule above: placed by `generationJobPlacement` on both sides, looked up across
+  every lane, and kept out of `isBookWork`, so neither the share nor "N books ahead" counts it. Four
+  at once is about 160 an hour, for under 0.1 GiB, at most eight text calls (stance and inventory
+  run together) and a handful of short writes on the ten-connection pool. Only light work belongs
+  here — nothing that renders or holds a manuscript, since the lane is sized for provider calls. The
+  lane beats like every other and its key is in the compose healthcheck, because that gates a deploy
+  and a release whose background `Worker` never starts is broken. But its pair of checks,
+  `worker_background` and `queue_background` (a prep waiting over 15 minutes), are
+  `ADVISORY_CHECKS` in `apps/api/src/monitoring/readiness.ts`: measured with the rest and alerted on
+  through `ALERT_CONDITIONS`, never in `ok` or the public body. While the lane is down every book
+  still starts, each planning those steps itself about a minute slower to its first chapter, and
+  readiness is binary: a 503 is the uptime monitor reporting the deployment down, the same reason a
+  provider account out of credit is an email and not a check (`apps/api/CLAUDE.md`). A prep older
+  than ten minutes exits without a call when it is finally taken, so a backlog drains at once, and
+  one still waiting at fifteen means nothing consumes the lane.
+- **A generation's pictures and its compile leave the long lane together, or the compile waits
+  behind the next book's run.** At the long lane's production concurrency of one (until
+  2026-10-17), a book's pictures could not start until its text job let go of the lane, then drew
+  one at a time at 7–10 s each, and another reader's book waited behind all of it (2026-10-15). So
+  `GENERATE_IMAGE` for a generation — its pages and its cover, everything but a revision's cover or
+  a re-typeset — is class `image` in `book-maker-images` (`WORKER_IMAGE_CONCURRENCY`, 4 in
+  production), and the compile that ends a generation is class `compile` in `book-maker-compile`
+  (`WORKER_COMPILE_CONCURRENCY`, 3 in production since 2026-10-17). Moving the pictures alone was
+  the trap: the compile is queued by the last picture's fan-in (`maybeEnqueueCompile`), which used to run while that picture still
+  held the long lane, so the compile — unprioritized — was the lane's next job. With the pictures
+  elsewhere the long lane goes idle while they land, the next book's `generate-book` start takes
+  it, and a long-lane compile then waits that whole run, 9–93 minutes, on a book whose every page
+  and picture is done. In its own lane it waits only for another generation's compile, and it is
+  still the one memory-heavy job. It ran one at a time beside the interactive lane's two until
+  thirty books finishing together queued sixteen minutes of compiles there; a compile is mostly
+  its defect screen's model call and Chromium renders two books at most however many run, so
+  production runs three (`docs/deployment.md`, "Job lanes", for the measurement and the 2 GiB
+  arithmetic).
+  `GENERATE_PAGE` stays long: a story's pages are drafted one after another anyway, so a lane of
+  their own would only start the next book's text beside them. Both classes still *continue* a
+  book — `isBookWork` — so the per-account share counts them, while `booksAheadInLongLane` reads
+  only the long lane's rows, since neither lane holds anybody's place in it. A deploy needs no
+  drain: the new worker still consumes `book-maker`, where the previous release's pictures and
+  compiles run one last time; only a rollback past these lanes has to wait for both to empty.
+- **A generation's compile is queued only once its book run is closed, and the run's own
+  completion is a fan-in like its pictures'.** With pictures drawn from the checkpointed draft in
+  a lane of their own and the compile's lane idle, the last picture or the cover could land while
+  `generate-book` was still writing its tail — the story-delta pass (removed 2026-10-16), the
+  composed pass's brief inventory — and its fan-in queued the compile (review of the 2026-10-15 speed changes). That
+  compile found no grouped-review snapshot (`shortPictureBookReviewCache.ts` reads only a COMPLETED
+  `generate-book`), paid for `runFinalBookQa` and the chapter review again, read empty
+  `requirementTargets`, checked coverage against promises no delta had paid yet, and could publish a
+  book the run then failed. `maybeEnqueueCompile` now answers `waiting` while any `GENERATE_BOOK`
+  row of the project is QUEUED or ACTIVE — the run's own in-handler call included, so nothing is
+  queued while the run can still write — after the cover branch, so a missing cover still starts
+  early; and `maybeCompileAfterCompletedJob` fans in for `generate-book` too, after its COMPLETED
+  write. The run and every page or picture write COMPLETED before they read, so whichever writes
+  second sees both closed (all six interleavings, `dispatchBookRunFanIn.test.ts`). That holds on
+  every path: every pass and its `already-complete` branch end in the processor's follow-up; a
+  retried run is QUEUED and fans in when it completes; a stalled reclaim shares the row id and the
+  COMPLETED-replay branch fans in; a failed or stopped run settles the book instead; a staged
+  replan's row is terminalized by its own publication and its tail queues the compile; edits,
+  continuations, imports and Studio publishes have no open run. A run row that closes without
+  completing (a stale cancel) leaves the compile to `reconcileStrandedGeneration`, which takes a
+  GENERATING book once every job is terminal. The price is a text-only book's compile queued
+  milliseconds later, and a failed follow-up there logged and swept, as a picture's always was.
 - **A row BullMQ reclaims while it still runs here waits for the original; it never runs beside
   it.** A job whose lock was not renewed for `lockDuration` is handed out again while its first
   execution carries on, and `markActive` accepts an ACTIVE row on purpose (a crashed worker's job
@@ -330,9 +413,9 @@ settlement this runtime makes of that charge obeys the stamp (`packages/db/CLAUD
   has one reversal (`packages/db/CLAUDE.md`), and an import's completion is a compare-and-set one
   copy loses — but the work does not: two `generate-book` runs draft the same chapters and pages
   and both buy every provider call, the later write winning page by page, and two narrations pass
-  the READY skip together and pay for every chapter twice. So with two lanes and an interactive
-  concurrency of 2 in one process, `deliveryGuard.ts` keys running deliveries by the durable row id
-  (shared by both lanes, so a copy in the other queue is held too) and moves a second delivery to
+  the READY skip together and pay for every chapter twice. So with four lanes and several of them
+  wider than one in one process, `deliveryGuard.ts` keys running deliveries by the durable row id
+  (shared by every lane, so a copy in another queue is held too) and moves a second delivery to
   `delayed` with `DelayedError` — no failure, no attempt spent — until the original is gone. It
   defers rather than refuses because the original has lost its Bull lock and cannot finish its
   own Bull job; the deferred copy is what settles it, through the replay paths above, exactly as
@@ -349,7 +432,7 @@ settlement this runtime makes of that charge obeys the stamp (`packages/db/CLAUD
   five-minute drain) or a deploy and an OOM kill inside one 60–90 minute book. That failure never
   calls the processor, so nothing settled the row until the lost-delivery sweep did, two hours
   later, while the book read "generating" (pre-launch review, 2026-10-13). `LANE_MAX_STALLED_COUNT`
-  is 5 on both lanes (`runtime/laneWorkers.ts`). A reclaim is a resume, and has been since the
+  is 5 on every lane (`runtime/laneWorkers.ts`). A reclaim is a resume, and has been since the
   first one was allowed — `markActive` takes an ACTIVE row back, a composed book restarts at its
   first unwritten chapter, a COMPLETED row replays its tail, a copy beside the original waits for it
   (above) — so each costs at most what it interrupted, and the bound stays for a job that kills its
@@ -398,7 +481,11 @@ settlement this runtime makes of that charge obeys the stamp (`packages/db/CLAUD
   "does it have a live consumer" together. A beat waiting on a reconnecting Redis is not doubled,
   and a failing write is logged once per streak. It takes the Redis client as an argument, because
   importing `runtime/queue.ts` opens a connection and only the entry point may. A new lane needs its
-  own readiness check in `apps/api/src/monitoring/readiness.ts`, which names the two it reads.
+  own pair of checks in `apps/api/src/monitoring/readiness.ts` (`worker_<lane>` and
+  `queue_<lane>`, with a wait threshold), filed in `READINESS_CHECKS` or, for a lane whose work is
+  optional, `ADVISORY_CHECKS` (the test pins that every lane is in exactly one); an alert condition
+  in `alertConditions.ts`; and its key in `scripts/worker-healthcheck.sh`, whose test pins the list
+  to `GENERATION_JOB_QUEUES`, advisory or not.
 
 ## Where the rest of the invariants live
 

@@ -5,7 +5,6 @@ import { modelTierForInput } from "../adapters/modelTiers.js";
 import { stampChapterBriefPhysicalAttempt, type TextModelAdapter } from "../adapters/types.js";
 import { mapWithConcurrency } from "../concurrency.js";
 import { range } from "../collections.js";
-import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload
@@ -43,27 +42,17 @@ import type {
   ChapterBrief,
   ChapterPlan,
   CreateProjectInput,
-  PageProductionBeat,
-  PageQualityReport
+  PageProductionBeat
 } from "../schemas/book.js";
 import { chapterBriefSchema, pageProductionBeatSchema } from "../schemas/book.js";
-import { hasPageBriefMetaLanguage } from "./pagesLocalQa.js";
-import { pageQaProviderCallMetadata } from "./pageQaRewriteTelemetry.js";
-import type { ReviewPageOptions } from "./pagesReview.js";
 import {
-  GROUNDED_FACTUALITY_RULE,
   arrayLikeField,
-  chapterBriefPayloadForPageScope,
   citationContractFields,
-  compactPriorPages,
-  compactFollowingPages,
   isRecord,
   numberField,
   objectKeys,
   openingContractForRange,
-  pageScopePayload,
   plannerToneRules,
-  sanitizePageBriefForCitationContract,
   stringArrayField,
   stringField,
   styleGuidancePayload
@@ -71,16 +60,17 @@ import {
 import { pagePromptBookStyle } from "./styleContract.js";
 
 /**
- * The production-editor layer: the global page-by-page production map, the
- * per-chapter briefs behind it, and the brief repair loop QA falls back to.
+ * The production-editor layer: the global page-by-page production map and the
+ * per-chapter briefs behind it. (The brief repair QA fell back to was removed
+ * with the per-page review chain, 2026-10-16.)
  * Split out of pages.ts, which re-exports everything public so
  * `@book-maker/core` is unchanged.
  *
- * Four of the five writers of page 1's brief live here, and none of them owns
- * the contract it writes that brief under. `pageBriefContract.ts` does, and
- * every rule line in this file is reached through its
- * `firstPageBriefFieldsForRange`. The fifth writer, `pageMapCritic.ts`, reads
- * that module rather than this one.
+ * The writers of page 1's brief live here, and none of them owns the contract
+ * it writes that brief under. `pageBriefContract.ts` does, and every rule line
+ * in this file is reached through its `firstPageBriefFieldsForRange`. (The
+ * page-map critic and the brief repair read that module too until they were
+ * removed on 2026-10-16.)
  */
 
 export type GenerateChapterBriefOptions = {
@@ -100,28 +90,6 @@ export type GeneratePageMapOptions = {
   plan: BookPlan;
   textModel: TextModelAdapter;
 };
-
-export type RepairPageBriefOptions = ReviewPageOptions & {
-  pageBrief: PageProductionBeat;
-  report: PageQualityReport;
-  /** Candidate the repaired assignment will brief; the original draft is 1. */
-  qaCandidateNumber?: number | undefined;
-};
-
-/**
- * The ceiling for a pass that **rewrites work the pipeline already produced**,
- * rather than creating it: `repairPageBrief` below, rewriting an assignment QA
- * rejected, and `polishPageDraft` (`pages.ts`), rewriting the page that
- * assignment produced. Sampled at the book's own creative temperature a rewrite
- * stops improving what it was handed and starts replacing it.
- *
- * It is a ceiling, not a setting: a book configured cooler keeps its own
- * temperature. It lives here because `pages.ts` imports this module and not the
- * other way round — the two passes used to clamp to independent `0.65`
- * literals with a comment in `pages.ts` asserting they were one number, so
- * moving the ceiling moved only the polish path.
- */
-export const REWRITE_TEMPERATURE_CEILING = 0.65;
 
 const CHUNKED_PAGE_MAP_THRESHOLD = 24;
 const CHAPTER_BRIEF_REPAIR_ATTEMPTS = 2;
@@ -351,101 +319,6 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
     }
     throw error;
   }
-}
-
-export async function repairPageBrief(options: RepairPageBriefOptions): Promise<PageProductionBeat> {
-  // `pageIndex` on a review/repair call is the *global* page index — it is what
-  // `pageScopePayload` publishes as `globalPageIndex` — so this is the book's
-  // first page whatever chapter the repair happens to be scoped to, and it
-  // stays right for a page 1 redrafted inside a finished book. A repair rewrites
-  // exactly one page, so it asks the range question in its one-page form.
-  const firstPage = firstPageBriefFieldsForRange(options, options.pageIndex, options.pageIndex);
-  const citation = citationContractFields(options.researchNotes ?? options.retrievedResearch ?? options.plan.researchNotes);
-  const result = await generateJsonWithRetry(options.textModel, {
-    purpose: "repair-page-brief",
-    providerCallMetadata: pageQaProviderCallMetadata({
-      report: options.report,
-      candidateNumber: options.qaCandidateNumber,
-      additionalReasons: ["brief_repair"]
-    }),
-    temperature: Math.min(REWRITE_TEMPERATURE_CEILING, options.input.temperature),
-    maxTokens: 2200,
-    schema: pageProductionBeatSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "You are a production editor repairing one page assignment after QA proved the assignment produces repetition or stalled progression.",
-          "Return a replacement page brief, not reader-facing prose.",
-          "Keep the same pageIndex and chapterIndex.",
-          "Preserve the book premise, audience, and chapter purpose, but you may discard original required examples, sources, metaphors, or ending pressure when QA says they cause repetition.",
-          "If followingPages is supplied, it is already-written prose. The repaired assignment must connect to its opening and preserve its established facts without consuming its beats.",
-          "The repaired beat must create a distinct new contribution beyond previousPages: a new textual analysis, concrete case, irreversible decision, practical consequence, or specific evidence path.",
-          ...evidenceLedgerRules(options.input, options.plan, "repair"),
-          GROUNDED_FACTUALITY_RULE,
-          ...citation.rules,
-          ...(citation.payload.researchNotes.length === 0
-            ? ["Discard source-identity requirements from the original page brief because researchNotes is empty."]
-            : []),
-          "Do not ask the writer to restate, reframe, or lightly polish the rejected draft.",
-          "If the chapter requires recurring mechanics, repair the assignment around the new consequence, location, choice, or relation rather than banning the recurring action itself.",
-          "Use pageScope to keep the repaired assignment inside the current page. Do not move futureChapterPageBriefs or later chapter keyBeats into this page.",
-          "The endingPressure must name a concrete consequence, completed choice, or resolved claim.",
-          "The endingPressure must be phrased as a substantive landing claim the prose can earn, not a procedural instruction. It must not include words such as concluding, survey, chapter, section, scope, transition, recap, reader, or next chapter.",
-          // Placed after the two endingPressure rules above because page 1
-          // amends them rather than replacing them: the landing still has to be
-          // a concrete claim the prose earns, and it also has to leave the
-          // second page something to answer.
-          ...firstPage.rules,
-          "Return exactly one JSON object with pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure, and optional imageMoment.",
-          ...targetLanguageGenerationGuidance(options.input.language),
-          ...plannerToneRules(options.input)
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            language: targetLanguagePayload(options.input.language),
-            book: {
-              title: options.plan.title,
-              premise: options.plan.premise,
-              audience: options.plan.audience,
-              category: options.input.category,
-              subcategory: options.input.subcategory,
-              ...pagePromptBookStyle(options.plan),
-              styleGuidance: styleGuidancePayload(options.input)
-            },
-            ...firstPage.payload,
-            ...citation.payload,
-            chapter: options.chapter,
-            chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
-            pageIndex: options.pageIndex,
-            pageScope: pageScopePayload(options),
-            originalPageBrief: sanitizePageBriefForCitationContract(
-              options.pageBrief,
-              options.researchNotes ?? options.retrievedResearch ?? options.plan.researchNotes
-            ),
-            rejectedDraft: {
-              title: options.draft.title,
-              summary: options.draft.summary,
-              excerpt: options.draft.markdown.slice(0, 1400)
-            },
-            qualityReport: options.report,
-            previousPages: compactPriorPages(options.previousPages, 6, 900),
-            ...(options.nextPages?.length ? { followingPages: compactFollowingPages(options.nextPages, 2, 900) } : {}),
-            continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.review),
-            instruction:
-              "Repair the assignment itself. If the original brief requires material already covered or flagged by QA, replace that material with a fresh page beat that still belongs in this chapter."
-          },
-          null,
-          2
-        )
-      }
-    ]
-  });
-
-  return normalizeRepairedPageBrief(result.data, options);
 }
 
 function parsePageMapFromModel(raw: unknown, options: GeneratePageMapOptions): ChapterBrief[] {
@@ -733,62 +606,6 @@ function findAllPageBeatItems(value: unknown): unknown[] {
   }
 
   return Object.values(value).flatMap((item) => findAllPageBeatItems(item));
-}
-
-function normalizeRepairedPageBrief(raw: unknown, options: RepairPageBriefOptions): PageProductionBeat {
-  const parsed = pageProductionBeatSchema.parse(raw);
-  const chapterIndex = options.chapter?.index ?? options.pageBrief.chapterIndex;
-  const purpose = parsed.purpose.trim() || `Advance page ${options.pageIndex} with a non-repetitive page assignment.`;
-  const beat = parsed.beat.trim() || `Add a distinct concrete beat for page ${options.pageIndex} that does not restate previous pages or the rejected draft.`;
-  const rawEndingPressure = parsed.endingPressure.trim();
-  const endingPressure =
-    rawEndingPressure && !hasPageBriefMetaLanguage(rawEndingPressure)
-      ? rawEndingPressure
-      : repairedEndingPressureFallback(options);
-  const requiredContinuity = parsed.requiredContinuity.map((item) => item.trim()).filter(Boolean);
-  const imageMoment = parsed.imageMoment?.trim();
-
-  return finalizeProductionPageBeat(
-    {
-      ...parsed,
-      pageIndex: options.pageIndex,
-      chapterIndex,
-      purpose,
-      beat,
-      requiredContinuity,
-      endingPressure,
-      ...(imageMoment ? { imageMoment } : {})
-    },
-    options.researchNotes ?? options.retrievedResearch ?? options.plan.researchNotes,
-    {
-      ...(options.chapter ? { chapter: options.chapter } : {}),
-      ...(options.chapterPageStart !== undefined ? { chapterPageStart: options.chapterPageStart } : {}),
-      ...(options.chapterPageEnd !== undefined ? { chapterPageEnd: options.chapterPageEnd } : {})
-    }
-  );
-}
-
-/**
- * The last-resort pressure when the model's own is empty or meta-laden. It is
- * deliberately blind to {@link pageEndingContract}: both of that function's
- * sentences are worded as instructions to the writer ("End the first page
- * with…", "Resolve the book's…"), which is exactly the procedural shape the
- * repair contract above forbids and the shape QA rejected to get here — pasting
- * one in would fail the next review on the one page that can least afford it.
- * The `fallbackPageBeatFromChapter` composition has no counterpart here for the
- * same reason its other half does not exist: a repair is scoped to one page
- * inside the current chapter and never names a next chapter to hand off to, so
- * there is nothing for a first-page pressure to compose with. Page 1's tension
- * and the last page's resolution are carried by the prompt rules instead, where
- * the model can phrase either as a claim.
- */
-function repairedEndingPressureFallback(options: RepairPageBriefOptions): string {
-  const feedback = [...options.report.issues, ...options.report.requiredRevisions, options.report.notes].join(" ");
-  const authorityContext = `${feedback} ${options.plan.premise} ${options.chapter?.summary ?? ""}`;
-  if (/\b(?:archiv\w*|preserv\w*|surviv\w*|record|silence|evidence)\b/i.test(feedback) && /\b(?:power|authority|govern|leadership|sovereignty|suprem)\b/i.test(authorityContext)) {
-    return "Surviving records establish a minimum threshold of documented female authority rather than proof that power was absent where evidence was lost.";
-  }
-  return "The new material establishes one evidence-bound implication for the central claim.";
 }
 
 function applyChapterContextToBrief(brief: ChapterBrief, options: GenerateChapterBriefOptions): ChapterBrief {

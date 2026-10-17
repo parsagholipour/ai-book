@@ -1,6 +1,6 @@
 import { acceptsChapterEdit, type ChapterEditAcceptanceOptions } from "./chapterEditAcceptance.js";
 import { chapterResearchNotesForPrompt, CHAPTER_RESEARCH_CONTEXT_RULE } from "./chapterResearchContext.js";
-import { chapterDegeneracy } from "./chapterIntegrity.js";
+import { addsScriptLeaks, chapterDegeneracy } from "./chapterIntegrity.js";
 import { generateChapterProse } from "./generateChapterProse.js";
 import { chapterCutConstraints } from "./chapterCutContext.js";
 import { deletionOnlyResult } from "./composedChapterCuts.js";
@@ -791,9 +791,10 @@ export async function editChapter(options: EditChapterOptions): Promise<EditedCh
   // reallocation and factual repairs may shorten the text; final manuscript QA
   // reports any remaining deficit.
   const lengthRegressed = !options.factualCorrection && options.allowExtension !== false && editShortensPastFloor(options.markdown, markdown, budget.min);
+  // An edit that brings in a word of another script is refused like one that stops being prose.
   if (!markdown || lengthRegressed || words < draftWords * 0.62 || chapterDegeneracy(markdown, {
     maxWords: options.degeneracyMaxWords ?? (options.factualCorrection ? editBudget.max : chapterWordBudget(options.input, pages).max), language: options.input.language
-  }).degenerate) {
+  }).degenerate || addsScriptLeaks(options.markdown, markdown, { language: options.input.language, brief: options.input.prompt })) {
     return { markdown: options.markdown, words: draftWords, attempts: 1, changed: false };
   }
   if (markdown !== options.markdown && !await acceptsChapterEdit(options, markdown)) {

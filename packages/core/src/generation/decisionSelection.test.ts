@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakeTextModelAdapter } from "../adapters/fake.js";
 import type { DecisionModelAdapter, DecisionRequest } from "../adapters/decisions.js";
-import { createProjectSchema, pageDraftSchema, type BookPlan, type ChapterPlan } from "../schemas/book.js";
-import { generateBestOfPageDrafts } from "./bestOf.js";
+import { createProjectSchema, type BookPlan, type ChapterPlan } from "../schemas/book.js";
 import { judgeChapterDrafts } from "./chapterJudge.js";
 import { selectCoverDesign } from "./coverDesignSelection.js";
 import { COVER_DESIGNS } from "./coverDesigns.js";
@@ -12,7 +11,6 @@ const input = createProjectSchema.parse({ prompt: "A detective follows a trail t
 const plan = { title: "The Ledger", audience: "Adults", premise: "A detective follows a trail" } as BookPlan;
 const chapter = { index: 1, title: "The first clue" } as ChapterPlan;
 const text = new FakeTextModelAdapter();
-const draft = (title: string) => pageDraftSchema.parse({ title, markdown: title + " content", summary: title });
 function route(choose: DecisionModelAdapter["choose"]) {
   return { resolve: vi.fn(async () => ({ choose })) };
 }
@@ -53,28 +51,6 @@ describe("decideFromCandidates", () => {
 });
 
 describe("finite selection integration", () => {
-  const pages = (decisions: ReturnType<typeof route>) => {
-    let count = 0;
-    return generateBestOfPageDrafts({ draftPage: async () => draft(String(count++)), baseOptions: { input, pageIndex: 1, pageBrief: { purpose: "Find clue", beat: "Read the ledger" } }, candidateCount: 2, judgeModel: text, decisions });
-  };
-  it("chooses the page by ID and retains its rubric and full candidate content", async () => {
-    const choose = vi.fn(async () => result("1"));
-    expect((await pages(route(choose))).title).toBe("1");
-    const request = (choose.mock.calls as unknown as [DecisionRequest][])[0]![0];
-    expect(request.instructions).toContain("Faithfulness to the page brief");
-    expect(request.instructions).toContain("opening page");
-    expect(request.context).toContain("Read the ledger");
-    expect(request.options[1]?.description).toContain("1 content");
-  });
-  it("keeps the first surviving page when the decision providers fail", async () => {
-    expect((await pages(route(async () => { throw new Error("both providers failed"); }))).title).toBe("0");
-  });
-  it("does not swallow a decision settings failure or cancellation", async () => {
-    const failed = route(async () => result("1"));
-    failed.resolve.mockRejectedValue(new Error("settings read failed"));
-    await expect(pages(failed)).rejects.toThrow("settings read failed");
-    await expect(pages(route(async () => { throw new DOMException("Stop", "AbortError"); }))).rejects.toMatchObject({ name: "AbortError" });
-  });
   it("pins one chapter route, sends full drafts in both orders and leaves Jev reasons empty", async () => {
     const first = Array.from({ length: 3000 }, (_, i) => `a${i}`).join(" ");
     const second = Array.from({ length: 4000 }, (_, i) => `b${i}`).join(" ");

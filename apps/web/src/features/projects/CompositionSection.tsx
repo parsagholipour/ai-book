@@ -5,8 +5,9 @@ import type { ProjectDetails, ResolvedGenerationStrategy } from "../../api.js";
 /**
  * How a composed book was written, from the rows the pass left behind: the
  * strategy the router resolved, the author stance on the plan, and per chapter
- * the form plan, the word counts, whether the editor changed it, and what the
- * whole-manuscript read said. A per-page book shows only the resolved strategy.
+ * the form plan, the word counts, whether a line editor ran and changed it (none
+ * has since 2026-10-16), and what the whole-manuscript read said. A per-page
+ * book shows only the resolved strategy.
  */
 
 type ChapterComposition = {
@@ -22,6 +23,8 @@ type ChapterReport = {
   draftWords: number;
   editedWords: number;
   editorChanged: boolean;
+  /** False on chapters written since the line edit was removed (2026-10-16); null on older reports, when it ran. */
+  lineEdited: boolean | null;
   readNotes: string[];
   secondEditApplied: boolean;
   wordBudget: { min: number; target: number; max: number };
@@ -66,6 +69,7 @@ export function readChapterReport(brief: unknown): ChapterReport | null {
     draftWords: typeof report.draftWords === "number" ? report.draftWords : 0,
     editedWords: typeof report.editedWords === "number" ? report.editedWords : 0,
     editorChanged: report.editorChanged === true,
+    lineEdited: typeof report.lineEdited === "boolean" ? report.lineEdited : null,
     readNotes: strings(report.readNotes),
     secondEditApplied: report.secondEditApplied === true,
     paragraphCv: typeof report.paragraphCv === "number" ? report.paragraphCv : null,
@@ -224,7 +228,7 @@ export function CompositionSection(props: { details: ProjectDetails | null }) {
                       {report ? `${report.draftWords} → ${report.editedWords}` : "—"}
                       {report && report.wordBudget.target ? <small className="muted admin-subtle"> of {report.wordBudget.target}</small> : null}
                     </td>
-                    <td>{report ? (report.editorChanged ? "changed" : "kept draft") : "—"}</td>
+                    <td>{report ? (report.lineEdited === false ? "no line edit" : report.editorChanged ? "changed" : "kept draft") : "—"}</td>
                     <td className="numeric">
                       {report?.paragraphCv !== null && report?.paragraphCv !== undefined ? report.paragraphCv.toFixed(2) : "—"}
                       {report?.shapePassApplied ? <small className="muted admin-subtle"> reshaped</small> : null}

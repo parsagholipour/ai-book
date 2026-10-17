@@ -1,12 +1,12 @@
 import {
   nextPageVersion,
+  pageIllustrationJobDedupeKey,
   pageIllustrationKeeperToken,
   retireGeneratedPageIllustrations,
   type PageIllustrationKeeper
 } from "./pageIllustrationOwnership.js";
 import { pageIllustrationVisualContract, reusablePageIllustration, rebindPageIllustration } from "./pageIllustrationVisualContract.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
-import type { PageQualityLoopOutcome } from "./pageReview.js";
 import { type BookPlan, type CreateProjectInput, type PageDraft, type PageQualityReport, type PriorPageContext } from "@book-maker/core";
 import {
   pageScope,
@@ -91,25 +91,20 @@ export function settledGeneratedPageContext(
 }
 
 /**
- * Publish a keeper as non-terminal under an optimistic row claim. The page and
- * a kept chapter-brief repair share the same transaction and therefore the
- * same win. A claim miss asks a lease-backed caller's fence once more so its
- * domain-specific stand-down error wins; an unfenced direct pass fails and
- * retries instead of publishing stale prose or chapter memory.
+ * Publish a keeper as non-terminal under an optimistic row claim, in a
+ * transaction when it replaces an illustrated keeper. A claim miss asks a
+ * lease-backed caller's fence once more so its domain-specific stand-down
+ * error wins; an unfenced direct pass fails and retries instead of publishing
+ * stale prose. (The name is historical: a kept chapter-brief repair used to be
+ * written in the same transaction, until the brief repair went with the
+ * per-page review chain on 2026-10-16.)
  */
-export async function stageGeneratedPageAndBrief(options: {
-  pendingBriefRepair: PageQualityLoopOutcome["pendingBriefRepair"];
-} & StageGeneratedPageOptions): Promise<StagedGeneratedPage> {
-  const replacementKeeper = replacesIllustrationKeeper(options);
+export async function stageGeneratedPageAndBrief(options: StageGeneratedPageOptions): Promise<StagedGeneratedPage> {
   const publish = (client: GeneratedPageWriteClient) => stageGeneratedPageWithClient(client, options);
-  if (!options.pendingBriefRepair && !replacementKeeper) {
+  if (!replacesIllustrationKeeper(options)) {
     return publish(prisma);
   }
-  return prisma.$transaction(async (tx) => {
-    const staged = await publish(tx);
-    await options.pendingBriefRepair?.(tx);
-    return staged;
-  });
+  return prisma.$transaction(async (tx) => publish(tx));
 }
 
 /**
@@ -219,10 +214,9 @@ export async function publishStagedGeneratedPage(options: {
   draft: PageDraft;
   stagedPage: StagedGeneratedPage;
   willIllustrate: boolean;
-  deferIllustrations?: boolean | undefined;
   continuityTags: string[];
 }): Promise<GeneratedPagePublicationResult> {
-  if (options.willIllustrate && !options.deferIllustrations && !options.stagedPage.reusedIllustration) {
+  if (options.willIllustrate && !options.stagedPage.reusedIllustration) {
     const prompt = options.draft.imagePrompt;
     if (!prompt) {
       throw new Error("Illustrated page publication requires an image prompt");
@@ -242,7 +236,8 @@ export async function publishStagedGeneratedPage(options: {
         prompt,
         keeperToken
       },
-      dedupeKey: `generate-image:${options.stagedPage.id}:${options.planId}:${options.stagedPage.revision}:${keeperToken}`
+      dedupeKey: pageIllustrationJobDedupeKey({ pageId: options.stagedPage.id, planId: options.planId,
+        revision: options.stagedPage.revision, keeperToken })
     });
     if (!imageJob) {
       return "enqueue-declined";

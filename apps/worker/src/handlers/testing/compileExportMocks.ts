@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 import type { Job } from "bullmq";
-import type { StoryState, PageQualityReport } from "@book-maker/core";
+import type { StoryState } from "@book-maker/core";
 import { dbScopeMocks } from "../../testing/dbScopeMocks.js";
 import { isPagePipelineQaFeature } from "../../testing/qualityGateFixtures.js";
 
@@ -14,8 +14,8 @@ type MockGenerationJobSelection =
   | { qualityReport: unknown }
   | null;
 
-// The suites' balanced compile: page QA, the final verdict, and the brief-coverage read a
-// composed book skips only on a tier without `briefCoverageReview`.
+// The suites' default gates: page QA, the defect screen (`finalBookQa`), and the brief-coverage
+// read, which every book skips on a tier without `briefCoverageReview`.
 export const isDefaultCompileQualityFeature = (feature: string): boolean =>
   isPagePipelineQaFeature(feature) || feature === "briefCoverageReview";
 
@@ -54,13 +54,9 @@ export const mocks = {
       ),
       deleteMany: vi.fn()
     },
-    // The compare-and-swap behind `repairPageBriefForRecovery`, and the whole
-    // reason it is here: the persisted chapter brief is read back by every later
-    // *drafting* job, so it outlives the compile and is the one write the repair
-    // pass declines when its caller answered for nothing. Supplying
-    // `assertOwnership` is what buys it. These two mocks are how the suites
-    // assert that bargain in both directions — the write happens with a fence
-    // and does not happen without one.
+    // The chapter-brief compare-and-swap the old per-page repair loop's brief
+    // repair made; kept so a suite asserting the repair never writes a chapter
+    // row has something to assert against.
     chapter: { findUnique: vi.fn(), updateMany: vi.fn() },
     continuityNote: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
     generationJob: {
@@ -89,18 +85,6 @@ export const mocks = {
     }
   },
   revisePageDraftWithRestart: vi.fn(),
-  // Which pages the final-QA repair redrafts is a test hook, so a fixture names
-  // them on its own verdict. A `vi.fn` rather than a plain function because the
-  // bound it is called with — the compiled book's last page, never the plan's
-  // target — is itself asserted on.
-  extractRepairPageIndexes: vi.fn((finalQa: { repairPageIndexes?: number[] }, _lastPage: number) =>
-    finalQa.repairPageIndexes ?? []
-  ),
-  pageReportFromFinalQa: vi.fn((qa: { score: number; issues: string[]; requiredFixes: string[]; notes?: string }): PageQualityReport => ({
-    approved: false, score: Math.min(qa.score, 60), issues: [...qa.issues], requiredRevisions: [...qa.requiredFixes],
-    notes: qa.notes ?? "Final QA requested a targeted page repair.", groundedOk: true, unsupportedClaims: [],
-    checks: { placeholderFree: true, promptLeakFree: true, titleClean: true, repetitionOk: true, progressionOk: true, styleNatural: true }
-  })),
   // Stubbed to "this chapter has no brief" by default. A suite that cares
   // *how often* it is asked — the repair pass parses one brief per chapter for
   // the whole pass, not one per page — controls it here.
@@ -145,13 +129,14 @@ export const mocks = {
   parallelPageWaveSize: vi.fn(() => 1),
   runDeterministicManuscriptChecks: vi.fn(),
   reviewQuickDraftManuscript: vi.fn(async (_options: unknown) => ({ approved: true, score: 100, issues: [] as string[], requiredFixes: [] as string[], notes: "Focused screen." })),
+  // The scoped repair's model work. Unstaged it answers `undefined` and the real core repair runs (with the
+  // suites' empty text model it fails, as an outage would); a suite that needs a repaired candidate stages one.
+  repairQuickDraftPages: vi.fn(async (_options: {
+    pages: ReadonlyArray<{ index: number; title: string; markdown: string; summary: string }>;
+    targetPageIndexes: readonly number[]; instruction: string; findings?: unknown;
+  }): Promise<Array<{ index: number; title: string; markdown: string; summary: string }> | undefined> => undefined),
   generateJsonWithRetry: vi.fn(
-    async (_model: unknown, options?: { purpose?: string }): Promise<{ data: Record<string, unknown> }> => {
-      if (options?.purpose === "review-manuscript-structure") {
-        return { data: { clusters: [] } };
-      }
-      return { data: { issues: [] } };
-    }
+    async (_model: unknown, _options?: { purpose?: string }): Promise<{ data: Record<string, unknown> }> => ({ data: { issues: [] } })
   ),
   // Mutable so the whole-handler suite can point storage at a temp dir.
   config: { BOOK_STORAGE_DIR: "", IMAGE_STORAGE_DIR: "", PUBLIC_API_URL: "http://localhost:4001" },
@@ -170,11 +155,13 @@ export const mocks = {
     generatePdfWithPageMap: vi.fn(async (markdown: unknown, options: Record<string, unknown>) => {
       const { pageMapPlan: _pageMapPlan, ...rest } = options;
       return { pdf: await mocks.strategy.generatePdf(markdown, rest) };
-    }),
-    runFinalBookQa: vi.fn()
+    })
   },
   inputForPlanVersion: vi.fn(),
-  createReaderChaptersForExport: vi.fn(),
+  // Answers like a provider outage by default: a finalized compile now resolves
+  // its chapters while its pictures are drawn, so a suite that never staged
+  // this still reaches the reader layout.
+  createReaderChaptersForExport: vi.fn(async (_options?: unknown): Promise<{ source: string; chapters: unknown[] }> => ({ source: "fallback", chapters: [] })),
   generateBookEpub: vi.fn(),
   generateBookDocx: vi.fn(),
   exportPublicationSuperseded: vi.fn(),
@@ -191,12 +178,6 @@ export const mocks = {
   rebuildStoryStateFromPages: vi.fn(
     async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
   ),
-  // The keeper story delta, split the same way and for the same reason: the
-  // extract is the model call, the persist is the write behind the fence.
-  // Null by default, which is what the gate answers with `storyExtractAudit`
-  // off — so the write never runs unless a suite stages an extract for it.
-  keeperStoryExtractForSave: vi.fn(async (): Promise<unknown> => null),
-  persistStoryExtract: vi.fn(),
   // The style audit's provider boundary. A suite that opts into the real
   // `revisedDraftStyleAuditor` runs the real `withStyleAudit` on top of this,
   // so the only thing standing in for a model is the audit verdict itself.
@@ -283,21 +264,6 @@ export const charactersModuleMock = () => ({
   maybeEnqueueCharacterCandidatePreparation: mocks.maybeEnqueueCharacterCandidatePreparation
 });
 
-/**
- * Only `extractRepairPageIndexes` is stubbed, over the real module.
- *
- * Everything else this module answers is measured rather than staged — above
- * all `extractRepairPageIndexesFromText`, which is what `exportQualityReview.ts`
- * maps each complaint on the reader's quality card with, and `lastPageIndex`,
- * which is the bound both of them are asked in. Spreading the actual module is
- * what keeps those real; stubbing the whole of it would quietly turn the card
- * assertions into assertions about this file.
- */
-export const finalQaPageTargetsModuleMock = (actual: typeof import("../../generation/finalQaPageTargets.js")) => ({
-  ...actual,
-  extractRepairPageIndexes: mocks.extractRepairPageIndexes
-});
-
 export const bookHelpersModuleMock = () => ({
   loadPagesForExport: (projectId: string) => {
     if (leasedPages) {
@@ -310,10 +276,8 @@ export const bookHelpersModuleMock = () => ({
   },
   loadPageTextSnapshot: mocks.loadPageTextSnapshot,
   loadStyleLockPages: mocks.loadStyleLockPages,
-  pageReportFromFinalQa: mocks.pageReportFromFinalQa,
   parseChapterBrief: (productionBrief: unknown) => mocks.parseChapterBrief(productionBrief),
   strategyForInput: () => ({ shouldIllustratePage: () => false, ...mocks.strategy }),
-  toFinalQaPage: (page: unknown) => page,
   toPriorPageContext: (page: unknown) => page,
   formatQualityFailure: () => "quality failure detail"
 });
@@ -334,8 +298,6 @@ export const storyStateStoreModuleMock = () => ({
  * every other one unchanged.
  */
 export const qualityEnrichmentModuleMock = (actual?: typeof import("../../generation/qualityEnrichment.js")) => ({
-  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-  persistStoryExtract: mocks.persistStoryExtract,
   revisedDraftStyleAuditor: actual ? actual.revisedDraftStyleAuditor : vi.fn(() => undefined)
 });
 
@@ -355,6 +317,11 @@ export const finalizationIllustrationsModuleMock = () => ({
 export const compileFinalizationModuleMock = () => ({
   FinalizationLeaseLostError: class extends Error {},
   hasCompileFinalization: async () => false,
+  // Deterministic stand-ins for the checkpoint fingerprints: the real ones hash,
+  // and this file may not import the module that does.
+  finalizationFingerprint: (value: unknown) => JSON.stringify(value),
+  manuscriptFinalizationFingerprint: (pages: ReadonlyArray<{ id: string; index: number; title: string; markdown: string; revision?: number }>) =>
+    JSON.stringify(pages.map(({ id, index, title, markdown, revision }) => ({ id, index, title, markdown, revision }))),
   openCompileFinalization: async (options: Parameters<typeof import("../compileFinalization.js").openCompileFinalization>[0]) => {
     leasedPages = [...options.pages];
     leaseOwnershipReadPending = false;
@@ -385,7 +352,10 @@ export const compileFinalizationModuleMock = () => ({
       unavailablePage: async (id: string) => { state.unavailableRepairPageIds.push(id); state.completedPageIds.push(id); state.activePageIndex = null; },
       completePage: async (id: string) => { state.completedPageIds.push(id); state.activePageIndex = null; },
       finishRepair: async () => { state.repairPassCompleted = true; state.activePageIndex = null; },
-      finishRepairInTransaction: async () => { state.repairPassCompleted = true; state.activePageIndex = null; },
+      finishRepairInTransaction: async () => {
+        state.repairPassCompleted = true; state.activePageIndex = null;
+        state.completedPageIds = [...new Set([...state.completedPageIds, ...state.startedPageIds])];
+      },
       phase: async (phase: string) => { state.phase = phase; }
     };
   }
@@ -403,11 +373,16 @@ export const coreModuleMock = (actual: typeof import("@book-maker/core")) => ({
   ...actual,
   generateJsonWithRetry: mocks.generateJsonWithRetry,
   reviewQuickDraftManuscript: mocks.reviewQuickDraftManuscript,
-  reviewManuscriptCoverage: vi.fn(async (options: { promises: readonly string[] }) => ({
-    status: "reviewed", requirements: [],
-    issues: options.promises.map((text) => ({ code: "UNPAID_PROMISE", severity: "warning", source: "model",
-      message: text, guidance: "Review the missing payoff.", affectedPageIndexes: [] }))
-  })),
+  repairQuickDraftPages: async (options: Parameters<typeof actual.repairQuickDraftPages>[0]) =>
+    (await mocks.repairQuickDraftPages(options)) ?? actual.repairQuickDraftPages(options),
+  // Shaped like the real review, whose issues are what `manuscriptCoverageIssues`
+  // derives from its requirements: the finalization path re-derives them after
+  // refreshing the export facts, so issues no requirement carries would vanish there.
+  reviewManuscriptCoverage: vi.fn(async (options: { promises: readonly string[] }) => {
+    const requirements = options.promises.map((text, index) => ({ id: `promise-${index + 1}`, source: "promise" as const,
+      text, quote: text, kind: "content" as const, status: "missing" as const, reason: "Review the missing payoff.", evidence: [] }));
+    return { status: "reviewed" as const, requirements, issues: actual.manuscriptCoverageIssues({ status: "reviewed", requirements }) };
+  }),
   // The style audit's one model call, mocked at the barrel because
   // `qualityEnrichment.ts` imports it from there. `withStyleAudit` stays real,
   // so a suite opting into the auditor measures the real penalty arithmetic.

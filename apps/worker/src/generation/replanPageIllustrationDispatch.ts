@@ -1,4 +1,4 @@
-import { pageIllustrationKeeperToken } from "./pageIllustrationOwnership.js";
+import { pageIllustrationJobDedupeKey, pageIllustrationKeeperToken } from "./pageIllustrationOwnership.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import { type BookGenerationStrategy, type BookPlan, type CreateProjectInput } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -89,7 +89,7 @@ export async function enqueueRevisionOwnedReplanIllustrations(options: {
         contentRevision: options.publicationRevision,
         exportPublicationProjectStatus: "EDITING"
       },
-      dedupeKey: `generate-image:${page.id}:${options.planVersionId}:${page.revision}:${keeperToken}`,
+      dedupeKey: pageIllustrationJobDedupeKey({ pageId: page.id, planId: options.planVersionId, revision: page.revision, keeperToken }),
       contentRevision: options.publicationRevision
     });
     // `enqueueWorkerJob` declines for a project that is gone or FAILED, which is

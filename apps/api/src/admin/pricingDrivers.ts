@@ -105,8 +105,9 @@ type SpendCountRow = {
  * it stored none that can be read. A book is counted at what it was charged
  * for, never at what today's rule would draw for it: the picture-book rule
  * changed twice in a day (four pictures, then a picture a page to twelve and
- * one per two pages, then `min(pages, 12)`), so a book charged under an earlier
- * one re-estimated today projects pictures nobody paid for.
+ * one per two pages, then `min(pages, 12)`) and again on 2026-10-17 (two for
+ * every five pages, at most twelve), so a book charged under an earlier one
+ * re-estimated today projects pictures nobody paid for, or misses some it did.
  */
 function quotedImages(row: SpendCountRow): { interior: number; cover: number | null } | null {
   const interior = Number(row.quoted_interior_images);

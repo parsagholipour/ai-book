@@ -2,7 +2,7 @@
  * Appends a generation-quality revision that flips one feature for one tier,
  * or swaps one tier's writer or judgment model — for A/B arms:
  *
- *   pnpm exec tsx scripts/dev-set-quality.ts feature chapterEditorPass balanced off
+ *   pnpm exec tsx scripts/dev-set-quality.ts feature chapterEditAcceptance balanced off
  *   pnpm exec tsx scripts/dev-set-quality.ts model balanced judgment deepseek deepseek-v4-flash thinkingEnabled=false
  *   pnpm exec tsx scripts/dev-set-quality.ts restore <version>      # copy a whole revision's settings back
  */

@@ -3,7 +3,7 @@ import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { GenerateJsonOptions, TextModelAdapter } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput, PageDraft } from "../schemas/book.js";
-import { generateBatchDraft, generateChapterDraft, generatePageDraft, generateWholeBookDraft, polishPageDraft } from "./pages.js";
+import { generateBatchDraft, generateChapterDraft, generatePageDraft, generateWholeBookDraft } from "./pages.js";
 import { revisePageDraft } from "./pagesReview.js";
 
 /**
@@ -90,8 +90,6 @@ describe("per-page drafts and figure blocks", () => {
   it("returns a draft with neither the fence nor the stand-in the writer put in it", async () => {
     const generated = await generatePageDraft({ input, plan, pageIndex: 3, previousSummaries: [], previousPages: [], continuityNotes: [], researchNotes: [], textModel: modelReturning(dirty) });
     expect(generated.markdown).toBe(clean);
-    const polished = await polishPageDraft({ input, plan, pageIndex: 3, draft, previousPages: [], nextPages: [], continuityNotes: [], researchNotes: [], textModel: modelReturning(dirty) });
-    expect(polished.markdown).toBe(clean);
     const revised = await revisePageDraft({ input, plan, pageIndex: 3, draft, report, previousPages: [], continuityNotes: [], textModel: modelReturning(dirty) });
     expect(revised.markdown).toBe(clean);
   });

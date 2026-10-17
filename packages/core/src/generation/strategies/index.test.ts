@@ -89,7 +89,8 @@ describe("book generation strategies", () => {
     expect(researchMapDraftPolishStrategy.researchDepth).toBe(12);
     expect(researchMapDraftPolishStrategy.createChapterBriefs).toBeDefined();
     expect(researchMapDraftPolishStrategy.generateWholeBookDraft).toBeDefined();
-    expect(researchMapDraftPolishStrategy.polishPageDraft).toBeDefined();
+    // No page is polished since 2026-10-16 (E4): the whole-book draft is the page.
+    expect(Object.hasOwn(researchMapDraftPolishStrategy, "polishPageDraft")).toBe(false);
   });
 
   it("composes every long book but a picture book chapter by chapter", () => {
@@ -123,7 +124,7 @@ describe("book generation strategies", () => {
     expect(draftThenPolishStrategy.executionMode).toBe("draft-then-polish");
     expect(draftThenPolishStrategy.createChapterBriefs).toBe(pageMapSequentialStrategy.createChapterBriefs);
     expect(draftThenPolishStrategy.generateWholeBookDraft).toBeDefined();
-    expect(draftThenPolishStrategy.polishPageDraft).toBeDefined();
+    expect(Object.hasOwn(draftThenPolishStrategy, "polishPageDraft")).toBe(false);
   });
 
   it("all strategies compile reader-facing Markdown without export artifacts", () => {

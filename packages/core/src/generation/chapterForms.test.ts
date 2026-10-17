@@ -285,7 +285,7 @@ describe("planChapterForms", () => {
     await expect(planChapterForms({ input, plan, ranges: ranges(), textModel: stopping })).rejects.toBe(stop);
   });
 
-  it("asks for a repair of a monotonous plan only while the formPlanRepair gate is on", async () => {
+  it("makes one call for a monotonous plan and settles it by rotation, with no repair call (removed 2026-10-16)", async () => {
     const plan = makeFallbackPlan(input);
     const all = ranges();
     let calls = 0;
@@ -297,10 +297,7 @@ describe("planChapterForms", () => {
         return { data: { chapters }, text: JSON.stringify({ chapters }) };
       }
     } as unknown as FakeTextModelAdapter;
-    await planChapterForms({ input, plan, ranges: all, textModel: monotonous });
-    expect(calls).toBe(2);
-    calls = 0;
-    const rotated = await planChapterForms({ input, plan, ranges: all, textModel: monotonous, repair: false });
+    const rotated = await planChapterForms({ input, plan, ranges: all, textModel: monotonous });
     expect(calls).toBe(1);
     expect(rotated.source).toBe("rotated");
     expect(rotated.issues).toEqual([]);

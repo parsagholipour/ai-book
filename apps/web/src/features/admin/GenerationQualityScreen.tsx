@@ -70,6 +70,8 @@ type QualitySavePatch = {
 
 export type QualityFeature = {
   retired?: boolean;
+  /** Off on every tier and kept for a later experiment: listed apart, with no tier boxes. */
+  shelved?: boolean;
   id: ServerFeatureId;
   label: string;
   summary: string;
@@ -709,6 +711,7 @@ function readFeatureCopy(value: unknown): QualityFeature[] | null {
       : undefined;
     features.push({
       ...(entry.retired === true ? { retired: true } : {}),
+      ...(entry.shelved === true ? { shelved: true } : {}),
       id,
       label,
       summary,
@@ -863,7 +866,8 @@ export function qualityResetFailure(error: unknown, action = "Reset quality gate
  */
 export function featureRows(state: GenerationQuality): QualityFeature[] {
   const described = new Map(state.features.map((feature) => [feature.id, feature]));
-  return Object.keys(state.settings).map((id) => described.get(id) ?? undescribedFeature(id)).filter((feature) => !feature.retired);
+  // A retired row stays: its group says what was removed and why, with no tier boxes.
+  return Object.keys(state.settings).map((id) => described.get(id) ?? undescribedFeature(id));
 }
 
 function undescribedFeature(id: ServerFeatureId): QualityFeature {

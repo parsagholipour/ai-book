@@ -16,6 +16,17 @@ String? formatGenerationDuration(int? milliseconds) {
   return '${hours}h ${remainingMinutes}m';
 }
 
+/// The time-left line under a plan's or a book's progress, from the seconds
+/// the server estimated (and this phone has counted down since). Rounded up to
+/// whole minutes, like [formatRetryCountdown], so it never promises sooner than
+/// the server did; once the count has run out with the work still going, it
+/// says so without a number.
+String formatTimeLeft(int seconds) {
+  if (seconds <= 0) return 'Almost done';
+  if (seconds < 60) return 'Less than a minute left';
+  return 'About ${(seconds / 60).ceil()} min left';
+}
+
 /// When an automatic retry will run, in words: the server's own `nextRetryAt`
 /// against [now]. Rounded up to whole minutes so it never promises sooner than
 /// it will happen, and it says so plainly once the moment has arrived.

@@ -14,7 +14,8 @@ const requirement = { text: "Natural dialogue", kind: "content", quote: "natural
   scope: { extent: "each_page", quote: brief } };
 const prose = '"Hold the lantern," Rabbit said. Turtle steadied its warm handle.';
 
-it.each(["fast", "balanced", "premium"])("carries the saved scope through the %s map, writer and coverage with one inventory call", async modelTier => {
+// Quick Draft plans a children's book without the requirement contract (the tier decides since 2026-10-16).
+it.each(["balanced", "premium", "ultra"])("carries the saved scope through the %s map, writer and coverage with one inventory call", async modelTier => {
   const tierInput = createProjectSchema.parse({ ...input, mediaSettings: { ...input.mediaSettings, modelTier } });
   const fixture = scriptedDevelopmentModel([
     { complete: true, requirements: [requirement] },

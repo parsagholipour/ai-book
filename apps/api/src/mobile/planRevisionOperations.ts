@@ -10,7 +10,7 @@ import {
   startGenerationAttempt,
   type CreditLedgerEntryRecord
 } from "@book-maker/db/billing";
-import { assertAiCapacity } from "./aiCapacity.js";
+import { assertAiCapacity, speculativeWorkAllowed } from "./aiCapacity.js";
 import type { AiWorkKind } from "../spendBreaker.js";
 
 /**
@@ -159,6 +159,8 @@ export async function queueChargedPlanRevision(options: {
   });
   const quote = planRevisionCreditCost(project?.mediaSettings);
   const amountCredits = quote.credits;
+  // The revised plan's composition prep is queued only if the breaker allows speculative work (H4).
+  const prepareComposition = await speculativeWorkAllowed(options.userId);
   const started = await startGenerationAttempt({
     userId: options.userId,
     commandKey: options.operationId
@@ -201,7 +203,8 @@ export async function queueChargedPlanRevision(options: {
               ? { respondedQuestionPrompts: options.respondedQuestionPrompts }
               : {}),
             ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {}),
-            ...(options.operationId ? { editOperationId: options.operationId } : {})
+            ...(options.operationId ? { editOperationId: options.operationId } : {}),
+            ...(prepareComposition ? { prepareComposition: true } : {})
           }
         });
         if (options.operationId) {

@@ -39,12 +39,11 @@ describe("evidence ledger gate", () => {
   it("hands each audience its own sentences, none of which trip the prompt sweep's markers", () => {
     const input = inputFor("HISTORY");
     const plan = makeFallbackPlan(input);
-    for (const audience of ["producer", "repair", "critic", "writer", "reviewer"] as const) {
+    for (const audience of ["producer", "critic", "writer", "reviewer"] as const) {
       const rules = evidenceLedgerRules(input, plan, audience);
       expect(rules.length).toBeGreaterThan(0);
       expect(rules.join(" ")).not.toMatch(/throat-clearing|openingHook/);
     }
-    expect(evidenceLedgerRules(input, plan, "repair").length).toBeGreaterThan(evidenceLedgerRules(input, plan, "producer").length);
   });
 
   it("carries only a ledger that is actually there, trimmed", () => {

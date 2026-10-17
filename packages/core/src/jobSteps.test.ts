@@ -15,7 +15,13 @@ describe("JOB_STEP_TEMPLATES", () => {
   });
 
   it("gives every job at least one step, with unique non-empty keys and labels", () => {
+    // The speculative composition prep runs while the reader reads the plan; nobody waits on it, so it reports nothing.
+    const stepless = new Set(["PREPARE_COMPOSITION"]);
     for (const [type, steps] of Object.entries(JOB_STEP_TEMPLATES)) {
+      if (stepless.has(type)) {
+        expect(steps, `${type} reports no steps`).toEqual([]);
+        continue;
+      }
       expect(steps.length, `${type} has no steps`).toBeGreaterThan(0);
       for (const step of steps) {
         expect(step.key, `${type} has a blank step key`).not.toBe("");

@@ -52,7 +52,6 @@ export type DraftProject = {
   illustrationCadence: IllustrationCadence;
   /** "ai" draws the cover, "design" picks a bundled one, "none" has no cover. */
   coverArtSource: CoverArtSource;
-  finalReview: boolean;
   toneProfile: ToneProfile;
   draftCandidates: number;
 };
@@ -325,7 +324,6 @@ export const initialDraft: DraftProject = {
   fullIllustrations: true,
   illustrationCadence: "template-driven",
   coverArtSource: "ai",
-  finalReview: true,
   toneProfile: DEFAULT_TONE_PROFILE,
   draftCandidates: 1
 };
@@ -352,7 +350,6 @@ export function projectInputFromDraft(draft: DraftProject) {
       coverArtSource: draft.coverArtSource,
       coverTemplate: draft.coverTemplate,
       imageModel: imageModelSelectionFromOption(draft.imageModel),
-      finalReview: draft.finalReview,
       generationStrategy: draft.generationStrategy,
       ...(draft.category === "KIDS" ? { audienceAgeRange: draft.audienceAgeRange } : {}),
       toneProfile: draft.toneProfile,
@@ -400,7 +397,6 @@ export function draftFromSavedInputs(project: Project): DraftProject {
     fullIllustrations: firstBoolean(mediaSettings.fullIllustrations, initialDraft.fullIllustrations),
     illustrationCadence: illustrationCadenceFromValue(mediaSettings.illustrationCadence),
     coverArtSource: resolveCoverArtSource(mediaSettings),
-    finalReview: firstBoolean(mediaSettings.finalReview, initialDraft.finalReview),
     audienceAgeRange:
       category === "KIDS" ? audienceAgeRangeFromValue(mediaSettings.audienceAgeRange) : initialDraft.audienceAgeRange,
     toneProfile: toneProfileFromValue(firstString(mediaSettings.toneProfile, initialDraft.toneProfile)),

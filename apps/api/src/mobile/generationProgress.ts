@@ -30,7 +30,10 @@ const STEP_LABELS: Omit<Record<GenerationStepKey, string>, "illustrate"> = {
 
 const CHAPTER_WRITE_LABEL = "Writing your chapters";
 
-/** Closed tokens the composed-chapters pass stamps on GENERATE_BOOK `setup`. */
+/**
+ * Closed tokens the composed-chapters pass stamps on GENERATE_BOOK `setup`. `edit` is only on jobs
+ * from before the line edit was removed (2026-10-16); it stays so their progress still reads.
+ */
 const CHAPTER_WRITE_PHASES = new Set(["compose", "scene", "edit", "read", "finalize"]);
 
 /** Closed tokens GENERATE_BOOK stamps on `briefs` (and sequential `setup`) before writing. */
@@ -67,6 +70,13 @@ const FINISH_PROGRESS_CEILING = 95;
 const PREPARE_BAND = { start: 20, end: 28 } as const;
 const ILLUSTRATE_BAND = { start: 80, end: 92 } as const;
 
+/**
+ * Where the book's own share of the bar starts: the 20 below it is the plan's
+ * share of the whole-book scale, so a run that has just begun already reads 20.
+ * The time-left estimate measures how far the run itself has got from here.
+ */
+export const BOOK_PROGRESS_START = PREPARE_BAND.start;
+
 export function serializeGenerationProgress(
   status: ProjectStatusResult,
   options: { coverEnabled: boolean; illustrationsEnabled: boolean }
@@ -90,6 +100,7 @@ export function serializeGenerationProgress(
   if (settled) {
     return {
       percent: 100,
+      estimatedSecondsLeft: null,
       detail: null,
       finalization: finalization?.phase === "published" ? finalization : null,
       steps: keys.map((key) => ({
@@ -112,6 +123,8 @@ export function serializeGenerationProgress(
 
   return {
     percent: generationProgressPercent(status, phase, imageMode !== null),
+    // Filled in by the status serializer, which holds the clock and the history.
+    estimatedSecondsLeft: null,
     detail: finalization?.label ?? liveDetail(status, phase),
     finalization,
     steps

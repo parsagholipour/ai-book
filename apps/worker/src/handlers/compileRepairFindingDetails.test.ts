@@ -20,7 +20,10 @@ it("keeps Quick's unverified page-13 concern through durable failure serializati
   expect(persisted[0]?.reviewFindings?.[0]?.validationFailure).toBe("evidence");
   expect(concern?.message).toContain("Unverified editorial concern");
   expect(concern?.evidence).toBeUndefined();
-  expect(buildManuscriptQualityReport([], issues, { finalReviewRan: true }).state).toBe("review_recommended");
+  // Unverified concerns are console diagnostics: kept on the report, never the reader's grade.
+  const report = buildManuscriptQualityReport([], issues, { finalReviewRan: true });
+  expect(report.state).toBe("passed");
+  expect(report.issues).toEqual(issues);
 });
 
 it("distinguishes a retained concern with incomplete auxiliary checks and accepts legacy failure records", () => {
@@ -71,5 +74,8 @@ it("retains both malformed-metadata diagnoses and all cited pages through repair
   expect(concerns[1]?.guidance).toContain("repair scope");
   expect(issues.find(issue => issue.code === "FINAL_QA_REPAIR_UNAVAILABLE")?.message)
     .toContain("Editorial concerns were found, but repair metadata could not be verified");
-  expect(buildManuscriptQualityReport([], issues, { finalReviewRan: true }).state).toBe("review_recommended");
+  // Unverified concerns are console diagnostics: kept on the report, never the reader's grade.
+  const report = buildManuscriptQualityReport([], issues, { finalReviewRan: true });
+  expect(report.state).toBe("passed");
+  expect(report.issues).toEqual(issues);
 });

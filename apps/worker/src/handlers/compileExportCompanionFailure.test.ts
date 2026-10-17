@@ -40,13 +40,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -139,12 +132,6 @@ describe("compileExport companion-format failure publication", () => {
       pages,
       images: [],
       research: []
-    });
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: true,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: []
     });
     mocks.strategy.compileMarkdown.mockReturnValue("# The Long Walk\n\nProse.\n");
     mocks.createReaderChaptersForExport.mockResolvedValue({ chapters: modelChapters, source: "model" });

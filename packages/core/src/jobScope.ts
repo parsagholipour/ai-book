@@ -21,7 +21,16 @@ export const DERIVATIVE_GENERATION_JOBS = Object.freeze({
    * attempt — never the book, which may be COMPLETE, EDITING or a DRAFT the
    * author is still writing.
    */
-  WRITING_ASSIST: "writing-assist"
+  WRITING_ASSIST: "writing-assist",
+  /**
+   * Speculative composition prep: the stance, the brief inventory, the episodes
+   * and the chapter form plan of a composed book, planned while its reader is
+   * still reading the plan and stored on that plan version. Unbilled and owned
+   * by nobody but its own row: a failure or a stop leaves the plan exactly as
+   * the book run would have found it without the prep, and never touches the
+   * project, its status or any charge.
+   */
+  PREPARE_COMPOSITION: "prepare-composition"
 } as const);
 
 export type DerivativeGenerationJobType = keyof typeof DERIVATIVE_GENERATION_JOBS;
@@ -481,7 +490,9 @@ export const JOB_PAGE_REWRITE_SCOPE: Readonly<Record<GenerationJobType, PageRewr
    * rows of pages a publish already wrote — never `Page.markdown` or a verdict.
    * What an assist suggests reaches the book only through a later publish.
    */
-  WRITING_ASSIST: "never"
+  WRITING_ASSIST: "never",
+  /** Writes plan-version fields before any page exists; never a page. */
+  PREPARE_COMPOSITION: "never"
 });
 
 /**

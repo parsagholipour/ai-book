@@ -2,23 +2,18 @@ import { describe, expect, it } from "vitest";
 import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
-import type { BookPlan, CreateProjectInput, PageQualityReport } from "../schemas/book.js";
-import {
-  REWRITE_TEMPERATURE_CEILING,
-  generateChapterBrief,
-  generateWholeBookPageMap,
-  repairPageBrief
-} from "./pages.js";
+import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import { generateChapterBrief, generateWholeBookPageMap } from "./pages.js";
 import { pageMapForWholeBookDraft } from "./pagesPageMap.js";
 
 /**
- * The first-page contract in the production map. Four paths brief page 1 — the
- * whole-book map, the per-chapter briefs the chunked path fans out, the
- * deterministic fallback, and the QA repair that rewrites whichever of the
- * three wrote the brief — and a real book almost never reaches the third of
+ * The first-page contract in the production map. Three paths brief page 1 — the
+ * whole-book map, the per-chapter briefs the chunked path fans out, and the
+ * deterministic fallback — and a real book almost never reaches the third of
  * them, so each is asserted here. The fallback's chapter arithmetic itself is
- * covered in pages.test.ts, and the fifth writer — the page-map critic, which
- * runs last over whatever these four wrote — in pageMapCritic.test.ts.
+ * covered in pages.test.ts. (The page-map critic that ran last over whatever
+ * these wrote, and the QA brief repair that rewrote one page's brief, were
+ * removed on 2026-10-16.)
  */
 
 const input: CreateProjectInput = {
@@ -591,172 +586,6 @@ describe("deterministic fallback page map opening beat", () => {
 
     expect(firstPage?.endingPressure).toMatch(/second page must answer/);
     expect(firstPage?.endingPressure).toContain("Hand off cleanly toward Chapter 2: The Cost.");
-  });
-});
-
-describe("page brief repair first-page contract", () => {
-  const rejectedDraft = {
-    title: "Welcome",
-    markdown: "In this book we will explore what sacrifice means before we meet Jack at all.",
-    summary: "The page frames the topic instead of opening it.",
-    continuityNotes: []
-  };
-
-  const report: PageQualityReport = {
-    approved: false,
-    score: 41,
-    issues: ["The opening restates the premise instead of entering the subject."],
-    requiredRevisions: ["Open inside the concrete scene."],
-    notes: "The assignment itself asks for framing.",
-    groundedOk: true,
-    unsupportedClaims: [],
-    checks: {
-      placeholderFree: true,
-      promptLeakFree: true,
-      titleClean: true,
-      repetitionOk: false,
-      progressionOk: false,
-      styleNatural: true
-    }
-  };
-
-  function repairOptions(pageIndex: number, plan: BookPlan) {
-    return {
-      input,
-      plan,
-      chapter: plan.chapters[0]!,
-      pageIndex,
-      pageBrief: {
-        pageIndex,
-        chapterIndex: 1,
-        purpose: `Set up the book on page ${pageIndex}.`,
-        beat: "Explain what the book is about before anything happens.",
-        requiredContinuity: [],
-        endingPressure: "The reader understands the topic."
-      },
-      draft: rejectedDraft,
-      report,
-      previousPages: [],
-      continuityNotes: []
-    };
-  }
-
-  it("restates the first-page rule and the openingHook when the repaired page is page 1", async () => {
-    const capture = capturingJsonModel(modelPageBeat(1, 1));
-    const plan: BookPlan = { ...makeFallbackPlan(input), openingHook };
-
-    await repairPageBrief({ ...repairOptions(1, plan), textModel: capture.model });
-
-    expect(capture.system).toMatch(/Global page 1 is the book's first page/);
-    expect(capture.system).toMatch(/endingPressure must leave a specific tension/);
-    expect(capture.system).toMatch(/openingHook is the plan's commitment/);
-    expect(capture.payload?.openingHook).toBe(openingHook);
-    // The repair's own landing-claim rule is not displaced by the amendment.
-    expect(capture.system).toMatch(/substantive landing claim/);
-  });
-
-  it("grounds a repaired assignment in the actual following prose", async () => {
-    const capture = capturingJsonModel(modelPageBeat(1, 1));
-    const plan: BookPlan = { ...makeFallbackPlan(input), openingHook };
-    await repairPageBrief({ ...repairOptions(1, plan), textModel: capture.model,
-      nextPages: [{ index: 2, title: "The crossing", markdown: "Turtle held the lantern while Rabbit tied the boat.", summary: "They prepare to cross." }] });
-    expect(capture.system).toContain("followingPages is supplied, it is already-written prose");
-    expect(JSON.stringify(capture.payload?.followingPages)).toContain("Turtle held the lantern");
-  });
-
-  it("repairs a one-page book's page 1 under the ending contract", async () => {
-    const capture = capturingJsonModel(modelPageBeat(1, 1));
-    const plan: BookPlan = { ...makeFallbackPlan(onePageInput), openingHook };
-
-    await repairPageBrief({ ...repairOptions(1, plan), input: onePageInput, textModel: capture.model });
-
-    expect(capture.system).toMatch(/Global page 1 is the book's first page/);
-    expect(capture.system).not.toMatch(/second page has to answer/);
-    expect(capture.system).toMatch(/Resolve the book's central promise/);
-    // The repair's own landing-claim rule is still not displaced by either
-    // reading of the amendment.
-    expect(capture.system).toMatch(/substantive landing claim/);
-  });
-
-  it("leaves a later page's repair unchanged", async () => {
-    const capture = capturingJsonModel(modelPageBeat(2, 1));
-    const plan: BookPlan = { ...makeFallbackPlan(input), openingHook };
-
-    await repairPageBrief({ ...repairOptions(2, plan), textModel: capture.model });
-
-    expect(capture.system).not.toMatch(/Global page 1 is the book's first page/);
-    expect(capture.system).not.toMatch(/openingHook/);
-    expect(capture.payload?.openingHook).toBeUndefined();
-    expect(capture.system).toContain("Discard source-identity requirements from the original page brief");
-    expect(capture.payload?.researchNotes).toEqual([]);
-  });
-
-  it("preserves source-identity requirements when a citeable note can satisfy them", async () => {
-    const capture = capturingJsonModel(modelPageBeat(2, 1));
-    const plan: BookPlan = {
-      ...makeFallbackPlan(input),
-      researchNotes: [
-        {
-          query: "archive",
-          title: "Boundary papers",
-          url: "https://example.com/papers",
-          summary: "Commission records."
-        }
-      ]
-    };
-
-    await repairPageBrief({ ...repairOptions(2, plan), textModel: capture.model });
-
-    expect(capture.system).not.toContain("Discard source-identity requirements from the original page brief");
-    expect(capture.payload?.researchNotes).toHaveLength(1);
-  });
-
-  it("keeps the first-page rule but sends no openingHook when the plan has none", async () => {
-    const capture = capturingJsonModel(modelPageBeat(1, 1));
-    const plan = makeFallbackPlan(input);
-
-    await repairPageBrief({ ...repairOptions(1, plan), textModel: capture.model });
-
-    expect(capture.system).toMatch(/Global page 1 is the book's first page/);
-    expect(capture.system).not.toMatch(/openingHook/);
-    expect(capture.payload?.openingHook).toBeUndefined();
-  });
-
-  it("restates no openingHook when the repaired page 1 belongs to an imported manuscript", async () => {
-    // The repair is the producer that rewrites whichever of the others wrote the
-    // brief, so it is the one that reaches page 1 after a QA failure with some
-    // entirely unrelated cause — the same shape as the reviser incident on the
-    // prompt side.
-    const capture = capturingJsonModel(modelPageBeat(1, 1));
-    const plan: BookPlan = { ...makeFallbackPlan(importedInput), openingHook };
-
-    await repairPageBrief({ ...repairOptions(1, plan), input: importedInput, textModel: capture.model });
-
-    expect(capture.system).not.toMatch(/openingHook/);
-    expect(capture.system).not.toContain(openingHook);
-    expect(capture.payload?.openingHook).toBeUndefined();
-    expect(capture.system).toMatch(/Global page 1 is the book's first page/);
-  });
-
-  it("repairs at the shared rewrite ceiling, and a cooler book at its own temperature", async () => {
-    // The ceiling is one constant, read here rather than restated: this and
-    // `polishPageDraft`'s clamp (pagesPolish.test.ts) used to be independent
-    // 0.65 literals under a comment asserting they were the same number, so
-    // moving it moved only the polish path.
-    const plan: BookPlan = { ...makeFallbackPlan(input), openingHook };
-    const hot = capturingJsonModel(modelPageBeat(1, 1));
-
-    await repairPageBrief({ ...repairOptions(1, plan), textModel: hot.model });
-
-    expect(input.temperature).toBeGreaterThan(REWRITE_TEMPERATURE_CEILING);
-    expect(hot.temperature).toBeCloseTo(REWRITE_TEMPERATURE_CEILING, 10);
-
-    const coolInput: CreateProjectInput = { ...input, temperature: REWRITE_TEMPERATURE_CEILING - 0.1 };
-    const cool = capturingJsonModel(modelPageBeat(1, 1));
-
-    await repairPageBrief({ ...repairOptions(1, plan), input: coolInput, textModel: cool.model });
-
-    expect(cool.temperature).toBeCloseTo(coolInput.temperature, 10);
   });
 });
 

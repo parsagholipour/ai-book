@@ -70,7 +70,8 @@ import {
   refundUnwrittenEditPages,
   staleGenerationJobReason
 } from "./jobLifecycle.js";
-import { PRE_EDIT_PROJECT_STATUS } from "@book-maker/core";
+import { PRE_EDIT_PROJECT_STATUS, STOPPED_JOB_MESSAGE } from "@book-maker/core";
+import { StopRequestedError } from "./jobTypes.js";
 
 describe("job lifecycle ownership", () => {
   beforeEach(() => {
@@ -639,6 +640,14 @@ describe("job lifecycle ownership", () => {
     mocks.generationJobUpdateMany.mockResolvedValue({ count: 0 });
 
     await expect(markCompleted(job("compile-export", { attemptId: "attempt-1" }))).resolves.toBe(false);
+    expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+  });
+
+  it("raises a stop already on the row before it writes anything, so a handler that returned past one still stops", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({ steps: [], status: "FAILED", message: STOPPED_JOB_MESSAGE, error: null });
+
+    await expect(markCompleted(job("compile-export", { attemptId: "attempt-1" }), "defer-to-successor")).rejects.toBeInstanceOf(StopRequestedError);
+    expect(mocks.generationJobUpdateMany).not.toHaveBeenCalled();
     expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
   });
 

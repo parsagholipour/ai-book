@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import { shouldIllustratePage } from "./illustrationSlots.js";
 import {
   buildCharacterReferencePrompt,
   characterReferenceCast,
+  characterReferenceCastFromDraft,
+  CHARACTER_REFERENCE_MIN_PICTURES,
   COVER_CAST_MAX,
   coverCastCharacters,
   coverPortraitCharacters,
@@ -230,5 +233,125 @@ describe("the cast a book draws reference sheets for", () => {
     const illustrated = { ...withPortrait, mediaSettings: { ...withPortrait.mediaSettings, fullIllustrations: true } };
     expect(coverPortraitCharacters(illustrated, tiko)).toEqual([]);
     expect(names(characterReferenceCast(illustrated, tiko))).toContain("Tiko");
+  });
+});
+
+describe("the cast a short book's draft decides its sheets for", () => {
+  // The Moss book (2026-10-17): ten pages, four pictures, the otter in all four
+  // and a frog, a heron and a beaver in one each — and four sheets drawn for it.
+  const picture: CreateProjectInput = {
+    ...input,
+    targetPages: 10,
+    mediaSettings: {
+      ...input.mediaSettings,
+      illustrationCadence: "every-page",
+      coverArtSource: "design",
+      includeCover: false,
+      mobile: { bookType: "short_story" }
+    } as CreateProjectInput["mediaSettings"]
+  };
+  const character = (name: string) => ({ name, role: "r", description: "d", traits: [], visualRules: [] });
+  const castPlan = (names: string[], coverPrompt = "A quiet river at dawn."): BookPlan => ({
+    ...plan,
+    illustrationPlan: { ...plan.illustrationPlan, coverPrompt },
+    characters: names.map(character)
+  });
+  const river = castPlan(["Moss", "Frog", "Heron", "Beaver"]);
+  const names = (characters: Array<{ name: string }> | undefined) => characters?.map((entry) => entry.name);
+  // Read off the slot function rather than written down: the cap is the
+  // owner's to move, and the rule has to follow wherever it puts the pictures.
+  const pageIndexes = Array.from({ length: picture.targetPages }, (_, i) => i + 1);
+  const drawn = pageIndexes.filter((index) => shouldIllustratePage(picture, river, index));
+  const undrawn = pageIndexes.filter((index) => !shouldIllustratePage(picture, river, index));
+  const draft = (prompts: Record<number, string>) => pageIndexes.map((index) => ({ index, imagePrompt: prompts[index] ?? null }));
+  const scene = (...who: string[]) => `Soft picture-book art: ${who.join(" and ")} by the river.`;
+
+  it("needs a cap with at least two pictures and a page left without one", () => {
+    expect(CHARACTER_REFERENCE_MIN_PICTURES).toBe(2);
+    expect(drawn.length).toBeGreaterThanOrEqual(2);
+    expect(undrawn.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("keeps only who at least two pictures show, in plan order", () => {
+    const [first, second] = drawn as [number, number];
+    const prompts: Record<number, string> = Object.fromEntries(drawn.map((index) => [index, scene("Moss")]));
+    prompts[first] = scene("Heron", "Moss", "Frog");
+    prompts[second] = scene("Moss", "a tall heron");
+    expect(names(characterReferenceCastFromDraft(picture, river, draft(prompts)))).toEqual(["Moss", "Heron"]);
+  });
+
+  it("counts only the pages the illustration slots draw, and only pages with a prompt", () => {
+    const [first] = drawn as [number];
+    const [skipped] = undrawn as [number];
+    const pages = draft({ [first]: scene("Moss", "Frog"), [skipped]: scene("Moss", "Frog") });
+    expect(characterReferenceCastFromDraft(picture, river, pages)).toEqual([]);
+    // The same two scenes on two drawn pages are two pictures.
+    const [, second] = drawn as [number, number];
+    expect(names(characterReferenceCastFromDraft(picture, river, draft({ [first]: scene("Frog"), [second]: scene("Frog") })))).toEqual(["Frog"]);
+    // The caller's own slot predicate is the one asked — the strategy's, in the worker.
+    expect(characterReferenceCastFromDraft(picture, river, pages, () => true)?.map((entry) => entry.name)).toEqual(["Moss", "Frog"]);
+  });
+
+  it("counts the cover concept as a picture only when a model draws the cover", () => {
+    const [first] = drawn as [number];
+    const pages = draft({ [first]: scene("Beaver") });
+    const coverShowsBeaver = castPlan(["Moss", "Frog", "Heron", "Beaver"], "Beaver gnawing a branch at sunset.");
+    expect(characterReferenceCastFromDraft(picture, coverShowsBeaver, pages)).toEqual([]);
+    const aiCover = { ...picture, mediaSettings: { ...picture.mediaSettings, coverArtSource: "ai" as const, includeCover: true } };
+    expect(names(characterReferenceCastFromDraft(aiCover, coverShowsBeaver, pages))).toEqual(["Beaver"]);
+  });
+
+  it("reads a cover concept that is only the brief as a picture of the lead", () => {
+    const [first, second, third] = drawn as [number, number, number];
+    const aiCover = {
+      ...picture,
+      prompt: "A picture book about Moss the otter, who helps Frog, Heron and Beaver.",
+      mediaSettings: { ...picture.mediaSettings, coverArtSource: "ai" as const, includeCover: true }
+    };
+    // Moss's and Frog's pictures, and the Moss book's own shapes: two friends on one page each.
+    const pages = draft({ [first]: scene("Moss"), [second]: scene("Moss", "Frog"), [third]: scene("Moss", "Heron") });
+    // `makeFallbackPlan`'s concept names everyone the brief does; counted, every friend kept a sheet.
+    const fallback = castPlan(["Moss", "Frog", "Heron", "Beaver"], `Cover illustration for Moss and the Stone: ${aiCover.prompt}`);
+    expect(names(characterReferenceCastFromDraft(aiCover, fallback, pages))).toEqual(["Moss"]);
+    // No concept at all is the brief too (`coverConceptText` falls back to the prompt).
+    expect(names(characterReferenceCastFromDraft(aiCover, castPlan(["Moss", "Frog", "Heron", "Beaver"], ""), pages))).toEqual(["Moss"]);
+    // The lead's one page and the cover are two pictures.
+    expect(names(characterReferenceCastFromDraft(aiCover, fallback, draft({ [first]: scene("Moss") })))).toEqual(["Moss"]);
+    // A concept the planner wrote is read for who it names.
+    const planned = castPlan(["Moss", "Frog", "Heron", "Beaver"], "Moss and Frog on a mossy stone at dusk.");
+    expect(names(characterReferenceCastFromDraft(aiCover, planned, pages))).toEqual(["Moss", "Frog"]);
+  });
+
+  it("always keeps a character the reader saved with artwork, and only with artwork", () => {
+    const saved = (portraitFile?: string) => ({
+      ...picture,
+      mediaSettings: {
+        ...picture.mediaSettings,
+        mobile: {
+          bookType: "short_story",
+          characters: [{ id: "lib-beaver", name: "Beaver", description: "A beaver", fields: [], ...(portraitFile ? { portraitFile } : {}) }]
+        }
+      } as CreateProjectInput["mediaSettings"]
+    });
+    // Named in no picture at all: the sheet is the only door the reader's face has into a page.
+    expect(names(characterReferenceCastFromDraft(saved("user-1/beaver.png"), river, draft({})))).toEqual(["Beaver"]);
+    expect(characterReferenceCastFromDraft(saved(), river, draft({}))).toEqual([]);
+  });
+
+  it("decides an empty cast rather than no cast, and decides nothing off the illustrated path", () => {
+    expect(characterReferenceCastFromDraft(picture, river, draft({}))).toEqual([]);
+    const coverOnly = { ...picture, mediaSettings: { ...picture.mediaSettings, fullIllustrations: false, coverArtSource: "ai" as const } };
+    expect(characterReferenceCastFromDraft(coverOnly, river, draft({}))).toBeUndefined();
+    expect(characterReferenceCastFromDraft(picture, castPlan([]), draft({}))).toBeUndefined();
+  });
+
+  it("matches a non-Latin name the way the page selection does", () => {
+    const persian = castPlan(["مهتاب", "رستم"]);
+    const [first, second] = drawn as [number, number];
+    const pages = draft({
+      [first]: "نقاشی نرم: مهتاب کنار رودخانه سنگ صافش را می‌جوید.",
+      [second]: "مهتاب و رستم زیر نور غروب روی ساحل نشسته‌اند."
+    });
+    expect(names(characterReferenceCastFromDraft(picture, persian, pages))).toEqual(["مهتاب"]);
   });
 });

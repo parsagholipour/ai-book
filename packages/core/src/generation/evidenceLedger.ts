@@ -26,7 +26,7 @@ import { inferWritingMode } from "./styleContract.js";
 
 export const EVIDENCE_LEDGER_WRITING_MODES: readonly WritingMode[] = ["analytical-history", "instructional"];
 
-export type EvidenceLedgerAudience = "producer" | "repair" | "critic" | "writer" | "reviewer";
+export type EvidenceLedgerAudience = "producer" | "critic" | "writer" | "reviewer";
 
 export type EvidenceLedgerFields = {
   claim?: string;
@@ -36,11 +36,6 @@ export type EvidenceLedgerFields = {
 const PRODUCER_RULES = [
   "For every page also return claim, the one bounded claim the page establishes in a single sentence, and evidenceAnchors, two to four specific cases, sources, dates, artefacts, or figures the page argues from.",
   "No two pages of a chapter may share an evidence anchor or make the same claim: each page owns its anchors, and a later page advances, challenges, or applies an earlier claim with different evidence."
-];
-
-const REPAIR_RULES = [
-  ...PRODUCER_RULES,
-  "The repaired claim must differ from every claim on pageScope.previousChapterPageBriefs and futureChapterPageBriefs, and the repaired evidenceAnchors must not reuse any anchor those briefs carry."
 ];
 
 const CRITIC_RULES = [
@@ -57,7 +52,6 @@ const REVIEWER_RULES = [
 
 const RULES_BY_AUDIENCE: Record<EvidenceLedgerAudience, readonly string[]> = {
   producer: PRODUCER_RULES,
-  repair: REPAIR_RULES,
   critic: CRITIC_RULES,
   writer: WRITER_RULES,
   reviewer: REVIEWER_RULES

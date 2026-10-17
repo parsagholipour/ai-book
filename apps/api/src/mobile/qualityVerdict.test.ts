@@ -189,3 +189,44 @@ describe("qualityForReader", () => {
     expect(reader.issues.map((entry) => entry.code)).toEqual(["MISSING_BRIEF_REQUIREMENT"]);
   });
 });
+
+describe("a split report on the wire", () => {
+  // Built by the worker's own grader, so the shape is the one a compile stores.
+  const stored = async () => {
+    const { buildManuscriptQualityReport } = await import("@book-maker/core");
+    return buildManuscriptQualityReport([
+      {
+        code: "PROMPT_LEAKAGE", severity: "error", source: "deterministic",
+        message: "Page 3 appears to expose generation instructions or hidden prompt text: “system prompt”.",
+        guidance: "Regenerate this page without internal instructions.", affectedPageIndexes: [3],
+        evidence: [{ pageIndex: 3, excerpt: "system prompt" }]
+      },
+      { code: "CHAPTER_LENGTH_SHORTFALL", severity: "error", source: "deterministic", message: "Chapter 2 is 40 words short.",
+        guidance: "Develop the chapter.", affectedPageIndexes: [5, 6] }
+    ], [{ code: "WHOLE_BOOK_REVIEW", severity: "warning", source: "model", message: "Page 7: The pacing sags.",
+      guidance: "Review page 7.", affectedPageIndexes: [7] }], { finalReviewRan: true });
+  };
+
+  it("gives the console both halves and the app the reader's findings alone, in the fields installed builds read", async () => {
+    const { normalizeProjectQuality } = await import("../projectStatus.js");
+    const operator = normalizeProjectQuality(await stored());
+    expect(operator).toMatchObject({ state: "review_recommended", score: 95, affectedPageIndexes: [3] });
+    expect(operator.issues.map((entry) => [entry.code, entry.severity])).toEqual([["PROMPT_LEAKAGE", "warning"]]);
+    expect(operator.diagnosticIssues?.map((entry) => entry.code)).toEqual(["CHAPTER_LENGTH_SHORTFALL", "WHOLE_BOOK_REVIEW"]);
+
+    const reader = qualityForReader(operator, { epub: { available: false }, docx: { available: false } });
+    expect(reader).not.toHaveProperty("diagnosticIssues");
+    expect(reader).toMatchObject({ state: "review_recommended", score: 95, affectedPageIndexes: [3],
+      issues: [expect.objectContaining({ code: "PROMPT_LEAKAGE", severity: "warning", affectedPageIndexes: [3] })] });
+  });
+
+  it("serves a report made before the split exactly as it was graded", async () => {
+    const { normalizeProjectQuality } = await import("../projectStatus.js");
+    const legacy = normalizeProjectQuality({ state: "blocked", score: 82, affectedPageIndexes: [5, 6], checkedAt: "2026-01-01T00:00:00.000Z",
+      issues: [{ code: "CHAPTER_LENGTH_SHORTFALL", severity: "error", source: "deterministic", message: "Chapter 2 is short.",
+        guidance: "Develop it.", affectedPageIndexes: [5, 6] }] });
+    expect(legacy).not.toHaveProperty("diagnosticIssues");
+    expect(qualityForReader(legacy, { epub: { available: true }, docx: { available: true } }))
+      .toMatchObject({ state: "blocked", issues: [expect.objectContaining({ code: "CHAPTER_LENGTH_SHORTFALL" })] });
+  });
+});

@@ -45,8 +45,6 @@ const mocks = vi.hoisted(() => {
     heartbeatStop: vi.fn(async () => undefined),
     claimAppliedEditPublication: vi.fn(async () => true),
     restoreEditProjectStatus: vi.fn(async () => true),
-    keeperStoryExtractForSave: vi.fn(async () => null),
-    persistStoryExtract: vi.fn(async () => null),
     publishTextEditManuscript: vi.fn(async () => ({
       identity: {
         projectId: "project-1", operationId: "op-1", planVersionId: "plan-1",
@@ -101,8 +99,6 @@ vi.mock("../generation/storyStateStore.js", () => ({
   loadProjectStoryState: vi.fn(async () => ({ promises: [], facts: [], entities: {}, unanswered: [] }))
 }));
 vi.mock("../generation/qualityEnrichment.js", () => ({
-  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-  persistStoryExtract: mocks.persistStoryExtract
 }));
 vi.mock("../generation/textEditLease.js", () => ({
   assertTextEditLeaseTx: mocks.assertTextEditLeaseTx,

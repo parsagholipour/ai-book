@@ -1,4 +1,4 @@
-import { GENERATION_JOB_QUEUES, type GenerationJobQueueName, type JobLane } from "./jobLanes.js";
+import { GENERATION_JOB_QUEUES, JOB_LANE_NAMES, type GenerationJobQueueName, type JobLane } from "./jobLanes.js";
 
 /*
  * A worker lane's proof of life, written by the worker
@@ -63,13 +63,13 @@ export function parseWorkerHeartbeat(raw: string | null | undefined): WorkerHear
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
   const { lane, queue, pid, host, startedAt, beatAt, running, concurrency } = record;
-  if (lane !== "long" && lane !== "interactive") return null;
+  if (typeof lane !== "string" || !(JOB_LANE_NAMES as readonly string[]).includes(lane)) return null;
   if (typeof queue !== "string" || !(GENERATION_JOB_QUEUES as readonly string[]).includes(queue)) return null;
   if (typeof startedAt !== "string" || Number.isNaN(Date.parse(startedAt))) return null;
   if (typeof beatAt !== "string" || Number.isNaN(Date.parse(beatAt))) return null;
   if (![pid, running, concurrency].every((number) => typeof number === "number" && Number.isFinite(number))) return null;
   return {
-    lane,
+    lane: lane as JobLane,
     queue: queue as GenerationJobQueueName,
     pid: pid as number,
     host: typeof host === "string" ? host : "",

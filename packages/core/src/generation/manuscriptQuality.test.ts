@@ -19,7 +19,7 @@ describe("persistent manuscript quality gate", () => {
     }
   });
 
-  it("blocks publication for deterministic integrity failures", () => {
+  it("files deterministic integrity failures for the console and blocks nothing it has not measured", () => {
     const issues = runDeterministicManuscriptChecks({
       expectedPageCount: 2,
       pages: [
@@ -28,20 +28,21 @@ describe("persistent manuscript quality gate", () => {
     });
     const report = buildManuscriptQualityReport(issues, [], { finalReviewRan: true });
 
-    expect(report.state).toBe("blocked");
+    // Neither type has a measured precision (`readerFindings.ts`), so the reader
+    // sees a pass and the console every error, which the repair pass still targets.
+    expect(report.state).toBe("passed");
+    expect(report.readerFindings).toEqual([]);
     expect(report.issues.map((issue) => issue.code)).toEqual(
       expect.arrayContaining(["PAGE_COUNT_MISMATCH", "PLACEHOLDER_TEXT"])
     );
-    expect(report.affectedPageIndexes).toContain(1);
+    expect(report.affectedPageIndexes).toEqual([]);
   });
 
-  it("surfaces an unpaid-promise warning as a review recommendation, never a block", () => {
+  it("files an unpaid-promise warning for the console, never the reader's grade", () => {
     const report = buildManuscriptQualityReport([unpaidPromise()], [], { finalReviewRan: true });
 
-    // A deterministic warning used to leave the state "passed", which hid the
-    // issue from every reader of the state field; it now recommends review
-    // exactly like a model warning does, and still never blocks.
-    expect(report.state).toBe("review_recommended");
+    // 4 of 10 labelled real (2026-10-15): a diagnostic.
+    expect(report.state).toBe("passed");
     expect(report.issues).toHaveLength(1);
     expect(report.issues[0]?.code).toBe("UNPAID_PROMISE");
   });
@@ -61,20 +62,20 @@ describe("persistent manuscript quality gate", () => {
     // Still recorded: the compile saw it, and the job row is where an operator
     // reads what it saw. Only the state is the claim the app acts on.
     expect(report.issues.map((issue) => issue.code)).toEqual(["UNPAID_PROMISE"]);
-    expect(report.affectedPageIndexes).toEqual([12]);
+    expect(report.affectedPageIndexes).toEqual([]);
   });
 
-  it("recommends review for an initial compile warning even when model review did not run", () => {
+  it("keeps the warnings gate over the reader's findings: a diagnostic never speaks either way", () => {
     const report = buildManuscriptQualityReport([unpaidPromise()], [], {
       finalReviewRan: false,
       deterministicWarningsAffectVerdict: true
     });
 
-    expect(report.state).toBe("review_recommended");
+    expect(report.state).toBe("passed");
     expect(report.issues.map((issue) => issue.code)).toEqual(["UNPAID_PROMISE"]);
   });
 
-  it("blocks an integrity error whether or not the final review ran", () => {
+  it("blocks nobody on an unmeasured integrity error, whether or not the final review ran", () => {
     for (const finalReviewRan of [true, false]) {
       const report = buildManuscriptQualityReport(
         runDeterministicManuscriptChecks({
@@ -85,11 +86,12 @@ describe("persistent manuscript quality gate", () => {
         { finalReviewRan }
       );
 
-      expect(report.state, `finalReviewRan=${finalReviewRan}`).toBe("blocked");
+      expect(report.state, `finalReviewRan=${finalReviewRan}`).toBe("passed");
+      expect(report.issues.map((issue) => issue.severity)).toContain("error");
     }
   });
 
-  it("keeps model-only concerns non-blocking", () => {
+  it("files model-only concerns for the console", () => {
     const report = buildManuscriptQualityReport([], [
       {
         code: "CHAPTER_TRANSITION",
@@ -101,11 +103,12 @@ describe("persistent manuscript quality gate", () => {
       }
     ], { finalReviewRan: true });
 
-    expect(report.state).toBe("review_recommended");
-    expect(report.affectedPageIndexes).toEqual([4, 5]);
+    expect(report.state).toBe("passed");
+    expect(report.affectedPageIndexes).toEqual([]);
+    expect(report.issues.map((issue) => issue.affectedPageIndexes)).toEqual([[4, 5]]);
   });
 
-  it("blocks a high-confidence corroborated structural error from the model path", () => {
+  it("files a high-confidence corroborated structural error for the console, never a block", () => {
     const report = buildManuscriptQualityReport(
       [],
       [
@@ -121,10 +124,11 @@ describe("persistent manuscript quality gate", () => {
       { finalReviewRan: true }
     );
 
-    expect(report.state).toBe("blocked");
+    expect(report.state).toBe("passed");
+    expect(report.issues[0]?.severity).toBe("error");
   });
 
-  it("keeps a medium-confidence corroborated structural finding advisory", () => {
+  it("keeps a medium-confidence corroborated structural finding on the console", () => {
     const report = buildManuscriptQualityReport(
       [],
       [
@@ -140,10 +144,10 @@ describe("persistent manuscript quality gate", () => {
       { finalReviewRan: true }
     );
 
-    expect(report.state).toBe("review_recommended");
+    expect(report.state).toBe("passed");
   });
 
-  it("blocks when appending a corroborated structural error onto a passed report", () => {
+  it("appends a corroborated structural error to the console without blocking the reader", () => {
     const report = buildManuscriptQualityReport([], [], { finalReviewRan: true });
     const blocked = appendQualityIssue(report, {
       code: "CORROBORATED_STRUCTURAL_DUPLICATION",
@@ -153,7 +157,8 @@ describe("persistent manuscript quality gate", () => {
       guidance: "Review the duplicates in Edit Mode.",
       affectedPageIndexes: [1, 2, 3]
     });
-    expect(blocked.state).toBe("blocked");
+    expect(blocked.state).toBe("passed");
+    expect(blocked.issues.map((issue) => issue.code)).toEqual(["CORROBORATED_STRUCTURAL_DUPLICATION"]);
   });
 
   it("passes a complete clean manuscript", () => {
@@ -199,7 +204,7 @@ describe("persistent manuscript quality gate", () => {
       },
       {
         code: "PROMPT_LEAKAGE",
-        message: "Page 2 appears to expose generation instructions or hidden prompt text."
+        message: "Page 2 appears to expose generation instructions or hidden prompt text: “system prompt”."
       },
       {
         code: "PLACEHOLDER_TEXT",
@@ -214,9 +219,12 @@ describe("persistent manuscript quality gate", () => {
         message: "Page 2 references a citation that has no matching definition."
       }
     ]);
+    // The leak is the one finding a reader is shown, quoted and capped at a warning.
     expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: true })).toMatchObject({
-      state: "blocked",
-      score: 0
+      state: "review_recommended",
+      score: 95,
+      readerFindings: [expect.objectContaining({ code: "PROMPT_LEAKAGE", severity: "warning",
+        evidence: [{ pageIndex: 2, excerpt: "system prompt" }] })]
     });
   });
 
@@ -286,8 +294,9 @@ describe("persistent manuscript quality gate", () => {
       affectedPageIndexes: []
     });
 
-    expect(degraded.state).toBe("review_recommended");
-    expect(degraded.score).toBe(95);
+    // A pipeline status is the console's: the reader's grade does not move.
+    expect(degraded.state).toBe("passed");
+    expect(degraded.score).toBe(100);
     expect(degraded.issues.map((issue) => issue.code)).toContain("EPUB_EXPORT_FAILED");
     // The original report is not mutated.
     expect(report.state).toBe("passed");
@@ -295,11 +304,14 @@ describe("persistent manuscript quality gate", () => {
   });
 
   it("never improves the state when appending to a blocked report", () => {
-    const blocked = buildManuscriptQualityReport(
-      runDeterministicManuscriptChecks({ expectedPageCount: 1, pages: [] }),
-      [],
-      { finalReviewRan: true }
-    );
+    // A report made before the split grades every issue, as it always did.
+    const blocked = {
+      state: "blocked" as const,
+      score: 82,
+      issues: runDeterministicManuscriptChecks({ expectedPageCount: 1, pages: [] }),
+      affectedPageIndexes: [],
+      checkedAt: "2026-01-01T00:00:00.000Z"
+    };
 
     const appended = appendQualityIssue(blocked, {
       code: "EPUB_EXPORT_FAILED",
@@ -333,7 +345,8 @@ describe("book-level repetition warnings", () => {
     expect(repeated).toHaveLength(1);
     expect(repeated[0]?.severity).toBe("warning");
     expect(repeated[0]?.affectedPageIndexes).toEqual([3, 9, 15, 21, 27, 33]);
-    expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: true }).state).toBe("review_recommended");
+    // 6 of 15 labelled real (2026-10-15): the console's.
+    expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: true }).state).toBe("passed");
   });
 
   it("leaves a phrase on too few pages alone", () => {
@@ -371,7 +384,7 @@ describe("book-level repetition warnings", () => {
     expect(openings).toHaveLength(1);
     expect(openings[0]?.severity).toBe("warning");
     expect(openings[0]?.affectedPageIndexes).toEqual([2, 5, 8]);
-    expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: true }).state).toBe("review_recommended");
+    expect(buildManuscriptQualityReport(issues, [], { finalReviewRan: true }).state).toBe("passed");
   });
 
   it("passes an ordinary story book whose repetitions stay incidental", () => {

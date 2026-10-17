@@ -373,7 +373,13 @@ export const finalBookQaSchema = z.preprocess(
     focusedReview: z.object({
       rejectedFindings: z.number().int().nonnegative(),
       repairGroups: z.array(z.array(z.number().int().positive()).min(1).max(3)).max(8),
-      unverifiedRepairPageIndexes: z.array(z.number().int().positive()).optional()
+      unverifiedRepairPageIndexes: z.array(z.number().int().positive()).optional(),
+      /** The grounded findings behind `repairGroups`: the compile repair reads their evidence pages and figure quotes. */
+      findings: z.array(z.object({
+        targets: z.array(z.number().int().positive()).min(1).max(3),
+        kind: z.string(), problem: z.string(), fix: z.string(),
+        evidence: z.array(z.object({ pageIndex: z.number().int().positive(), quote: z.string() })).max(12)
+      })).max(8).optional()
     }).optional()
   })
 );

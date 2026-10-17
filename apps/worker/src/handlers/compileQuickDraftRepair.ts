@@ -1,7 +1,8 @@
-import { hasFigureFence, isStopOrAbortError, pageQualityReportSchema, QuickDraftRepairRejectedError,
+import { isStopOrAbortError, pageQualityReportSchema, QuickDraftRepairRejectedError,
   repairQuickDraftPages, reviewQuickDraftPageLocally, uniqueStrings } from "@book-maker/core";
 import { deletePageEmbeddings, Prisma, prisma } from "@book-maker/db";
 import { loadPagesForExport } from "../generation/bookHelpers.js";
+import { quickDraftTargetMessages } from "../generation/quickDraftReviewPolicy.js";
 import { retireGeneratedPageIllustrations } from "../generation/pageIllustrationOwnership.js";
 import { assertJobNotStopped, advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
@@ -33,24 +34,27 @@ export async function repairQuickDraftFromFinalQa(options: Options, targets: Exp
   } else {
     for (const page of targets) if (await options.onRepairPageStarted?.(page.id, page.index) === false) return undefined;
   }
-  // Figures retain their existing owner; this narrow repair cannot safely rewrite figure syntax.
-  if (targets.some(page => hasFigureFence(page.markdown) || (!options.deferIllustrations &&
-      options.strategy.shouldIllustratePage(options.input, options.plan, page.index))))
-    return unavailable(new Error("Focused repair requires prose-only targets or deferred illustration finalization."));
-  const instructions = [...options.finalQa.issues, ...options.finalQa.requiredFixes];
+  // A picture is redrawn only when finalization is deferred; a figure is the repair's to patch (core `quickDraftRepairScope.ts`).
+  if (!options.deferIllustrations && targets.some(page => options.strategy.shouldIllustratePage(options.input, options.plan, page.index)))
+    return unavailable(new Error("Focused repair requires deferred illustration finalization for illustrated pages."));
+  const targetIndexes = new Set(targets.map(page => page.index));
+  // The screen's grounded findings carry their own problem, fix and evidence; only a review stored before
+  // they were kept falls back to its "Page N:" messages. Either way, only the targets' own complaints.
+  const findings = (options.finalQa.focusedReview?.findings ?? []).filter(finding => finding.targets.some(index => targetIndexes.has(index)));
+  const instructions = options.finalQa.focusedReview?.findings ? [] : quickDraftTargetMessages(options.finalQa, targetIndexes);
   for (const page of targets) {
     const stored = pageQualityReportSchema.safeParse(page.qualityReport);
     if (stored.success && !stored.data.approved) instructions.push(...stored.data.issues, ...stored.data.requiredRevisions);
   }
   for (const issue of options.additionalRepairIssues ?? [])
     if (issue.affectedPageIndexes.some(index => targets.some(page => page.index === index))) instructions.push(issue.message, issue.guidance);
-  if (!instructions.length) return unavailable(new Error("No concrete repair instructions were recorded."));
+  if (!instructions.length && !findings.length) return unavailable(new Error("No concrete repair instructions were recorded."));
   await advanceJobStep(options.generationJobId, "qa", 35, `Checking a focused repair for pages ${targets.map(page => page.index).join(", ")}`);
   let candidate: Awaited<ReturnType<typeof repairQuickDraftPages>>;
   try {
     candidate = await repairQuickDraftPages({ input: options.input, plan: options.plan,
       pages: options.pages.map(({ index, title, markdown, summary }) => ({ index, title, markdown, summary })),
-      targetPageIndexes: targets.map(page => page.index), instruction: uniqueStrings(instructions).join("\n"),
+      targetPageIndexes: targets.map(page => page.index), instruction: uniqueStrings(instructions).join("\n"), findings,
       textModel: options.providers.text, assertActive: active });
   } catch (error) {
     if (isStopOrAbortError(error) || error instanceof ExportRepairSupersededError || error instanceof ExportRepairFenceUnreadableError) throw error;

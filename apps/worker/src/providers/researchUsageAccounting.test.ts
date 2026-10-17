@@ -80,3 +80,22 @@ it("charges no fee and claims nothing for a search that cited nothing", async ()
     metadata: expect.objectContaining({ groundedPrompt: false, groundingFeeUsd: 0, groundingUnits: 0 })
   }) });
 });
+
+it("writes a failed search's row as a failed call of unknown usage and grounding, claiming no allowance", async () => {
+  const inner = new GeminiResearchAdapter({ apiKey: "fixture", textModel: "gemini-2.5-flash" });
+  Object.assign(inner, { ai: { models: { generateContent: async () => { throw new Error("Invalid argument: bad request"); } } } });
+  const logger = createRunLogger({ id: "grounding", name: "generate-book", data: { projectId: "p", generationJobId: "job" } } as Parameters<typeof createRunLogger>[0]);
+
+  await expect(new LoggingResearchAdapter(inner, logger, "job", "p").search({ query: "ISO 1161", purpose: "case-source-search" })).rejects.toThrow("Invalid argument");
+
+  // Google may have grounded the prompt before it failed, so the call is on the books; it takes no place in the free allowance.
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(prisma.providerCallLog.create).toHaveBeenCalledTimes(1);
+  const { data } = vi.mocked(prisma.providerCallLog.create).mock.calls[0]![0] as { data: { costHint: unknown; metadata: Record<string, unknown> } & Record<string, unknown> };
+  expect(data).toMatchObject({ projectId: "p", generationJobId: "job", provider: "gemini", model: "gemini-2.5-flash", purpose: "case-source-search", costHint: null });
+  // `liveStatus: failed` is the Costs and Operations tabs' failed bucket, never estimated or unrated.
+  expect(data.metadata).toMatchObject({ operation: "research.search", liveStatus: "failed", costStatus: "unknown_usage", provisional: true, groundedPrompt: "unknown", usageUnavailableReason: "provider_error" });
+  // No fee field, so the grounding summary does not count it as an unpriced grounded call.
+  expect(data.metadata).not.toHaveProperty("groundingFeeUsd");
+  expect(data.metadata).not.toHaveProperty("groundingOrdinal");
+});

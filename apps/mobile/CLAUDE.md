@@ -443,6 +443,11 @@ at once:
   as `apps/api/src/mobile/projectStatusSerializers.ts` writes it; the count is the server's and the
   words are the app's (`waitingInLineLabel`). A missing key is a book that is not waiting, so an
   older server simply shows no line.
+- **The time-left wire.** `MobilePlanningProgress.fromJson` and `MobileGenerationProgress.fromJson`
+  read `estimatedSecondsLeft` as `apps/api/src/mobile/projectStatusSerializers.ts` writes it:
+  seconds left, never a clock time, and the words are the app's (`formatTimeLeft`). A missing,
+  null or non-numeric value is no estimate, so an older server shows no line. See "Time left" in
+  `lib/features/projects/CLAUDE.md`.
 - **The status-stream wire.** `statusStreamEnding` in
   `lib/features/projects/data/project_status_watch.dart` reads the `event: error` codes
   `apps/api/src/mobile/routes/status.ts` sends: `STATUS_STREAM_SESSION_ENDED` (the token the stream

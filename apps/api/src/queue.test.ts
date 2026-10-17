@@ -467,6 +467,21 @@ describe("stopping a run", () => {
     expect(mocks.updateMany).toHaveBeenCalled();
   });
 
+  it("stops a running composition prep and leaves its plan-ready book as it was (harness redesign H4)", async () => {
+    // An account suspension or the console's Stop on a book whose reader is still reading its plan.
+    mocks.projectUpdate.mockResolvedValue({ status: "PLAN_READY", contentRevision: 0 });
+    mocks.findMany.mockResolvedValue([
+      { id: "job-prep", bullJobId: null, status: "ACTIVE", type: "PREPARE_COMPOSITION", payload: { planId: "plan-1" }, attemptId: null }
+    ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.updateMany).toHaveBeenCalled();
+    expect(mocks.projectUpdateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: { status: "FAILED" } }));
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
   it("restores a stopped presentation reprint to its prior settled status without refunding", async () => {
     mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
     mocks.findMany.mockResolvedValue([

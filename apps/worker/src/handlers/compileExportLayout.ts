@@ -10,8 +10,8 @@ import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 
 export async function resolveCompileReaderLayout(options: {
   projectId: string; input: CreateProjectInput; plan: BookPlan; strategy: BookGenerationStrategy;
-  pages: ExportPageForRepair[]; textModel: TextModelAdapter; superseded: boolean;
-  detachedRepair: boolean; presentationOnly: boolean;
+  pages: ExportPageForRepair[]; textModel: TextModelAdapter;
+  superseded: boolean; detachedRepair: boolean; presentationOnly: boolean;
 }) {
   const { projectId, input, plan, pages, detachedRepair, presentationOnly } = options;
   const publishedMarkdown = detachedRepair || presentationOnly

@@ -1,5 +1,4 @@
-import { styleAuditedScoreBeats, type PageDraft, type PageQualityReport, type ChapterBrief } from "@book-maker/core";
-import type { RepairedPageBrief } from "./pageReviewRecovery.js";
+import { styleAuditedScoreBeats, type PageDraft, type PageQualityReport } from "@book-maker/core";
 
 export type DraftCandidate = { draft: PageDraft; revision: number; report: PageQualityReport };
 
@@ -26,26 +25,5 @@ export type PageQualityLoopOutcome = {
   revision: number;
   /** Total candidates/attempts consumed, whichever draft was kept. */
   attempts: number;
-  /**
-   * This chapter's brief with the page's brief repair merged in, present only
-   * when the page kept a draft that repair briefed — the same condition the
-   * durable `Chapter.productionBrief` write is taken on, decided once below.
-   *
-   * A caller that briefs the chapter's *other* pages from one copy of the brief
-   * (the book passes, whose `ChapterSetup.brief` is one object per chapter; the
-   * compile's repair pass, which parses one per chapter) rebinds its copy to
-   * this and so hands the chapter's later pages the assignment this page
-   * actually delivered. A caller drafting one page per job has nobody to tell
-   * and ignores it. Absent is the safe answer either way: the caller keeps the
-   * brief it had, which is what the row keeps too.
-   */
-  repairedChapterBrief?: ChapterBrief | undefined;
-  /**
-   * The durable half of a kept brief repair, present only when the caller asked
-   * to publish it with its own page write. The function accepts that caller's
-   * transaction client, keeping the CAS implementation behind this narrow
-   * seam rather than exposing chapter-row details here.
-   */
-  pendingBriefRepair?: NonNullable<RepairedPageBrief["persist"]> | undefined;
 };
 

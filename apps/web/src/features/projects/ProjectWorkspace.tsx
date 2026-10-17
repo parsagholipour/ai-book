@@ -16,6 +16,7 @@ import { normalizePlanMessages } from "../planning/planMessages.js";
 import type { NormalizedPlanQuestion, QuestionResponse } from "../planning/planQuestions.js";
 import { PreviewsSection } from "../previews/PreviewsSection.js";
 import { CompositionSection } from "./CompositionSection.js";
+import { QualitySection } from "./QualitySection.js";
 import { Metric } from "../shared/Metric.js";
 import { formatLiveTokenCount } from "../shared/formatters.js";
 import { VoiceCallBar, VoiceCharactersPanel, VoiceRoomBar } from "../voice/VoiceComponents.js";
@@ -226,6 +227,8 @@ export function ProjectWorkspace(props: {
           </div>
 
           <CompositionSection details={props.selectedDetails} />
+
+          <QualitySection quality={props.selectedStatus?.quality} />
 
           <PreviewsSection
             selectedProject={selectedProject}

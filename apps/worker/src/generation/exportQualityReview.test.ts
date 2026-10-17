@@ -7,7 +7,6 @@ import {
   clipQualityTextSuffix,
   qualityIssuesFromFinalQa
 } from "./exportQualityReview.js";
-import { extractRepairPageIndexes } from "./finalQaPageTargets.js";
 
 // No module mocks: both modules under test are pure text. `exportQualityReview`
 // reached the per-message extractor through `bookHelpers`, which opens the
@@ -32,22 +31,6 @@ describe("the export quality formatter's dependencies", () => {
     // The collection helper's narrow core subpath has an empty runtime closure;
     // the core barrel remains a type-only import and is erased.
     expect(runtimeImports).toEqual(["./finalQaPageTargets.js", "@book-maker/core/collections"]);
-  });
-
-  it("leaves the repair's page targets one exported name", async () => {
-    // `bookHelpers.ts` re-exported `extractRepairPageIndexes` so
-    // `compileExportRepair.ts` could import it from there and the compile suites
-    // could stub it there — a second name for one function, and a module
-    // boundary kept alive by a `vi.mock` target. The consumer takes it from the
-    // module that defines it, and the suites mock that module instead.
-    const [bookHelpers, repair] = await Promise.all([
-      readFile(new URL("bookHelpers.ts", import.meta.url), "utf8"),
-      readFile(new URL("../handlers/compileExportRepair.ts", import.meta.url), "utf8")
-    ]);
-    expect(bookHelpers).not.toMatch(/export\s*\{[^}]*extractRepairPageIndexes/);
-    expect(repair).toMatch(
-      /import\s*\{[^}]*\bextractRepairPageIndexes\b[^}]*\}\s*from\s*"\.\.\/generation\/finalQaPageTargets\.js"/
-    );
   });
 });
 
@@ -178,11 +161,9 @@ describe("qualityIssuesFromFinalQa", () => {
   it.each([
     ["The book ends abruptly and resolves nothing.", 20],
     ["The opening reads as a definition of the topic.", 1]
-  ])("shows no page for %j while the repair pass still redrafts page %i", (message, repairTarget) => {
-    // The two questions the shared extractor makes look like one. The reader is
-    // shown nothing, because the edge heuristics are a guess about a complaint
-    // that named no page; the repair pass still redrafts on that guess, because
-    // it must rewrite *something* and the message says which end.
+  ])("shows no page for %j, a complaint that names none (page %i is only a guess)", (message) => {
+    // The reader is shown nothing, because a page for a complaint that named
+    // none would be a guess about which end it meant.
     const finalQa: FinalBookQa = {
       approved: false,
       score: 55,
@@ -192,6 +173,5 @@ describe("qualityIssuesFromFinalQa", () => {
     };
 
     expect(qualityIssuesFromFinalQa(finalQa, 20)[0]?.affectedPageIndexes).toEqual([]);
-    expect(extractRepairPageIndexes(finalQa, 20)).toEqual([repairTarget]);
   });
 });

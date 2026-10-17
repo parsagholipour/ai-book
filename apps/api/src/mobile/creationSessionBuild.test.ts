@@ -626,7 +626,6 @@ describe("mobile creation session project build", () => {
       mediaSettings: expect.objectContaining({
         fullIllustrations: true,
         includeCover: true,
-        finalReview: true,
         draftCandidates: 1,
         generationStrategy: "auto",
         mobile: expect.objectContaining({
@@ -721,7 +720,6 @@ describe("mobile creation session project build", () => {
       complexity: 4,
       temperature: 0.65,
       mediaSettings: expect.objectContaining({
-        finalReview: false,
         includeCover: false,
         fullIllustrations: false,
         generationStrategy: "auto",
@@ -735,7 +733,7 @@ describe("mobile creation session project build", () => {
       targetPages: 28,
       complexity: 5,
       temperature: 0.65,
-      mediaSettings: expect.objectContaining({ finalReview: true, draftCandidates: 1, modelTier: "balanced" })
+      mediaSettings: expect.objectContaining({ draftCandidates: 1, modelTier: "balanced" })
     });
     // Premium's value is the model tier; best-of drafting stays off because no
     // mobile length routes to the strategy that reads it — Ultra is the tier
@@ -746,7 +744,6 @@ describe("mobile creation session project build", () => {
       complexity: 6,
       temperature: 0.55,
       mediaSettings: expect.objectContaining({
-        finalReview: true,
         draftCandidates: 1,
         modelTier: "premium"
       })
@@ -757,12 +754,13 @@ describe("mobile creation session project build", () => {
       complexity: 7,
       temperature: 0.55,
       mediaSettings: expect.objectContaining({
-        finalReview: true,
         draftCandidates: 2,
         modelTier: "ultra"
       })
     });
     expect((premium.mediaSettings as Record<string, unknown>).parallelPageGeneration).toBeUndefined();
+    // The retired final-review flag is written by no preset (2026-10-16): the defect screen is the tier's gate.
+    for (const book of [fast, balanced, premium, ultra]) expect((book.mediaSettings as Record<string, unknown>).finalReview).toBeUndefined();
     expect((ultra.mediaSettings as Record<string, unknown>).parallelPageGeneration).toBeUndefined();
     // Mobile inputs carry a tier name, never a concrete provider/model selection.
     expect(JSON.stringify({ fast, balanced, premium, ultra })).not.toMatch(/provider|textModel|imageModel/);

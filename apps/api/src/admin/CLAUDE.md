@@ -55,6 +55,17 @@ but calls from before that, and any made on a direct provider token, are not.
   means list price always. Each row records its `groundingAllowance`, so the table shows what each
   period was priced under even after the setting changes. A grounded row on a model with no
   grounding rate has a null `costHint` and counts as unrated, never as priced on its tokens alone.
+  **A search that fails is a failed call row, its grounding unknown, and it claims no place in the
+  free allowance.** It used to leave a
+  run-log line and no row, so the failures were missing from the Costs and Operations tabs,
+  although Google may bill a prompt that grounded before the deadline or the error. The worker's
+  `LoggingResearchAdapter` now writes one row per failed request (retries included):
+  `liveStatus: "failed"`, `costStatus: "unknown_usage"`, `usageUnavailableReason:
+  "provider_error"`, `groundedPrompt: "unknown"`, no tokens and a null `costHint`. That puts it in
+  the failed bucket of both tabs, never estimated or unrated. It carries no `groundingFeeUsd`, so
+  the grounding summary does not count it as an unpriced grounded call, and it claims no ordinal
+  in the free allowance, since nothing says it used one. The API's creation-chat search still
+  writes nothing for a failure.
 
 - **Every provider call row names the user it was spent for, and a voice call's usage is recorded
   from the provider's own token counts.** A per-reader daily cost cap is a `SUM("costHint")` over

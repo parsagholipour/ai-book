@@ -1,5 +1,5 @@
 import type { FastifyReply } from "fastify";
-import { LONG_LANE_CAPABLE_JOB_TYPES, PAYLOAD_LANED_JOB_TYPES, jobLaneClass } from "@book-maker/core";
+import { BOOK_WORK_JOB_TYPES, PAYLOAD_LANED_JOB_TYPES, isBookWork, jobLaneClass } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { hasActiveSubscriptionEntitlement } from "@book-maker/db/billing";
 import { sendChatPayload } from "./chatStreaming.js";
@@ -27,8 +27,9 @@ import { sendChatPayload } from "./chatStreaming.js";
  * "In progress" is read off the durable `GenerationJob` rows, classified by the
  * same lane map the enqueue sides route by, so a book whose only open job is an
  * edit's re-typeset (interactive) does not count against it, and a book whose
- * generation compile is still waiting does. The book being started is never
- * counted against itself. It is a check, not a lock: two approvals racing in
+ * pictures or generation compile are still waiting does — those run in the image
+ * and compile lanes now, beside the long one, but the book is still being made
+ * (`isBookWork`). The book being started is never counted against itself. It is a check, not a lock: two approvals racing in
  * the same instant can both pass it, which costs one extra book in line, never
  * money.
  */
@@ -48,7 +49,7 @@ export async function longLaneBooksInProgress(userId: string, exceptProjectIds: 
   const rows = await prisma.generationJob.findMany({
     where: {
       status: { in: ["QUEUED", "ACTIVE"] },
-      type: { in: [...LONG_LANE_CAPABLE_JOB_TYPES] },
+      type: { in: [...BOOK_WORK_JOB_TYPES] },
       project: { userId },
       ...(exceptProjectIds.length > 0 ? { projectId: { notIn: [...exceptProjectIds] } } : {})
     },
@@ -59,7 +60,7 @@ export async function longLaneBooksInProgress(userId: string, exceptProjectIds: 
     if (!row.projectId) continue;
     const payload = (PAYLOAD_LANED_JOB_TYPES as readonly string[]).includes(row.type) ? row.payload : null;
     const laneClass = jobLaneClass(row.type, payload);
-    if (laneClass && laneClass !== "interactive") books.add(row.projectId);
+    if (laneClass && isBookWork(laneClass)) books.add(row.projectId);
   }
   return books;
 }
@@ -113,11 +114,15 @@ export async function requireBooksInProgressCapacity(
   return false;
 }
 
-/** Whether any of these rows would take the long lane — the resume door asks before gating. */
+/**
+ * Whether any of these rows would be book work — the long lane, or a
+ * generation's pictures or compile — which the resume door asks before gating:
+ * a retry that redraws a book's pictures puts that book back in progress.
+ */
 export function startsLongLaneWork(jobs: ReadonlyArray<{ type: string; payload: unknown }>): boolean {
   return jobs.some((job) => {
     const laneClass = jobLaneClass(job.type, job.payload);
-    return laneClass !== null && laneClass !== "interactive";
+    return laneClass !== null && isBookWork(laneClass);
   });
 }
 

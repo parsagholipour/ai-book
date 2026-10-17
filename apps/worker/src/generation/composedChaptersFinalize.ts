@@ -1,11 +1,9 @@
-import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
 import {
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
-  type PageDraft,
   type ProviderSet,
-  chapterCaseEvidence, mapWithConcurrency, reviewChapterCaseEvidence, reviewSourceClaims, stripFigureFences
+  chapterCaseEvidence, reviewChapterCaseEvidence, reviewSourceClaims, stripFigureFences
 } from "@book-maker/core";
 import { prisma, pageScope } from "@book-maker/db";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
@@ -21,9 +19,6 @@ import {
   publishStagedGeneratedPage,
   stageGeneratedPageAndBrief
 } from "./pagePublication.js";
-import { keeperStoryExtractForSave, persistStoryExtract } from "./qualityEnrichment.js";
-import { loadQualityContext } from "./qualitySettings.js";
-import { loadProjectStoryState } from "./storyStateStore.js";
 import { reviewWholeBookDraftPages } from "./wholeBookPageReview.js";
 
 /**
@@ -115,7 +110,6 @@ export async function finalizePendingPages(options: {
     start = end;
   }
 
-  const keepers: Array<{ pageIndex: number; draft: PageDraft; revised: boolean }> = [];
   for (const [offset, page] of reviewed.entries()) {
     const pageIndex = page.draft.index;
     const existing = await loadGeneratedPagePublicationSnapshot(projectId, pageIndex);
@@ -134,7 +128,6 @@ export async function finalizePendingPages(options: {
       revision: page.revision,
       qualityReport: page.qualityReport,
       status: approved ? (willIllustrate ? "GENERATING" : "COMPLETED") : "FAILED_QA",
-      pendingBriefRepair: undefined,
       existingPage: existing
     });
     if (approved && !willIllustrate && page.draft.continuityNotes.length > 0) {
@@ -165,7 +158,6 @@ export async function finalizePendingPages(options: {
         throw new GeneratedPagePublicationClaimLostError(pageIndex);
       }
     }
-    if (approved) keepers.push({ pageIndex, draft: page.draft, revised: page.revision > 1 });
     if ((offset + 1) % 10 === 0) {
       await updateJobProgress(generationJobId, {
         progress: 76 + Math.round(((offset + 1) / reviewed.length) * 6),
@@ -173,63 +165,4 @@ export async function finalizePendingPages(options: {
       });
     }
   }
-  await persistChapterStoryDeltas({ projectId, input, plan, providers, generationJobId, keepers, chapterIdByIndex });
 }
-
-/**
- * The story state: one extraction per approved page as before, but a
- * chapter's pages are extracted together against the state the chapter
- * started from, then applied in page order. One after another, the calls
- * were 140 of a Quick Draft guide's 610 seconds (2026-09-30), and every
- * chapter was already written, so nothing downstream was waiting on the
- * state they built. A page no longer sees what an earlier page of its own
- * chapter added: a repeat is merged on apply where the state keys it
- * (promises, entities) and appended where it does not (facts).
- */
-export async function persistChapterStoryDeltas(options: {
-  projectId: string;
-  input: CreateProjectInput;
-  plan: BookPlan;
-  providers: ProviderSet;
-  generationJobId?: string | undefined;
-  keepers: ReadonlyArray<{ pageIndex: number; draft: PageDraft; revised: boolean }>;
-  chapterIdByIndex: ReadonlyMap<number, string>;
-}): Promise<void> {
-  const { projectId, input, plan, keepers } = options;
-  const quality = quickDraftPageQuality(input, await loadQualityContext(input));
-  if (keepers.length === 0 || !quality.enabled("storyExtractAudit")) return;
-  // `storyNotesTogether` (Quick Draft): one window for the whole book, so
-  // every page is extracted at once against the state the book opened with.
-  const together = quality.enabled("storyNotesTogether");
-  const chapters: Array<typeof keepers[number][]> = [];
-  for (const keeper of keepers) {
-    const chapterId = options.chapterIdByIndex.get(keeper.pageIndex);
-    const last = chapters.at(-1);
-    if (last && (together || options.chapterIdByIndex.get(last[0]!.pageIndex) === chapterId)) last.push(keeper);
-    else chapters.push([keeper]);
-  }
-  let currentState = await loadProjectStoryState(projectId, plan.promises ?? []);
-  let done = 0;
-  for (const pages of chapters) {
-    const chapterState = currentState;
-    const extracts = await mapWithConcurrency(pages, together ? BOOK_STORY_EXTRACT_CONCURRENCY : STORY_EXTRACT_CONCURRENCY, (page) => keeperStoryExtractForSave({
-      projectId, pageIndex: page.pageIndex, draft: page.draft, textModel: options.providers.text, plan, input,
-      previousExtract: null, keeperWasRevised: page.revised, currentState: chapterState, quality
-    }));
-    for (const [offset, extract] of extracts.entries()) {
-      if (!extract) continue;
-      const nextState = await persistStoryExtract({ projectId, pageIndex: pages[offset]!.pageIndex, plan, extract });
-      if (nextState) currentState = nextState;
-    }
-    done += pages.length;
-    await updateJobProgress(options.generationJobId, {
-      progress: 82 + Math.round((done / keepers.length) * 6),
-      message: `Noted the story state of ${done}/${keepers.length} pages`
-    });
-  }
-}
-
-/** Calls in flight within one chapter's extraction. */
-const STORY_EXTRACT_CONCURRENCY = 6;
-/** Calls in flight when the whole book is one window: a 20–30 page book's pages in two or three rounds. */
-const BOOK_STORY_EXTRACT_CONCURRENCY = 12;

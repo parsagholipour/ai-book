@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { repairChapterArithmetic, arithmeticRepairNotes, type ArithmeticCorrection } from "./composedArithmeticRepair.js";
-import { StopRequestedError } from "../runtime/jobTypes.js";
 
 type Edit = (markdown: string, correction: ArithmeticCorrection) => Promise<string>;
 
@@ -62,47 +61,4 @@ it("does not spend a repair on grouped integers from the Balanced RSA chapter", 
   const edit = vi.fn<Edit>(async () => markdown);
   expect(await repairChapterArithmetic({ markdown, edit, degenerate: () => false })).toBeUndefined();
   expect(edit).not.toHaveBeenCalled();
-});
-
-describe("the prose's arithmetic beside the math's", () => {
-  const prose = "After rent of $1,200 and electricity of $110 from $800, only $290 remains.";
-  const fixedProse = prose.replace("only $290 remains", "the month is $510 short");
-  const finding = { quote: "only $290 remains", reason: "800 - 1200 - 110 = -510, not 290." };
-
-  it("retains disputed calculations for review without authorizing an automatic edit", async () => {
-    const disputed = { ...finding, reviewOnly: true as const };
-    const edit = vi.fn<Edit>();
-    expect(await repairChapterArithmetic({ markdown: prose, edit, degenerate: () => false,
-      proseFindings: async () => [disputed] })).toMatchObject({
-      markdown: prose, findings: 1, repairs: 0, unresolved: [disputed]
-    });
-    expect(edit).not.toHaveBeenCalled();
-  });
-
-  it("repairs confirmed math while retaining disputed prose omitted by a later check", async () => {
-    const disputed = { ...finding, reviewOnly: true as const };
-    const edit = vi.fn<Edit>(async () => right + prose);
-    let checks = 0;
-    const result = await repairChapterArithmetic({ markdown: wrong + prose, edit, degenerate: () => false,
-      proseFindings: async () => ++checks === 1 ? [disputed] : [] });
-    expect(result).toMatchObject({ markdown: right + prose, repairs: 1, unresolved: [disputed] });
-    expect(edit.mock.calls[0]![1].instructions.join(" ")).not.toContain(finding.quote);
-  });
-
-  it("repairs a verified prose error, asks once for the first review and again only for the edited text", async () => {
-    const proseFindings = vi.fn(async (markdown: string) => (markdown.includes("$290") ? [finding] : []));
-    const edit = vi.fn<Edit>(async () => fixedProse);
-    const repair = await repairChapterArithmetic({ markdown: prose, edit, degenerate: () => false, proseFindings });
-    expect(repair).toMatchObject({ markdown: fixedProse, findings: 1, repairs: 1, unresolved: [] });
-    expect(edit.mock.calls[0]![1].computations).toEqual([finding.reason]);
-    expect(proseFindings.mock.calls.map(([markdown]) => markdown)).toEqual([prose, fixedProse]);
-  });
-
-  it("treats a failed prose check as no findings and lets a stop through", async () => {
-    const edit = vi.fn<Edit>();
-    expect(await repairChapterArithmetic({ markdown: prose, edit, degenerate: () => false, proseFindings: async () => { throw new Error("provider down"); } })).toBeUndefined();
-    const stop = new StopRequestedError();
-    await expect(repairChapterArithmetic({ markdown: prose, edit, degenerate: () => false, proseFindings: async () => { throw stop; } })).rejects.toBe(stop);
-    expect(edit).not.toHaveBeenCalled();
-  });
 });

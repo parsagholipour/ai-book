@@ -1,8 +1,8 @@
 import { Worker, type ConnectionOptions, type WorkerOptions } from "bullmq";
 import {
   GENERATION_JOB_RETENTION,
-  INTERACTIVE_JOB_QUEUE,
-  LONG_JOB_QUEUE,
+  JOB_LANE_NAMES,
+  queueNameForLane,
   type GenerationJobQueueName,
   type JobLane
 } from "@book-maker/core";
@@ -11,12 +11,14 @@ import type { RawWorkerJob } from "./jobPayloads.js";
 import { deliveryRowId, isStalledOutFailure, settleStalledOutDelivery } from "./lostDeliveries.js";
 
 /**
- * One BullMQ Worker per lane (`jobLanes.ts` in core), both in this process: a
- * long lane's books cannot hold the interactive lane's plans and edits, and
- * each lane has its own concurrency. The long lane consumes the original
- * `book-maker` queue, so whatever the previous release left there still runs.
+ * One BullMQ Worker per lane (`jobLanes.ts` in core), all five in this process:
+ * a long lane's books cannot hold the interactive lane's plans and edits, a
+ * book's pictures draw beside its text instead of after it, and each lane has
+ * its own concurrency. The long lane consumes the original `book-maker` queue,
+ * so whatever the previous release left there still runs — its pictures and
+ * compiles included, which simply take a long-lane slot one last time.
  *
- * Both lanes share one delivery guard, so a row reclaimed by BullMQ while it
+ * Every lane shares one delivery guard, so a row reclaimed by BullMQ while it
  * is still running here waits for the original whichever lane either copy is
  * in (`deliveryGuard.ts`).
  *
@@ -52,10 +54,10 @@ export const LANE_MAX_STALLED_COUNT = 5;
  */
 export const STALLED_OUT_QUIET_MS = LANE_LOCK_DURATION_MS / 2;
 
-const LANE_QUEUES: ReadonlyArray<[JobLane, GenerationJobQueueName]> = [
-  ["long", LONG_JOB_QUEUE],
-  ["interactive", INTERACTIVE_JOB_QUEUE]
-];
+const LANE_QUEUES: ReadonlyArray<[JobLane, GenerationJobQueueName]> = JOB_LANE_NAMES.map((lane) => [
+  lane,
+  queueNameForLane(lane)
+]);
 
 type LaneWorker = Pick<Worker, "name" | "on" | "close" | "isRunning">;
 
@@ -71,7 +73,7 @@ export type LaneWorkers = {
   /** `running` counts this lane's deliveries in flight in this process, for its heartbeat. */
   workers: ReadonlyArray<{ lane: JobLane; queueName: GenerationJobQueueName; worker: LaneWorker; running(): number }>;
   guard: DeliveryGuard;
-  /** Closes both together: each waits for its own running jobs, and the deploy's grace covers the slower lane. */
+  /** Closes every lane together: each waits for its own running jobs, and the deploy's grace covers the slowest. */
   close(): Promise<void>;
 };
 

@@ -55,10 +55,10 @@ describe("runCreationTurn", () => {
 
     // The same list the app draws before the server answers (creation_chat_helpers.dart).
     expect(turn.quickReplies).toEqual([
-      "A bedtime story for my 5-year-old",
-      "Lead magnet about pricing",
-      "Workbook for new coaches",
-      "Short story about a garden mystery"
+      "A bedtime story where my 5-year-old is the hero",
+      "A cozy mystery set in a seaside bakery",
+      "A beginner's guide to growing vegetables on a balcony",
+      "A 30-day workbook to stop overthinking"
     ]);
     for (const reply of turn.quickReplies) {
       expect(reply).not.toMatch(/\b(?:\d+|five)[ -]year[ -]olds\b|\bfor (?:kids|children)\b/i);
@@ -66,7 +66,9 @@ describe("runCreationTurn", () => {
   });
 
   it("reads the suggested bedtime story's reader off the age it names", () => {
-    const turn = deterministicCreationTurn({ messages: [{ role: "user", content: "A bedtime story for my 5-year-old" }] });
+    const turn = deterministicCreationTurn({
+      messages: [{ role: "user", content: "A bedtime story where my 5-year-old is the hero" }]
+    });
 
     expect(turn.brief.audience).toBe("5-year-old");
   });

@@ -29,7 +29,7 @@ beforeEach(() => {
 it("atomically adopts compatible artwork after the page claim and avoids another image job", async () => {
   const staged = await stageGeneratedPageAndBrief({ projectId: "project-1", chapterId: null, pageIndex: 1,
     draft, revision: 2, qualityReport: {} as never, status: "GENERATING", existingPage: existing,
-    pendingBriefRepair: undefined, illustrationContext: { input, plan, planId: "plan-1" } });
+    illustrationContext: { input, plan, planId: "plan-1" } });
   expect(staged.reusedIllustration).toBe(true);
   expect(mocks.transaction).toHaveBeenCalledOnce();
   expect(mocks.updatePage.mock.invocationCallOrder[0]).toBeLessThan(mocks.updateAsset.mock.invocationCallOrder[0]!);
@@ -43,7 +43,7 @@ it("cannot rebind an image after losing the exact page claim", async () => {
   mocks.updatePage.mockResolvedValue({ count: 0 });
   await expect(stageGeneratedPageAndBrief({ projectId: "project-1", chapterId: null, pageIndex: 1,
     draft, revision: 2, qualityReport: {} as never, status: "GENERATING", existingPage: existing,
-    pendingBriefRepair: undefined, illustrationContext: { input, plan, planId: "plan-1" } })).rejects.toThrow("publication claim");
+    illustrationContext: { input, plan, planId: "plan-1" } })).rejects.toThrow("publication claim");
   expect(mocks.updateAsset).not.toHaveBeenCalled();
   expect(mocks.enqueue).not.toHaveBeenCalled();
 });
@@ -52,7 +52,7 @@ it("refuses stale artwork when rewritten prose changes the scene but leaves its 
   const changedScene = { ...draft, markdown: "Rabbit waited alone beneath a tree. Turtle had stayed home." };
   const staged = await stageGeneratedPageAndBrief({ projectId: "project-1", chapterId: null, pageIndex: 1,
     draft: changedScene, revision: 2, qualityReport: {} as never, status: "GENERATING", existingPage: existing,
-    pendingBriefRepair: undefined, illustrationContext: { input, plan, planId: "plan-1" } });
+    illustrationContext: { input, plan, planId: "plan-1" } });
   expect(staged.reusedIllustration).not.toBe(true);
   expect(mocks.updateAsset).not.toHaveBeenCalled();
   expect(mocks.retire).toHaveBeenCalled();

@@ -46,13 +46,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -69,12 +62,17 @@ vi.mock("../generation/pageReview.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/pageReview.js")>("../generation/pageReview.js");
   return (await import("./testing/compileExportMocks.js")).pageReviewModuleMock(actual);
 });
+vi.mock("../generation/pageIllustrationOwnership.js", async () => {
+  const actual = await vi.importActual<typeof import("../generation/pageIllustrationOwnership.js")>("../generation/pageIllustrationOwnership.js");
+  return { ...actual, retireGeneratedPageIllustrations: vi.fn(actual.retireGeneratedPageIllustrations) };
+});
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return (await import("./testing/compileExportMocks.js")).coreModuleMock(actual);
 });
 
 import { exportRepairOwnershipFence } from "./compileExportFence.js";
+import { retireGeneratedPageIllustrations } from "../generation/pageIllustrationOwnership.js";
 import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { isDefaultCompileQualityFeature, mocks } from "./testing/compileExportMocks.js";
 
@@ -133,7 +131,6 @@ const strategy = {
   executionMode: "whole-book",
   reviewPageDraft: vi.fn(),
   revisePageDraft: vi.fn(),
-  repairPageBrief: vi.fn(),
   shouldIllustratePage: vi.fn(() => false)
 };
 const ownership = () => exportRepairOwnershipFence("project-1", 4)!;
@@ -165,7 +162,6 @@ describe("Quick Draft bounded patch repairs", () => {
     mocks.revisePageDraftWithRestart.mockResolvedValue(draft);
     strategy.revisePageDraft.mockResolvedValue(draft);
     strategy.reviewPageDraft.mockResolvedValue(approvedReport(true));
-    strategy.repairPageBrief.mockReset();
     strategy.shouldIllustratePage.mockReturnValue(false);
     mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       ...page(),
@@ -190,7 +186,6 @@ describe("Quick Draft bounded patch repairs", () => {
     expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
     expect(strategy.reviewPageDraft).not.toHaveBeenCalled();
     expect(strategy.revisePageDraft).not.toHaveBeenCalled();
-    expect(strategy.repairPageBrief).not.toHaveBeenCalled();
     patchCalls.mockClear();
     await repairPagesFromFinalQa({ ...options, shouldRepairPage: (id) => id !== "page-1" });
     expect(patchCalls).not.toHaveBeenCalled();
@@ -236,6 +231,63 @@ describe("Quick Draft bounded patch repairs", () => {
       "Pip points to the cave.", "The captain checks the cave."
     ]);
     expect(onRepairGroupPublished).toHaveBeenCalledOnce();
+  });
+
+  const flow = (to: string) => "```figure\n" + JSON.stringify({ kind: "flow", title: "Route", nodes: [
+    { id: "a", label: "Submit", shape: "start" }, { id: "b", label: "Admissible?", shape: "decision" },
+    { id: "c", label: "Approved", shape: "end" }, { id: "d", label: "Rejected", shape: "end" }],
+    edges: [{ from: "a", to: "b" }, { from: "b", to: "c", label: "Yes" }, { from: "b", to, label: "No" }], source: "Records" }) + "\n```";
+  function figureRepair(options: { illustrated?: boolean; deferIllustrations?: boolean } = {}) {
+    const quickInput = createProjectSchema.parse({ prompt: "How a proposal moves.", category: "SOCIETY", targetPages: 3, mediaSettings: { modelTier: "fast" } });
+    const pages = [1, 2, 3].map(index => ({ ...page(), id: `page-${index}`, index,
+      markdown: index === 2 ? `The proposal stops when it is inadmissible.\n\n${flow("c")}` : `Context page ${index}.` }));
+    const textModel = new FakeTextModelAdapter();
+    const generate = vi.spyOn(textModel, "generateJson").mockImplementation(async <T>(request: GenerateJsonOptions<T>) => {
+      const raw = request.purpose === "patch-page"
+        ? { pages: [{ pageIndex: 2, patches: [{ find: '{"from":"b","to":"c","label":"No"}', replace: '{"from":"b","to":"d","label":"No"}' }] }] }
+        : { targetChecks: [{ pageIndex: 2, resolved: true }], regressions: [] };
+      return { data: request.schema.parse(raw), text: JSON.stringify(raw), provider: "fixture", model: "fixture" };
+    });
+    strategy.shouldIllustratePage.mockReturnValue(options.illustrated ?? false);
+    const finding = { targets: [2], kind: "contradiction", problem: "The diagram approves an inadmissible proposal.", fix: "Route No to Rejected.",
+      evidence: [{ pageIndex: 2, quote: '{"from":"b","to":"c","label":"No"}' }, { pageIndex: 2, quote: "The proposal stops when it is inadmissible." }] };
+    const repair = repairOptions(pages[1]!, { input: quickInput, plan: makeFallbackPlan(quickInput), pages,
+      providers: { text: textModel, embedding: {} }, quality: quickDraftPageQuality(quickInput, { enabled: () => true }),
+      deferIllustrations: options.deferIllustrations ?? false,
+      finalQa: { ...finalQa, issues: ["Page 2: The diagram approves an inadmissible proposal.", "Page 3: An unrelated complaint."],
+        requiredFixes: ["Page 2: Route No to Rejected."],
+        // Page 3's complaint is a finding the screen could not ground: never a target, never an instruction.
+        focusedReview: { rejectedFindings: 1, repairGroups: [[2]], unverifiedRepairPageIndexes: [3], findings: [finding] } },
+      onRepairGroupStarted: vi.fn(async () => true), onRepairGroupPublished: vi.fn(), onRepairPageUnavailable: vi.fn() });
+    return { repair, generate, pages };
+  }
+
+  it("repairs a figure page's JSON, under a new revision that retires the page's earlier picture", async () => {
+    const { repair, generate, pages } = figureRepair();
+    await repairPagesFromFinalQa(repair);
+    expect(generate.mock.calls.map(([request]) => request.purpose)).toEqual(["patch-page", "final-book-qa"]);
+    const proposal = JSON.parse(generate.mock.calls[0]![0].messages[1]!.content);
+    // Only the targets' own complaints, and the finding that quotes the figure shows its JSON.
+    expect(proposal.instruction).toBe("");
+    expect(proposal.findings).toEqual([expect.objectContaining({ repairPages: [2], fix: "Route No to Rejected." })]);
+    expect(proposal.pages.find((p: { index: number }) => p.index === 2).markdown).toContain('"to":"c","label":"No"');
+    const write = mocks.prisma.page.update.mock.calls.map(([call]) => call).find((call) => call.where.id === "page-2")!;
+    expect(write.data.markdown).toBe(`The proposal stops when it is inadmissible.\n\n${flow("d")}`);
+    expect(write.data.revision).toEqual({ increment: 1 });
+    expect(vi.mocked(retireGeneratedPageIllustrations)).toHaveBeenCalledWith(expect.anything(),
+      expect.objectContaining({ pageIndex: 2, priorKeeper: expect.objectContaining({ pageId: "page-2", markdown: pages[1]!.markdown, revision: 1 }) }));
+  });
+
+  it("reaches an illustrated page once finalization defers its picture, and only then", async () => {
+    const deferred = figureRepair({ illustrated: true, deferIllustrations: true });
+    await repairPagesFromFinalQa(deferred.repair);
+    expect(deferred.generate).toHaveBeenCalledTimes(2);
+    vi.clearAllMocks();
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
+    const immediate = figureRepair({ illustrated: true, deferIllustrations: false });
+    await repairPagesFromFinalQa(immediate.repair);
+    expect(immediate.generate).not.toHaveBeenCalled();
+    expect(immediate.repair.onRepairPageUnavailable).toHaveBeenCalledOnce();
   });
 
   it("saves neither linked page when an untouched dependency changes during verification", async () => {

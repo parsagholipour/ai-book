@@ -131,7 +131,15 @@ export const mediaSettingsSchema = z.object({
    */
   coverArtSource: coverArtSourceSchema.optional(),
   coverTemplate: coverTemplateIdSchema.default("auto"),
-  finalReview: z.boolean().default(true),
+  /**
+   * Retired 2026-10-16: controls nothing. It used to ask for the compile's old
+   * final review (and, through it, deferred pictures, the short-book path and
+   * compact picture-book planning). The compile's one review is now the defect
+   * screen, decided by the `finalBookQa` gate and the book's kind
+   * (`usesCompileDefectScreen` in the worker). Stored rows keep the key; nothing
+   * writes or reads it.
+   */
+  finalReview: z.boolean().optional(),
   /**
    * Print the reader-facing Sources list at the end of the book. Unset leaves
    * the automatic source-forward decision in place (SCIENCE, HEALTH, BIOGRAPHY,
@@ -217,8 +225,8 @@ export type ToneProfile = z.infer<typeof toneProfileSchema>;
  * rather than a book this pipeline wrote.
  *
  * Page 1 of an imported manuscript is the author's own opening sentence, and
- * the gate above is not advisory: `runLocalFinalQa` hands its rejection to
- * `repairPagesFromFinalQa`, which model-redrafts the page in place. Nothing
+ * the gate above is not advisory: a page it fails is FAILED_QA and a target of
+ * the compile's repair, which model-redrafts the page in place. Nothing
  * generated that page — the writer instruction this check is the deterministic
  * twin of was never given to anyone for it — so a book that genuinely opens
  * "Have you ever wondered why your tap water tastes different in August?" would
@@ -229,11 +237,9 @@ export type ToneProfile = z.infer<typeof toneProfileSchema>;
  * from. Only the opening gate is skipped; the rest of local QA still runs, and
  * the final page's `hasVagueEnding` is left exactly as it was.
  *
- * **The model reviewers ask this too** (`pagesReview.ts`), because the local
- * gate returning no issue is precisely what stops `runFinalBookQa` returning
- * early — so an exemption spelled only here handed the author's opening to the
- * model that was instructed to reject it, which is worse than no exemption at
- * all.
+ * **The model reviewers ask this too** (`pagesReview.ts`), because an
+ * exemption spelled only here handed the author's opening to the model that was
+ * instructed to reject it, which is worse than no exemption at all.
  *
  * It takes the raw `mediaSettings` rather than a `CreateProjectInput` because
  * its consumers sit on both sides of that type: the page gates read it off an

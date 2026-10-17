@@ -10,7 +10,7 @@ vi.mock("./storyStateStore.js", () => ({
   loadProjectStoryState: vi.fn(), rebuildStoryStateFromPages: vi.fn(), persistPageStoryDelta: vi.fn()
 }));
 
-import { enrichPageQualityReport, revisedDraftStyleAuditor } from "./qualityEnrichment.js";
+import { revisedDraftStyleAuditor } from "./qualityEnrichment.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 
 const input = createProjectSchema.parse({ prompt: "A storm at sea", targetPages: 20 });
@@ -38,24 +38,17 @@ function fixture(choice = "clean") {
     quality: { enabled: (gate: string): boolean => gate === "styleAuditor" },
     userRequest: "Make page 12 more dramatic."
   };
-  const enrich = (overrides: Partial<typeof options> = {}) => enrichPageQualityReport({
-    ...options, ...overrides, input, pageIndex: 12, draft, report, previousPages: [], researchNotes: [],
-    storyState: { promises: [], facts: [], entities: {}, unanswered: [] }
-  });
-  return { options, enrich, choose, decisions, generateJson };
+  return { options, choose, decisions, generateJson };
 }
 
 describe("worker style screens", () => {
-  it("screens initial and revised pages with the same pinned context and requested edit", async () => {
+  it("screens a chat-rewritten page with the pinned context and the requested edit", async () => {
     const test = fixture();
-    const enriched = await test.enrich();
     const revised = await revisedDraftStyleAuditor(test.options)!(12, draft, report);
-    expect(enriched.report).toMatchObject({ approved: true, score: 90, stylePenalty: 0 });
     expect(revised).toMatchObject({ approved: true, score: 90, stylePenalty: 0 });
     expect(test.generateJson).not.toHaveBeenCalled();
-    expect(test.choose).toHaveBeenCalledTimes(2);
+    expect(test.choose).toHaveBeenCalledTimes(1);
     const initialContext = JSON.parse(test.choose.mock.calls[0]![0].context);
-    expect(JSON.parse(test.choose.mock.calls[1]![0].context)).toEqual(initialContext);
     expect(initialContext).toEqual({
       pageIndex: 12, pageRole: "body", markdown: "A wave struck.\n\nThe mast fell.",
       voiceGuide: plan.voiceGuide, antiAiRules: localStyleInstructions(plan),
@@ -91,17 +84,15 @@ describe("worker style screens", () => {
   it("never screens when the style gate is off or excerpts are absent", async () => {
     const test = fixture();
     for (const overrides of [{ quality: { enabled: () => false } }, { styleExcerpts: [] }]) {
-      expect((await test.enrich(overrides)).report).not.toHaveProperty("stylePenalty");
       expect(revisedDraftStyleAuditor({ ...test.options, ...overrides })).toBeUndefined();
     }
     expect(test.decisions.resolve).not.toHaveBeenCalled();
     expect(test.generateJson).not.toHaveBeenCalled();
   });
 
-  it.each([new StopRequestedError(), new DOMException("Cancelled", "AbortError")])("propagates %s through initial and revision enrichment", async (stop) => {
+  it.each([new StopRequestedError(), new DOMException("Cancelled", "AbortError")])("propagates %s through the revision audit", async (stop) => {
     const test = fixture();
     test.choose.mockRejectedValue(stop);
-    await expect(test.enrich()).rejects.toBe(stop);
     await expect(revisedDraftStyleAuditor(test.options)!(12, draft, report)).rejects.toBe(stop);
     expect(test.generateJson).not.toHaveBeenCalled();
   });

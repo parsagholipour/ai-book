@@ -29,7 +29,10 @@ it("shares five physical calls across fallback and network retry", async () => {
   const pair = new FallbackTextModelAdapter({
     primary: { adapter: primary, selection: { provider: "openai", model: "primary" } },
     fallback: { adapter: fallback, selection: { provider: "openai", model: "fallback" } },
-    shouldFallback: isTextProviderFallbackError
+    shouldFallback: isTextProviderFallbackError,
+    // Primary, primary, fallback, then primary, fallback: the same-model retry
+    // is one of the five, once per call, never a sixth.
+    primaryRetryDelayMs: () => 0
   });
   const adapter = Object.assign(Object.create(pair), {
     generateJson: <T>(options: Parameters<OpenAITextAdapter["generateJson"]>[0]) =>

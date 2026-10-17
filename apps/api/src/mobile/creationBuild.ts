@@ -33,7 +33,7 @@ import {
 } from "./dto.js";
 import { pageLimitRefusal, sendPageLimitExceeded } from "./bookPageLimit.js";
 import { sendInsufficientCredits, sendMobileError } from "./httpErrors.js";
-import { aiWorkKindForTier, sendAiCapacityRefusal } from "./aiCapacity.js";
+import { aiWorkKindForTier, sendAiCapacityRefusal, speculativeWorkAllowed } from "./aiCapacity.js";
 import { ULTRA_TIER_UNAVAILABLE_MESSAGE, ultraTierRefused } from "./ultraTier.js";
 import { spendBreaker } from "../spendBreaker.js";
 import {
@@ -343,6 +343,8 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       return { ok: false, pageLimit };
     }
     const planQuote = planGenerationCreditCost(input);
+    // Whether the plan's composition prep may be queued after it (harness redesign H4): speculative, unbilled work.
+    const prepareComposition = await speculativeWorkAllowed(userId);
     let project: MobileProjectRecord | null = null;
     let output: MobileCreationOutputRecord;
     let operation: MobilePlanOperationDto | null = null;
@@ -401,7 +403,8 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
             attemptId,
             payload: {
               inputSnapshot: inputSnapshotFromProject(createdProject),
-              ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
+              ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {}),
+              ...(prepareComposition ? { prepareComposition: true } : {})
             }
           });
           await tx.mobileCreationDraft.update({

@@ -11,7 +11,6 @@ import {
   inferWritingMode,
   isRepetitiveGlobalGuidance,
   localStyleInstructions,
-  manuscriptPromptStyleFields,
   matchesUserParallelIntent,
   mergeStyleRulesById,
   pagePromptBookStyle,
@@ -551,51 +550,5 @@ describe("pagePromptBookStyle", () => {
     const prompt = pagePromptBookStyle(plan);
     expect(prompt.antiAiRules.join(" ")).toMatch(/Do not invent evidence/);
     expect(prompt.antiAiRules.join(" ")).not.toMatch(/same caveat construction/);
-  });
-});
-
-describe("manuscriptPromptStyleFields", () => {
-  it("keeps a stored parallel-structure distribution line unchanged", () => {
-    const instruction = "Ask the same questions throughout the book.";
-    const prompt = "Use deliberate parallel structure and the same questions throughout every chapter.";
-    const applied = applyPlanStyleContract(
-      {
-        ...withoutStoredContract(makeFallbackPlan(testInput({ prompt }))),
-        antiAiRules: [instruction]
-      },
-      { userPrompt: prompt, input: testInput({ prompt }) }
-    );
-    expect(applied.styleContract?.distributionRules.some((rule) => rule.instruction === instruction)).toBe(true);
-
-    const fields = manuscriptPromptStyleFields(applied);
-    expect(fields.distributionRules).toContain(instruction);
-    expect(fields.distributionRules.join(" ")).not.toMatch(/chapter where it is assigned/i);
-  });
-
-  it("still exposes the chapter-scoped rewrite when the user did not ask for parallel structure", () => {
-    const instruction = "Ask the same questions throughout the book on every era.";
-    const applied = applyPlanStyleContract(
-      {
-        ...withoutStoredContract(makeFallbackPlan(testInput())),
-        antiAiRules: [instruction]
-      },
-      { input: testInput({ prompt: "A survey of irrigation across eras" }) }
-    );
-
-    const fields = manuscriptPromptStyleFields(applied);
-    expect(fields.distributionRules.join(" ")).toMatch(/chapter where it is assigned/i);
-    expect(fields.distributionRules).not.toContain(instruction);
-  });
-
-  it("rewrites repetitive guidance on a legacy plan with no stored contract", () => {
-    const instruction = "Ask the same questions throughout the book on every era.";
-    const raw = makeFallbackPlan(testInput({ category: "HISTORY", prompt: "A history of the Indus cities" }));
-    const { styleContract: _dropped, writingMode: _mode, ...legacy } = raw;
-    const fields = manuscriptPromptStyleFields({
-      ...legacy,
-      antiAiRules: [instruction]
-    });
-    expect(fields.distributionRules.join(" ")).toMatch(/chapter where it is assigned/i);
-    expect(fields.distributionRules).not.toContain(instruction);
   });
 });

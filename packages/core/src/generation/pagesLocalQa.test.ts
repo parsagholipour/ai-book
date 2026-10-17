@@ -343,7 +343,7 @@ describe("first-page opening gate", () => {
   });
 
   it("leaves an imported manuscript's own first sentence alone", () => {
-    // runLocalFinalQa feeds this rejection to repairPagesFromFinalQa, which
+    // A page this rejects is FAILED_QA and a target of the compile's repair, which
     // model-redrafts the page in place — so on an import the gate rewrote the
     // author's opening line for breaking a writer instruction nothing had ever
     // been given. The generated twin below is the control: the sentence is the

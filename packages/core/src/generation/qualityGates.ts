@@ -51,19 +51,12 @@ export const QUALITY_FEATURE_IDS = [
   "pageModelReview",
   "pageQaRewrite",
   "finalBookQa",
-  "storyExtractAudit",
-  "planCritic",
-  "claimVerifier",
   "changedCandidateGrounding",
   "compactPageDraftContext",
   "styleExcerpts",
   "styleAuditor",
-  "pageMapCritic",
-  "beatDedup",
   "writerTools",
-  "bestOfPolish",
   "planThinkingBoost",
-  "claimRetrieve",
   "chapterEditorPass",
   "chapterEditAcceptance",
   "manuscriptReadPass",
@@ -72,20 +65,52 @@ export const QUALITY_FEATURE_IDS = [
   "developmentalEdit",
   "creativeContract",
   "materialFirst",
-  "coupletRewrite",
   "chapterApparatus",
   "figures",
   "chapterFocus",
   "manuscriptReadCuts",
-  "formPlanRepair",
-  "storyNotesTogether",
   "wideSourceGathering",
-  "proseArithmeticCheck",
   "chapterFactLedger",
   "briefCoverageReview"
 ] as const;
 
 export type QualityFeatureId = (typeof QUALITY_FEATURE_IDS)[number];
+
+/**
+ * Gates deleted from the table that a stored revision may still carry. They
+ * control nothing: `parseQualityFeatureSettings` ignores them like any unknown
+ * id, and the API leaves them out of what it serves and of every revision it
+ * writes, so the console never draws them as a newer server's gate.
+ * `coupletRewrite` was retired on 2026-09-06 and had no reader left. The E4
+ * review audit (2026-10-16, `.scratch/eval-data/reports/e4-review-audit.md`)
+ * removed four more on every tier under the owner's rule — a review, edit or
+ * critic that improves books by 5–10% or not at all is deleted, not kept on
+ * Premium or Ultra unmeasured — and their code with them: `planCritic` (blind
+ * readers preferred the book without its patch, 2 wins / 3 ties / 8 losses),
+ * `bestOfPolish` (the judge's pick against the draft without best-of, 5/8/6),
+ * `formPlanRepair` (repaired vs rotation-only form plan, 4/4/9) and
+ * `proseArithmeticCheck` (a defect screen that fixed a real error in 0 of 48
+ * books).
+ * The E5 sweep (2026-10-16, `.scratch/eval-data/reports/e5-final-review-sweep.md`)
+ * removed two more: `pageMapCritic` (the critic that patched a page map before
+ * drafting; the short book drafted from its patched map against the one drafted
+ * from the map it was handed, 5 wins / 7 ties / 6 losses over 41 books) and
+ * `beatDedup` (a checkbox no code read: the collision rewrite it was named for
+ * is mandatory map integrity and always runs). `claimVerifier` and
+ * `claimRetrieve`, shelved since 2026-09-30, went with the per-page review chain
+ * that was their only reader: no generated page is model-reviewed on any tier
+ * since E5, so neither could switch anything any more.
+ * E6 (2026-10-16, `.scratch/eval-data/reports/e6-story-memory.md`) removed
+ * `storyExtractAudit` — story memory, the per-page extract later pages read as
+ * the book's story state — after a continuation drafted with it lost to the same
+ * continuation drafted from the plan's promises alone, 7 wins / 4 ties / 10
+ * losses (stopped at 21 of 30 pairs), and `storyNotesTogether`, which only
+ * scheduled those extracts.
+ */
+export const REMOVED_QUALITY_FEATURE_IDS: readonly string[] = [
+  "coupletRewrite", "planCritic", "bestOfPolish", "formPlanRepair", "proseArithmeticCheck",
+  "pageMapCritic", "beatDedup", "claimVerifier", "claimRetrieve", "storyExtractAudit", "storyNotesTogether"
+];
 
 /**
  * Integrity that cannot be disabled by model tier or operator checkboxes.
@@ -146,39 +171,47 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   // Detection is deterministic. It hands a failed report to the existing page
   // QA rewrite loop, so there is no extra model call unless the prose actually
   // contains a significant cluster of AI-writing tells.
+  // These three, and `styleAuditor`, switch a reader's chat page rewrite only
+  // (its review → revise loop): no generated page is model-reviewed, rewritten,
+  // unslopped or style-audited on any tier since 2026-10-16 (E4 short books, E5
+  // every other page generation drafts). `pageQaRewrite` also switches the
+  // compile's scoped repair and a composed page's integrity revise.
   smartUnslop: ["ultra", "premium", "balanced", "fast"],
   pageModelReview: ["ultra", "premium", "balanced", "fast"],
   pageQaRewrite: ["ultra", "premium", "balanced", "fast"],
+  // The defect screen: the compile's one review, on every tier, over the books it was measured on
+  // (`usesCompileDefectScreen` in the worker). It fixed a real reader-visible defect in 23% of Quick Draft
+  // books and 36% of Balanced composed ones (H7), and in 2 of 17 Quick Draft short-book drafts with 4 of 4
+  // repairs preferred, while on 13 Balanced short-book drafts it found nothing (H7b, 2026-10-16). The
+  // owner's bar: a model defect screen stays only where it fixes such a defect in at least 10% of books.
   finalBookQa: ["ultra", "premium", "balanced", "fast"],
-  storyExtractAudit: ["ultra", "premium", "balanced", "fast"],
-  planCritic: ["ultra", "premium", "balanced"],
   // Claim and source verification is off by default on every tier (2026-09-30:
   // best-looking books over token-spending checks; see SOURCE_CLAIM_REVIEW in
-  // apps/worker/src/generation/sourceClaimState.ts). The checkboxes remain.
-  claimVerifier: [],
+  // apps/worker/src/generation/sourceClaimState.ts). Shelved: the console offers
+  // no tier boxes. It rechecks a reader's chat page rewrite only.
   changedCandidateGrounding: [],
   compactPageDraftContext: ["balanced", "fast"],
   styleExcerpts: ["ultra", "premium", "balanced", "fast"],
   styleAuditor: ["ultra", "premium", "balanced"],
-  pageMapCritic: ["ultra", "premium"],
-  // Detection is deterministic and free. The optional rewrite call this flag
-  // used to imply still runs as mandatory map integrity; this checkbox is
-  // retained so operators can see the polish row without disabling integrity.
-  beatDedup: ["ultra", "premium", "balanced", "fast"],
   writerTools: ["ultra"],
-  bestOfPolish: ["ultra"],
   planThinkingBoost: [],
-  claimRetrieve: [],
-  // Composed-chapters strategy only. One prose call per chapter each; the
-  // read is one call per book. Both replace the per-page review loop.
-  chapterEditorPass: ["ultra", "premium", "balanced", "fast"],
-  // Quick Draft trades both for speed (Parsa, 2026-09-30): the acceptance
-  // review is 7–30 s of every chapter's finish and paced the chapter loop;
-  // the read is 30–45 s after the last chapter.
+  // Retired 2026-10-16 with the composed line edit it switched (see its
+  // description): `qualityFeatureEnabled` answers false whatever a stored
+  // revision lists, so this default only fills the key a revision may lack.
+  chapterEditorPass: [],
+  // Composed chapters: the whole-chapter review of a repair's factual
+  // correction and of the manuscript read's cuts. Quick Draft trades it for
+  // speed (Parsa, 2026-09-30): 7–30 s of a chapter's finish.
   chapterEditAcceptance: ["ultra", "premium", "balanced"],
-  manuscriptReadPass: ["ultra", "premium", "balanced"],
+  // Off on every tier (2026-10-16): a stage that moves a book by under 5–10% is
+  // removed (the owner's rule), and E3 measured Balanced's read and cuts
+  // changing 0.75% of a book's words in 20 of 37 books, 2–8 minutes after the
+  // last chapter. The owner declined to keep it on Premium and Ultra unmeasured:
+  // a critic that does not help one writer is not kept for another in case.
+  manuscriptReadPass: [],
   // The September 5 live experiment regressed quality and runtime. These
   // stages require an explicit opt-in; older settings must not enable them.
+  // Shelved in the console, like chapterFocus below.
   bookDevelopment: [],
   caseEvidence: [],
   developmentalEdit: [],
@@ -189,7 +222,6 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   // against the grounded contract and the pre-audit pipeline (2026-09-30).
   creativeContract: ["ultra", "premium", "balanced", "fast"],
   materialFirst: [],
-  coupletRewrite: [],
   chapterApparatus: [],
   // No model call of its own: the form plan assigns the figure inside its
   // one call, the writer emits the block, the exporters draw it.
@@ -199,29 +231,24 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   // read's cut is affordable only where the book has room over its floor.
   // Off everywhere; the live revision opts in.
   chapterFocus: [],
+  // Needs the read, which Quick Draft and Balanced no longer make by default.
   manuscriptReadCuts: [],
-  // The form plan's second call, 30–60 s of a book's preparation. Without it
-  // the rotation settles forms but never landings; the one blind comparison
-  // (2026-09-30, three Quick Draft books each way) went 4–2 to the round that
-  // had it, inside run-to-run noise. Quick Draft skips it for speed.
-  formPlanRepair: ["ultra", "premium", "balanced"],
-  // Scheduling only, no prose changes: every page's story notes at once
-  // against the book's opening state instead of a chapter at a time (about
-  // 45 s → 10 s at finalize), and six chapters' sources gathered at once
+  // Scheduling only, no prose changes: six chapters' sources gathered at once
   // instead of three.
-  storyNotesTogether: ["fast"],
   wideSourceGathering: ["fast"],
-  // One call per chapter that has numbers, in the chapter's finish, which no
-  // longer paces the loop; an error it proposes is kept only when code agrees.
-  proseArithmeticCheck: ["ultra", "premium", "balanced", "fast"],
   // One short call per chapter; the next chapter's compose waits for it (2.5–4.7 s measured). Every
   // Quick Draft book of 2026-09-30 contradicted an earlier chapter's names, dates or figures.
   chapterFactLedger: ["ultra", "premium", "balanced", "fast"],
   // The compile's read of the finished book against the brief: 26–67 s after
   // the last chapter, on the critical path. On the 2026-09-30 Quick Draft
   // books it marked every requirement fulfilled, gaps the blind readers named
-  // included. Quick Draft skips it for speed (Parsa, 2026-10-01).
-  briefCoverageReview: ["ultra", "premium", "balanced"]
+  // included. Quick Draft skips it for speed (Parsa, 2026-10-01), and since
+  // 2026-10-15 no tier does: on Balanced it was 43–77 s of the compile, its
+  // findings are console diagnostics only, and labelled they were real 27%
+  // (MISSING_BRIEF_REQUIREMENT) and 40% (UNPAID_PROMISE) of the time. The owner
+  // declined to keep it on Premium and Ultra unmeasured (2026-10-16). The
+  // brief's asks still reach the form plan through the inventory.
+  briefCoverageReview: []
 };
 
 export type QualityFeatureDescription = {
@@ -230,6 +257,13 @@ export type QualityFeatureDescription = {
   summary: string;
   /** Saved revisions may retain this key, but it no longer controls a pipeline. */
   retired?: boolean;
+  /**
+   * Measured and off on every tier, its code kept for a later experiment. The
+   * console lists it apart and offers no tier boxes. A stored tier list still
+   * runs, because a revision is how an experiment opts one in
+   * (`scripts/dev-set-quality.ts`), so the console shows any it finds.
+   */
+  shelved?: boolean;
   /** The pipelines whose books this gate can change. */
   pipelines: readonly QualityPipeline[];
   /** Where in that pipeline it fires, as the console labels it. */
@@ -247,58 +281,38 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "smartUnslop",
     label: "Smart unslop",
-    summary: "Finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page.",
+    summary: "A reader's chat page rewrite only: finds significant deterministic slop candidates and, when Page QA rewrites is on, asks for a contextual minimal rewrite or an unchanged page. No generated page is rewritten for slop since 2026-10-16.",
     pipelines: ["per-page", "composed"],
-    stage: "Page checks"
+    stage: "Chat page rewrite"
   },
   {
     id: "pageModelReview",
     label: "Model page review",
-    summary: "Reviews each drafted page with the editor model. Quick Draft defers this to its focused whole-book review.",
-    pipelines: ["per-page"],
-    stage: "Page review"
+    summary: "Reviews a page a reader asked the chat to rewrite. No generated page is model-reviewed on any tier since 2026-10-16: the per-page chain lost to the raw draft 3 wins / 7 ties / 7 losses (E4), and E5 took it off every page generation drafts, continuations, inserts and replans included.",
+    pipelines: ["per-page", "composed"],
+    stage: "Chat page rewrite"
   },
   {
     id: "pageQaRewrite",
     label: "Page QA rewrites",
-    summary: "Revises failing pages. Quick Draft repairs at most three pages once each after its whole-book review. Off keeps the reviewed draft.",
+    summary: "Revises a page that failed: a reader's chat page rewrite after its review, a composed page whose integrity checks found a prompt leak or a placeholder, and the compile's scoped repair of what the defect screen proved. No generated page is rewritten over a review since 2026-10-16. Off keeps the draft.",
     pipelines: ["per-page", "composed"],
-    stage: "Page review"
+    stage: "Page repairs"
   },
   {
     id: "finalBookQa",
-    label: "Final book QA",
-    summary: "Final book review and targeted repair before export. Quick Draft runs one concrete-defect screen and one verification if repaired, including composed books. Deterministic manuscript checks remain active.",
+    label: "Defect screen",
+    summary: "The compile's one review: a concrete-defect screen of the whole book (contradictions, wrong arithmetic, duplicated or unfinished passages, leaked notes) and a scoped repair of at most three pages with one verification. It runs on every Quick Draft book and on every book composed by chapters; a short or per-page book on Balanced, Premium or Ultra is printed as drafted, because the screen found nothing to fix in those drafts. Deterministic manuscript checks always run.",
     pipelines: ["per-page", "composed"],
     stage: "Compile"
   },
   {
-    id: "storyExtractAudit",
-    label: "Story extract + audit",
-    summary: "Tracks promises, facts, and contradictions per page. Quick Draft defers this audit to its whole-book screen.",
-    pipelines: ["per-page", "composed"],
-    stage: "Page save"
-  },
-  {
-    id: "planCritic",
-    label: "Plan critic",
-    summary: "One cheap mechanical call per book that patches promises and repeated beats. Not a second planner.",
-    pipelines: ["planning"],
-    stage: "Plan"
-  },
-  {
-    id: "claimVerifier",
-    label: "Claim verifier (factual books)",
-    summary: "Checks page claims against loaded research notes. Kids and fiction skip the call even when this is on.",
-    pipelines: ["per-page"],
-    stage: "Page review"
-  },
-  {
     id: "changedCandidateGrounding",
+    shelved: true,
     label: "Changed candidate grounding",
-    summary: "Checks changed factual page candidates against supplied research and source passages. Jev flags and uncertainty go to the claim verifier; repairs stay within the page rewrite budget. Off skips this recheck only.",
-    pipelines: ["per-page"],
-    stage: "Page review"
+    summary: "Checks the changed factual candidates of a reader's chat page rewrite against supplied research and source passages; repairs stay within the rewrite's budget. Off skips this recheck only.",
+    pipelines: ["per-page", "composed"],
+    stage: "Chat page rewrite"
   },
   {
     id: "compactPageDraftContext",
@@ -317,35 +331,14 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "styleAuditor",
     label: "Style auditor",
-    summary: "One cheap mechanical call per page comparing prose to the pinned excerpts and voice guide.",
-    pipelines: ["per-page"],
-    stage: "Page review"
-  },
-  {
-    id: "pageMapCritic",
-    label: "Page-map critic",
-    summary: "Reviews and patches the page map. Short auto storybooks skip this extra pass when prose review is enabled. Mandatory map integrity always runs.",
-    pipelines: ["per-page"],
-    stage: "Page map"
-  },
-  {
-    id: "beatDedup",
-    label: "Page-beat rewrite (optional polish)",
-    summary: "One cheap rewrite call when a beat collision is found. Map integrity (coverage, generics, collisions) always runs and is not this checkbox.",
-    pipelines: ["per-page"],
-    stage: "Page map"
+    summary: "One cheap mechanical call comparing a reader's chat page rewrite to the pinned excerpts and voice guide. No generated page is style-audited since 2026-10-16.",
+    pipelines: ["per-page", "composed"],
+    stage: "Chat page rewrite"
   },
   {
     id: "writerTools",
     label: "Writer tools",
     summary: "Ultra-only tool loop (lookup page / entity / research) with at most two tool rounds plus a finish.",
-    pipelines: ["per-page"],
-    stage: "Page draft"
-  },
-  {
-    id: "bestOfPolish",
-    label: "Best-of-2 polish",
-    summary: "Samples two polish drafts and keeps the stronger one. Sequential page draft uses the same gate.",
     pipelines: ["per-page"],
     stage: "Page draft"
   },
@@ -358,45 +351,39 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     stage: "Plan"
   },
   {
-    id: "claimRetrieve",
-    label: "Failed-claim research retrieve",
-    summary: "When a factual page fails groundedOk, one embedding retrieve of stored research into the existing revise.",
-    pipelines: ["per-page"],
-    stage: "Page review"
-  },
-  {
     id: "chapterEditorPass",
-    label: "Chapter line edit (composed chapters)",
-    summary: "One editor call per composed chapter: cuts repeated caveats and restatements, varies paragraph shape, lets stated positions stand. Off keeps the first draft.",
-    pipelines: ["composed"],
+    retired: true,
+    label: "Chapter line edit (removed)",
+    summary: "Removed 2026-10-16: a composed chapter is printed as drafted, with no line-edit call and no review of one, on every tier. Blind readers preferred the draft to the edited chapter: fiction 6 wins, 11 ties, 13 losses for the edit; nonfiction 15/26/9, a tie; Quick Draft guides and workbooks 1/7/16, the edit adding recaps and restatements; Balanced ones 8/5/11 even with each change judged on its own. Repairs and cuts still run.",
+    pipelines: [],
     stage: "Chapter edit"
   },
   {
     id: "chapterEditAcceptance",
-    label: "Chapter edit semantic acceptance",
-    summary: "Checks meaning preservation and edit intent separately after chapter edits and deletion-only cuts. Jev judgments use one contextual review when uncertain; unresolved changes keep the original and its findings. Off skips semantic acceptance only.",
+    label: "Chapter repair and cut acceptance",
+    summary: "One contextual review of a composed chapter's arithmetic or evidence repair, judged against its computation or passages, and of each deletion-only cut the manuscript read makes; a change it does not pass keeps the original and its findings. Off keeps every repair and cut unreviewed. There is no line edit to review since 2026-10-16.",
     pipelines: ["composed"],
-    stage: "Chapter edit"
+    stage: "Chapter repairs"
   },
   {
     id: "manuscriptReadPass",
     label: "Whole-manuscript read (composed chapters)",
-    summary: "One read of the finished book returning per-chapter notes; at most a third of the chapters get a second line edit.",
+    summary: "One read of the finished book returning per-chapter notes, which the console shows and the read's cuts act on. Off on every tier since 2026-10-16: with its cuts it changed 0.75% of a Balanced book's words, in 20 of 37 books, for 2–8 minutes after the last chapter, under the 5–10% a stage has to move a book by.",
     pipelines: ["composed"],
     stage: "Manuscript read"
   },
   {
-    id: "bookDevelopment", label: "Research-led book planning",
+    id: "bookDevelopment", shelved: true, label: "Research-led book planning",
     summary: "Before a new nonfiction manuscript starts, redesigns chapter count, order and scope while checking requested coverage and distinct contributions. Requires reviewed case evidence even if that separate gate is off. Stored plans resume unchanged.",
     pipelines: ["composed"], stage: "Book development"
   },
   {
-    id: "caseEvidence", label: "Evidence for major cases",
+    id: "caseEvidence", shelved: true, label: "Evidence for major cases",
     summary: "Builds and independently checks case claims against retrieved passages, retries missing research, and checks the resulting prose before publication.",
     pipelines: ["composed"], stage: "Case evidence"
   },
   {
-    id: "developmentalEdit", label: "Developmental manuscript edit",
+    id: "developmentalEdit", shelved: true, label: "Developmental manuscript edit",
     summary: "A bounded edit of overlapping sections across nonfiction chapters, with source-backed replacements, coordinated moves and a whole-book word budget before the final line edit; replaces the legacy notes-only read for these runs.",
     pipelines: ["composed"], stage: "Developmental edit"
   },
@@ -410,22 +397,14 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   {
     id: "materialFirst",
     label: "Material first: episodes and a primary-source dossier (composed chapters)",
-    summary: "Plans two or three episodes per chapter, fetches verbatim public-domain text for them, and composes each chapter around its episodes with a code-checked quote guard.",
+    summary: "Inert for a real book: a book its author stance says is written from sources plans its episodes and gathers a dossier on every tier, and any other book gathers nothing either way. Only a MOCK_AI run reads it, where it lets a sourced book plan fake episodes and query the live catalogues.",
     pipelines: ["composed"],
     stage: "Compose chapter"
   },
   {
-    id: "coupletRewrite",
-    retired: true,
-    label: "Retired: pattern-driven couplet rewrite",
-    summary: "Compatibility key for saved revisions. Has no effect: contextual chapter editing handles prose; pattern matches never trigger rewrites or disclaimer deletion.",
-    pipelines: [],
-    stage: "Line edit"
-  },
-  {
     id: "chapterApparatus",
     label: "Chapter epigraphs from the dossier (composed chapters)",
-    summary: "Sets a verbatim, attributed epigraph from the chapter's primary-source dossier at the head of each chapter that has one, and lets no two consecutive chapters open on a told scene. No model call; needs Material first.",
+    summary: "Sets a verbatim, attributed epigraph from the chapter's primary-source dossier at the head of each chapter that has one, and lets no two consecutive chapters open on a told scene. No model call; needs a dossier, which only a book written from sources gathers.",
     pipelines: ["composed"],
     stage: "Paginate and describe"
   },
@@ -438,6 +417,7 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   },
   {
     id: "chapterFocus",
+    shelved: true,
     label: "Chapter focus: per-chapter question and investigation (composed chapters)",
     summary: "The episode planner also plans a question, investigation list and contribution per chapter, and the writer composes from them with the strict reconstruction rule and no separate scene call; off, the chapter is composed the rung-5 way from the stance and its episodes, with a told opening scene where the material has one. No extra model call either way.",
     pipelines: ["composed"],
@@ -451,32 +431,11 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
     stage: "Manuscript read"
   },
   {
-    id: "formPlanRepair",
-    label: "Form plan repair call (composed chapters)",
-    summary: "When the chapter form plan breaks a variety or shape rule, one more planner call to repair it before the deterministic rotation. Off, the rotation alone settles variety and shape issues are left standing.",
-    pipelines: ["composed"],
-    stage: "Chapter form plan"
-  },
-  {
-    id: "storyNotesTogether",
-    label: "Story notes for the whole book at once (composed chapters)",
-    summary: "At finalize, every page's story-state extraction runs at once against the book's opening state. Off, a chapter's pages run together against the state that chapter started from. Same calls either way; no effect on the prose.",
-    pipelines: ["composed"],
-    stage: "Finalize pages"
-  },
-  {
     id: "wideSourceGathering",
     label: "Gather six chapters' sources at once (composed chapters)",
     summary: "The dossier searches, fetches and extracts six chapters at a time instead of three, so the first chapter starts sooner. More load on the catalogue hosts at once; same calls.",
     pipelines: ["composed"],
     stage: "Compose chapter"
-  },
-  {
-    id: "proseArithmeticCheck",
-    label: "Arithmetic in the prose (composed chapters)",
-    summary: "One call per chapter with numbers proposes wrong totals, balances, rates and ratios in the prose; code keeps only those its own computation confirms, and the chapter's arithmetic repair corrects them. Runs beside the next chapter's drafting.",
-    pipelines: ["composed"],
-    stage: "Chapter edit"
   },
   {
     id: "chapterFactLedger",
@@ -487,9 +446,9 @@ export const QUALITY_FEATURES: QualityFeatureDescription[] = [
   },
   {
     id: "briefCoverageReview",
-    label: "Final check against the brief (composed chapters)",
-    summary: "At compile, one model read of the finished book checks each explicit ask in the brief and each plan promise, and reports what it finds missing. 26–67 s on the critical path. Off, the compile records no coverage verdict and no warning; the brief's asks still reach the form plan while the chapters are written.",
-    pipelines: ["composed"],
+    label: "Final check against the brief",
+    summary: "At compile, one model read of the finished book checks each explicit ask in the brief and each plan promise, and reports what it finds missing. 26–67 s on the critical path. Off, the compile records no coverage verdict and no warning, for a book either pipeline wrote; the brief's asks still reach the form plan while the chapters are written.",
+    pipelines: ["per-page", "composed"],
     stage: "Compile"
   }
 ];

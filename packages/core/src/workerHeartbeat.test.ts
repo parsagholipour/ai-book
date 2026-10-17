@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INTERACTIVE_JOB_QUEUE, LONG_JOB_QUEUE } from "./jobLanes.js";
+import { BACKGROUND_JOB_QUEUE, COMPILE_JOB_QUEUE, IMAGE_JOB_QUEUE, INTERACTIVE_JOB_QUEUE, LONG_JOB_QUEUE } from "./jobLanes.js";
 import {
   parseWorkerHeartbeat,
   WORKER_HEARTBEAT_INTERVAL_MS,
@@ -22,11 +22,17 @@ const beat: WorkerHeartbeat = {
 
 describe("worker heartbeat keys", () => {
   it("names one key per lane, outside BullMQ's own prefix", () => {
-    expect(WORKER_HEARTBEAT_KEYS).toEqual([workerHeartbeatKey(LONG_JOB_QUEUE), workerHeartbeatKey(INTERACTIVE_JOB_QUEUE)]);
+    expect(WORKER_HEARTBEAT_KEYS).toEqual([
+      workerHeartbeatKey(LONG_JOB_QUEUE),
+      workerHeartbeatKey(INTERACTIVE_JOB_QUEUE),
+      workerHeartbeatKey(IMAGE_JOB_QUEUE),
+      workerHeartbeatKey(COMPILE_JOB_QUEUE),
+      workerHeartbeatKey(BACKGROUND_JOB_QUEUE)
+    ]);
     for (const key of WORKER_HEARTBEAT_KEYS) {
       expect(key.startsWith("bull:")).toBe(false);
     }
-    expect(new Set(WORKER_HEARTBEAT_KEYS).size).toBe(2);
+    expect(new Set(WORKER_HEARTBEAT_KEYS).size).toBe(5);
   });
 
   it("outlives exactly three missed beats", () => {
@@ -37,6 +43,15 @@ describe("worker heartbeat keys", () => {
 describe("parseWorkerHeartbeat", () => {
   it("reads back what the worker writes", () => {
     expect(parseWorkerHeartbeat(JSON.stringify(beat))).toEqual(beat);
+  });
+
+  it("reads the image, compile and background lanes' beats", () => {
+    const images = { ...beat, lane: "images" as const, queue: IMAGE_JOB_QUEUE, concurrency: 4 };
+    const compile = { ...beat, lane: "compile" as const, queue: COMPILE_JOB_QUEUE, concurrency: 1 };
+    const background = { ...beat, lane: "background" as const, queue: BACKGROUND_JOB_QUEUE, concurrency: 4 };
+    expect(parseWorkerHeartbeat(JSON.stringify(images))).toEqual(images);
+    expect(parseWorkerHeartbeat(JSON.stringify(compile))).toEqual(compile);
+    expect(parseWorkerHeartbeat(JSON.stringify(background))).toEqual(background);
   });
 
   it.each([

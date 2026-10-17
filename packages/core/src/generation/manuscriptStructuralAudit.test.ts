@@ -61,7 +61,8 @@ describe("manuscript structural audit", () => {
       finalReviewRan: true,
       manuscriptPageCount: 120
     });
-    expect(report.state).toBe("review_recommended");
+    // Hedging labelled 4 of 15 real (2026-10-15): the console's, never the reader's grade.
+    expect(report.state).toBe("passed");
     expect(report.diagnostics?.wouldBlock).toBe(true);
     expect(report.diagnostics?.findings.some((finding) => finding.code === "SYMMETRICAL_HEDGING" && finding.wouldBlock)).toBe(
       true
@@ -109,7 +110,7 @@ describe("manuscript structural audit", () => {
       finalReviewRan: true,
       manuscriptPageCount: pages.length
     });
-    expect(report.state).toBe("review_recommended");
+    expect(report.state).toBe("passed");
     expect(report.diagnostics?.wouldBlock).toBe(true);
   });
 

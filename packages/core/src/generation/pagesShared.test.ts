@@ -10,10 +10,8 @@ import {
   generateChapterBrief,
   generatePageDraft,
   generateWholeBookDraft,
-  polishPageDraft,
   reviewPageDraft,
-  revisePageDraft,
-  runFinalBookQa
+  revisePageDraft
 } from "./pages.js";
 import {
   OPENING_QUALITY_RULE_MARKER,
@@ -722,25 +720,6 @@ describe("the opening contract, across every prompt that states it", () => {
       }
     },
     {
-      name: "polishPageDraft",
-      carriesOpeningHook: true,
-      async run({ input, plan, pageStart }) {
-        const capture = capturingModel(pageDraft);
-        await polishPageDraft({
-          input,
-          plan,
-          pageIndex: pageStart,
-          draft: { ...pageDraft, markdown: prose(pageStart) },
-          previousPages: [],
-          nextPages: [],
-          continuityNotes: [],
-          researchNotes: [],
-          textModel: capture.model
-        });
-        return capture.prompt;
-      }
-    },
-    {
       name: "revisePageDraft",
       carriesOpeningHook: true,
       async run({ input, plan, pageStart }) {
@@ -770,26 +749,6 @@ describe("the opening contract, across every prompt that states it", () => {
           draft: { ...pageDraft, markdown: prose(pageStart) },
           previousPages: [],
           continuityNotes: [],
-          textModel: capture.model
-        });
-        return capture.prompt;
-      }
-    },
-    {
-      name: "runFinalBookQa",
-      alwaysWritesFirstPage: true,
-      carriesOpeningHook: false,
-      async run({ input, plan }) {
-        const capture = capturingModel({ approved: true, score: 92, issues: [], requiredFixes: [], notes: "Approved." });
-        await runFinalBookQa({
-          input,
-          plan,
-          pages: range(1, input.targetPages).map((index) => ({
-            index,
-            title: `Page ${index}`,
-            markdown: prose(index),
-            summary: pageSummary(index)
-          })),
           textModel: capture.model
         });
         return capture.prompt;
@@ -837,7 +796,7 @@ describe("the opening contract, across every prompt that states it", () => {
     // Round five: the hook half used to be gated on the plan and on nothing
     // else, justified as "a repair's replacement page is generated prose". That
     // is true of the brief producers and false of every prompt below —
-    // `revisePageDraft` and `polishPageDraft` rewrite the page they are handed,
+    // `revisePageDraft` (and the page polish, removed 2026-10-16) rewrites the page it is handed,
     // in place, and a reader's "make page 1 sharper" reaches `revisePageDraft`
     // through `rewritePageForUserRequest`. An import's `openingHook` is invented
     // by a later plan revision that never saw page 1 (a fresh import's plan has

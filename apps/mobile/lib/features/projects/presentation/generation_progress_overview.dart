@@ -5,6 +5,7 @@ import '../../../shared/ui/motion.dart';
 import '../domain/project_models.dart';
 import 'plan_build_progress.dart';
 import 'progress_step_row.dart';
+import 'time_left_note.dart';
 import 'waiting_in_line_note.dart';
 import '../../billing/domain/billing_models.dart';
 
@@ -61,6 +62,15 @@ class GenerationProgressOverviewCard extends StatelessWidget {
         !stopped &&
         !status.isAutomaticRetryPending &&
         const {'planning', 'generating', 'editing'}.contains(status.status);
+    // The server's estimate for whichever run the bar is drawing; an edit
+    // carries none.
+    final secondsLeft = !working
+        ? null
+        : status.status == 'planning'
+        ? status.planningProgress?.estimatedSecondsLeft
+        : status.status == 'generating'
+        ? status.generationProgress?.estimatedSecondsLeft
+        : null;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -126,6 +136,10 @@ class GenerationProgressOverviewCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (secondsLeft != null) ...[
+              const SizedBox(height: 8),
+              TimeLeftNote(secondsLeft: secondsLeft),
+            ],
             const SizedBox(height: 14),
             Wrap(
               spacing: 8,

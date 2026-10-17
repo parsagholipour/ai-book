@@ -45,35 +45,22 @@ export function modelTierForInput(input: CreateProjectInput): ModelTier {
 export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "source-summary",
   "review-page",
-  "review-picture-book-continuity",
   "review-chapter-edit-acceptance",
   "review-edit-adherence",
-  "judge-page-drafts",
   "final-book-qa",
-  // The chapter-transition sibling of final-book-qa: a strict-schema issue
-  // list, not prose. Left off this list it ran on the premium prose model.
-  "book.final_qa.chapter_transitions",
-  // Compile-time structural corroboration of deterministic clusters.
-  // Spelled as a literal: this module must stay import-free.
-  "review-manuscript-structure",
   "chapterize-export",
-  "repair-page-brief",
   "generate-page-map",
   "generate-chapter-brief",
   "import-chapterize",
   "import-style-profile",
   // A 300-token pick from a fixed catalog (coverDesigns.ts).
   "select-cover-design",
-  "extract-story-state",
-  "critique-plan",
   "verify-page-claims",
   "audit-page-style",
-  "critique-page-map",
   "dedupe-page-beats",
   // Page titles, summaries and continuity notes for a chapter the composed-
   // chapters pass has already written and paginated (`composedChapter.ts`).
   "describe-pages",
-  "check-chapter-arithmetic",
   // The continuity ledger read off a composed draft (`chapterFacts.ts`): a strict-schema list.
   "extract-chapter-facts",
   // A forced choice between two drafts of one chapter (`chapterJudge.ts`); the

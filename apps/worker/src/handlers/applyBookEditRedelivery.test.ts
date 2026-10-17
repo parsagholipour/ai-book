@@ -19,8 +19,6 @@ const mocks = vi.hoisted(() => ({
   prepareEmbedding: vi.fn(),
   strategyUsesSemanticMemory: vi.fn(() => false),
   writePreparedEmbedding: vi.fn(),
-  keeperStoryExtractForSave: vi.fn(),
-  persistStoryExtract: vi.fn(),
   refundSkippedEditOperation: vi.fn(),
   settleSkippedTextEditLeaseTx: vi.fn(),
   assertTextEditLeaseTx: vi.fn(async (_tx: unknown, _operationId: string, _ownerToken: string) => ({
@@ -115,8 +113,6 @@ vi.mock("../generation/storyStateStore.js", () => ({
   loadProjectStoryState: vi.fn(() => ({ promises: [], facts: [], entities: {}, unanswered: [] }))
 }));
 vi.mock("../generation/qualityEnrichment.js", () => ({
-  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-  persistStoryExtract: mocks.persistStoryExtract
 }));
 vi.mock("../generation/textEditLease.js", () => ({
   assertTextEditLeaseTx: mocks.assertTextEditLeaseTx,
@@ -198,9 +194,7 @@ beforeEach(() => {
   mocks.getProjectOrThrow.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
   mocks.maybeEnqueueCompile.mockResolvedValue("compile");
   mocks.strategyUsesSemanticMemory.mockReturnValue(false);
-  mocks.keeperStoryExtractForSave.mockResolvedValue(null);
   mocks.writePreparedEmbedding.mockResolvedValue("stored");
-  mocks.persistStoryExtract.mockResolvedValue(null);
   mocks.refundSkippedEditOperation.mockResolvedValue(undefined);
   mocks.settleSkippedTextEditLeaseTx.mockResolvedValue({ classifier: {} });
   mocks.claimAppliedEditPublication.mockResolvedValue(true);

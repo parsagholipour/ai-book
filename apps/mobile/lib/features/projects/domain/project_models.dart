@@ -870,10 +870,17 @@ int estimatedInteriorImageCount({
 /// The most pictures a picture book draws (`PICTURE_BOOK_MAX_PICTURES`).
 const pictureBookMaxPictures = 12;
 
-/// A picture book's pictures: `min(pages, 12)`, so a longer book never draws
-/// fewer. Mirrors `pictureBookIllustrationCap` in core's `illustrationSlots.ts`.
-int pictureBookIllustrationCount(int pages) =>
-    pages.clamp(0, pictureBookMaxPictures);
+/// A picture book's pictures: two for every five pages, rounded to the
+/// nearest, at least one and at most 12, so a longer book never draws fewer.
+/// Integer arithmetic, as in `pictureBookIllustrationCap` in core's
+/// `illustrationSlots.ts`, which this mirrors.
+int pictureBookIllustrationCount(int pages) {
+  if (pages <= 0) {
+    return 0;
+  }
+  final rounded = (4 * pages + 5) ~/ 10;
+  return rounded.clamp(1, pictureBookMaxPictures);
+}
 
 /// Compact copy for places that summarize generated imagery in one phrase.
 String generatedImagesLabel({

@@ -5,7 +5,7 @@ import { buildContextPack } from "../context/contextPack.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
 import { generatePageDraft, generateWholeBookDraft } from "./pages.js";
-import { applyPlanStyleContract, manuscriptPromptStyleFields, pagePromptBookStyle } from "./styleContract.js";
+import { applyPlanStyleContract, pagePromptBookStyle } from "./styleContract.js";
 
 const LOCAL_MARKER = "UNIQUE_LOCAL_PAGE_RULE_MARKER";
 const DISTRIBUTION_MARKER = "UNIQUE_DISTRIBUTION_MANUSCRIPT_RULE_MARKER";
@@ -141,11 +141,5 @@ describe("style contract prompt routing", () => {
     const wholeUser = whole.requests[0]?.messages.find((message) => message.role === "user")?.content ?? "";
     expect(wholeUser).toContain(LOCAL_MARKER);
     expect(wholeUser).not.toContain(DISTRIBUTION_MARKER);
-  });
-
-  it("puts distribution rules on the manuscript review payload helper", () => {
-    const fields = manuscriptPromptStyleFields(planWithMarkers());
-    expect(fields.distributionRules).toContain(DISTRIBUTION_MARKER);
-    expect(fields.distributionRules.join(" ")).not.toContain(LOCAL_MARKER);
   });
 });

@@ -5,10 +5,8 @@ import {
   generateChapterBrief,
   generateImageBytes,
   generatePageDraft,
-  repairPageBrief,
   reviewPageDraft,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage
 } from "../pages.js";
 import { COMPOSED_CHAPTERS_RESEARCH_STRATEGY_ID, COMPOSED_CHAPTERS_STRATEGY_ID } from "./ids.js";
@@ -31,9 +29,7 @@ const sharedGeneration = {
   generateChapterBrief,
   generatePageDraft,
   reviewPageDraft,
-  repairPageBrief,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage,
   generateImageBytes,
   compileMarkdown: compileBookMarkdown,

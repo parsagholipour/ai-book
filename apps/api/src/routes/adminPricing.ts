@@ -67,7 +67,6 @@ const PREVIEW_INPUT = createProjectSchema.parse({
     illustrationCadence: "template-driven",
     includeCover: true,
     coverTemplate: "minimal",
-    finalReview: true,
     toneProfile: "neutral"
   }
 });

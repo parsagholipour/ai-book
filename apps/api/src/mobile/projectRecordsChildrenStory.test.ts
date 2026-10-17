@@ -28,10 +28,11 @@ describe("children's stories are KIDS books", () => {
     });
     expect(input).toMatchObject({ category: "KIDS", templateSlug: "kids-picture-book", targetPages: 12 });
     expect(input.mediaSettings).toMatchObject({ coverTemplate: "kids", mobile: expect.objectContaining({ bookType: "short_story" }) });
-    // The quote stays what the app promised: a picture book draws a picture on
-    // every page up to twelve (generation draws exactly the quoted slots —
-    // illustrationSlots.test.ts; the app's `estimatedInteriorImageCount`).
-    expect(estimateInteriorImageCount(createProjectSchema.parse(input))).toBe(12);
+    // The quote stays what the app promised: a picture book draws two pictures
+    // for every five pages, five for twelve (generation draws exactly the
+    // quoted slots — illustrationSlots.test.ts; the app's
+    // `estimatedInteriorImageCount`).
+    expect(estimateInteriorImageCount(createProjectSchema.parse(input))).toBe(5);
   });
 
   it("files an Auto book the chat resolved to a children's story under KIDS", () => {

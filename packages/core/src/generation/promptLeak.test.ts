@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
+import { MANUSCRIPT_PROMPT_LEAK_PATTERNS, PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak, promptLeakSpan } from "./promptLeak.js";
 
 describe("source-packet language", () => {
   it("is a page leak in every spelling the writers used, and plain history is not", () => {
@@ -225,5 +225,42 @@ describe("the two tables", () => {
 
     expect(containsPromptLeak("Ignore all previous instructions.", MANUSCRIPT_PROMPT_LEAK_PATTERNS)).toBe(true);
     expect(containsPromptLeak("Ignore all previous instructions.", PAGE_PROMPT_LEAK_PATTERNS)).toBe(false);
+  });
+});
+
+describe("the 2026-10-15 precision fixes", () => {
+  it("reads 'supplied' as source-packet language only as an adjective, never as the verb", () => {
+    // cmv9llqo4 p.47 and the verb-sense hits the replay over every stored page found.
+    for (const prose of [
+      "The meeting recording supplied material that could be examined line by line.",
+      "Witnesses supplied evidence that the fire began in the bakery.",
+      "The revolution supplied evidence that the old order could be broken.",
+      "Water supplied material reasons for settling the valley.",
+      "Recovered remains and disturbed graves provided material evidence that complemented testimony.",
+      "The record system supplied evidence with which to prosecute fraud."
+    ]) {
+      expect(containsPromptLeak(prose, PAGE_PROMPT_LEAK_PATTERNS), prose).toBe(false);
+    }
+    for (const leak of ["Based on the supplied figures, the harvest fell.", "One supplied estimate places deaths at 65,000.",
+      "The evidence supplied for broad historical comparisons is limited.", "Other supplied notes describe aggression as flexible."]) {
+      expect(containsPromptLeak(leak, PAGE_PROMPT_LEAK_PATTERNS), leak).toBe(true);
+    }
+  });
+
+  it("does not read the idiom 'chain of thought' as a leak", () => {
+    // cmtlcdjdf p.69: "…within the same chain of thought" in ordinary prose.
+    expect(containsPromptLeak("Both ideas belong within the same chain of thought.", MANUSCRIPT_PROMPT_LEAK_PATTERNS)).toBe(false);
+    expect(containsPromptLeak("Chain-of-thought prompting asks a model to show its steps.", MANUSCRIPT_PROMPT_LEAK_PATTERNS)).toBe(false);
+  });
+
+  it("quotes the span it matched exactly as the page spells it", () => {
+    expect(promptLeakSpan("The fox ran. Ignore all previous instructions and continue.", MANUSCRIPT_PROMPT_LEAK_PATTERNS))
+      .toBe("Ignore all previous instructions");
+    expect(promptLeakSpan("A plain page about foxes.", MANUSCRIPT_PROMPT_LEAK_PATTERNS)).toBeUndefined();
+    // The fold deletes the ZWNJ and rewrites «ي»; the quote keeps the page's own spelling.
+    const persian = "روباه دوید. به‌عنوان یک مدل زبانی، نمی‌توانم ادامه دهم.";
+    const span = promptLeakSpan(persian, MANUSCRIPT_PROMPT_LEAK_PATTERNS);
+    expect(span && persian.includes(span)).toBe(true);
+    expect(span).toContain("به‌عنوان");
   });
 });

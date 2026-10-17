@@ -42,17 +42,6 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
-// One export of one module, over the real rest of it: which pages the final-QA
-// repair redrafts is a test hook, while the per-message extractor behind the
-// reader's quality card and the page bound both questions are asked in stay
-// real, so the card assertions below measure the actual mapping.
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -110,17 +99,18 @@ describe("page QA findings on the exported quality card", () => {
     mocks.config.BOOK_STORAGE_DIR = storage;
     mocks.config.IMAGE_STORAGE_DIR = join(storage, "images");
     mocks.strategy.executionMode = "whole-book";
+    // The defect screen is the compile's one review; a Quick Draft book takes it whatever its shape.
     mocks.inputForPlanVersion.mockReturnValue({ prompt: "Rabbit and Turtle find lanterns.", category: "FICTION",
-      targetPages: 30, complexity: 3, language: "en", mediaSettings: { finalReview: true, fullIllustrations: false } });
+      targetPages: 30, complexity: 3, language: "en", mediaSettings: { fullIllustrations: false, modelTier: "fast" } });
     mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", inputSnapshot: null,
       planningPackage: { title: "Lanterns", premise: "A walk home.", audience: "adults", chapters: [] } });
     mocks.prisma.project.findUnique.mockResolvedValue({ id: "project-1", title: "Lanterns", status: "GENERATING",
       contentRevision: 4, authorName: null, mediaSettings: {}, pages, images: [], research: [] });
-    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "balanced", enabled: () => false });
-    // The repair spent its budget and returned these saved keepers. Whole-book QA passes.
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "fast" as unknown as "balanced",
+      enabled: (feature: string) => feature === "finalBookQa" || feature === "pageQaRewrite" });
+    // The repair spent its budget and returned these saved keepers. The screen passes.
     repairPages.mockImplementation(async () => pages);
     mocks.loadLeasedPagesForExport.mockImplementation(async (_projectId, snapshot) => snapshot);
-    mocks.strategy.runFinalBookQa.mockResolvedValue({ approved: true, issues: [], requiredFixes: [], repairPageIndexes: [] });
     mocks.strategy.compileMarkdown.mockReturnValue("# Lanterns\n\nRabbit and Turtle walk home.\n");
     mocks.createReaderChaptersForExport.mockResolvedValue({ source: "deterministic", chapters: [] });
     mocks.exportPublicationSuperseded.mockResolvedValue(false);
@@ -131,10 +121,12 @@ describe("page QA findings on the exported quality card", () => {
   });
   afterEach(async () => { await rm(storage, { recursive: true, force: true }); });
 
-  it("preserves rejected keeper findings and guidance even when final book QA approves, while publishing exports", async () => {
+  it("preserves rejected keeper findings and guidance even when the screen approves, while publishing exports", async () => {
     await compileExport(job);
     const report = reports().at(-1)!;
-    expect(report).toMatchObject({ state: "review_recommended", affectedPageIndexes: [13, 24] });
+    // Page QA's rejections are console diagnostics (6 of 16 labelled real, 2026-10-15): the reader's
+    // grade is a pass and names no page, while the operator keeps every finding and its guidance.
+    expect(report).toMatchObject({ state: "passed", affectedPageIndexes: [], readerFindings: [] });
     for (const index of [13, 24]) {
       expect(report.issues).toContainEqual(expect.objectContaining({ code: "PAGE_QA_UNRESOLVED",
         severity: "warning", source: "model", message: expect.stringContaining(objection),
@@ -146,7 +138,31 @@ describe("page QA findings on the exported quality card", () => {
     expect(mocks.generateBookEpub).toHaveBeenCalledOnce();
     expect(mocks.generateBookDocx).toHaveBeenCalledOnce();
     expect(repairPages).toHaveBeenCalledOnce();
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(2);
+    // The book is read once; the verdict after the repair is derived, never read again.
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledOnce();
+  });
+
+  it("reads a Quick Draft book once: a verified repair settles its findings and the screen's others stand", async () => {
+    mocks.loadQualityContext.mockResolvedValue({ settings: {}, tier: "fast" as unknown as "balanced", enabled: () => true });
+    const finding = (page: number, problem: string) => ({ targets: [page], kind: "contradiction", problem, fix: "Make them agree.",
+      evidence: [{ pageIndex: page, quote: `marker ${page}` }, { pageIndex: page - 1, quote: `marker ${page - 1}` }] });
+    mocks.reviewQuickDraftManuscript.mockResolvedValueOnce({ approved: false, score: 60, notes: "Focused screen.",
+      issues: ["Page 13: The lantern number turns.", "Page 24: The marker count changes."],
+      requiredFixes: ["Page 13: Make them agree.", "Page 24: Make them agree."],
+      focusedReview: { rejectedFindings: 0, repairGroups: [[13], [24]],
+        findings: [finding(13, "The lantern number turns."), finding(24, "The marker count changes.")] } } as never);
+    const repaired = pages.map((page) => page.index === 13 ? { ...page, revision: 2, markdown: "Rabbit reads the number in place." } : page);
+    repairPages.mockImplementation(async (options: Parameters<typeof import("./compileExportRepair.js").repairPagesFromFinalQa>[0]) => {
+      // As the scoped repair publishes: one group claimed, then published with its verification.
+      await options.onRepairGroupStarted!([{ id: "page-13", index: 13 }]);
+      await options.onRepairGroupPublished!({} as never, repaired);
+      return repaired;
+    });
+    await compileExport(job);
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledOnce();
+    const report = reports().at(-1)!;
+    const screen = report.issues.filter((issue) => /lantern number|marker count/.test(issue.message));
+    expect(screen.map((issue) => issue.affectedPageIndexes)).toEqual([[24]]);
   });
 
   it("uses the post-repair keeper, removing a rejection only when that page is now approved", async () => {
@@ -155,8 +171,7 @@ describe("page QA findings on the exported quality card", () => {
     repairPages.mockResolvedValue(repaired);
     await compileExport(job);
     const report = reports().at(-1)!;
-    expect(report.affectedPageIndexes).toEqual([24]);
-    expect(report.issues.filter((issue) => issue.code === "PAGE_QA_UNRESOLVED")).toHaveLength(1);
+    expect(report.issues.filter((issue) => issue.code === "PAGE_QA_UNRESOLVED").map((issue) => issue.affectedPageIndexes)).toEqual([[24]]);
     expect(pagesOutsideStoredQualityProvenance(storedQualityProvenance(report)!.reviewedPages, repaired).size).toBe(0);
   });
 
@@ -165,15 +180,19 @@ describe("page QA findings on the exported quality card", () => {
     mocks.loadPageTextSnapshot.mockResolvedValue(pages.map((page) => page.index === 13
       ? { ...page, revision: 2, markdown: "The reader corrected this page." } : page));
     await compileExport(job);
-    expect(reports()[0]!.affectedPageIndexes).toEqual([13, 24]);
+    const pagesNamed = (report: ManuscriptQualityReport) => [...new Set(report.issues.flatMap((issue) => issue.affectedPageIndexes))].sort((a, b) => a - b);
+    expect(pagesNamed(reports()[0]!)).toEqual([13, 24]);
     const withdrawn = reports().at(-1)!;
-    expect(withdrawn.state).toBe("review_recommended");
-    expect(withdrawn.affectedPageIndexes).toEqual([24]);
+    expect(withdrawn.state).toBe("passed");
+    expect(pagesNamed(withdrawn)).toEqual([24]);
   });
 
-  it("keeps an interrupted repair blocked and its unresolved page visible after withdrawing obsolete findings", async () => {
-    mocks.strategy.runFinalBookQa.mockResolvedValue({ approved: false,
-      issues: ["Page 13 still contains the old defect."], requiredFixes: [], repairPageIndexes: [13, 24] });
+  it("keeps an interrupted repair and its unresolved page on the console after withdrawing obsolete findings", async () => {
+    mocks.reviewQuickDraftManuscript.mockResolvedValueOnce({ approved: false, score: 60, notes: "Focused screen.",
+      issues: ["Page 13: still contains the old defect."], requiredFixes: ["Page 13: remove the old defect."],
+      focusedReview: { rejectedFindings: 0, repairGroups: [[13]], findings: [{ targets: [13], kind: "contradiction",
+        problem: "still contains the old defect.", fix: "remove the old defect.",
+        evidence: [{ pageIndex: 13, quote: "marker 13" }, { pageIndex: 12, quote: "marker 12" }] }] } } as never);
     const repaired = pages.map((page) => page.index === 13
       ? { ...page, revision: 2, markdown: "Rabbit reads the number without moving it.",
         status: "COMPLETED", qualityReport: { approved: true, score: 95 } }
@@ -184,11 +203,11 @@ describe("page QA findings on the exported quality card", () => {
     mocks.loadPagesForExport.mockResolvedValue(repaired);
     const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try { await compileExport(job); } finally { logged.mockRestore(); }
-    expect(reports().at(-1)).toMatchObject({ state: "blocked", issues: [
+    expect(reports().at(-1)).toMatchObject({ state: "passed", issues: [
       { code: "FINAL_QA_REPAIR_INCOMPLETE", affectedPageIndexes: [24] },
       { code: "PAGE_QA_UNRESOLVED", severity: "warning", affectedPageIndexes: [24] }
     ] });
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledOnce();
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "REVIEW_REQUIRED" }));
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledOnce();
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 });

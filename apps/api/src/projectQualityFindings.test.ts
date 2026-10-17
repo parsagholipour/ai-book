@@ -12,9 +12,12 @@ describe("quality finding cards", () => {
       findings: groups.map((issueIndexes, n) => ({ id: `historical-${n}`, issueIndexes, severity: "warning" })) };
     expect(normalizeProjectQuality(historical)).toMatchObject({ score: 50, issues: expect.any(Array) });
     expect(normalizeProjectQuality(historical).issues).toHaveLength(10);
+    // Graded since the split: these are all console diagnostics, grouped into the same six cards,
+    // and the reader's card is an unblemished pass.
     const rebuilt = buildManuscriptQualityReport([], crossPage.balanced as ManuscriptQualityIssue[], { finalReviewRan: true });
-    expect(normalizeProjectQuality(rebuilt).issues).toHaveLength(6);
-    expect(normalizeProjectQuality(rebuilt).score).toBe(70);
+    expect(normalizeProjectQuality(rebuilt).issues).toHaveLength(0);
+    expect(normalizeProjectQuality(rebuilt).diagnosticIssues).toHaveLength(6);
+    expect(normalizeProjectQuality(rebuilt).score).toBe(100);
   });
   it("preserves cross-page identity and related evidence through API normalization", () => {
     const provenance = pageFindingProvenance(9, "The lantern is no longer there.", [6, 7]);
@@ -23,20 +26,22 @@ describe("quality finding cards", () => {
     const report = buildManuscriptQualityReport([], [base, { ...base, code: "PAGE_QA_UNRESOLVED", affectedPageIndexes: [9],
       message: "Page QA did not approve the saved draft: The lantern is no longer there." }], { finalReviewRan: true });
     const result = normalizeProjectQuality(JSON.parse(JSON.stringify(report)));
-    expect(result.score).toBe(95);
-    expect(result.issues).toHaveLength(1);
-    expect(result.issues[0]).toMatchObject({ affectedPageIndexes: [9, 6, 7], provenance });
+    expect(result.score).toBe(100);
+    expect(result.issues).toHaveLength(0);
+    expect(result.diagnosticIssues).toHaveLength(1);
+    expect(result.diagnosticIssues?.[0]).toMatchObject({ affectedPageIndexes: [9, 6, 7], provenance });
   });
   it("shows one card per finding while preserving repair history and the saved ledger", () => {
     const report = buildManuscriptQualityReport([], captured as ManuscriptQualityIssue[], { finalReviewRan: true });
     const serialized = JSON.parse(JSON.stringify(report));
     const normalized = normalizeProjectQuality(serialized);
-    expect(normalized.score).toBe(90);
+    expect(normalized.score).toBe(100);
     expect(normalized.scoreBasis).toBe("unresolved_findings");
-    expect(normalized.state).toBe("review_recommended");
-    expect(normalized.issues).toHaveLength(2);
-    expect(normalized.issues[0]?.message).toContain("Automatic repair was rejected");
-    expect(normalized.issues[0]?.affectedPageIndexes).toEqual([10]);
+    expect(normalized.state).toBe("passed");
+    expect(normalized.issues).toHaveLength(0);
+    expect(normalized.diagnosticIssues).toHaveLength(2);
+    expect(normalized.diagnosticIssues?.[0]?.message).toContain("Automatic repair was rejected");
+    expect(normalized.diagnosticIssues?.[0]?.affectedPageIndexes).toEqual([10]);
     expect(serialized.issues).toHaveLength(5);
   });
 
@@ -48,8 +53,9 @@ describe("quality finding cards", () => {
       { ...captured[0]!, source: "deterministic", severity: "error", code: "PLACEHOLDER_TEXT", message: "TODO remains." }
     ], { finalReviewRan: true });
     const normalized = normalizeProjectQuality(report);
-    expect(normalized.state).toBe("blocked");
-    expect(normalized.issues).toHaveLength(3);
-    expect(normalized.issues.find(i => i.code === "PLACEHOLDER_TEXT")?.severity).toBe("error");
+    // An unmeasured integrity error blocks no reader since the split; the console keeps its severity.
+    expect(normalized.state).toBe("passed");
+    expect(normalized.diagnosticIssues).toHaveLength(3);
+    expect(normalized.diagnosticIssues?.find(i => i.code === "PLACEHOLDER_TEXT")?.severity).toBe("error");
   });
 });

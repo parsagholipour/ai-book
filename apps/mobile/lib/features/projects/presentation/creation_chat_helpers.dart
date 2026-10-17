@@ -16,13 +16,15 @@ const creationChatLocalGreetingTurn = MobileCreationTurn(
   // Every example is said by the person making the book. A child-facing
   // phrasing ("Bedtime story for 5 year olds") reads, to a store reviewer, as
   // an app aimed at children; the maker of a bedtime story is a parent.
+  // Each names a different kind of book and is specific enough to plan from
+  // without a follow-up question, because a tap sends it as the first message.
   // The server sends its own copy of this list (`quickReplies`); the two move
   // together.
   quickReplies: <String>[
-    'A bedtime story for my 5-year-old',
-    'Lead magnet about pricing',
-    'Workbook for new coaches',
-    'Short story about a garden mystery',
+    'A bedtime story where my 5-year-old is the hero',
+    'A cozy mystery set in a seaside bakery',
+    "A beginner's guide to growing vegetables on a balcony",
+    'A 30-day workbook to stop overthinking',
   ],
   readiness: emptyCreationReadiness,
   titleSuggestions: <String>[],

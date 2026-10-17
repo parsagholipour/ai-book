@@ -72,6 +72,11 @@ vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/generatePageMocks.js")).storyStateStoreModuleMock()
 );
+vi.mock("../generation/pageQualityGateReview.js", async () =>
+  (await import("./testing/generatePageMocks.js")).pageQualityGateReviewModuleMock(
+    await vi.importActual<typeof import("../generation/pageQualityGateReview.js")>("../generation/pageQualityGateReview.js")
+  )
+);
 vi.mock("../generation/qualityEnrichment.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/qualityEnrichment.js")>(
     "../generation/qualityEnrichment.js"
@@ -449,28 +454,6 @@ describe("generatePage context assembly", () => {
     );
     expect(mocks.retrieveSemanticPageMemory).toHaveBeenCalledWith(
       expect.objectContaining({ vector: [0.5], beforePageIndex: 10 })
-    );
-  });
-
-  it("keeps URL-less semantic hits out of the generate-page revision prompt", async () => {
-    const citeable = "Boundary papers: Commission records.";
-    mocks.qualityEnabled.mockImplementation((feature?: string) => feature === "claimRetrieve");
-    mocks.loadResearchNotesForGeneration.mockResolvedValue([citeable]);
-    mocks.retrieveSemanticResearchNotes.mockResolvedValue([
-      "Grounding summary: URL-less bootstrap claim.",
-      citeable
-    ]);
-    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
-    mocks.reviewPageDraft
-      .mockResolvedValueOnce({ ...report(40), groundedOk: false, issues: ["Needs revision."] })
-      .mockResolvedValue({ ...report(88), approved: true });
-    mocks.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
-
-    await generatePage(job);
-
-    expect(mocks.retrieveSemanticResearchNotes).toHaveBeenCalledTimes(1);
-    expect(mocks.revisePageDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ retrievedResearch: [citeable] })
     );
   });
 

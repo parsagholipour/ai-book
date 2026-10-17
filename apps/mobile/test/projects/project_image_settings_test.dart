@@ -311,21 +311,22 @@ void main() {
     );
   });
 
-  test('a children\'s story is quoted min(pages, 12) pictures', () {
-    // It is written as a KIDS picture book: the server bills min(pages, 12)
-    // pictures (`pictureBookIllustrationCap`), so a longer book never draws
-    // fewer. An adult story keeps page 1 + every 8th.
+  test('a children\'s story is quoted two pictures for every five pages', () {
+    // It is written as a KIDS picture book: the server bills two pictures for
+    // every five pages, at most 12 (`pictureBookIllustrationCap`), so a longer
+    // book never draws fewer. An adult story keeps page 1 + every 8th.
     int count(String? choice, int pages) => estimatedInteriorImageCount(
       bookType: 'short_story',
       bookTypeChoice: choice,
       illustrationsEnabled: true,
       targetPages: pages,
     );
-    expect(count('children_story', 12), 12);
-    expect(count('children_story', 3), 3);
-    expect(count('children_story', 13), 12);
-    expect(count('children_story', 16), 12);
-    expect(count('children_story', 24), 12);
+    expect(count('children_story', 12), 5);
+    expect(count('children_story', 3), 1);
+    expect(count('children_story', 10), 4);
+    expect(count('children_story', 13), 5);
+    expect(count('children_story', 16), 6);
+    expect(count('children_story', 24), 10);
     expect(count('children_story', 30), 12);
     expect(count('short_story', 12), 2);
     // Auto stays custom, ceil(pages / 8), whatever lane the chat resolved.

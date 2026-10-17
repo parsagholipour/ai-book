@@ -61,7 +61,7 @@ function expectLockedJobRead(clients: ReturnType<typeof separateJobClients>, pro
     where: {
       projectId,
       status: { in: ["QUEUED", "ACTIVE"] },
-      type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH", "WRITING_ASSIST"] }
+      type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH", "WRITING_ASSIST", "PREPARE_COMPOSITION"] }
     },
     select: { payload: true }
   });

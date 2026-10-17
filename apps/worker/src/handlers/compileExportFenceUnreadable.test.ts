@@ -64,13 +64,6 @@ vi.mock(
 // repair redrafts is a test hook, while the per-message extractor behind the
 // reader's quality card and the page bound both questions are asked in stay
 // real, so the card assertions below measure the actual mapping.
-vi.mock("../generation/finalQaPageTargets.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
-      "../generation/finalQaPageTargets.js"
-    );
-  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
-});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -104,6 +97,9 @@ import { safeJsonStringify, serializeError } from "../runtime/serialization.js";
 
 describe("compileExport when its repair fence cannot be read", () => {
   const plan = { title: "The Long Walk", premise: "A walk home.", audience: "adults", chapters: [] };
+  // A Quick Draft book: the defect screen is the compile's one review and its scoped repair the one repair,
+  // which reads the fence as it opens, again once its candidate is verified, and then claims the revision
+  // inside the transaction that publishes the whole group.
   const input = {
     title: "The Long Walk",
     prompt: "A book about walking home.",
@@ -112,14 +108,9 @@ describe("compileExport when its repair fence cannot be read", () => {
     complexity: 3,
     temperature: 0.6,
     language: "en",
-    mediaSettings: { finalReview: true }
+    mediaSettings: { modelTier: "fast" }
   };
 
-  /**
-   * Page 2 carries a chapter because the durable write is what the fence
-   * guards: a page in no chapter reaches no `casUpdateChapterProductionBrief`,
-   * so there would be nothing to stand down from.
-   */
   const compilePage = (index: number) => ({
     id: `page-${index}`,
     index,
@@ -130,7 +121,7 @@ describe("compileExport when its repair fence cannot be read", () => {
     revision: 1,
     status: "COMPLETED",
     images: [],
-    chapter: index === 2 ? { id: "chapter-a", index: 1, productionBrief: {} } : null
+    chapter: null
   });
   const pages = [compilePage(1), compilePage(2)];
 
@@ -155,51 +146,27 @@ describe("compileExport when its repair fence cannot be read", () => {
       data: { projectId: "project-1", planId: "plan-1", generationJobId: "gj-1", contentRevision: 4, ...payload }
     }) as unknown as Job;
 
-  /**
-   * A repair the reviewer accepts first time, so the pass reaches the end of
-   * its one flagged page and the compile goes on to publish. What that leaves
-   * assertable is the page write itself: a barrier that gave up would have
-   * stopped before it.
-   *
-   * Returns the cleanup for the reviewer it puts on the shared strategy mock.
-   */
-  const repairsPageTwoCleanly = () => {
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: "Page 2",
-      markdown: "A repaired page the reviewer accepts first time.",
-      summary: "Page 2 summary.",
-      imagePrompt: null,
-      continuityNotes: []
-    });
-    mocks.prisma.page.update.mockImplementation(
-      async ({ where, data }: { where: { id: string }; data: object }) => ({
-        ...pages.find((page) => page.id === where.id),
-        ...data
-      })
-    );
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: vi.fn().mockResolvedValue({
-        approved: true,
-        score: 88,
-        issues: [],
-        requiredRevisions: [],
-        notes: "",
-        checks: { repetitionOk: true, progressionOk: true }
-      })
-    });
-    return () => {
-      delete (mocks.strategy as Record<string, unknown>).reviewPageDraft;
-    };
-  };
-
-  /** Final QA flags page 2, so the repair pass runs. */
-  const flagPageTwo = () =>
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
+  /** The screen's verdict: one grounded finding per named page, plus any page-less messages. */
+  const screenFinds = (targets: number[] = [1], otherIssues: string[] = []) =>
+    mocks.reviewQuickDraftManuscript.mockResolvedValue({
       approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [2]
-    });
+      score: 60,
+      notes: "Focused screen.",
+      issues: [...targets.map((index) => `Page ${index}: The walk starts twice.`), ...otherIssues],
+      requiredFixes: targets.map((index) => `Page ${index}: Start it once.`),
+      focusedReview: { rejectedFindings: 0, repairGroups: targets.map((index) => [index]),
+        findings: targets.map((index) => ({ targets: [index], kind: "duplicate", problem: "The walk starts twice.",
+          fix: "Start it once.", evidence: [{ pageIndex: index, quote: `Page ${index} prose` }] })) }
+    } as never);
+
+  /** A verified candidate for every target, so what stops the repair is only ever the fence. */
+  const repairsTargetsCleanly = () => {
+    mocks.repairQuickDraftPages.mockImplementation(async ({ pages: book, targetPageIndexes }) =>
+      book.map((page) => targetPageIndexes.includes(page.index) ? { ...page, markdown: `Page ${page.index}, repaired.` } : page));
+    mocks.prisma.page.update.mockImplementation(
+      async ({ where, data }: { where: { id: string }; data: object }) => ({ ...pages.find((page) => page.id === where.id), ...data })
+    );
+  };
 
   /**
    * The render-and-publish tail every case here needs, because reaching it is
@@ -230,15 +197,15 @@ describe("compileExport when its repair fence cannot be read", () => {
   };
 
   /**
-   * The barrier stops answering mid-pass, and stays quiet until the handler's
-   * own manuscript re-read — which is the liveness question the whole
-   * unreadable path turns on, so it is where the blip clears by default.
+   * The barrier stops answering, and stays quiet until the handler's own
+   * manuscript re-read — which is the liveness question the whole unreadable
+   * path turns on, so it is where the blip clears by default.
    *
-   * `clears` is how many barrier reads answer before the database goes quiet:
-   * the pass asks one as it opens a page and one immediately before that page's
-   * writes, so `2` puts the failure at the *second* flagged page and leaves the
-   * first one repaired — the shape of the incident this is here for, rather
-   * than a pass that never got started.
+   * `clears` is how many barrier asks answer before the database goes quiet.
+   * The scoped repair asks as it opens and again once its candidate is
+   * verified, then claims the revision in its publication transaction, so `2`
+   * puts the failure at that claim — the latest point a group can be stopped,
+   * and still before any page of it is written.
    *
    * `manuscriptStaysUnreadable` is the same blip lasting one read longer: the
    * re-read is a query against the pool that just gave up, so it is at least as
@@ -246,7 +213,7 @@ describe("compileExport when its repair fence cannot be read", () => {
    * a failure instead of publishing.
    */
   const barrierGoesDark = async (
-    options: { clears?: number; repaired?: unknown[]; manuscriptStaysUnreadable?: boolean } = {}
+    options: { clears?: number; reread?: unknown[]; manuscriptStaysUnreadable?: boolean } = {}
   ): Promise<void> => {
     await keepsCompiling();
     const clears = options.clears ?? 0;
@@ -263,20 +230,19 @@ describe("compileExport when its repair fence cannot be read", () => {
       return false;
     };
     mocks.exportPublicationSuperseded.mockImplementation(barrierAnswer);
-    // The publication-side ask is now a revision CAS on the transaction
-    // client, not another advisory read. It is the same database barrier and
-    // therefore participates in this deterministic outage sequence too.
+    // The publication-side ask is a revision CAS on the transaction client, not
+    // another advisory read. It is the same database barrier and therefore
+    // participates in this deterministic outage sequence too.
     mocks.prisma.project.updateMany.mockImplementation(async () => ({ count: (await barrierAnswer()) ? 0 : 1 }));
     mocks.loadPagesForExport.mockImplementation(async () => {
       if (options.manuscriptStaysUnreadable) {
         throw new Error("Timed out fetching a new connection from the pool");
       }
       databaseUnreachable = false;
-      return options.repaired ?? pages;
+      return options.reread ?? pages;
     });
   };
 
-  /** The last line of this compile's own run log, which is the file its provider calls are in. */
   /** The latest entry for `event`: the render after the pass appends its own events. */
   const lastRunLogEntry = async (event: string): Promise<Record<string, unknown>> => {
     const lines = await readRunLog("books/project-1/runs/gj-1-compile-export.jsonl");
@@ -297,7 +263,8 @@ describe("compileExport when its repair fence cannot be read", () => {
       inputSnapshot: null
     });
     mocks.prisma.project.findUnique.mockResolvedValue(projectRecord());
-    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+    mocks.prisma.project.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
     mocks.loadPagesForExport.mockResolvedValue(pages);
     mocks.loadProjectStoryState.mockResolvedValue({ promises: [], facts: [], entities: {}, unanswered: [] });
     mocks.loadQualityContext.mockResolvedValue({
@@ -306,7 +273,10 @@ describe("compileExport when its repair fence cannot be read", () => {
       enabled: isDefaultCompileQualityFeature
     });
     mocks.generateJsonWithRetry.mockResolvedValue({ data: { issues: [] } });
-    mocks.exportPublicationSuperseded.mockResolvedValue(false);
+    mocks.exportPublicationSuperseded.mockReset().mockResolvedValue(false);
+    mocks.repairQuickDraftPages.mockReset();
+    screenFinds();
+    repairsTargetsCleanly();
   });
 
   afterEach(async () => {
@@ -315,26 +285,19 @@ describe("compileExport when its repair fence cannot be read", () => {
   });
 
   it("rides out a blip at the barrier instead of settling the book on it", async () => {
-    // The barrier is two or three indexed reads per repaired page across the
-    // minutes a long book's repair takes, so a pool that is briefly full or a
-    // connection reset lands on one of them as a matter of course. Unretried,
-    // that throw is neither of the fence's answers, nothing above catches it,
-    // and a book whose pages are all written reaches `markFailed` — FAILED,
-    // with `FULL_BOOK_GENERATION` handed back — because one `SELECT` did not
-    // come back. The repair is supposed to notice nothing.
+    // The barrier is asked two or three times per repair group, and a pool that
+    // is briefly full or a connection reset lands on one of them as a matter of
+    // course. Unretried, that throw is neither of the fence's answers, nothing
+    // above catches it, and a finished book reaches `markFailed` — FAILED, with
+    // `FULL_BOOK_GENERATION` handed back — because one `SELECT` did not come
+    // back. The repair is supposed to notice nothing.
     await keepsCompiling();
-    flagPageTwo();
-    const restoreStrategy = repairsPageTwoCleanly();
     mocks.exportPublicationSuperseded
       .mockRejectedValueOnce(new Error("Timed out fetching a new connection from the pool"))
       .mockRejectedValueOnce(new Error("Timed out fetching a new connection from the pool"))
       .mockResolvedValue(false);
 
-    try {
-      await expect(compileExport(job())).resolves.toEqual({ durableCompletionCommitted: true });
-    } finally {
-      restoreStrategy();
-    }
+    await expect(compileExport(job())).resolves.toEqual({ durableCompletionCommitted: true });
 
     expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
     expect(mocks.publishCompiledExports).toHaveBeenCalled();
@@ -348,10 +311,9 @@ describe("compileExport when its repair fence cannot be read", () => {
     // "Superseded" publishes nothing and writes no project status — and this
     // compile is the kind queued against a live project, so that abandons its
     // immediate handoff and waits for delayed stranded recovery, over a read
-    // that may have been a hiccup. So the pass stops and the compile carries on
+    // that may have been a hiccup. So the repair stops and the compile carries on
     // to the checks that actually bind: its own supersede read, and the
     // compare-and-set inside `publishCompiledExports`.
-    flagPageTwo();
     await barrierGoesDark();
     const warnings: unknown[][] = [];
     const logged = vi.spyOn(console, "warn").mockImplementation((...args) => {
@@ -366,68 +328,32 @@ describe("compileExport when its repair fence cannot be read", () => {
 
     // Three asks at the barrier — one attempt and two retries — and then it
     // gives up rather than guessing. The compile checks again before chapter
-    // resolution and after coverage, before rendering the final manuscript.
+    // resolution and before publishing the final manuscript.
     expect(mocks.exportPublicationSuperseded).toHaveBeenCalledTimes(5);
-    // Nothing of the book was rewritten past the barrier it could not clear,
-    // and the manuscript the render is built from is re-read rather than
-    // carried over — a published PDF that disagrees with the page rows has no
-    // revision bump behind it and so no recompile ever coming to fix it.
+    // Nothing of the book was rewritten past the barrier it could not clear, no
+    // model was paid for a candidate it could not publish, and the manuscript
+    // the render is built from is re-read rather than carried over — a
+    // published PDF that disagrees with the page rows has no revision bump
+    // behind it and so no recompile ever coming to fix it.
+    expect(mocks.repairQuickDraftPages).not.toHaveBeenCalled();
     expect(mocks.prisma.page.update).not.toHaveBeenCalled();
     expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");
-    // The same unreadable ownership answer also forbids the post-repair model
-    // spend: there is no exact fence to prove those re-read pages are still
-    // this compile's. Deterministic checks and publication CAS still run.
-    expect(mocks.strategy.runFinalBookQa).toHaveBeenCalledTimes(1);
+    // The book was read once; there is no second read for an unanswered fence to forbid.
+    expect(mocks.reviewQuickDraftManuscript).toHaveBeenCalledTimes(1);
     expect(mocks.publishCompiledExports).toHaveBeenCalled();
     expect(
       warnings.filter(([message]) => message === "Export compile superseded before publication")
     ).toHaveLength(0);
   });
 
-  it("reports and renders the re-read manuscript after a partial repair", async () => {
-    const original = [
-      { ...compilePage(1), markdown: "TODO: replace this original page before publication." },
-      compilePage(2)
-    ];
-    const repairedMarkdown = "Page 1 as the pass repaired it before the ownership fence went quiet.";
-    const repaired = [{ ...compilePage(1), markdown: repairedMarkdown }, compilePage(2)];
-    mocks.prisma.project.findUnique.mockResolvedValue(projectRecord(original));
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [
-        "Page 1 still contains the old defect.",
-        "Page 2 still needs review.",
-        "The pacing sags throughout the book."
-      ],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    mocks.generateJsonWithRetry.mockResolvedValue({
-      data: {
-        issues: [
-          {
-            code: "CHAPTER_COHERENCE",
-            message: "Page 1 repeats its old scene.",
-            guidance: "Revise page 1.",
-            affectedPageIndexes: [1]
-          },
-          {
-            code: "CHAPTER_COHERENCE",
-            message: "Page 2 shifts tone.",
-            guidance: "Review page 2.",
-            affectedPageIndexes: [2]
-          },
-          {
-            code: "CHAPTER_TRANSITION",
-            message: "The book-wide transition pattern is uneven.",
-            guidance: "Review the chapter transitions.",
-            affectedPageIndexes: []
-          }
-        ]
-      }
-    });
-    await barrierGoesDark({ clears: 2, repaired });
-    const restoreStrategy = repairsPageTwoCleanly();
+  it("reports and renders the re-read manuscript when the fence goes dark at the publication claim", async () => {
+    // The latest point a group can be stopped: its candidate verified, its
+    // claim unanswered. The transaction rolls the whole group back, so the
+    // re-read is the manuscript as it stood, and that is what is graded and
+    // rendered — with the screen's findings intact, since nothing moved under
+    // them, and the incomplete repair on the console.
+    screenFinds([1], ["The pacing sags throughout the book."]);
+    await barrierGoesDark({ clears: 2 });
     mocks.strategy.compileMarkdown.mockImplementation(
       ({ pages: manuscript }: { pages: Array<{ markdown: string }> }) =>
         `# The Long Walk\n\n${manuscript.map((page) => page.markdown).join("\n\n")}`
@@ -437,57 +363,33 @@ describe("compileExport when its repair fence cannot be read", () => {
     try {
       await expect(compileExport(job())).resolves.toEqual({ durableCompletionCommitted: true });
     } finally {
-      restoreStrategy();
       logged.mockRestore();
     }
 
-    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
-    const compileInput = mocks.strategy.compileMarkdown.mock.calls[0]![0] as {
-      pages: Array<{ markdown: string }>;
-    };
-    expect(compileInput.pages[0]?.markdown).toBe(repairedMarkdown);
+    expect(mocks.repairQuickDraftPages).toHaveBeenCalledOnce();
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
     const report = persistedQualityReport();
-    expect(report.issues.map((issue) => issue.code)).not.toContain("PLACEHOLDER_TEXT");
-    expect(report).toMatchObject({ state: "blocked" });
-    expect(report.issues).toEqual([
+    // The incomplete repair is a pipeline status: an error on the console, never the reader's grade.
+    expect(report).toMatchObject({ state: "passed" });
+    expect(report.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "FINAL_QA_REPAIR_INCOMPLETE", affectedPageIndexes: [] }),
-      expect.objectContaining({ code: "CHAPTER_COHERENCE", message: "Page 2 shifts tone." }),
-      expect.objectContaining({
-        code: "WHOLE_BOOK_REVIEW",
-        message: "Page 2 still needs review.",
-        affectedPageIndexes: [2]
-      })
-    ]);
-    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "REVIEW_REQUIRED" }));
+      expect.objectContaining({ code: "WHOLE_BOOK_REVIEW", message: "Page 1: The walk starts twice.", affectedPageIndexes: [1] }),
+      expect.objectContaining({ code: "WHOLE_BOOK_REVIEW", message: "The pacing sags throughout the book.", affectedPageIndexes: [] })
+    ]));
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
     const renderedMarkdown = mocks.strategy.generatePdf.mock.calls[0]?.[0] as string;
-    expect(renderedMarkdown).toContain(repairedMarkdown);
-    expect(renderedMarkdown).not.toContain("TODO: replace this original page");
+    expect(renderedMarkdown).toContain(pages[0]!.markdown);
+    expect(renderedMarkdown).not.toContain("Page 1, repaired.");
   });
 
-  it("says how far its repair pass got, in the run log the render is in", async () => {
-    // Stopping the pass is right; stopping it silently is not. The fence keeps
+  it("says how far its repair got, in the run log the render is in", async () => {
+    // Stopping the repair is right; stopping it silently is not. The fence keeps
     // each failed read only as the `cause` on the error it raises, the
     // handler's catch drops that error the moment it has pages back, and
     // `markCompleted` overwrites the job's progress line a few steps later — so
-    // a pool that was briefly full while page 2 was being repaired shipped an
-    // unrepaired book that looks exactly like a repaired one. Both siblings on
-    // this path warn; the only one that hides a *partial* pass said nothing at
-    // all.
-    const repaired = [
-      { ...compilePage(1), markdown: "Page 1 as the pass rewrote it before the barrier went quiet." },
-      compilePage(2)
-    ];
-    // Page 1 is repaired and written, and the database goes quiet as page 2 is
-    // opened: two barriers cleared, one page rewritten, one page the compile
-    // was paid to repair and did not.
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    await barrierGoesDark({ clears: 2, repaired });
-    const restoreStrategy = repairsPageTwoCleanly();
+    // a pool that was briefly full during the repair shipped an unrepaired book
+    // that looks exactly like a repaired one.
+    await barrierGoesDark({ clears: 2 });
     const warnings: unknown[][] = [];
     const logged = vi.spyOn(console, "warn").mockImplementation((...args) => {
       warnings.push(args);
@@ -496,7 +398,6 @@ describe("compileExport when its repair fence cannot be read", () => {
     try {
       await expect(compileExport(job())).resolves.toEqual({ durableCompletionCommitted: true });
     } finally {
-      restoreStrategy();
       logged.mockRestore();
     }
 
@@ -511,236 +412,43 @@ describe("compileExport when its repair fence cannot be read", () => {
       warning: "export_repair_fence_unreadable",
       projectId: "project-1",
       generationJobId: "gj-1",
-      // In pages, because that is the only unit the reader of this line can act
-      // on: one of the two pages this pass was paid to repair shipped
-      // unrepaired. `barriersCleared` stays beside it as evidence about the
-      // fence and no longer as a number anybody divides — see the case below.
-      pagesRepaired: 1,
-      pagesTargeted: 2,
+      // In pages: the group publishes whole or not at all, so a fence dark at its
+      // claim repaired none of the page it was paid to repair.
+      pagesRepaired: 0,
+      pagesTargeted: 1,
       barriersCleared: 2,
-      pagesRewritten: 1,
+      pagesRewritten: 0,
       pagesInBook: 2
     });
-    // The underlying read failure travels with it. Without it the line says a
-    // pass was truncated and nothing about what truncated it, which is the
-    // difference between a pool to resize and a failover to explain.
+    // The underlying read failure travels with it.
     expect((detail as { error: Error }).error.message).toBe("Connection terminated unexpectedly");
-    // And the same facts land in the run log, which is where somebody already
-    // holding one book and asking "why is this one unrepaired" looks — in
-    // sequence with the provider calls of the very pass that stopped.
+    // And the same facts land in the run log, in sequence with the provider
+    // calls of the very repair that stopped.
     const entry = await lastRunLogEntry("export.repair.fence_unreadable");
     expect(entry).toMatchObject({
       event: "export.repair.fence_unreadable",
-      pagesRepaired: 1,
-      pagesTargeted: 2,
+      pagesRepaired: 0,
+      pagesTargeted: 1,
       barriersCleared: 2,
-      pagesRewritten: 1,
+      pagesRewritten: 0,
       pagesInBook: 2,
       error: { message: "Connection terminated unexpectedly" }
     });
     expect(entry.job).toMatchObject({ projectId: "project-1", generationJobId: "gj-1" });
   });
 
-  it("counts the pages it repaired rather than the reads its fence answered", async () => {
-    // The number in that line used to be `barriersCleared`, documented — in the
-    // error class, in the fence and in the note itself — as two reads per
-    // repaired page. It is two only for a page whose loop approves early. A
-    // page that reaches `repairPageBriefForRecovery` asks once more after the
-    // planner call, so the pass below clears three barriers repairing exactly
-    // one page. No arithmetic over the read count can say how many pages ran.
-    //
-    // Page 1 is given a chapter of its own here because that is what buys the
-    // third ask: with no `chapterId` the brief repair has nothing to persist.
-    const chaptered = [
-      { ...compilePage(1), chapter: { id: "chapter-a", index: 1, productionBrief: {} } },
-      compilePage(2)
-    ];
-    mocks.prisma.project.findUnique.mockResolvedValue(projectRecord(chaptered));
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    // A brief the reviewer keeps blaming, which is what drives the loop into
-    // recovery — the one route that reaches the fence twice more.
-    mocks.parseChapterBrief.mockReturnValue({
-      chapterIndex: 1,
-      title: "One",
-      summary: "S",
-      continuityFocus: [],
-      pages: [{ pageIndex: 1, purpose: "Repeat", beat: "Repeat", requiredContinuity: [], endingPressure: "" }]
-    });
-    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: {} });
-    mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 1 });
-    mocks.prisma.page.update.mockImplementation(
-      async ({ where, data }: { where: { id: string }; data: object }) => ({
-        ...chaptered.find((page) => page.id === where.id),
-        ...data
-      })
-    );
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: "Page 1",
-      markdown: "A rewrite the reviewer rejects for repeating an earlier page.",
-      summary: "Page 1 summary.",
-      imagePrompt: null,
-      continuityNotes: []
-    });
-    let briefRepaired = false;
-    Object.assign(mocks.strategy, {
-      // Rejected until the brief is repaired, accepted straight after: the
-      // repair's write is only taken for a page that keeps a draft it briefed,
-      // and it is that write's own ask this case is counting.
-      reviewPageDraft: vi.fn(async () => ({
-        approved: briefRepaired,
-        score: briefRepaired ? 88 : 40,
-        issues: [],
-        requiredRevisions: [],
-        notes: "",
-        checks: { repetitionOk: briefRepaired, progressionOk: true }
-      })),
-      revisePageDraft: vi.fn().mockResolvedValue({
-        title: "Page 1",
-        markdown: "The rewrite written against the repaired beat.",
-        summary: "Page 1 summary.",
-        imagePrompt: null,
-        continuityNotes: []
-      }),
-      repairPageBrief: vi.fn(async () => {
-        briefRepaired = true;
-        return { pageIndex: 1, purpose: "Fresh", beat: "Fresh", requiredContinuity: [], endingPressure: "" };
-      })
-    });
-    // Three cleared asks — page 1's loop entry, brief-repair stand-down and
-    // atomic publication claim — and then the database goes quiet as page 2
-    // opens.
-    await barrierGoesDark({ clears: 3, repaired: chaptered });
-    const warnings: unknown[][] = [];
-    const logged = vi.spyOn(console, "warn").mockImplementation((...args) => {
-      warnings.push(args);
-    });
-
-    try {
-      await expect(compileExport(job())).resolves.toEqual({ durableCompletionCommitted: true });
-    } finally {
-      for (const key of ["reviewPageDraft", "revisePageDraft", "repairPageBrief"]) {
-        delete (mocks.strategy as Record<string, unknown>)[key];
-      }
-      mocks.parseChapterBrief.mockReturnValue(undefined);
-      logged.mockRestore();
-    }
-
-    // The page really did take the expensive route, so the two numbers really
-    // do disagree.
-    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalled();
-    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
-    const [, detail] =
-      warnings.find(
-        ([message]) => message === "Export compile stopped repairing: its ownership fence could not be read"
-      ) ?? [];
-    expect(detail).toMatchObject({ pagesRepaired: 1, pagesTargeted: 2, barriersCleared: 3 });
-  });
-
-  it("counts a page it could not fix as a page it finished", async () => {
-    // The count says where the pass stopped, not how well it did. A page whose
-    // rewrites all failed review spent its whole budget and saved its best
-    // draft as FAILED_QA — every write that page owed is made — so leaving it
-    // out would report a pass that stopped one page earlier than it did, which
-    // is the same lie in the other direction.
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    mocks.revisePageDraftWithRestart.mockResolvedValue({
-      title: "Page 1",
-      markdown: "A rewrite the reviewer never accepts.",
-      summary: "Page 1 summary.",
-      imagePrompt: null,
-      continuityNotes: []
-    });
-    Object.assign(mocks.strategy, {
-      reviewPageDraft: vi.fn().mockResolvedValue({
-        approved: false,
-        score: 40,
-        issues: [],
-        requiredRevisions: [],
-        notes: "",
-        checks: { repetitionOk: true, progressionOk: true }
-      }),
-      revisePageDraft: vi.fn().mockResolvedValue({
-        title: "Page 1",
-        markdown: "Another rewrite the reviewer never accepts.",
-        summary: "Page 1 summary.",
-        imagePrompt: null,
-        continuityNotes: []
-      })
-    });
-    mocks.prisma.page.update.mockImplementation(
-      async ({ where, data }: { where: { id: string }; data: object }) => ({
-        ...pages.find((page) => page.id === where.id),
-        ...data
-      })
-    );
-    // Page 1 opens, exhausts its budget and saves as FAILED_QA — two cleared
-    // asks — and the database goes quiet as page 2 opens.
-    await barrierGoesDark({ clears: 2 });
-    const warnings: unknown[][] = [];
-    const logged = vi.spyOn(console, "warn").mockImplementation((...args) => {
-      warnings.push(args);
-    });
-
-    try {
-      await expect(compileExport(job())).resolves.toEqual({ durableCompletionCommitted: true });
-    } finally {
-      for (const key of ["reviewPageDraft", "revisePageDraft"]) {
-        delete (mocks.strategy as Record<string, unknown>)[key];
-      }
-      logged.mockRestore();
-    }
-
-    expect(mocks.prisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "FAILED_QA" }) })
-    );
-    const [, detail] =
-      warnings.find(
-        ([message]) => message === "Export compile stopped repairing: its ownership fence could not be read"
-      ) ?? [];
-    expect(detail).toMatchObject({ pagesRepaired: 1, pagesTargeted: 2 });
-  });
-
   it("counts only the pages the manuscript actually holds as targets", async () => {
-    // A denominator has to name something the pass could have reached. Its
+    // A denominator has to name something the repair could have reached. Its
     // targets are a union — the indexes page-level QA flagged, the
     // `affectedPageIndexes` of every error-severity deterministic issue, and
-    // the verdict's own, bounded by the book's *highest* index rather than by
-    // the pages under it — so a manuscript with a hole in its numbering is
-    // named for a page nobody can open. Counting the raw list reported
-    // "repaired 1 of 3" for a book with two repairable pages, and an operator
-    // deciding whether to re-queue the compile read two unrepaired pages where
-    // there was one: the same arithmetic error `barriersCleared` was demoted
-    // for, made by the number that replaced it.
+    // the screen's own — so a manuscript with a hole in its numbering can be
+    // named for a page nobody can open. The targets are resolved to rows first,
+    // and only those are counted.
     const gapped = [compilePage(1), compilePage(3)];
     mocks.prisma.project.findUnique.mockResolvedValue(projectRecord(gapped));
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2, 3]
-    });
-    const restoreStrategy = repairsPageTwoCleanly();
-    // Over the helper's, which is staged against the ordinary two-page book.
-    mocks.prisma.page.update.mockImplementation(
-      async ({ where, data }: { where: { id: string }; data: object }) => ({
-        ...gapped.find((page) => page.id === where.id),
-        ...data
-      })
-    );
-    // Page 1 opens and saves — two cleared asks — and the database goes quiet
-    // as page 3 opens. Page 2 is not a page: nothing opens it, nothing skips
-    // it any more, and nothing counts it.
-    await barrierGoesDark({ clears: 2, repaired: gapped });
+    mocks.loadPagesForExport.mockResolvedValue(gapped);
+    screenFinds([1, 2, 3]);
+    await barrierGoesDark({ clears: 2, reread: gapped });
     const warnings: unknown[][] = [];
     const logged = vi.spyOn(console, "warn").mockImplementation((...args) => {
       warnings.push(args);
@@ -749,17 +457,15 @@ describe("compileExport when its repair fence cannot be read", () => {
     try {
       await expect(compileExport(job())).resolves.toEqual({ durableCompletionCommitted: true });
     } finally {
-      restoreStrategy();
       logged.mockRestore();
     }
 
-    expect(mocks.prisma.page.update.mock.calls.map((call) => (call[0] as { where: { id: string } }).where.id))
-      .toEqual(["page-1"]);
+    expect(mocks.repairQuickDraftPages).toHaveBeenCalledWith(expect.objectContaining({ targetPageIndexes: [1, 3] }));
     const [, detail] =
       warnings.find(
         ([message]) => message === "Export compile stopped repairing: its ownership fence could not be read"
       ) ?? [];
-    expect(detail).toMatchObject({ pagesRepaired: 1, pagesTargeted: 2, barriersCleared: 2 });
+    expect(detail).toMatchObject({ pagesRepaired: 0, pagesTargeted: 2, barriersCleared: 2 });
   });
 
   it("settles the compile on the read failure when the manuscript cannot be re-read either", async () => {
@@ -767,7 +473,6 @@ describe("compileExport when its repair fence cannot be read", () => {
     // is one this compile has nothing left to publish against, so the original
     // failure travels and settles the row rather than the handler publishing
     // against a book it can no longer see.
-    flagPageTwo();
     mocks.exportPublicationSuperseded.mockRejectedValue(new Error("Connection terminated unexpectedly"));
     mocks.loadPagesForExport.mockRejectedValue(new Error("Connection terminated unexpectedly"));
 
@@ -782,20 +487,8 @@ describe("compileExport when its repair fence cannot be read", () => {
     // the fence's error is the only record of the repair that had already
     // stopped: `barriersCleared`, and the read it gave up on, carried on the
     // error for one reader, `recordTruncatedRepairPass`, which is below the
-    // re-read and never runs on this path. So a book went FAILED with
-    // `FULL_BOOK_GENERATION` refunded, its durable `error` column reading a bare
-    // connection message and nothing anywhere saying its repair had stopped two
-    // barriers in.
-    mocks.strategy.runFinalBookQa.mockResolvedValue({
-      approved: false,
-      issues: [],
-      requiredFixes: [],
-      repairPageIndexes: [1, 2]
-    });
-    // Page 1 repaired, the barrier dark as page 2 opens, and the manuscript
-    // still unreadable when the handler asks for it back.
+    // re-read and never runs on this path.
     await barrierGoesDark({ clears: 2, manuscriptStaysUnreadable: true });
-    const restoreStrategy = repairsPageTwoCleanly();
     const warnings: unknown[][] = [];
     const logged = vi.spyOn(console, "warn").mockImplementation((...args) => {
       warnings.push(args);
@@ -805,46 +498,40 @@ describe("compileExport when its repair fence cannot be read", () => {
     try {
       settled = await compileExport(job()).catch((error: unknown) => error);
     } finally {
-      restoreStrategy();
       logged.mockRestore();
     }
 
     // Still a failure, and still the re-read's: `markFailed` writes
     // `error.message` onto the row, so the driver's own words stay in front of
-    // whoever opens it, with the barrier count in the same sentence.
+    // whoever opens it, with the repair's progress in the same sentence.
     expect(settled).toBeInstanceOf(ExportManuscriptUnreadableError);
     const failure = settled as ExportManuscriptUnreadableError;
     expect(failure.message).toContain("Timed out fetching a new connection from the pool");
     // The durable `error` column is read by somebody deciding whether the book
     // that never shipped was nearly repaired or barely started, so the sentence
-    // states pages. It used to state the fence's read count, which answers a
-    // question nobody asks and, at three asks for any page that reaches a brief
-    // repair, cannot be turned into this one.
-    expect(failure.message).toContain("repaired 1 of 2 pages");
+    // states pages.
+    expect(failure.message).toContain("repaired 0 of 1 page)");
     expect(mocks.publishCompiledExports).not.toHaveBeenCalled();
-    // One page really was repaired before the barrier went quiet, which is what
-    // makes the count a fact about this run rather than a constant.
-    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
     // The fence itself is the `cause`, so `error.cause.cause` still reaches the
     // read that went dark for anyone holding the object.
     expect(failure.cause).toBeInstanceOf(ExportRepairFenceUnreadableError);
     expect((failure.cause as ExportRepairFenceUnreadableError).barriersCleared).toBe(2);
-    // And the same two facts survive the only trip that matters: `processJob`
+    // And the same facts survive the only trip that matters: `processJob`
     // files `serializeError(error)` as JSON, which spreads own *enumerable*
     // entries and renders a nested `Error` as `{}` — so a cause chain alone
     // reaches the run log as nothing at all.
     const filed = JSON.parse(safeJsonStringify(serializeError(failure))) as Record<string, unknown>;
     expect(filed).toMatchObject({
       name: "ExportManuscriptUnreadableError",
-      repairProgress: { pagesRepaired: 1, pagesTargeted: 2 },
+      repairProgress: { pagesRepaired: 0, pagesTargeted: 1 },
       barriersCleared: 2,
       fenceError: { message: "Connection terminated unexpectedly" },
       manuscriptError: { message: "Timed out fetching a new connection from the pool" }
     });
     // What it must not do is file the truncated-pass note. That note is what a
-    // compile says about a pass it shipped a book around, and two of its three
-    // numbers are measured against the manuscript as re-read — which on this
-    // path never came back. The ordering in the handler is what keeps it quiet.
+    // compile says about a repair it shipped a book around, measured against the
+    // manuscript as re-read — which on this path never came back.
     expect(
       warnings.filter(
         ([message]) => message === "Export compile stopped repairing: its ownership fence could not be read"
@@ -858,7 +545,6 @@ describe("compileExport when its repair fence cannot be read", () => {
     // `instanceof`, so wrapping a `StopRequestedError` here would settle a run
     // the reader ended as a FAILED book — the swallow rule reached by composing
     // rather than by catching.
-    flagPageTwo();
     mocks.exportPublicationSuperseded.mockRejectedValue(new Error("Connection terminated unexpectedly"));
     mocks.loadPagesForExport.mockRejectedValue(new StopRequestedError());
 

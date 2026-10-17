@@ -1,13 +1,15 @@
 import { expect, it } from "vitest";
 import captured from "./testing/crossPageQualityIssues.json" with { type: "json" };
 import { buildManuscriptQualityReport, type ManuscriptQualityIssue } from "./manuscriptQuality.js";
-import { groupManuscriptQualityFindings, manuscriptQualityCards } from "./manuscriptQualityFindings.js";
+import { groupManuscriptQualityFindings, manuscriptQualityCards, manuscriptQualityPenalty } from "./manuscriptQualityFindings.js";
 import { pageFindingProvenance, optionalQualityProvenance } from "./manuscriptQualityProvenance.js";
 
 it.each([['balanced', 70, 6], ['premium', 85, 3]] as const)("scores the captured %s cross-page findings once", (tier, score, count) => {
   const issues = captured[tier] as ManuscriptQualityIssue[];
   const result = buildManuscriptQualityReport([], issues, { finalReviewRan: true });
-  expect(result.score).toBe(score);
+  // The ledger's charge; the reader's score counts only reader findings, and these are diagnostics.
+  expect(Math.max(0, 100 - manuscriptQualityPenalty(result.findings ?? []))).toBe(score);
+  expect(result.score).toBe(100);
   expect(result.findings).toHaveLength(count);
   expect(manuscriptQualityCards(result.issues)).toHaveLength(count);
   expect(result.issues.map(i => i.message)).toEqual(issues.map(i => i.message));

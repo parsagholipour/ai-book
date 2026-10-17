@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # The worker container's compose healthcheck (docker-compose.production.yml).
 #
-# Healthy while both lanes' heartbeat keys (packages/core/src/workerHeartbeat.ts)
-# exist and were last written by *this* container. The worker writes each lane's
+# Healthy while every lane's heartbeat key (packages/core/src/workerHeartbeat.ts)
+# exists and was last written by *this* container. The worker writes each lane's
 # key every 30 s with a 90 s TTL while that lane's BullMQ Worker runs, so this is
-# "both lanes have a consumer" (what the check it replaced asked BullMQ) plus
+# "every lane has a consumer" (what the check it replaced asked BullMQ) plus
 # "its event loop is not wedged", which BullMQ's consumer list cannot see.
+#
+# The background lane is in the list although /api/ready leaves it out (its
+# work is optional, so its outage is an operator alert): this check gates a
+# deploy, and a release whose background Worker never starts is a broken release.
 #
 # The host comparison is what makes it a deploy gate. A key is the lane's, not
 # the process's, and outlives a stopped worker by up to 90 s, while a deploy
@@ -35,9 +39,9 @@ host=${address%%:*}
 port=6379
 [[ $address == *:* ]] && port=${address##*:}
 
-# The two queues are LONG_JOB_QUEUE and INTERACTIVE_JOB_QUEUE in
-# packages/core/src/jobLanes.ts; the test fails if they drift apart.
-keys=(book-maker:worker-heartbeat:book-maker book-maker:worker-heartbeat:book-maker-interactive)
+# The queues are GENERATION_JOB_QUEUES in packages/core/src/jobLanes.ts, in its
+# order; the test fails if they drift apart.
+keys=(book-maker:worker-heartbeat:book-maker book-maker:worker-heartbeat:book-maker-interactive book-maker:worker-heartbeat:book-maker-images book-maker:worker-heartbeat:book-maker-compile book-maker:worker-heartbeat:book-maker-background)
 
 exec 3<>"/dev/tcp/$host/$port" || fail "cannot reach Redis at $host:$port"
 for key in "${keys[@]}"; do

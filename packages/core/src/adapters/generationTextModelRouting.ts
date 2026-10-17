@@ -23,7 +23,6 @@ export type GenerationTextModelRouteField = (typeof GENERATION_TEXT_MODEL_ROUTE_
 export const GENERATION_MODEL_STAGES = [
   { id: "plan-book", label: "Book plan", group: "Planning", role: "writer" },
   { id: "revise-plan", label: "Plan revision", group: "Planning", role: "writer" },
-  { id: "critique-plan", label: "Plan review", group: "Planning", role: "judgment" },
   { id: "author-stance", label: "Author stance", group: "Planning", role: "writer" },
   { id: "architect-book", label: "Book architecture", group: "Planning", role: "writer" },
   { id: "plan-chapter-forms", label: "Chapter forms", group: "Planning", role: "writer" },
@@ -46,35 +45,26 @@ export const GENERATION_MODEL_STAGES = [
   { id: "detemplate-chapter", label: "Chapter form rewrite", group: "Chapters", role: "writer" },
   { id: "cut-chapter", label: "Chapter cuts", group: "Chapters", role: "writer" },
   { id: "describe-pages", label: "Page titles and summaries", group: "Chapters", role: "judgment" },
-  { id: "check-chapter-arithmetic", label: "Chapter arithmetic check", group: "Chapters", role: "judgment" },
   { id: "extract-chapter-facts", label: "Chapter continuity ledger", group: "Chapters", role: "judgment" },
   { id: "read-manuscript", label: "Manuscript review", group: "Manuscript", role: "writer" },
   { id: "inventory-brief-requirements", label: "Brief requirement inventory", group: "Manuscript", role: "writer" },
   { id: "rewrite-seams", label: "Chapter transitions rewrite", group: "Manuscript", role: "writer" },
-  { id: "review-manuscript-structure", label: "Manuscript structure review", group: "Manuscript", role: "judgment" },
   { id: "final-book-qa", label: "Final book review", group: "Manuscript", role: "judgment" },
-  { id: "book.final_qa.chapter_transitions", label: "Chapter transitions review", group: "Manuscript", role: "judgment" },
   { id: "chapterize-export", label: "Export chapter structure", group: "Manuscript", role: "judgment" },
   { id: "generate-page-map", label: "Page map", group: "Page mapping", role: "judgment" },
   { id: "generate-chapter-brief", label: "Chapter briefs", group: "Page mapping", role: "judgment" },
-  { id: "repair-page-brief", label: "Page brief repair", group: "Page mapping", role: "judgment" },
-  { id: "critique-page-map", label: "Page map review", group: "Page mapping", role: "judgment" },
   { id: "dedupe-page-beats", label: "Page beat rewrite", group: "Page mapping", role: "judgment" },
   { id: "generate-page", label: "Page drafting", group: "Pages", role: "writer" },
   { id: "generate-chapter-draft", label: "Chapter page draft", group: "Pages", role: "writer" },
   { id: "generate-page-batch", label: "Batch page draft", group: "Pages", role: "writer" },
   { id: "generate-whole-book", label: "Whole book draft", group: "Pages", role: "writer" },
   { id: "write-page-with-tools", label: "Page drafting with tools", group: "Pages", role: "writer" },
-  { id: "polish-page", label: "Page polish", group: "Pages", role: "writer" },
-  { id: "judge-page-drafts", label: "Page draft comparison", group: "Pages", role: "judgment" },
   { id: "review-page", label: "Page review", group: "Page review", role: "judgment" },
-  { id: "review-picture-book-continuity", label: "Picture-book continuity", group: "Page review", role: "judgment" },
   { id: "revise-page", label: "Page revision", group: "Page review", role: "writer" },
   { id: "patch-page", label: "Page patch", group: "Page review", role: "writer" },
   { id: "verify-page-claims", label: "Page claim verification", group: "Page review", role: "judgment" },
   { id: "audit-page-style", label: "Page style review", group: "Page review", role: "judgment" },
   { id: "review-edit-adherence", label: "Edit instruction review", group: "Page review", role: "judgment" },
-  { id: "extract-story-state", label: "Story continuity", group: "Supporting steps", role: "judgment" },
   { id: "select-cover-design", label: "Cover design selection", group: "Supporting steps", role: "judgment" },
   { id: "rewrite-image-prompt-copyright-safe", label: "Image prompt rewrite", group: "Supporting steps", role: "judgment" },
   { id: "extract-voice-character-candidates", label: "Voice character extraction", group: "Supporting steps", role: "writer" },
@@ -97,7 +87,7 @@ export type GenerationStageRoute = { primary: DecisionModelSelection; fallback: 
 export type GenerationStageRoutes = Partial<Record<GenerationModelStageId, GenerationStageRoute>>;
 
 export function stageSupportsFiniteDecisions(id: string): boolean {
-  return id === "judge-chapter-drafts" || id === "judge-page-drafts";
+  return id === "judge-chapter-drafts";
 }
 
 export function generationModelStage(purpose: string | undefined) {
@@ -108,11 +98,8 @@ export function generationModelStage(purpose: string | undefined) {
 export function generationStageRoute(routing: GenerationTextModelRouting, tier: ModelTier, id: GenerationModelStageId): GenerationStageRoute {
   const saved = routing[tier].stages?.[id];
   if (saved) return saved;
-  if (id === "review-picture-book-continuity") return generationStageRoute(routing, tier, "review-page");
   // Splitting extraction must not silently change any saved model, effort or fallback.
   if (id === "inventory-brief-requirements") return generationStageRoute(routing, tier, "read-manuscript");
-  // A new mechanical check takes the story-state extraction's route until it is given its own.
-  if (id === "check-chapter-arithmetic") return generationStageRoute(routing, tier, "extract-story-state");
   // The next chapter's compose waits on this extraction, so until it is given its own route it takes
   // Quick Draft's page-description route on every tier: luna with no reasoning answered in 2.5–4.7 s
   // on the 2026-09-30 books, Balanced's own (luna, low) in 6–10 s.

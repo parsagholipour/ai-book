@@ -143,16 +143,22 @@ export class TextFallbackCallAccounting {
 
   private async handleEvent(event: TextFallbackEvent): Promise<void> {
     const eventAt = new Date().toISOString();
-    if (event.event === "fallback.start") {
+    if (event.event === "fallback.start" || event.event === "fallback.primary_retry") {
+      // The failed primary request is settled on its own row — its reported
+      // usage, or the live output estimate it streamed — before the next
+      // request (the fallback's, or the primary's fresh one) resets the usage
+      // this call observes. Without that, a same-model retry's success settled
+      // one row for both requests and the interrupted one's tokens vanished.
       await this.finalizeFailure(event.primary.error, eventAt);
       this.providerRequest = undefined;
       this.providerUsage = undefined;
       this.attemptStartedAt = eventAt;
+      const next = event.event === "fallback.start" ? event.fallback : event.primary;
       this.liveUsage = await beginLiveTextUsage({
         projectId: this.context.projectId,
         generationJobId: this.context.generationJobId,
-        provider: event.fallback.provider,
-        model: event.fallback.model,
+        provider: next.provider,
+        model: next.model,
         purpose: this.context.purpose,
         operation: this.context.operation,
         callId: this.context.callId,

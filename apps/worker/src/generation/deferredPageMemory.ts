@@ -1,16 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  applyStoryDelta,
   foldCharacterName,
-  parseStoryState,
-  seedStoryStateFromPromises,
   type BookGenerationStrategy,
   type BookPlan,
-  type CreateProjectInput,
   type PageDraft,
-  type ProviderSet,
-  type StoryDelta,
-  type StoryState
+  type ProviderSet
 } from "@book-maker/core";
 import { degradeRetrievalArm, pageScope, Prisma } from "@book-maker/db";
 import { config } from "../runtime/config.js";
@@ -19,10 +13,6 @@ import { runBestEffortPageMemoryWrite } from "./bestEffortSavepoint.js";
 import { prepareEmbedding, strategyUsesSemanticMemory } from "./embeddingWrites.js";
 import { foldedMentions } from "./entityMentions.js";
 import { updateEntityStateFromPage } from "./entityState.js";
-import {
-  keeperStoryExtractForSave,
-  type QualityGateContext
-} from "./qualityEnrichment.js";
 
 export type DeferredPageMemoryCandidate = {
   pageIndex: number;
@@ -31,85 +21,31 @@ export type DeferredPageMemoryCandidate = {
 
 export type PreparedDeferredPageMemory = DeferredPageMemoryCandidate & {
   preparedEmbedding: Awaited<ReturnType<typeof prepareEmbedding>> | null;
-  storyExtract: Awaited<ReturnType<typeof keeperStoryExtractForSave>>;
 };
 
 /** A prepared page beside the row id the publication created for it. */
 type PublishedPageMemory = PreparedDeferredPageMemory & { pageId: string };
 
-type MemoryBatchOptions = {
-  tx: Prisma.TransactionClient;
-  projectId: string;
-  plan: BookPlan;
-};
-
-export async function prepareDeferredPageStoryContext(options: {
-  projectId: string;
-  input: CreateProjectInput;
-  plan: BookPlan;
-  providers: ProviderSet;
-  quality: QualityGateContext;
-  currentStoryState: StoryState;
-  candidate: DeferredPageMemoryCandidate;
-}): Promise<{
-  storyExtract: Awaited<ReturnType<typeof keeperStoryExtractForSave>>;
-  nextStoryState: StoryState;
-}> {
-  const storyExtract = await keeperStoryExtractForSave({
-    projectId: options.projectId,
-    pageIndex: options.candidate.pageIndex,
-    draft: options.candidate.draft,
-    textModel: options.providers.text,
-    plan: options.plan,
-    input: options.input,
-    previousExtract: null,
-    keeperWasRevised: true,
-    currentState: options.currentStoryState,
-    quality: options.quality
-  });
-  return {
-    storyExtract,
-    nextStoryState: storyExtract
-      ? applyStoryDelta(options.currentStoryState, storyExtract.storyDelta, options.candidate.pageIndex)
-      : options.currentStoryState
-  };
-}
-
 /**
- * Spends every provider call required by deferred page memory before the final
- * manuscript transaction. Story extracts are prepared in page order so each
- * later extract sees the facts accepted from the earlier in-memory keeper.
+ * Spends every provider call required by deferred page memory — one embedding
+ * per page, for a strategy whose later pages read semantic memory — before the
+ * final manuscript transaction, in page order. (No story extract: nothing
+ * extracts story state since 2026-10-16, E6.)
  */
 export async function prepareDeferredPageMemory(options: {
-  projectId: string;
-  input: CreateProjectInput;
-  plan: BookPlan;
   providers: ProviderSet;
   strategy: BookGenerationStrategy;
-  quality: QualityGateContext;
-  initialStoryState: StoryState;
   candidates: readonly DeferredPageMemoryCandidate[];
   assertOwnership?: (() => Promise<void>) | undefined;
 }): Promise<PreparedDeferredPageMemory[]> {
-  let currentState = options.initialStoryState;
   const prepared: PreparedDeferredPageMemory[] = [];
   for (const candidate of [...options.candidates].sort((left, right) => left.pageIndex - right.pageIndex)) {
     await options.assertOwnership?.();
-    const storyContext = await prepareDeferredPageStoryContext({
-      projectId: options.projectId,
-      input: options.input,
-      plan: options.plan,
-      providers: options.providers,
-      quality: options.quality,
-      currentStoryState: currentState,
-      candidate
-    });
-    currentState = storyContext.nextStoryState;
     const preparedEmbedding = strategyUsesSemanticMemory(options.strategy)
       ? await prepareEmbedding(candidate.draft.summary, options.providers.embedding)
       : null;
     await options.assertOwnership?.();
-    prepared.push({ ...candidate, preparedEmbedding, storyExtract: storyContext.storyExtract });
+    prepared.push({ ...candidate, preparedEmbedding });
   }
   return prepared;
 }
@@ -132,9 +68,9 @@ export async function prepareDeferredPageMemory(options: {
  * whose expiry rolls back the entire published manuscript — every retry
  * reproducing it, after all the drafting, review and adherence work has been
  * paid for. The same rows are written now, in statements bounded by the
- * project's cast instead of by its length: one note insert, one page-delta
- * update, one fold of the story state the batch read, one entity pass, and one
- * embedding upsert.
+ * project's cast instead of by its length: one note insert, one entity pass,
+ * and one embedding upsert. (The page-delta update and the story-state fold
+ * went with story memory, 2026-10-16, E6.)
  */
 export async function persistPreparedDeferredPageMemory(options: {
   tx: Prisma.TransactionClient;
@@ -145,10 +81,9 @@ export async function persistPreparedDeferredPageMemory(options: {
   prepared: readonly PreparedDeferredPageMemory[];
   tags?: readonly string[] | undefined;
 }): Promise<void> {
-  // Sorted here rather than assumed of the caller: the story fold and the
-  // entity pass are both order-sensitive, and page order is the order the
-  // extracts were prepared in. Both callers already sort, so this changes
-  // nothing they publish; it is what makes the batch's own claim true.
+  // Sorted here rather than assumed of the caller: the entity pass is
+  // order-sensitive. Both callers already sort, so this changes nothing they
+  // publish; it is what makes the batch's own claim true.
   const pages: PublishedPageMemory[] = [...options.prepared]
     .sort((left, right) => left.pageIndex - right.pageIndex)
     .map((candidate) => {
@@ -162,7 +97,6 @@ export async function persistPreparedDeferredPageMemory(options: {
     return;
   }
   await writeContinuityNotes(options, pages);
-  await writeStoryMemory(options, pages);
   await writeEntityState(options, pages);
   await writePageEmbeddings(options, pages);
 }
@@ -207,43 +141,10 @@ async function writeContinuityNotes(
 }
 
 /**
- * The batch's story memory: each page's own delta, and one fold of them onto
- * `Project.storyState`.
- *
- * Two best-effort blocks rather than one, because the columns are not worth the
- * same. `Page.storyDelta` is what `rebuildStoryStateFromPages` reads the live
- * fold back out of, so it must survive a fold that cannot land; the project
- * column is the O(1) cache in front of that rebuild.
- */
-async function writeStoryMemory(
-  options: MemoryBatchOptions,
-  pages: readonly PublishedPageMemory[]
-): Promise<void> {
-  const extracted = pages.flatMap((page) =>
-    page.storyExtract
-      ? [{ pageIndex: page.pageIndex, pageId: page.pageId, delta: page.storyExtract.storyDelta }]
-      : []
-  );
-  if (extracted.length === 0) {
-    return;
-  }
-  await runBestEffortPageMemoryWrite(options.tx, () =>
-    reportBatchMemoryFailure(options.projectId, "page story deltas", () =>
-      writePageStoryDeltas(options.tx, options.projectId, extracted)
-    )
-  );
-  await runBestEffortPageMemoryWrite(options.tx, () =>
-    reportBatchMemoryFailure(options.projectId, "story state fold", () =>
-      foldProjectStoryState(options, extracted)
-    )
-  );
-}
-
-/**
  * A savepoint swallows what it rolls back, so an arm that fails inside one
  * leaves no line at all — and the per-page writers this batch replaced each
- * named their own failure (`persistPageStoryDelta` logged the delta it lost,
- * `updateEntityStateFromPage` still reports through `degradeRetrievalArm`).
+ * named their own failure (`updateEntityStateFromPage` still reports through
+ * `degradeRetrievalArm`).
  * Logged here and rethrown, so the rollback that keeps the manuscript
  * transaction committable still happens. Once per publication rather than once
  * per page, which is why this is a plain warn and not the census ladder.
@@ -261,72 +162,6 @@ async function reportBatchMemoryFailure<T>(
     }
     throw error;
   }
-}
-
-type PageStoryDelta = { pageIndex: number; pageId: string; delta: StoryDelta };
-
-/** One statement for the column a per-page `updateMany` wrote one row at a time. */
-function writePageStoryDeltas(
-  tx: Prisma.TransactionClient,
-  projectId: string,
-  extracted: readonly PageStoryDelta[]
-): Promise<number> {
-  return tx.$executeRawUnsafe(
-    `UPDATE "Page" page
-        SET "storyDelta" = item.story_delta,
-            "updatedAt" = CURRENT_TIMESTAMP
-       FROM jsonb_to_recordset($2::jsonb) AS item(page_id text, story_delta jsonb)
-      WHERE page."id" = item.page_id
-        AND page."projectId" = $1`,
-    projectId,
-    JSON.stringify(extracted.map((entry) => ({ page_id: entry.pageId, story_delta: entry.delta })))
-  );
-}
-
-/**
- * The whole batch folded onto the story state in one read-modify-write.
- *
- * `applyStoryDelta` is a pure fold, so folding the batch in page order in
- * memory reaches exactly the document a delta-at-a-time loop reached — and it
- * cannot lose a race it never runs: both callers open their transaction by
- * updating this Project row, so nothing else may write the column until they
- * commit. The claim is still staked on the document that was read, because a
- * miss under a lock we believed we held is a fact worth saying out loud rather
- * than a state to overwrite. `Project.storyState` is rebuildable
- * (`rebuildProjectStoryState`, from the page deltas above), which is why a miss
- * degrades instead of failing the manuscript.
- */
-async function foldProjectStoryState(
-  options: MemoryBatchOptions,
-  extracted: readonly PageStoryDelta[]
-): Promise<StoryState | null> {
-  const project = await options.tx.project.findUnique({
-    where: { id: options.projectId },
-    select: { storyState: true }
-  });
-  if (!project) {
-    return null;
-  }
-  const stored = project.storyState;
-  let next =
-    stored == null ? seedStoryStateFromPromises(options.plan.promises ?? []) : parseStoryState(stored);
-  for (const entry of extracted) {
-    next = applyStoryDelta(next, entry.delta, entry.pageIndex);
-  }
-  const claimed = await options.tx.project.updateMany({
-    where: {
-      id: options.projectId,
-      storyState: stored == null ? { equals: Prisma.DbNull } : { equals: stored as Prisma.InputJsonValue }
-    },
-    data: { storyState: next as Prisma.InputJsonValue }
-  });
-  if (claimed.count === 1) {
-    return next;
-  }
-  console.warn(
-    `Story state fold for ${options.projectId} did not claim the row it read; leaving the rebuild to reconcile it`
-  );
-  return null;
 }
 
 /**

@@ -246,7 +246,7 @@ describe("loadPricingDrivers", () => {
 
   it("counts a book's pictures off the quote its charge stored, and re-estimates only a charge with none", async () => {
     // A 16-page picture book charged under the rule before min(pages, 12) was
-    // quoted eight pictures and a drawn cover; today's rule would draw twelve.
+    // quoted eight pictures and a drawn cover; today's rule would draw six.
     primeWindow({ edits: [], chargedCredits: 0 });
     mockPrisma.project.findMany.mockResolvedValue([
       {
@@ -269,7 +269,7 @@ describe("loadPricingDrivers", () => {
           project_id: "kids-1", operation: "FULL_BOOK_GENERATION", pricing_key: null, export_unlock: "false",
           quoted_interior_images: "8", quoted_cover: "true", count: 2
         },
-        // An older charge with no quote at all: today's estimate, 12 pictures and the cover.
+        // An older charge with no quote at all: today's estimate, 6 pictures and the cover.
         { project_id: "kids-1", operation: "FULL_BOOK_GENERATION", pricing_key: null, export_unlock: null, count: 1 }
       ]);
     });
@@ -277,7 +277,7 @@ describe("loadPricingDrivers", () => {
     const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
 
     expect(report.drivers.fullBookBase).toBe(3);
-    expect(report.drivers.imageGeneration).toBe(2 * (8 + 1) + 1 * (12 + 1));
+    expect(report.drivers.imageGeneration).toBe(2 * (8 + 1) + 1 * (6 + 1));
     const sql = mockPrisma.$queryRaw.mock.calls.map((args) => sqlFromQueryRawCall(args as unknown[])).join("\n");
     expect(sql).toContain("{creditEstimate,assumptions,estimatedInteriorImages}");
     expect(sql).toContain("{creditEstimate,assumptions,includesCover}");

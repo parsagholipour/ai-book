@@ -68,6 +68,7 @@ const mocks = vi.hoisted(() => {
       })
     },
     project: { update: vi.fn(async () => ({})) },
+    generationJob: { findUnique: vi.fn(async () => null), updateMany: vi.fn(async () => ({ count: 0 })) }, // no composition prep
     planVersion: {
       findUnique: vi.fn(async () => ({ planningPackage: store.planningPackage })),
       updateMany: vi.fn(async (args: { data: { planningPackage: unknown } }) => {
@@ -175,7 +176,8 @@ vi.mock("./wholeBookPageReview.js", () => ({
 }));
 
 import { FakeTextModelAdapter, assignedSectionCount, caseEvidencePacketSchema, chapterWordBudget, figureCapFor, figureSpecSchema, makeFallbackPlan, proseWordCount, sustainedSectionShare, type CreateProjectInput, type ProviderSet } from "@book-maker/core";
-import { composedChaptersStrategy } from "@book-maker/core";
+import { composedChaptersResearchStrategy, composedChaptersStrategy } from "@book-maker/core";
+import { retrieveChapterSources } from "./sourceDossier.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { composedResumeState, derivedChapterBrief, generateBookComposedChapters } from "./composedChaptersPass.js";
 import { finalizePendingPages } from "./composedChaptersFinalize.js";
@@ -356,7 +358,7 @@ describe("generateBookComposedChapters", () => {
     const compose = fake.generateText;
     fake.generateText = async (options) => options.purpose !== "compose-chapter" ? compose(options)
       : options.messages[0]!.content.includes("Your previous answer was") ? Promise.reject(new Error("OpenAI response was incomplete: max_output_tokens."))
-      : compose(options).then((full) => ({ ...full, text: full.text.split(/(?<=\.)\s+/).filter((_, i, all) => i < all.length / 3).join(" ") }));
+      : compose(options).then((full) => ({ ...full, text: full.text.split(/(?<=\.)\s+/).filter((_, i, all) => i < all.length / 3).join("\n\n") }));
     const append = vi.fn(async (_event: string, _data: Record<string, unknown>) => "");
     await generateBookComposedChapters({ projectId: "project-1", planId: "plan-1", input, plan, providers: providersWith(fake), strategy: composedChaptersStrategy, generationJobId: "job-1", runLog: { append } });
     expect(append.mock.calls.filter(([event]) => event === "generation.composed_chapters.length_retry_failed").map(([, data]) => data)).toEqual(plan.chapters.map((chapter) => expect.objectContaining({ chapterIndex: chapter.index, error: "OpenAI response was incomplete: max_output_tokens." })));
@@ -382,12 +384,11 @@ describe("generateBookComposedChapters", () => {
     expect(purposes.filter((purpose) => purpose === "author-stance")).toHaveLength(1);
     expect(purposes.filter((purpose) => purpose === "plan-chapter-forms")).toHaveLength(1);
     expect(purposes.filter((purpose) => purpose === "compose-chapter")).toHaveLength(plan.chapters.length);
-    // One line edit per chapter, plus one reshaping edit when the deterministic
-    // shape check finds the edited chapter uniform — the fake's paragraphs
-    // never run past 150 words, so every chapter takes that second pass here.
-    const edits = purposes.filter((purpose) => purpose === "edit-chapter").length;
-    expect(edits).toBeGreaterThanOrEqual(plan.chapters.length);
-    expect(edits).toBeLessThanOrEqual(plan.chapters.length * 2);
+    // No line edit and no review of one (removed 2026-10-16): the draft is the chapter.
+    expect(purposes).not.toContain("edit-chapter");
+    expect(purposes).not.toContain("review-chapter-edit-acceptance");
+    expect(store.chapters.map((chapter) => (chapter.productionBrief as { report: { lineEdited?: boolean; editorChanged: boolean } }).report))
+      .toEqual(plan.chapters.map(() => expect.objectContaining({ lineEdited: false, editorChanged: false })));
     // Described once after the compose; the arc and the seams are off by default (composedChaptersState.ts).
     expect(purposes.filter((purpose) => purpose === "describe-pages")).toHaveLength(plan.chapters.length);
     expect(purposes).not.toContain("architect-book");
@@ -415,8 +416,8 @@ describe("generateBookComposedChapters", () => {
     expect(typeof shaped.paragraphCv).toBe("number");
     expect(typeof shaped.shapePassApplied).toBe("boolean");
     expect(briefs[0]!.report.formPlanSource).toBe("model");
-    // The plan carried no stance, so the one the pass generated is written back onto it; no arc is planned by default.
-    expect(mocks.prisma.planVersion.update).toHaveBeenCalledTimes(1);
+    // The plan carried no stance, so the one the pass generated is written back onto it (a CAS); no arc by default.
+    expect(mocks.prisma.planVersion.update).not.toHaveBeenCalled();
     expect((store.planningPackage.authorStance as { thesis: string }).thesis).not.toBe("");
     expect(store.planningPackage.bookArc).toBeUndefined();
     expect(briefs.some((brief) => (brief.report as { seamsApplied?: boolean }).seamsApplied)).toBe(false);
@@ -446,7 +447,8 @@ describe("generateBookComposedChapters", () => {
       chapterIndex: 1
     });
     expect(setupCounters.some((counters) => counters?.phase === "compose" && counters.chapterIndex === 1)).toBe(true);
-    expect(setupCounters.some((counters) => counters?.phase === "edit" && counters.chapterIndex === 1)).toBe(true);
+    // No "edit" phase since the line edit was removed (2026-10-16); the API still maps the token for older jobs.
+    expect(setupCounters.some((counters) => counters?.phase === "edit")).toBe(false);
     expect(setupCounters.some((counters) => counters?.phase === "read" && counters.total === plan.chapters.length)).toBe(true);
     expect(setupCounters.some((counters) => counters?.phase === "finalize" && counters.done === plan.chapters.length)).toBe(true);
   });
@@ -563,21 +565,42 @@ describe("generateBookComposedChapters", () => {
     expect(store.pages).toHaveLength(input.targetPages);
   });
 
+  it("keeps a research book's lead answers as its notes and starts research only for the chapters no lead answered", async () => {
+    // H3b (2026-10-16): a chapter with leads gets no chapter-research search of its own.
+    const base = makeFallbackPlan(input);
+    const last = base.chapters.at(-1)!.index;
+    const episodes = { chapters: base.chapters.map((chapter) => ({ index: chapter.index, episodes: chapter.index === last ? [] : [{ title: `Lead ${chapter.index}`, kind: "document", why: "", searchQueries: [`query ${chapter.index}`] }] })) };
+    const plan = { ...base, authorStance: { thesis: "T.", positions: ["P", "Q"], refusals: [], voiceSample: "The keeper wrote the wind in the log. ".repeat(12), research: "sources" as const }, episodes, researchQueries: [] } as unknown as typeof base;
+    store.planningPackage = plan as unknown as Record<string, unknown>;
+    const search = vi.fn(async (query: { query: string }) => ({ query: query.query, summary: "An answer.", sources: [] }));
+    vi.mocked(retrieveChapterSources).mockImplementation(async (options) => {
+      await options.leadSearch?.(`query ${options.chapter.index}`, `Lead ${options.chapter.index}`);
+      return { documents: [], excerpts: [] };
+    });
+    const start = vi.fn();
+    const providers = { text: recordingFake().fake, research: { search } } as unknown as ProviderSet;
+    try {
+      await generateBookComposedChapters({ projectId: "project-1", planId: "plan-1", input, plan, providers, strategy: composedChaptersResearchStrategy, research: { start, ready: async () => {} } });
+    } finally { vi.mocked(retrieveChapterSources).mockImplementation(async () => ({ documents: [], excerpts: [] })); }
+    expect(start).toHaveBeenCalledExactlyOnceWith({ chapterIndexes: [last], researchQueries: [] });
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: "query 1", purpose: "case-source-search" }));
+  });
+
   it("lets two chapters finish beside the one being composed, and never more", async () => {
-    // Finishing a chapter (edit, review, descriptions) outlasted composing the next and paced the loop (2026-09-30).
+    // Finishing a chapter (then edit, review, descriptions) outlasted composing the next and paced the loop (2026-09-30).
     const long = { ...input, targetPages: 30 };
     const plan = makeFallbackPlan(long);
     const { fake } = recordingFake();
-    const originalText = fake.generateText.bind(fake);
-    let editing = 0;
+    const originalJson = fake.generateJson.bind(fake);
+    let finishing = 0;
     let peak = 0;
-    fake.generateText = async (options) => {
-      if (options.purpose !== "edit-chapter") return originalText(options);
-      editing += 1;
-      peak = Math.max(peak, editing);
+    fake.generateJson = async (options) => {
+      if (options.purpose !== "describe-pages") return originalJson(options);
+      finishing += 1;
+      peak = Math.max(peak, finishing);
       await new Promise((resolve) => setTimeout(resolve, 30));
-      editing -= 1;
-      return originalText(options);
+      finishing -= 1;
+      return originalJson(options);
     };
     await generateBookComposedChapters({ projectId: "project-1", planId: "plan-1", input: long, plan, providers: providersWith(fake), strategy: composedChaptersStrategy });
     expect(plan.chapters.length).toBeGreaterThanOrEqual(3);
@@ -585,21 +608,32 @@ describe("generateBookComposedChapters", () => {
     expect(store.pages).toHaveLength(long.targetPages);
   });
 
-  it("skips the editor and the read when their gates are off", async () => {
+  it("skips the read when its gate is off, and never line-edits: Balanced's default since 2026-10-16", async () => {
     const plan = makeFallbackPlan(input);
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature !== "chapterEditorPass" && feature !== "manuscriptReadPass");
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature !== "manuscriptReadPass");
     const { fake, purposes } = recordingFake();
+    const append = vi.fn(async (_event: string, _data: Record<string, unknown>) => "");
     await generateBookComposedChapters({
       projectId: "project-1",
       planId: "plan-1",
       input,
       plan,
       providers: providersWith(fake),
-      strategy: composedChaptersStrategy
+      strategy: composedChaptersStrategy,
+      generationJobId: "job-1",
+      runLog: { append }
     });
-    expect(purposes).not.toContain("edit-chapter");
-    expect(purposes).not.toContain("read-manuscript");
+    for (const purpose of ["edit-chapter", "read-manuscript", "cut-chapter", "review-chapter-edit-acceptance"]) expect(purposes).not.toContain(purpose);
     expect(store.pages).toHaveLength(input.targetPages);
+    expect(store.pages.every((page) => page.status === "COMPLETED")).toBe(true);
+    // The continuity notes the chapters staged are published without a read to re-stage them.
+    expect(store.pages.every((page) => store.notes.some((note) => note.pageId === page.id))).toBe(true);
+    // Nothing says a read happened, or that one was skipped or left something unverified.
+    const phases = vi.mocked(advanceJobStep).mock.calls.map((call) => (call[4] as { phase?: string } | undefined)?.phase);
+    expect(phases).not.toContain("read");
+    expect(append.mock.calls.map(([event]) => event).filter((event) => /read|cut|unverified/.test(event))).toEqual([]);
+    const reports = store.chapters.map((chapter) => (chapter.productionBrief as { report: { readNotes: string[]; secondEditApplied: boolean } }).report);
+    expect(reports.every((report) => report.readNotes.length === 0 && report.secondEditApplied === false)).toBe(true);
   });
 });
 
@@ -657,7 +691,7 @@ describe("figures in the composed pass", () => {
 describe("developed nonfiction manuscript integration", () => {
   it("finishes staged chapters through one extractive development plan, then resumes without repeating it", async () => {
     mocks.developmentEnabled = true;
-    mocks.qualityEnabled.mockImplementation((feature) => !["figures", "coupletRewrite", "chapterApparatus"].includes(feature));
+    mocks.qualityEnabled.mockImplementation((feature) => !["figures", "chapterApparatus"].includes(feature));
     const chapters = [1, 2].map((index) => ({ index, title: `Trial ${index}`, summary: `Finding ${index}`, keyBeats: [`Evidence ${index}`], targetPages: 12 }));
     const packets = chapters.map((chapter) => caseEvidencePacketSchema.parse({
       id: `case-${chapter.index}`, sourceChapterIndex: chapter.index, reviewVersion: 1,
@@ -748,8 +782,7 @@ describe("manuscript read cuts", () => {
   }
 
   const gatesOffFor = (extra: string[]) => {
-    // The line edit and the couplet rewrite would replace the scripted draft.
-    mocks.qualityEnabled.mockImplementation((feature: string) => !["chapterEditorPass", "coupletRewrite", ...extra].includes(feature));
+    mocks.qualityEnabled.mockImplementation((feature: string) => !extra.includes(feature));
   };
 
   const run = async (fake: FakeTextModelAdapter, decisions?: ProviderSet["decisions"], plan = makeFallbackPlan(input)) => {
@@ -802,68 +835,31 @@ describe("manuscript read cuts", () => {
     }
   });
 
-  it.each([true, false])("honors the semantic gate (%s) on the worker line editor", async (enabled) => {
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "chapterEditorPass" || (enabled && feature === "chapterEditAcceptance"));
-    const { fake } = readingFake({});
-    const text = fake.generateText.bind(fake);
-    fake.generateText = async (request) => {
-      if (request.purpose !== "edit-chapter") return text(request);
-      const payload = JSON.parse(request.messages.find((message) => message.role === "user")!.content) as { draft: string };
-      return { text: payload.draft.replace("charged", "did not charge"), provider: "fixture", model: "fixture" };
-    };
-    const review = rejectingReviewer(fake);
-    const decisions = rejectingDecisions();
-    const plan = await run(fake, decisions);
-    expect(store.pages.some((page) => page.markdown.includes("did not charge"))).toBe(!enabled);
-    // One contextual review per changed chapter retains the polarity reversal; no decision model is consulted.
-    expect(decisions.choose).not.toHaveBeenCalled();
-    expect(review.mock.calls.filter(([request]) => request.purpose === "review-chapter-edit-acceptance")).toHaveLength(enabled ? plan.chapters.length : 0);
-  });
-
-  it("discards a degenerate line edit inside editChapter and publishes the draft", async () => {
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "chapterEditorPass");
-    const { fake } = readingFake({});
-    const text = fake.generateText.bind(fake);
-    const subjects = ["The codex plate", "The calpulli leaders", "The tribute exchange"];
-    const loop = Array.from(
-      { length: 500 },
-      (_, index) => `${subjects[index % 3]} polished these tables, shining them with oils and creams number ${index}.`
-    ).join(" ");
-    fake.generateText = async (request) => {
-      if (request.purpose !== "edit-chapter") return text(request);
-      return { text: loop, provider: "fixture", model: "fixture" };
-    };
-    await run(fake);
-    const book = store.pages.map((page) => page.markdown).join("\n\n");
-    expect(book).toContain("Ledger 0 records the fee");
-    expect(book).not.toContain("polished these tables");
-    expect(
-      store.chapters.every(
-        (chapter) => (chapter.productionBrief as { report: { editorChanged: boolean } }).report.editorChanged === false
-      )
-    ).toBe(true);
-  });
-
-  it("preserves valid qualifications, repetitions and paragraphs with the legacy rewrite flag on", async () => {
-    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "coupletRewrite");
+  it.each([true, false])("keeps the arithmetic repair, reviewed only when the acceptance gate is on (%s)", async (enabled) => {
+    // The line edit is gone; the repair is a factual correction through the editor, judged against its computation.
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature !== "manuscriptReadPass" && (enabled || feature !== "chapterEditAcceptance"));
     const { fake, purposes } = recordingFake();
-    const generateText = fake.generateText.bind(fake);
-    const qualification = "The grave held several bodies. Excavators found wounds on the bones. The wounds do not prove that the deaths occurred in battle.";
-    const claim = "The decree did not free the prisoners. It transferred them to another prison.";
-    const repeated = "The witness repeated the same words because the clerk had asked her to repeat them.";
-    const paragraphs = "The clerk closed the ledger after the hearing.\n\nThat afternoon brought another hearing before a different judge.";
-    fake.generateText = async (options) => {
-      if (options.purpose !== "compose-chapter") return generateText(options);
-      purposes.push(options.purpose);
-      return { text: [qualification, claim, repeated, paragraphs, repeated, longDraft(6200)].join("\n\n"), provider: "fixture", model: "fixture" };
+    const text = fake.generateText.bind(fake);
+    const json = fake.generateJson.bind(fake);
+    fake.generateText = async (request) => {
+      const reply = await text(request);
+      if (request.purpose === "compose-chapter") return { ...reply, text: `${reply.text}\n\nThe first block gives \\(2 + 2 = 5\\) before the key is applied.` };
+      if (request.purpose !== "edit-chapter") return reply;
+      const payload = JSON.parse(request.messages.find((message) => message.role === "user")!.content) as { draft: string; factualCorrection?: { computations?: string[] } };
+      expect(payload.factualCorrection?.computations?.length).toBeGreaterThan(0);
+      return { ...reply, text: payload.draft.replace("2 + 2 = 5", "2 + 2 = 4") };
     };
-    await run(fake);
-    const first = store.pages.filter((page) => page.chapterId === store.chapters[0]!.id).map((page) => page.markdown).join("\n\n");
-    expect(first).toContain(qualification);
-    expect(first).toContain(claim);
-    expect(first).toContain(paragraphs);
-    expect(first.split(repeated)).toHaveLength(3);
-    expect(purposes).not.toContain("rewrite-couplets");
+    fake.generateJson = async (request) => {
+      if (request.purpose !== "review-chapter-edit-acceptance") return json(request);
+      purposes.push(request.purpose);
+      return { data: request.schema.parse({ meaning: "pass", intent: "pass", meaningReason: "Only the wrong sum changed", intentReason: "The requested correction" }), text: "", provider: "fixture", model: "fixture" };
+    };
+    const plan = await run(fake);
+    const book = store.pages.map((page) => page.markdown).join("\n\n");
+    expect(book).toContain("2 + 2 = 4");
+    expect(book).not.toContain("2 + 2 = 5");
+    expect(purposes.filter((purpose) => purpose === "edit-chapter")).toHaveLength(plan.chapters.length);
+    expect(purposes.filter((purpose) => purpose === "review-chapter-edit-acceptance")).toHaveLength(enabled ? plan.chapters.length : 0);
   });
 
   it("cuts exactly the flagged chapter when the gate is on", async () => {
@@ -886,6 +882,10 @@ describe("manuscript read cuts", () => {
     expect(reports()[0]!.readNotes).toHaveLength(1);
     expect(reports()[0]!.secondEditApplied).toBe(false);
     expect(store.pages).toHaveLength(input.targetPages);
+    // Re-staged uncut on a fresh run, it keeps its pages' continuity notes, and finalize publishes them.
+    const kept = store.pages.filter((page) => page.chapterId === store.chapters[0]!.id).map((page) => page.id);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.every((id) => store.notes.some((note) => note.pageId === id))).toBe(true);
   });
 
   it("makes no cut call with the gate off, and still records the read's notes", async () => {

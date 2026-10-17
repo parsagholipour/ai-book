@@ -53,7 +53,7 @@ function fixture(modelTier: "fast" | "balanced" | "premium" = "premium") {
   return { options, briefs, calls, regenerate };
 }
 
-it.each(["fast", "balanced", "premium"] as const)(
+it.each(["balanced", "premium"] as const)(
   "lets the captured setup/restoration through unchanged in one bounded review on %s", async modelTier => {
   const { options, briefs, calls, regenerate } = fixture(modelTier);
   const result = await enforceProductionMapIntegrity(options);

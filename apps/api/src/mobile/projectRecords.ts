@@ -53,7 +53,7 @@ import { GenerationAttemptConflictError, startGenerationAttempt } from "@book-ma
 import { z } from "zod";
 import { requestedPageCountScope } from "./pageCountScope.js";
 import { manuscriptSummarySelect } from "./manuscript/manuscriptSerializers.js";
-import { aiWorkKindForTier, assertAiCapacity } from "./aiCapacity.js";
+import { aiWorkKindForTier, assertAiCapacity, speculativeWorkAllowed } from "./aiCapacity.js";
 import { UltraTierUnavailableError, ultraTierRefused } from "./ultraTier.js";
 
 /**
@@ -161,7 +161,6 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     includeCover: includeCoverForSource(coverArtSource),
     coverArtSource,
     coverTemplate: bookType.coverTemplate,
-    finalReview: quality.finalReview,
     toneProfile: bookType.toneProfile,
     generationStrategy: AUTO_BOOK_GENERATION_STRATEGY_ID,
     ...(quality.parallelPageGeneration !== undefined
@@ -594,6 +593,8 @@ export async function queueInitialMobilePlan(
     }
     await assertAiCapacity(userId, aiWorkKindForTier(planQuote.modelTier));
   }
+  // Whether the plan's composition prep may be queued after it (harness redesign H4): speculative, unbilled work.
+  const prepareComposition = await speculativeWorkAllowed(userId);
   const started = await startGenerationAttempt({
     userId,
     commandKey,
@@ -642,7 +643,8 @@ export async function queueInitialMobilePlan(
         attemptId,
         payload: {
           inputSnapshot,
-          ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
+          ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {}),
+          ...(prepareComposition ? { prepareComposition: true } : {})
         }
       });
       await tx.project.update({ where: { id: projectId }, data: { status: "PLANNING" } });

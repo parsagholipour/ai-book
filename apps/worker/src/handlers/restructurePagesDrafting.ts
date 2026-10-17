@@ -7,14 +7,12 @@ import {
 import { runBestEffortPageMemoryWrite } from "../generation/bestEffortSavepoint.js";
 import { prepareEmbedding, strategyUsesSemanticMemory, writePreparedEmbedding } from "../generation/embeddingWrites.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generation/generationContext.js";
-import { keeperStoryExtractForSave, persistStoryExtract } from "../generation/qualityEnrichment.js";
 import { reviewAndSaveGeneratedPage } from "../generation/pageReview.js";
 import { revisePageDraftWithRestart } from "../generation/pageRevision.js";
 import {
   renewStructuralPageLeaseTx,
   StructuralPageLeaseLostError
 } from "../generation/structuralPageLease.js";
-import { loadProjectStoryState } from "../generation/storyStateStore.js";
 import type { inputForPlanVersion } from "../generation/projectInput.js";
 import { loadQualityContext } from "../generation/qualitySettings.js";
 import type { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -25,7 +23,6 @@ import {
   type DurableEditCompletionClaim
 } from "../runtime/durableEditCompletion.js";
 import {
-  applyStoryDelta,
   isBareStructuralInstruction,
   jsonRecord,
   reviewAppliedBookEdit,
@@ -79,7 +76,6 @@ type AdherenceAudit = {
 
 type PreparedInsertedCandidate = InsertedCandidate & {
   preparedEmbedding: Awaited<ReturnType<typeof prepareEmbedding>> | null;
-  storyExtract: Awaited<ReturnType<typeof keeperStoryExtractForSave>>;
 };
 
 export type DraftedInsertedPages = {
@@ -312,11 +308,7 @@ export async function draftInsertedPages(options: {
     throw new ReaderEditFailure(NEW_PAGES_ADHERENCE_FAILED);
   }
 
-  const prepared = await prepareCandidatesForPublication(
-    options,
-    [...candidates.values()],
-    quality
-  );
+  const prepared = await prepareCandidatesForPublication(options, [...candidates.values()]);
   return {
     pageIds: prepared.map((candidate) => candidate.page.id),
     pageIndexes: prepared.map((candidate) => candidate.page.index),
@@ -367,7 +359,7 @@ export async function publishDraftedInsertedPages(
       throw new StructuralPageLeaseLostError();
     }
 
-    for (const { page, draft, qualityReport, preparedEmbedding, storyExtract } of drafted.candidates) {
+    for (const { page, draft, qualityReport, preparedEmbedding } of drafted.candidates) {
       const saved = await tx.page.updateMany({
         where: { id: page.id, projectId: options.projectId, index: page.index, status: { not: "COMPLETED" } },
         data: {
@@ -399,17 +391,6 @@ export async function publishDraftedInsertedPages(
             preparedEmbedding,
             tx
           )
-        );
-      }
-      if (storyExtract) {
-        await runBestEffortPageMemoryWrite(tx, () =>
-          persistStoryExtract({
-            projectId: options.projectId,
-            pageIndex: page.index,
-            plan: options.plan,
-            extract: storyExtract,
-            client: tx
-          })
         );
       }
     }
@@ -545,9 +526,7 @@ async function reviewCandidate(
     illustrate: false,
     assertOwnership: options.assertLease,
     deferPublication: true,
-    editInstruction: options.editInstruction,
-    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-    maxCandidates: 1,
+    editInstruction: options.editInstruction
   });
   const candidate = reviewed.candidate;
   if (!candidate) {
@@ -578,35 +557,18 @@ async function reviewCandidates(
   });
 }
 
+/** One embedding per inserted page, for a strategy whose later pages read semantic memory; no story extract (E6). */
 async function prepareCandidatesForPublication(
   options: Parameters<typeof draftInsertedPages>[0],
-  candidates: InsertedCandidate[],
-  quality: Awaited<ReturnType<typeof loadQualityContext>>
+  candidates: InsertedCandidate[]
 ): Promise<PreparedInsertedCandidate[]> {
-  let currentState = await loadProjectStoryState(options.projectId, options.plan.promises ?? []);
   const prepared: PreparedInsertedCandidate[] = [];
   for (const candidate of candidates) {
     const preparedEmbedding = strategyUsesSemanticMemory(options.strategy)
       ? await prepareEmbedding(candidate.draft.summary, options.providers.embedding)
       : null;
-    const storyExtract = await keeperStoryExtractForSave({
-      projectId: options.projectId,
-      pageIndex: candidate.page.index,
-      draft: candidate.draft,
-      textModel: options.providers.text,
-      plan: options.plan,
-      input: options.input,
-      previousExtract: null,
-      keeperWasRevised: true,
-      currentState,
-      quality
-    });
-    if (storyExtract) {
-      currentState = applyStoryDelta(currentState, storyExtract.storyDelta, candidate.page.index);
-    }
-    prepared.push({ ...candidate, preparedEmbedding, storyExtract });
+    prepared.push({ ...candidate, preparedEmbedding });
   }
-
   return prepared;
 }
 

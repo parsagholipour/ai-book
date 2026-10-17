@@ -21,7 +21,9 @@ function model(answer: unknown) {
 const research = { search: vi.fn() };
 
 describe("compact picture-book planning", () => {
-  it.each(["fast", "balanced", "premium"] as const)("keeps compact planning and the complete map for %s text-only stories with saved characters", async (modelTier) => {
+  // Quick Draft plans a children's book without the requirement contract (the app's Quick Draft preset never set
+  // the `finalReview` flag this used to read, and since 2026-10-16 the tier says so directly).
+  it.each(["balanced", "premium", "ultra"] as const)("keeps compact planning and the complete map for %s text-only stories with saved characters", async (modelTier) => {
     const textInput = createProjectSchema.parse({ ...input, mediaSettings: { ...input.mediaSettings,
       modelTier, fullIllustrations: false, illustrationCadence: "manual", includeCover: false, coverArtSource: "none",
       mobile: { characters: [{ id: "rabbit", name: "Rabbit", description: "An impatient explorer who learns to listen.", fields: [] }] }
@@ -47,10 +49,12 @@ describe("compact picture-book planning", () => {
   it("keeps the compact eligibility bounds with illustrations disabled", () => {
     const textInput = { ...input, mediaSettings: { ...input.mediaSettings, fullIllustrations: false } };
     expect(usesCompactPictureBookPlanning(textInput)).toBe(true);
+    // `finalReview` controls nothing since 2026-10-16; the tier decides.
+    expect(usesCompactPictureBookPlanning({ ...textInput, mediaSettings: { ...textInput.mediaSettings, finalReview: false } })).toBe(true);
     for (const changed of [
       { ...textInput, category: "STORY" as const }, { ...textInput, targetPages: 4 }, { ...textInput, targetPages: 41 },
       { ...textInput, prompt: "Teach scientific facts about real turtles." },
-      { ...textInput, mediaSettings: { ...textInput.mediaSettings, finalReview: false } },
+      { ...textInput, mediaSettings: { ...textInput.mediaSettings, modelTier: "fast" as const } },
       { ...textInput, mediaSettings: { ...textInput.mediaSettings, generationStrategy: "draft-then-polish" as const } },
       { ...textInput, mediaSettings: { ...textInput.mediaSettings, mobile: { import: { source: "manuscript" } } } }
     ]) expect(usesCompactPictureBookPlanning(changed)).toBe(false);

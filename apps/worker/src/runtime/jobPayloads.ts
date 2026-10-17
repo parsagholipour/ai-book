@@ -119,7 +119,9 @@ const imageLayoutSchema = z.object({
 
 const planBookSchema = z.object({
   ...projectDispatchedFields,
-  inputSnapshot: z.unknown().optional()
+  inputSnapshot: z.unknown().optional(),
+  /** The door that queued the plan asked the spend breaker for speculative work: queue the composition prep after it. */
+  prepareComposition: z.boolean().optional()
 }).passthrough();
 
 const revisePlanSchema = z.object({
@@ -129,7 +131,8 @@ const revisePlanSchema = z.object({
   editOperationId: optionalId("editOperationId"),
   editInstruction: z.string().trim().min(1).optional(),
   characterContext: z.string().trim().min(1).optional(),
-  respondedQuestionPrompts: z.array(z.string()).optional()
+  respondedQuestionPrompts: z.array(z.string()).optional(),
+  prepareComposition: z.boolean().optional()
 }).passthrough();
 
 const generateBookSchema = z.object({
@@ -277,6 +280,12 @@ const writingAssistSchema = z.object({
   pages: z.array(writingAssistPageSchema).optional()
 }).passthrough();
 
+/** `prepare-composition`: the plan version a composed book's speculative prep plans for (`handlers/prepareComposition.ts`). */
+const prepareCompositionSchema = z.object({
+  ...projectDispatchedFields,
+  planId: requiredId("planId")
+}).passthrough();
+
 /** Exhaustive by construction: a new core job name is a compile error here. */
 export const jobPayloadSchemas = {
   [jobNames.PLAN_BOOK]: planBookSchema,
@@ -293,7 +302,8 @@ export const jobPayloadSchemas = {
   [jobNames.CONTINUE_BOOK]: continueBookSchema,
   [jobNames.GENERATE_AUDIOBOOK]: generateAudiobookSchema,
   [jobNames.GENERATE_CHARACTER_PORTRAIT]: generateCharacterPortraitSchema,
-  [jobNames.WRITING_ASSIST]: writingAssistSchema
+  [jobNames.WRITING_ASSIST]: writingAssistSchema,
+  [jobNames.PREPARE_COMPOSITION]: prepareCompositionSchema
 } as const satisfies Record<WorkerJobName, z.ZodType>;
 
 export type WorkerJobPayloadByName = {
@@ -327,6 +337,7 @@ export type ContinueBookJob = WorkerJob<typeof jobNames.CONTINUE_BOOK>;
 export type GenerateAudiobookJob = WorkerJob<typeof jobNames.GENERATE_AUDIOBOOK>;
 export type GenerateCharacterPortraitJob = WorkerJob<typeof jobNames.GENERATE_CHARACTER_PORTRAIT>;
 export type WritingAssistJob = WorkerJob<typeof jobNames.WRITING_ASSIST>;
+export type PrepareCompositionJob = WorkerJob<typeof jobNames.PREPARE_COMPOSITION>;
 
 export type RawWorkerJob = Job<unknown, void, string>;
 

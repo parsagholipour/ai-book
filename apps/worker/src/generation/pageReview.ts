@@ -1,21 +1,12 @@
 import { quickDraftPageQuality } from "./quickDraftReviewPolicy.js";
-import { sentenceLengthRepairFor, type SentenceLengthRepair } from "@book-maker/core";
 import { changedCandidateGrounding } from "./changedCandidateGrounding.js";
-import { formatQualityFailure, styleExcerptsForPage } from "./bookHelpers.js";
+import { formatQualityFailure } from "./bookHelpers.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
-import {
-  enrichPageQualityReport,
-  keeperStoryExtractForSave,
-  persistStoryExtract,
-  revisedDraftStyleAuditor,
-  type QualityGateContext
-} from "./qualityEnrichment.js";
+import { revisedDraftStyleAuditor, type QualityGateContext } from "./qualityEnrichment.js";
 import { prepareEmbedding, strategyUsesSemanticMemory, writePreparedEmbedding } from "./embeddingWrites.js";
 import { updateEntityStateFromPage } from "./entityState.js";
-import { retrieveSemanticResearchNotes } from "./researchMemory.js";
-import { validateSemanticResearchNotes } from "./researchSources.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
   GeneratedPagePublicationClaimLostError,
@@ -24,20 +15,10 @@ import {
   settledGeneratedPageContext,
   stageGeneratedPageAndBrief
 } from "./pagePublication.js";
-import { pageQaCandidatesFor, pageQaRewriteAttemptsFor } from "./tuning.js";
 import { revisePageDraftWithRestart } from "./pageRevision.js";
 import { reviewPageWithQualityGates } from "./pageQualityGateReview.js";
 import {
-  pageRevisionMessage,
-  keepUserRequestApplied,
-  pageRewriteReport,
-  recoveryRevisionForLoop,
-  repairPageBriefForRecovery,
-  shouldRepairPageBriefForRecovery,
-  type RepairedPageBrief
-} from "./pageReviewRecovery.js";
-import {
-  hasSmartUnslopCandidates, smartUnslopResolved, isCancellationError,
+  hasSmartUnslopCandidates, smartUnslopResolved,
   type DecisionModelRoute,
   type BookGenerationStrategy,
   type BookPlan,
@@ -55,45 +36,33 @@ import {
 import { pageScope } from "@book-maker/db";
 import { bestDraftCandidate, type DraftCandidate, type PageQualityLoopOutcome } from "./pageReviewCandidates.js";
 export { bestDraftCandidate, type DraftCandidate, type PageQualityLoopOutcome } from "./pageReviewCandidates.js";
-import { matchingPrecomputedReview, type PrecomputedPageReview } from "./precomputedPageReview.js";
-export type { PrecomputedPageReview } from "./precomputedPageReview.js";
+import type { QualityFeatureId } from "@book-maker/core/qualityGates";
 
 export { revisePageDraftWithRestart } from "./pageRevision.js";
 export { pageReviewPassesFor, reviewPageWithQualityGates } from "./pageQualityGateReview.js";
 
 /**
- * Page quality review loop: score a draft, revise it, and save the best candidate.
- */
-
-/**
- * The one score → revise → re-score loop behind every page review: the
- * generate-page handler, the direct passes' per-page review, the chat page
- * rewrite and the final-QA repair in compile-export.
+ * The one score → revise → re-score loop, and a reader's chat page rewrite
+ * (`textEditRewrite.ts`) is its only caller. Since 2026-10-16 no generated
+ * page enters it: a page job, a book pass, a continuation, an insert and a
+ * replan save the draft with its local checks (`withoutPageReview`, E4 and E5).
+ * The branches only those callers reached went with them that day — the brief
+ * repair and its durable chapter write, the recovery rewrites, the
+ * sentence-length repair, the failed-claim research retrieve, the
+ * no-improvement stop and the saved-keeper seed (E6).
  *
- * The counting base is the caller's: the page loops count *candidates* from
- * the original draft (`maxCandidates` = `pageQaCandidatesFor`), while final
- * QA counts *attempts* from the first rewrite — one later — which is why it
- * passes `recoveryRevision: PAGE_QA_RECOVERY_CANDIDATE - 1`. Both enter
- * recovery mode at the third rewrite; collapsing the two numbers into one
- * constant silently delays that by a rewrite. Whatever the caller asks for,
- * `recoveryRevisionForLoop` fits it to this loop's tier-scaled budget — down to
- * the last candidate for a budget that would never reach it, but never onto a
- * loop's first rewrite, and `undefined` for a loop that has no recovery at
- * all.
+ * `maxCandidates` counts candidates from the rewrite the caller hands in, so a
+ * budget of 1 reviews and audits that draft and rewrites nothing; with
+ * `pageQaRewrite` off the loop never rewrites whatever the budget says.
  *
  * **The style audit is the loop's, not the caller's.** Every caller used to
  * hand-assemble the same triple — a `styleExcerpts` array, a
- * `revisedDraftStyleAuditor` built from exactly those excerpts, and (in the two
- * callers whose seed report comes straight off `reviewPageDraft`) a duplicated
- * pre-loop "if the seed was approved, audit it too" block. Four copies of a
- * pair that is only meaningful when both halves name the *same* array: an audit
- * against excerpts the rewrite was not written from measures nothing, and the
- * only thing keeping them equal was that each copy happened to derive them the
- * same way. So the loop takes the excerpts and the quality gates and builds the
- * auditor itself, and audits **every** approved report it sees, the seed
- * included. A seed that has already been audited says so — see
- * `alreadyStyleAudited` — which is what keeps `enrichPageQualityReport`'s audit
- * of the initial draft from being paid for twice.
+ * `revisedDraftStyleAuditor` built from exactly those excerpts, and a
+ * duplicated pre-loop "if the seed was approved, audit it too" block — and an
+ * audit against excerpts the rewrite was not written from measures nothing. So
+ * the loop takes the excerpts and the quality gates, builds the auditor
+ * itself, and audits **every** approved report it sees, the seed included. A
+ * seed that has already been audited says so — see `alreadyStyleAudited`.
  */
 export async function runPageQualityLoop(options: {
   projectId: string;
@@ -103,21 +72,13 @@ export async function runPageQualityLoop(options: {
   chapter?: ChapterPlan | undefined;
   chapterBrief?: ChapterBrief | undefined;
   pageBrief?: PageProductionBeat | undefined;
-  chapterPageStart?: number | undefined;
-  chapterPageEnd?: number | undefined;
-  /** The gate on the brief repair's durable write; see the take below the loop. */
-  chapterId?: string | null | undefined;
   pageIndex: number;
   draft: PageDraft;
-  /** Before the first rewrite, when the caller has already changed the seed. */
+  /** The page before the reader's edit; grounding and the reviewer compare against it. */
   originalDraft?: Pick<PageDraft, "title" | "markdown"> | undefined;
-  /** A previously saved candidate, judged against the current repair findings. */
-  initialKeeper?: { draft: PageDraft; report: PageQualityReport };
   /** The initial draft's review, produced by the caller. */
   report: PageQualityReport;
   previousPages: PriorPageContext[];
-  /** Prose that already exists after this page; set only when one is inserted. */
-  nextPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
   /** Citeable notes loaded for this page; empty is an explicit citation gate. */
   researchNotes?: string[] | undefined;
@@ -125,27 +86,6 @@ export async function runPageQualityLoop(options: {
   decisions?: DecisionModelRoute | undefined;
   generationJobId?: string | undefined;
   maxCandidates: number;
-  /** Stop a final repair after repeated candidates fail to improve its keeper. */
-  stopAfterNoImprovement?: number;
-  recoveryRevision?: number | undefined;
-  /**
-   * Repair a conflicting page brief at the recovery candidate. Both the page
-   * loops and the final-QA repair set this: a page whose brief collides with
-   * a beat the book already covered fails review the same way on every
-   * rewrite, so re-executing the brief unchanged spends the whole budget on
-   * the one complaint a rewrite cannot answer. It buys **one** repair per
-   * page however long the budget is — see the latch at the call site — and its
-   * durable half is spent later still, only on a page that keeps a draft the
-   * repair briefed.
-   */
-  repairBrief?: boolean | undefined;
-  /**
-   * Leave a kept repair staged for a caller that owns the corresponding page
-   * publication. Direct loop callers default to the established standalone
-   * CAS; `reviewAndSaveGeneratedPage` opts in so the page and chapter move in
-   * one transaction.
-   */
-  deferBriefRepairPersistence?: boolean | undefined;
   reviseContext: string;
   reviseProgress?: number | undefined;
   /**
@@ -157,45 +97,24 @@ export async function runPageQualityLoop(options: {
   /** Operator gates for rewrites, style audits, and changed-candidate grounding. */
   quality: QualityGateContext;
   /**
-   * The reader's own edit request, set only when this loop is repairing a page
-   * they asked to change. It reaches two places, and both are load-bearing.
-   * Every rewrite briefing gets "keep the requested edit applied", so a quality
-   * revision cannot quietly undo what was paid for. And the style auditor is
-   * told the change was requested: without it, "make page 12 more dramatic"
-   * lands as a register shift away from the opening-pages excerpts, the audit
-   * flips the reviewer's approval, the small user-edit budget burns pulling the
-   * page back toward the voice it was asked to leave, and the edit is delivered
-   * FAILED_QA — which then feeds the next compile's repair pass.
+   * The reader's own edit request. It reaches two places, and both are
+   * load-bearing. Every rewrite briefing gets "keep the requested edit
+   * applied", so a quality revision cannot quietly undo what was paid for. And
+   * the style auditor is told the change was requested: without it, "make page
+   * 12 more dramatic" lands as a register shift away from the opening-pages
+   * excerpts, the audit flips the reviewer's approval, the small user-edit
+   * budget burns pulling the page back toward the voice it was asked to leave,
+   * and the edit is delivered FAILED_QA.
    */
   userRequest?: string | undefined;
   characterContext?: string | undefined;
   /** Supplemental page-local guidance kept beside the authoritative userRequest. */
   pageEditGuidance?: string | undefined;
-  repairInstruction?: string | undefined;
-  sentenceRepair?: SentenceLengthRepair | undefined;
   /** Forwarded to every revise this loop spends; see `RevisePageOptions.figures`. */
   figures?: "keep" | "hold";
-  retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
-  /**
-   * Per-rewrite progress reporting, in the caller's own style. The loop hands
-   * over the recovery index it resolved as well as the revision it is about to
-   * spend, because the two callers that render a message from it used to derive
-   * that index themselves — `pageQaRecoveryRevision(pageQaCandidatesFor(input))`
-   * at each call site — from an input that says nothing about `userRequest`.
-   * A loop pinned to a reader's own edit opts out of recovery entirely (below),
-   * so those call sites were one `onRewrite` away from telling an operator
-   * "Quality recovery rewrite page 12" about a loop that will never write a
-   * replacement page. The number the message reads has to be the number the
-   * rewrites were briefed against, and one derivation is the only way to say so.
-   */
-  onRewrite?: ((revision: number, recoveryRevision: number | undefined) => Promise<void>) | undefined;
-  /**
-   * Optional ownership fence. A standalone kept repair is fenced here; a
-   * deferred one is fenced by the caller's combined publication phase.
-   */
-  assertOwnership?: () => Promise<void>;
+  /** Called before each rewrite with the candidate number it is about to spend. */
+  onRewrite?: ((revision: number) => Promise<void>) | undefined;
 }): Promise<PageQualityLoopOutcome> {
-  const sentenceRepair = options.userRequest ? undefined : options.sentenceRepair;
   const styleExcerpts = options.styleExcerpts ?? [];
   const auditApprovedRevision = revisedDraftStyleAuditor({
     ...(options.decisions ? { decisions: options.decisions } : {}),
@@ -213,126 +132,25 @@ export async function runPageQualityLoop(options: {
       : candidateReport;
 
   const checkGrounding = changedCandidateGrounding({ ...options, original: options.originalDraft });
-  let researchNotes = options.researchNotes;
+  const researchNotes = options.researchNotes;
   let draft = options.draft;
   // Before `best` is seeded, not after: the audit may flip the seed's approval
   // and stamp its penalty, and a keeper comparison run against the pre-audit
   // copy would hand the page's seat to a rewrite on scores from two scales.
   let report = await auditApproved(draft, await checkGrounding(draft, options.report, researchNotes ?? []));
-  let pageBrief = options.pageBrief;
-  /**
-   * The loop's own, because a brief repair replaces it. The caller's object is
-   * never written to: a book pass hands the same `ChapterSetup.brief` to every
-   * page of a chapter, so a repair written through it would brief that
-   * chapter's remaining pages against an assignment nothing had yet decided
-   * this page would keep — see `repairPageBriefForRecovery`.
-   */
-  let chapterBrief = options.chapterBrief;
-  // Spent by the *attempt*, and at most once per page — see the loop below.
-  let briefRepairSpent = false;
-  /**
-   * The brief repair, held back until the page keeps a draft that was briefed
-   * against it — both the durable write and the merged brief the caller's own
-   * copy may become. See the take below the loop.
-   */
-  let deferredBriefRepair: {
-    fromRevision: number;
-    chapterBrief: ChapterBrief | undefined;
-    persist: RepairedPageBrief["persist"];
-  } | null = null;
   let revision = 1;
-  let best: DraftCandidate = options.initialKeeper
-    ? sentenceRepair ? { ...options.initialKeeper, revision: 0 }
-      : bestDraftCandidate({ ...options.initialKeeper, revision: 0 }, { draft, revision, report })
-    : { draft, revision, report };
-  let noImprovement = 0;
+  let best: DraftCandidate = { draft, revision, report };
   // A deterministic candidate cluster buys one contextual rewrite. If the
   // writer returns the page unchanged because every match is protected, the
   // same scanner result must not burn the rest of this page's rewrite budget.
   let smartUnslopSpent = smartUnslopResolved(report);
   const maxCandidates = options.quality.enabled("pageQaRewrite") ? options.maxCandidates : 1;
-  // Fitted to this loop's budget at both ends, and `undefined` for a loop that
-  // has no recovery at all — `recoveryRevisionForLoop` owns both answers, and
-  // it is what `onRewrite` is handed, so a progress message cannot disagree
-  // with the rewrite it is announcing about which mode this loop is in.
-  const recoveryRevision = recoveryRevisionForLoop({
-    maxCandidates,
-    ...(options.recoveryRevision !== undefined ? { requested: options.recoveryRevision } : {}),
-    ...(options.userRequest ? { userRequest: options.userRequest } : {})
-  });
-  let lastSentenceAttemptMarkdown = sentenceRepair?.originalMarkdown;
 
   while (!report.approved && revision < maxCandidates) {
-    // A syntax-only request cannot authorize a story rewrite. Stop on semantic
-    // rejection or an unapplied patch; a high-scoring rejection is no keeper.
-    if (sentenceRepair && (draft.markdown === lastSentenceAttemptMarkdown ||
-      !sentenceLengthRepairFor(options.input, draft, report))) break;
-    lastSentenceAttemptMarkdown = draft.markdown;
     const resolvesSmartUnslop =
       !smartUnslopSpent && hasSmartUnslopCandidates(report);
     const nextRevision = revision + 1;
-    await options.onRewrite?.(nextRevision, recoveryRevision);
-    if (
-      !sentenceRepair && options.repairBrief &&
-      !briefRepairSpent &&
-      shouldRepairPageBriefForRecovery(nextRevision, report, pageBrief, recoveryRevision)
-    ) {
-      // One repair per page, and the latch is the only thing making it one.
-      // `shouldRepairPageBriefForRecovery` asks about the *report*, and the
-      // report is why this page is still in the loop: a reviewer answering
-      // `repetitionOk: false` — the commonest way a page reaches recovery —
-      // answers it the same way on every rewrite left, so the predicate alone
-      // reads "repair from the recovery candidate onwards". On an ultra book
-      // that is `finalQaRevisionsFor` 10 against a recovery fitted to 3:
-      // rewrites 3 through 10 each spent a `repairPageBrief` planner call
-      // nothing budgeted and, wherever a `chapterId` is supplied, wrote a
-      // *different* beat into `Chapter.productionBrief` behind it — eight
-      // model calls and eight durable chapter rewrites for one page, on a
-      // compile repairing fifteen, with every other page of that chapter
-      // reading the last one back. Nor is repetition a cheaper version of the
-      // idea: the repair exists to hand the *remaining* rewrites a fresh
-      // assignment, so re-running it on that assignment's own rejection asks
-      // the planner to disown the beat it wrote one rewrite ago.
-      //
-      // Closed before the call, so a repair the provider refuses spends it
-      // too: `embeddingRepair.ts`'s bargain at loop scale — a refusal not
-      // written down is paid for again — and the page that draws a refusal is
-      // exactly the page whose reviewer keeps flagging the same thing, so a
-      // latch conditioned on the repair *working* would never close in the
-      // case it was added for. A rewrite that could not be re-briefed still
-      // carries the recovery instruction, which is the move that changes it.
-      briefRepairSpent = true;
-      const repair = await repairPageBriefForRecovery({
-        strategy: options.strategy,
-        input: options.input,
-        plan: options.plan,
-        chapter: options.chapter,
-        chapterBrief,
-        chapterPageStart: options.chapterPageStart,
-        chapterPageEnd: options.chapterPageEnd,
-        chapterId: options.chapterId,
-        pageBrief,
-        pageIndex: options.pageIndex, qaCandidateNumber: nextRevision,
-        draft,
-        qualityReport: options.repairInstruction ? { ...report, requiredRevisions: [...report.requiredRevisions, options.repairInstruction] } : report,
-        previousPages: options.previousPages,
-        ...(options.nextPages ? { nextPages: options.nextPages } : {}),
-        continuityNotes: options.continuityNotes,
-        researchNotes,
-        textModel: options.textModel,
-        generationJobId: options.generationJobId,
-        context: options.reviseContext,
-        ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
-      });
-      // Rebind only this loop's remaining rewrites and reviews; nothing the caller holds is mutated.
-      pageBrief = repair.beat;
-      chapterBrief = repair.chapterBrief;
-      deferredBriefRepair = { fromRevision: nextRevision, chapterBrief: repair.chapterBrief, persist: repair.persist };
-    }
-    const retrieved = await retrievedResearchForRevise(options, draft, report);
-    if (retrieved.retrievedResearch?.length) {
-      researchNotes = [...new Set([...(researchNotes ?? []), ...retrieved.retrievedResearch])];
-    }
+    await options.onRewrite?.(nextRevision);
     draft = await revisePageDraftWithRestart({
       strategy: options.strategy,
       generationJobId: options.generationJobId,
@@ -342,30 +160,20 @@ export async function runPageQualityLoop(options: {
         input: options.input,
         plan: options.plan,
         chapter: options.chapter,
-        chapterBrief,
-        pageBrief,
-        chapterPageStart: options.chapterPageStart,
-        chapterPageEnd: options.chapterPageEnd,
+        chapterBrief: options.chapterBrief,
+        pageBrief: options.pageBrief,
         pageIndex: options.pageIndex, qaCandidateNumber: nextRevision,
-        ...(deferredBriefRepair ? { qaBriefRepaired: true } : {}),
         draft,
-        report: sentenceRepair ? report : pageRewriteReport(
-          keepUserRequestApplied(report, options.userRequest),
-          nextRevision,
-          recoveryRevision
-        ),
+        report: keepUserRequestApplied(report, options.userRequest),
         ...(options.userRequest ? { editInstruction: options.userRequest } : {}),
         ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-        ...(sentenceRepair ? { sentenceRepair } : {}),
-        ...(options.pageEditGuidance || options.repairInstruction ? { pageEditGuidance: [options.pageEditGuidance, options.repairInstruction].filter(Boolean).join("\n") } : {}),
+        ...(options.pageEditGuidance ? { pageEditGuidance: options.pageEditGuidance } : {}),
         ...(options.figures ? { figures: options.figures } : {}),
         previousPages: options.previousPages,
-        ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
         researchNotes,
         textModel: options.textModel,
-        ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
-        ...retrieved
+        ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       }
     });
     revision = nextRevision;
@@ -376,20 +184,15 @@ export async function runPageQualityLoop(options: {
       ...(options.userRequest ? { userRequest: options.userRequest } : {}),
       allowSmartUnslop: !smartUnslopSpent && !resolvesSmartUnslop,
       reviewOptions: {
-        ...(options.repairInstruction ? { repairInstruction: options.repairInstruction } : {}),
         repairOriginalMarkdown: (options.originalDraft ?? options.draft).markdown,
-        ...(sentenceRepair ? { sentenceRepair } : {}),
         input: options.input,
         plan: options.plan,
         chapter: options.chapter,
-        chapterBrief,
-        pageBrief,
-        chapterPageStart: options.chapterPageStart,
-        chapterPageEnd: options.chapterPageEnd,
+        chapterBrief: options.chapterBrief,
+        pageBrief: options.pageBrief,
         pageIndex: options.pageIndex,
         draft,
         previousPages: options.previousPages,
-        ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
         researchNotes,
         textModel: options.textModel,
@@ -400,60 +203,36 @@ export async function runPageQualityLoop(options: {
       smartUnslopSpent = true;
     }
     report = await auditApproved(draft, await checkGrounding(draft, report, researchNotes ?? []));
-    const nextBest = sentenceRepair && !report.approved ? best : bestDraftCandidate(best, { draft, revision, report });
-    noImprovement = nextBest === best ? noImprovement + 1 : 0;
-    best = nextBest;
-    if (options.stopAfterNoImprovement && noImprovement >= options.stopAfterNoImprovement) {
-      // One changed brief can resolve a real constraint conflict. Give its first
-      // candidate a chance; repeating the same assignment buys no such exception.
-      const canRecoverBrief = !sentenceRepair && options.repairBrief && !briefRepairSpent && revision < maxCandidates &&
-        shouldRepairPageBriefForRecovery(revision + 1, report, pageBrief, recoveryRevision);
-      if (!canRecoverBrief) break;
-    }
+    best = bestDraftCandidate(best, { draft, revision, report });
   }
 
   // Every candidate was grounded before entering selection, including failures.
-  // A fallback therefore carries its own cached verdict. Failed pages still keep
-  // their strongest draft and honest report under the existing publication policy.
-  // A repaired brief is taken only when that keeper was written against it.
-  const keptRevision = report.approved ? revision : best.revision;
-  const keptBriefRepair =
-    deferredBriefRepair && keptRevision >= deferredBriefRepair.fromRevision ? deferredBriefRepair : null;
-  const pendingBriefRepair = keptBriefRepair?.persist ?? undefined;
-  // A loop caller that does not own the page's durable publication keeps the
-  // established standalone CAS. The explicit fence stays immediately before
-  // it, a whole page of provider work after the repair's stand-down assertion.
-  // A caller that *does* own publication takes both later — see the page/brief
-  // transaction in `reviewAndSaveGeneratedPage`.
-  let standaloneBriefRepairWritten = false;
-  if (pendingBriefRepair && !options.deferBriefRepairPersistence) {
-    await options.assertOwnership?.();
-    standaloneBriefRepairWritten = (await pendingBriefRepair()) === "written";
-  }
-  const mayCarryBriefRepair = options.deferBriefRepairPersistence
-    ? pendingBriefRepair !== undefined || keptBriefRepair !== null
-    : pendingBriefRepair
-      ? standaloneBriefRepairWritten
-      : keptBriefRepair !== null;
-  const carried = mayCarryBriefRepair && keptBriefRepair?.chapterBrief
-    ? { repairedChapterBrief: keptBriefRepair.chapterBrief }
-    : {};
-  const pending = pendingBriefRepair && options.deferBriefRepairPersistence
-    ? { pendingBriefRepair }
-    : {};
-
+  // A fallback therefore carries its own cached verdict. A failed page keeps
+  // its strongest draft and honest report under the existing publication policy.
   if (report.approved) {
-    return { approved: true, draft, report, revision, attempts: revision, ...carried, ...pending };
+    return { approved: true, draft, report, revision, attempts: revision };
   }
   return {
     approved: false,
     draft: best.draft,
     report: best.report,
     revision: best.revision,
-    attempts: revision,
-    ...carried,
-    ...pending
+    attempts: revision
   };
+}
+
+/**
+ * A quality rewrite of a page the reader asked to change must repair the page
+ * *around* their edit, never back out of it — the request is already in the
+ * draft, and the rewrite is being asked for because something else about the
+ * page failed review.
+ */
+export function keepUserRequestApplied(report: PageQualityReport, userRequest: string | undefined): PageQualityReport {
+  const instruction = userRequest ? `Keep the user's requested edit applied: ${userRequest}` : "";
+  if (!instruction || report.requiredRevisions.includes(instruction)) {
+    return report;
+  }
+  return { ...report, requiredRevisions: [instruction, ...report.requiredRevisions] };
 }
 
 /**
@@ -461,11 +240,9 @@ export async function runPageQualityLoop(options: {
  *
  * `withStyleAudit` stamps `stylePenalty` on everything it returns — zero when
  * the audit passed — precisely so a report can say it was audited at all, which
- * is what `styleAuditedScoreBeats` compares candidates on. The seed report a
- * page job hands this loop has been audited by `enrichPageQualityReport`
- * already; the seed a chat rewrite or a final-QA repair hands in comes straight
- * off `reviewPageDraft` and has not. That difference is the whole of who owes a
- * seed audit, and reading it off the report is what lets one rule serve both.
+ * is what `styleAuditedScoreBeats` compares candidates on. A seed that comes
+ * straight off `reviewPageDraft` — the chat rewrite's — has not been, and owes
+ * the audit; reading that off the report keeps the rule in one place.
  * The field travels *beside* `PageQualityReport` rather than inside its schema,
  * hence the narrowing.
  */
@@ -474,27 +251,18 @@ function alreadyStyleAudited(report: PageQualityReport): boolean {
 }
 
 /**
- * What one drafted page leaves behind for the pages after it.
- *
- * `page` is the saved keeper as the next pages read it back.
- * `repairedChapterBrief` is this chapter's brief with the page's brief repair
- * merged in, and it is present only when the page kept a draft that repair
- * briefed — see the take in `runPageQualityLoop`. A caller that briefs a
- * chapter's pages from one copy of its brief (the book passes, one
- * `ChapterSetup.brief` per chapter) rebinds that copy to it, so the chapter's
- * remaining pages are told what this page actually delivered; a caller drafting
- * a page into a finished book has nobody to tell and ignores it.
+ * What one drafted page leaves behind for the pages after it: `page` is the
+ * saved keeper as the next pages read it back.
  */
 export type SavedGeneratedPage = {
   page: PriorPageContext;
-  repairedChapterBrief?: ChapterBrief | undefined;
-  /** Always present for a `deferPublication` caller — which publishes this page itself, so a settled row it does not own throws rather than returning a candidate-less shape four call sites each invent an answer to — and it owes `repairedChapterBrief` the same adoption. */
+  /** Always present for a `deferPublication` caller — which publishes this page itself, so a settled row it does not own throws rather than returning a candidate-less shape four call sites each invent an answer to. */
   candidate?: { draft: PageDraft; qualityReport: PageQualityReport } | undefined;
 };
 
 /**
- * Reviews a drafted page, saves the keeper, and publishes the keeper's story
- * delta, continuity notes, entity state and embedding. Provider calls first,
+ * Checks a drafted page locally, saves it, and publishes its continuity
+ * notes, entity state and embedding. Provider calls first,
  * then one ownership assertion, then only writes — a lost lease publishes
  * none of that tail. See generation/CLAUDE.md.
  */
@@ -524,8 +292,6 @@ export async function reviewAndSaveGeneratedPage(options: {
    * page is still reviewed and saved identically.
    */
   illustrate?: boolean | undefined;
-  /** New-book finalization queues images after its bounded manuscript repair. */
-  deferIllustrations?: boolean | undefined;
   /**
    * Chapter/batch resume regenerates the whole unit containing the first
    * missing page. Its already-settled prefix must therefore accept the new
@@ -543,17 +309,14 @@ export async function reviewAndSaveGeneratedPage(options: {
    * means for the book. Callers with no lease pass nothing and are unchanged.
    */
   assertOwnership?: () => Promise<void>;
-  /** Review and revise, publishing nothing — no page, no brief CAS — until an operation-level gate passes. */
+  /** Check, publishing nothing until an operation-level gate passes. */
   deferPublication?: boolean | undefined;
-  /** Approved edit request pinned through any quality revisions. */
+  /**
+   * The edit request a continuation, insert or replan drafted this page for. It
+   * keeps Quick Draft's page gates undeferred (`quickDraftPageQuality`); no
+   * model reviews the page either way.
+   */
   editInstruction?: string | undefined;
-  characterContext?: string | undefined;
-  /** Let an operation-level retry loop own the candidate budget. */
-  maxCandidates?: number | undefined;
-  figures?: "keep" | "hold";
-  precomputedReview?: PrecomputedPageReview | undefined;
-  /** Only a validated complete-manuscript review may defer its targeted repairs. */
-  deferRepairsUntilFinalization?: boolean | undefined;
 }): Promise<SavedGeneratedPage> {
   // Pin optimistic ownership before any review/rewrite provider call. A retry
   // of an already-settled page replays nothing, while a row that changes under
@@ -581,27 +344,12 @@ export async function reviewAndSaveGeneratedPage(options: {
   // passes `nextPages`) must be checked against what comes after it too.
   const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, options.chapter);
-  const quality = quickDraftPageQuality(options.input, await loadQualityContext(options.input), options.editInstruction);
-  const precomputed = matchingPrecomputedReview({ precomputed: options.precomputedReview, draft: options.draft,
-    previousPages: options.previousPages, nextPages: options.nextPages, quality });
-  // The book's own opening voice, not whatever the caller's window happens to
-  // start at. This path had no lock at all, so `enrichPageQualityReport` fell
-  // back to pinning from `previousPages` — and `continueBook` passes the last
-  // eighteen pages, so a continuation drafted at page 41 was audited and
-  // revised against pages 23 and 24. The initial `reviewPageDraft` used to
-  // omit the lock even after the enrich/loop gained it, so on balanced the
-  // auditor flipped a page the first reviewer had never compared to pages 1–2.
-  const styleExcerpts = await styleExcerptsForPage({
-    projectId: options.projectId,
-    pageIndex: options.draft.index,
-    recencyPages: options.previousPages,
-    input: options.input,
-    quality
-  });
-  const initialReport = await reviewPageWithQualityGates({
-    ...(precomputed ? { precomputedReport: precomputed.report } : {}),
-    ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
-    ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
+  const quality = withoutPageReview(
+    quickDraftPageQuality(options.input, await loadQualityContext(options.input), options.editInstruction)
+  );
+  // The deterministic local checks, and nothing a model reads or rewrites: see
+  // `withoutPageReview`. The page is saved as drafted, with its report.
+  const qualityReport = await reviewPageWithQualityGates({
     strategy: options.strategy,
     quality,
     reviewOptions: {
@@ -618,87 +366,11 @@ export async function reviewAndSaveGeneratedPage(options: {
       ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
       continuityNotes,
       researchNotes,
-      textModel: options.providers.text,
-      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+      textModel: options.providers.text
     }
   });
-  const enriched = await enrichPageQualityReport({
-    ...(precomputed ? { precomputed } : {}),
-    ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
-    ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
-    input: options.input,
-    plan: options.plan,
-    pageIndex: options.draft.index,
-    draft: options.draft,
-    report: initialReport,
-    previousPages: options.previousPages,
-    researchNotes,
-    textModel: options.providers.text,
-    projectId: options.projectId,
-    quality,
-    styleExcerpts
-  });
-
-  const outcome = await runPageQualityLoop({
-    ...(options.providers.decisions ? { decisions: options.providers.decisions } : {}),
-    projectId: options.projectId,
-    strategy: options.strategy,
-    input: options.input,
-    plan: options.plan,
-    chapter: options.chapter,
-    chapterBrief: options.chapterBrief,
-    pageBrief,
-    chapterPageStart: options.chapterPageStart,
-    chapterPageEnd: options.chapterPageEnd,
-    chapterId: options.chapterId,
-    pageIndex: options.draft.index,
-    draft: options.draft,
-    report: enriched.report,
-    previousPages: options.previousPages,
-    ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
-    continuityNotes,
-    researchNotes,
-    textModel: options.providers.text,
-    generationJobId: options.generationJobId,
-    maxCandidates: precomputed && options.deferRepairsUntilFinalization ? 1 : options.maxCandidates ?? pageQaCandidatesFor(options.input),
-    ...(options.editInstruction ? {} : { stopAfterNoImprovement: 2 }),
-    repairBrief: true,
-    // This function owns the page write, so it also owns when the accepted
-    // chapter repair becomes durable. The loop returns the CAS for the
-    // transaction below instead of committing it ahead of the page fence.
-    deferBriefRepairPersistence: true,
-    reviseContext: `Page ${options.draft.index}`,
-    quality,
-    ...(options.editInstruction ? { userRequest: options.editInstruction } : {}),
-    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-    ...(options.figures ? { figures: options.figures } : {}),
-    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
-    ...(quality.enabled("claimRetrieve")
-      ? {
-          retrieveResearch: async (draft: PageDraft) =>
-            validateSemanticResearchNotes(
-              await retrieveSemanticResearchNotes({
-                projectId: options.projectId,
-                queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
-                embedding: options.providers.embedding,
-                topK: 6
-              }),
-              researchNotes
-            )
-        }
-      : {}),
-    onRewrite: (nextRevision, recoveryRevision) =>
-      updateJobProgress(options.generationJobId, {
-        message: pageRevisionMessage(
-          options.draft.index,
-          nextRevision,
-          pageQaRewriteAttemptsFor(options.input),
-          recoveryRevision
-        )
-      }),
-    ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
-  });
-  const { draft, revision, report: qualityReport } = outcome;
+  const draft = options.draft;
+  const revision = 1;
 
   const pageContext: PriorPageContext = {
     index: options.draft.index,
@@ -707,19 +379,14 @@ export async function reviewAndSaveGeneratedPage(options: {
     summary: draft.summary
   };
   if (options.deferPublication) {
-    return {
-      page: pageContext,
-      candidate: { draft, qualityReport },
-      ...(outcome.repairedChapterBrief ? { repairedChapterBrief: outcome.repairedChapterBrief } : {})
-    };
+    return { page: pageContext, candidate: { draft, qualityReport } };
   }
 
   if (!qualityReport.approved) {
-    // Page-level failure isolation: keep the best draft with its honest
-    // report, flag the page, and let the rest of the book continue. The
-    // compile-time final review repairs FAILED_QA pages before export.
+    // Page-level failure isolation: keep the draft with its honest report,
+    // flag the page, and let the rest of the book continue.
     await updateJobProgress(options.generationJobId, {
-      message: `Page ${options.draft.index} kept its best draft but failed quality review; the final review will repair it. ${formatQualityFailure(options.draft.index, qualityReport)}`
+      message: `Page ${options.draft.index} kept its draft but failed its local checks. ${formatQualityFailure(options.draft.index, qualityReport)}`
     });
   }
 
@@ -734,48 +401,29 @@ export async function reviewAndSaveGeneratedPage(options: {
     revision,
     qualityReport,
     status: pageStatus,
-    pendingBriefRepair: outcome.pendingBriefRepair,
     existingPage,
     illustrationContext: { input: options.input, plan: options.plan, planId: options.planId },
     ...(assertOwnership ? { assertOwnership } : {})
   });
 
-  // The page, and the chapter brief the pass may now brief this chapter's other
-  // pages from. The repair reaches it only through the loop's own take — the
-  // caller's brief was never written to — so a page that shipped its pre-repair
-  // prose leaves the chapter exactly as it found it.
-  const savedContext: SavedGeneratedPage = {
-    page: pageContext,
-    ...(outcome.repairedChapterBrief ? { repairedChapterBrief: outcome.repairedChapterBrief } : {})
-  };
+  const savedContext: SavedGeneratedPage = { page: pageContext };
 
   // Nothing semantic is even *computed* for a delivery that has already lost the
-  // row: the two provider calls below would be pure waste for it, and a barrier
+  // row: the provider call below would be pure waste for it, and a barrier
   // is one statement. The publish barrier further down is the load-bearing one.
   await assertOwnership?.();
 
   // ---- Prepare: every provider call the tail owes, and not one write. ----
   //
-  // Story state, continuity notes, entity state and the page embedding are read
-  // back by *later* pages, so a delivery that has lost its lease publishing any
-  // of them poisons the winner's book with prose the reader will never see. The
-  // upsert above is the winner's to redo (it is keyed on project+index, and the
-  // winner drafts the same page ids); these are not — the notes and the
-  // embedding are appended, and the story state is merged. So the calls that
-  // take time happen here, holding their results in memory, and the writes all
-  // happen after one fresh assertion with nothing slow between them.
-  const keeperExtract = precomputed?.reviewUnavailable && !enriched.extract && revision === 1 ? null : await keeperStoryExtractForSave({
-    projectId: options.projectId,
-    pageIndex: options.draft.index,
-    draft,
-    textModel: options.providers.text,
-    plan: options.plan,
-    input: options.input,
-    previousExtract: enriched.extract,
-    keeperWasRevised: revision > 1,
-    currentState: enriched.storyState,
-    quality
-  });
+  // Continuity notes, entity state and the page embedding are read back by
+  // *later* pages, so a delivery that has lost its lease publishing any of them
+  // poisons the winner's book with prose the reader will never see. The upsert
+  // above is the winner's to redo (it is keyed on project+index, and the winner
+  // drafts the same page ids); these are not — the notes and the embedding are
+  // appended. So the call that takes time happens here, holding its result in
+  // memory, and the writes all happen after one fresh assertion with nothing
+  // slow between them. No story extract: no generated page pays for story
+  // memory (E6, 2026-10-16).
   // Embeddings and entity state are only read by sequential-pages jobs; the
   // direct modes writing them paid one embedding per page for nothing.
   const usesSemanticMemory = qualityReport.approved && strategyUsesSemanticMemory(options.strategy);
@@ -787,16 +435,7 @@ export async function reviewAndSaveGeneratedPage(options: {
   await assertOwnership?.();
 
   if (!qualityReport.approved) {
-    // Skip continuity notes, embeddings, and illustration for a flagged page;
-    // the final review rewrites it and the repaired version feeds those steps.
-    if (keeperExtract) {
-      await persistStoryExtract({
-        projectId: options.projectId,
-        pageIndex: options.draft.index,
-        plan: options.plan,
-        extract: keeperExtract
-      });
-    }
+    // Skip continuity notes, embeddings, and illustration for a flagged page.
     return savedContext;
   }
 
@@ -811,7 +450,6 @@ export async function reviewAndSaveGeneratedPage(options: {
     draft,
     stagedPage: page,
     willIllustrate,
-    ...(options.deferIllustrations ? { deferIllustrations: true } : {}),
     continuityTags: ["page", String(options.draft.index), options.strategy.id]
   });
   // A declined enqueue leaves this staged keeper authoritative and retryable,
@@ -830,15 +468,6 @@ export async function reviewAndSaveGeneratedPage(options: {
     throw new GeneratedPagePublicationClaimLostError(options.draft.index);
   }
 
-  if (keeperExtract) {
-    await persistStoryExtract({
-      projectId: options.projectId,
-      pageIndex: options.draft.index,
-      plan: options.plan,
-      extract: keeperExtract
-    });
-  }
-
   if (usesSemanticMemory) {
     if (draft.continuityNotes.length > 0) {
       await updateEntityStateFromPage(options.projectId, options.draft.index, draft.continuityNotes);
@@ -854,22 +483,26 @@ export async function reviewAndSaveGeneratedPage(options: {
   return savedContext;
 }
 
-async function retrievedResearchForRevise(
-  options: {
-    retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
-  },
-  draft: PageDraft,
-  report: PageQualityReport
-): Promise<{ retrievedResearch: string[] } | Record<string, never>> {
-  if (!options.retrieveResearch || report.groundedOk !== false) {
-    return {};
-  }
-  try {
-    const notes = await options.retrieveResearch(draft, report);
-    return notes.length > 0 ? { retrievedResearch: notes } : {};
-  } catch (error) {
-    if (isCancellationError(error)) throw error;
-    console.warn("Failed-claim research retrieve skipped", error);
-    return {};
-  }
+/**
+ * The page review gates no generated page answers to, on any tier: a page a book
+ * pass, a page job, a continuation, a structural insert or a replan drafts keeps
+ * the deterministic local checks only, and is saved as drafted. E4 measured the
+ * chain on short books (polish and every review against the raw draft: 3 wins / 7
+ * ties / 7 losses, gpt-6-luna, which drafts every tier), and E5
+ * (`.scratch/eval-data/reports/e5-final-review-sweep.md`) applied it to every
+ * other page generation drafts, where no stored arm existed to measure. The
+ * owner's rule (2026-10-16): a review that improves books by 5–10% or not at all
+ * is removed, Premium and Ultra included. These gates still switch a reader's
+ * chat page rewrite (`textEditRewrite.ts`), and `pageQaRewrite` the compile's
+ * scoped repair and the composed finalize's integrity revise. (Story memory,
+ * `storyExtractAudit`, is not here because it was removed outright on
+ * 2026-10-16, E6.)
+ */
+const PAGE_REVIEW_GATES = new Set<QualityFeatureId>([
+  "pageModelReview", "pageQaRewrite", "smartUnslop", "styleAuditor", "changedCandidateGrounding"
+]);
+
+/** A generated page's quality context: every gate but the page review ones above. */
+export function withoutPageReview<T extends QualityGateContext>(quality: T): T {
+  return { ...quality, enabled: (feature: QualityFeatureId) => !PAGE_REVIEW_GATES.has(feature) && quality.enabled(feature) };
 }

@@ -36,7 +36,6 @@ export const mocks = {
     async (_options: { beforePageIndex?: number; excludePageIndexes: number[] }) => [] as string[]
   ),
   reviewPageDraft: vi.fn(),
-  repairPageBrief: vi.fn(),
   parseChapterBrief: vi.fn((_value?: unknown): unknown => undefined),
   generatePageDraft: vi.fn(),
   revisePageDraft: vi.fn(),
@@ -61,13 +60,12 @@ export const mocks = {
   })),
   strategyOverrides: { shouldIllustratePage: (): boolean => false },
   inputForPlanVersion: vi.fn(() => ({ mediaSettings: {} })),
-  generateBestOfPageDrafts: vi.fn(
-    async (options: { draftPage: (opts: unknown) => Promise<unknown>; baseOptions: unknown }) =>
-      options.draftPage(options.baseOptions)
-  ),
   qualityEnabled: vi.fn((_feature?: string) => false),
   pageQualityEnabled: vi.fn((_feature?: string) => true),
-  enrichPageQualityReport: vi.fn(),
+  // The gate review the handler calls. A generated page gets its local checks
+  // only, so the suites decide the verdict through `reviewPageDraft` here, the
+  // way they always have, rather than through real local checks on fixture prose.
+  reviewPage: vi.fn(async (options: { reviewOptions: unknown }) => mocks.reviewPageDraft(options.reviewOptions)),
   // The style audit's provider boundary; `withStyleAudit` above it stays real.
   auditPageStyle: vi.fn()
 };
@@ -127,7 +125,6 @@ export const bookHelpersModuleMock = (actual: typeof import("../../generation/bo
     generatePageDraft: mocks.generatePageDraft,
     reviewPageDraft: mocks.reviewPageDraft,
     revisePageDraft: mocks.revisePageDraft,
-    repairPageBrief: mocks.repairPageBrief,
     shouldIllustratePage: (...args: unknown[]) =>
       (mocks.strategyOverrides.shouldIllustratePage as (...args: unknown[]) => boolean)(...args)
   }),
@@ -135,22 +132,12 @@ export const bookHelpersModuleMock = (actual: typeof import("../../generation/bo
 });
 
 /**
- * Three candidates keep the test loop short; the real ceiling only changes how
- * many rewrites run, not which draft is kept. The review loop itself is the
- * real `runPageQualityLoop` — only the strategy underneath is mocked.
- *
- * Shrunken budgets *over* the real module, not instead of it. Everything in
- * `tuning.ts` is a pure function of its arguments, so anything this does not
- * deliberately shrink — `pageQaRecoveryRevision`, which the loop reads for
- * every rewrite — should be the real one. Hand-listing the exports instead
- * failed both suites with "No export is defined on the mock" the first time one
- * was added, rather than with anything about the code under test.
+ * One revise restart over the real module, not instead of it: hand-listing the
+ * exports failed both suites with "No export is defined on the mock" the first
+ * time one was added, rather than with anything about the code under test.
  */
 export const tuningModuleMock = (actual: typeof import("../../generation/tuning.js")) => ({
   ...actual,
-  pageQaCandidatesFor: () => 3,
-  pageQaRewriteAttemptsFor: () => 2,
-  finalQaRevisionsFor: () => 2,
   MAX_PAGE_REVISE_RESTARTS: 1
 });
 
@@ -170,13 +157,18 @@ export const qualityEnrichmentModuleMock = (
   actual: typeof import("../../generation/qualityEnrichment.js")
 ) => ({
   ...actual,
-  enrichPageQualityReport: mocks.enrichPageQualityReport,
   persistKeeperStoryDelta: vi.fn()
+});
+
+export const pageQualityGateReviewModuleMock = (
+  actual: typeof import("../../generation/pageQualityGateReview.js")
+) => ({
+  ...actual,
+  reviewPageWithQualityGates: mocks.reviewPage
 });
 
 export const coreModuleMock = (actual: typeof import("@book-maker/core")) => ({
   ...actual,
-  generateBestOfPageDrafts: mocks.generateBestOfPageDrafts,
   auditPageStyle: mocks.auditPageStyle,
   bookPlanSchema: { parse: () => ({ premise: "A tale.", chapters: [] }) },
   createProviders: () => ({})
@@ -281,19 +273,7 @@ export function resetGeneratePageMocks() {
   mocks.enqueueWorkerJob.mockResolvedValue({ id: "image-job" });
   mocks.strategyOverrides.shouldIllustratePage = () => false;
   mocks.inputForPlanVersion.mockReturnValue({ mediaSettings: {} });
-  mocks.generateBestOfPageDrafts.mockImplementation(
-    async (options: { draftPage: (opts: unknown) => Promise<unknown>; baseOptions: unknown }) =>
-      options.draftPage(options.baseOptions)
-  );
   mocks.qualityEnabled.mockReturnValue(false);
   mocks.pageQualityEnabled.mockReturnValue(true);
-  // The handler pins once and hands the same array to the draft, the
-  // enrichment pass and the review loop — which is where the auditor is built
-  // from — so the test below can assert all three by reference.
-  mocks.enrichPageQualityReport.mockImplementation(async ({ report }: { report: unknown }) => ({
-    report,
-    extract: null,
-    storyState: emptyStoryState()
-  }));
   mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
 }

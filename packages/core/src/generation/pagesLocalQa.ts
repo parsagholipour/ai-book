@@ -10,6 +10,7 @@ import { skippedPageQualityReport } from "./pagesSkippedQualityReport.js";
 import { overlapTokens } from "./pageOverlap.js";
 import { repeatedRecentPage } from "./pagesRepetitionQa.js";
 import { PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
+import { describeScriptLeaks, findScriptLeaks, type ScriptLeak } from "./scriptLeaks.js";
 import {
   countReadableWords,
   hasExcessiveDashUse,
@@ -59,6 +60,7 @@ type LocalPageRuleContext = {
   wordCount: number;
   minWords: number;
   sentenceStats: ReturnType<typeof sentenceLengthStats> | undefined;
+  scriptLeaks: ScriptLeak[];
 };
 
 type LocalPageQualityRule = (context: LocalPageRuleContext) => readonly LocalPageFinding[] | undefined;
@@ -98,6 +100,17 @@ const LOCAL_PAGE_QUALITY_RULES = [
     ({ text }) => containsPromptLeak(text, PAGE_PROMPT_LEAK_PATTERNS),
     ["promptLeakFree"],
     "Page leaks prompts, schema, image instructions, or production notes."
+  ),
+  // A word in a script the book is not written in ("покрыیده" in a Persian
+  // page, E1c) is the writer's own state leaking, so it fails the integrity
+  // flag every path repairs — the composed finalize, Quick Draft's compile
+  // repair and a chat patch included. Measured before it shipped: 4 of 18,059
+  // stored pages, all real leaks (`scriptLeaks.ts`). An author's own page is
+  // never rewritten for it.
+  pageRule(
+    ({ scriptLeaks }) => scriptLeaks.length > 0,
+    ["promptLeakFree"],
+    ({ scriptLeaks }) => `Page contains words in a script the book is not written in: ${describeScriptLeaks(scriptLeaks)}.`
   ),
   pageRule(
     ({ currentBody }) => hasPageBriefMetaLanguage(currentBody),
@@ -318,7 +331,7 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
   // because `collapseHardWraps` trims each line itself and so answers
   // identically for `markdown` and for its trimmed twin. This runs for every
   // draft candidate of every page — page 1 of a balanced-and-up book has
-  // several — and again for every page of `runLocalFinalQa`.
+  // several.
   const flowingBody = collapseHardWraps(currentBody);
   const flowingText = `${collapseHardWraps(options.draft.title)}\n${flowingBody}`;
 
@@ -328,9 +341,8 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
   // tokenized once, with both summary sets derived from those tokens. Scoring
   // per pair instead put the draft body through five full shingle passes, its
   // summary through ten and every predecessor's through two, on a function that
-  // runs for every draft candidate of every page and again for every page of
-  // `runLocalFinalQa`: thousands of redundant tokenizations of a finished book,
-  // all of them on the worker's own thread.
+  // runs for every draft candidate of every page: thousands of redundant
+  // tokenizations of a book, all of them on the worker's own thread.
   //
   // **They are built inside the predecessor guard, because hoisting them out of
   // the loop also hoists them out of the loop's short circuit.** `.find` over an
@@ -375,7 +387,11 @@ function localPageRuleContext(options: ReviewPageOptions): LocalPageRuleContext 
     kidsGuidance,
     wordCount,
     minWords,
-    sentenceStats: kidsGuidance ? sentenceLengthStats(currentBody) : undefined
+    sentenceStats: kidsGuidance ? sentenceLengthStats(currentBody) : undefined,
+    scriptLeaks: isAuthorManuscript(options.input.mediaSettings) ? [] : findScriptLeaks(text, {
+      language: options.input.language,
+      brief: [options.input.title, options.input.prompt].filter(Boolean).join("\n")
+    })
   };
 }
 

@@ -66,6 +66,11 @@ vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/generatePageMocks.js")).storyStateStoreModuleMock()
 );
+vi.mock("../generation/pageQualityGateReview.js", async () =>
+  (await import("./testing/generatePageMocks.js")).pageQualityGateReviewModuleMock(
+    await vi.importActual<typeof import("../generation/pageQualityGateReview.js")>("../generation/pageQualityGateReview.js")
+  )
+);
 vi.mock("../generation/qualityEnrichment.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/qualityEnrichment.js")>(
     "../generation/qualityEnrichment.js"

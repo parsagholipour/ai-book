@@ -1,12 +1,12 @@
 import { isAuthorManuscript, readerChaptersFromComposedChapters, type BookGenerationStrategy, type BookPlan, type CreateProjectInput } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
-import { usesShortPictureBookReview } from "./shortPictureBook.js";
+import { usesShortBookPath } from "./shortPictureBook.js";
 
 /** Retain the current titled partition only when it completely covers this short book. */
 export function shortPictureBookReaderChapters(options: {
   input: CreateProjectInput; plan: BookPlan; strategy: BookGenerationStrategy; pages: readonly ExportPageForRepair[];
 }) {
-  if (isAuthorManuscript(options.input.mediaSettings) || !usesShortPictureBookReview(options)) return undefined;
+  if (isAuthorManuscript(options.input.mediaSettings) || !usesShortBookPath(options)) return undefined;
   const identities = new Map<number, string>();
   for (const page of options.pages) {
     const chapter = page.chapter;

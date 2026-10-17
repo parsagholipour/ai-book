@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeTextModelAdapter } from "../adapters/fake.js";
-import { createProjectSchema } from "../schemas/book.js";
-import type { GenerateJsonOptions } from "../adapters/types.js";
-import { evaluateExpression, proseArithmeticFindings, verifiedFinding } from "./proseArithmetic.js";
+import { evaluateExpression, verifiedFinding } from "./proseArithmetic.js";
 
 // The three a blind panel caught on 2026-09-30.
 const workbook = "Suppose the freelancer starts April with $800. After paying rent of $1,200 and electricity of $110, only $290 remains on April 5, which is why the buffer matters.";
@@ -32,35 +29,5 @@ describe("arithmetic in the prose", () => {
     // A result spelled in words is no number: it used to read as 0 and always be "wrong".
     expect(verifiedFinding("A height of 2,100 millimetres, or six feet ten and a half inches.", "or six feet ten and a half inches", "(6*12+10.5)*25.4", "six feet ten and a half inches")).toBeUndefined();
     expect(verifiedFinding("A rate of about $43.75 per hour is the result.", "A rate of about $43.75 per hour", "50400 / 1152", 43.75)).toBeUndefined();
-  });
-
-  it("asks no model about a chapter without numbers to check, and returns only the verified proposals", async () => {
-    const input = createProjectSchema.parse({ prompt: "A money workbook.", category: "BUSINESS", targetPages: 20 });
-    const seen: GenerateJsonOptions<unknown>[] = [];
-    const fake = new FakeTextModelAdapter(input);
-    const model = { ...fake, generateJson: async (options: GenerateJsonOptions<unknown>) => {
-      seen.push(options);
-      if (String(options.messages[1]!.content).includes('"passage"')) {
-        const confirmed = { states: String(options.messages[1]!.content).includes("800 - 1200 - 110") };
-        return { data: options.schema.parse(confirmed), text: JSON.stringify(confirmed), provider: "fixture", model: "fixture" };
-      }
-      const data = { errors: [
-        { quote: "only $290 remains on April 5", expression: "800 - 1200 - 110", stated: 290 },
-        { quote: "starts April with $800", expression: "400 * 2", stated: 800 },
-        // Wrong arithmetic by code, but the confirmation says the sentence means something else.
-        { quote: "After paying rent of $1,200 and electricity", expression: "1100 + 110", stated: 1200 }
-      ] };
-      return { data: options.schema.parse(data), text: JSON.stringify(data), provider: "fixture", model: "fixture" };
-    } } as unknown as FakeTextModelAdapter;
-    expect(await proseArithmeticFindings({ markdown: "No numbers here at all.", textModel: model })).toEqual([]);
-    expect(seen).toHaveLength(0);
-    const findings = await proseArithmeticFindings({ markdown: workbook, textModel: model });
-    expect(seen[0]!.purpose).toBe("check-chapter-arithmetic");
-    expect(findings).toEqual([
-      { quote: "only $290 remains on April 5", reason: "800 - 1200 - 110 = -510, not 290." },
-      expect.objectContaining({ quote: "After paying rent of $1,200 and electricity", reviewOnly: true })
-    ]);
-    // One check, and one confirmation per proposal that code agreed was wrong.
-    expect(seen).toHaveLength(3);
   });
 });

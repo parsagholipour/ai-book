@@ -41,6 +41,7 @@ import { generateImage } from "./handlers/generateImage.js";
 import { generatePage } from "./handlers/generatePage.js";
 import { importBook } from "./handlers/importBook.js";
 import { planBook, revisePlan } from "./handlers/planning.js";
+import { prepareComposition } from "./handlers/prepareComposition.js";
 import { replanBook } from "./handlers/replanBook.js";
 import { writingAssist } from "./handlers/writingAssist.js";
 import {
@@ -128,7 +129,7 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
           completion = await planBook(job);
           break;
         case "revise-plan":
-          await revisePlan(job);
+          completion = await revisePlan(job);
           break;
         case "generate-book":
           completion = (await generateBook(job)) ?? undefined;
@@ -168,6 +169,9 @@ async function processValidatedWorkerJob(job: AnyWorkerJob, runLogger: RunLogger
           break;
         case "writing-assist":
           await writingAssist(job);
+          break;
+        case "prepare-composition":
+          completion = await prepareComposition(job);
           break;
         default:
           unreachableWorkerJob(job);

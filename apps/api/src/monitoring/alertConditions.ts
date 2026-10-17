@@ -2,7 +2,16 @@ import { statfs } from "node:fs/promises";
 import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE } from "@book-maker/core";
 import type { Prisma } from "@book-maker/db";
 import type { AlertObservation, AlertPolicy, AlertState } from "./alertState.js";
-import { READINESS_CHECKS, type ReadinessCheck, type ReadinessReport } from "./readiness.js";
+import {
+  PROVIDER_QUOTA_ACCOUNTS,
+  PROVIDER_QUOTA_WINDOW_MS,
+  providerQuotaConditionKey,
+  providerQuotaLabel,
+  providerQuotaObservations,
+  type ProviderCallOutcome,
+  type ProviderQuotaConditionKey
+} from "./providerQuota.js";
+import { MONITORED_CHECKS, type MonitoredCheck, type ReadinessReport } from "./readiness.js";
 
 /**
  * What the operator alert sweep watches, how long each must hold before it is
@@ -11,14 +20,15 @@ import { READINESS_CHECKS, type ReadinessCheck, type ReadinessReport } from "./r
  */
 
 export type AlertConditionKey =
-  | ReadinessCheck
+  | MonitoredCheck
   | "spend_soft"
   | "spend_hard"
   | "spend_monthly"
   | "spend_paid"
   | "failed_jobs"
   | "disk"
-  | "safety_reports";
+  | "safety_reports"
+  | ProviderQuotaConditionKey;
 
 export type AlertCondition = {
   key: AlertConditionKey;
@@ -42,6 +52,13 @@ const DISK_POLICY: AlertPolicy = { confirmSweeps: 2, clearSweeps: 2, repeat: { k
  * arrive while it lasts; the count in it is what was open when it was sent.
  */
 const SAFETY_REPORTS_POLICY: AlertPolicy = { confirmSweeps: 1, clearSweeps: 1, repeat: { kind: "cooldown", ms: HOUR } };
+/**
+ * An empty account is a fact the provider stated, and it holds until the
+ * account answers again (`providerQuota.ts`), so this needs no hysteresis of
+ * its own: two sweeps let one misread refusal be answered by the next success,
+ * and one answer clears it.
+ */
+const PROVIDER_QUOTA_POLICY: AlertPolicy = { confirmSweeps: 2, clearSweeps: 1, repeat: { kind: "cooldown", ms: HOUR } };
 
 const COMPOSE = "docker compose --env-file .env -f docker-compose.production.yml";
 
@@ -87,6 +104,25 @@ export const ALERT_CONDITIONS: readonly AlertCondition[] = [
     hint: `${COMPOSE} ps worker; ${COMPOSE} logs --tail 200 worker; docker inspect --format '{{.State.OOMKilled}}' book-maker-worker-1`
   },
   {
+    key: "worker_images",
+    label: "Worker, image lane (a book's pictures and cover)",
+    policy: READINESS_POLICY,
+    hint: `${COMPOSE} ps worker; ${COMPOSE} logs --tail 200 worker; an older worker image consumes no image lane (docs/deployment.md, "Job lanes")`
+  },
+  {
+    key: "worker_compile",
+    label: "Worker, compile lane (a generated book's PDF)",
+    policy: READINESS_POLICY,
+    hint: `${COMPOSE} ps worker; ${COMPOSE} logs --tail 200 worker; docker inspect --format '{{.State.OOMKilled}}' book-maker-worker-1`
+  },
+  {
+    // Advisory: not an /api/ready check (`ADVISORY_CHECKS` in readiness.ts).
+    key: "worker_background",
+    label: "Worker, background lane (composition prep while a reader reads the plan; books still start without it)",
+    policy: READINESS_POLICY,
+    hint: `${COMPOSE} ps worker; ${COMPOSE} logs --tail 200 worker; books meanwhile plan their own stance, episodes and forms, about a minute slower to their first chapter`
+  },
+  {
     key: "queue_long",
     label: "Long lane backlog",
     policy: READINESS_POLICY,
@@ -97,6 +133,25 @@ export const ALERT_CONDITIONS: readonly AlertCondition[] = [
     label: "Interactive lane backlog",
     policy: READINESS_POLICY,
     hint: `the ACTIVE GenerationJob rows (startedAt) for a hung job; ${COMPOSE} logs --tail 200 worker`
+  },
+  {
+    key: "queue_images",
+    label: "Image lane backlog",
+    policy: READINESS_POLICY,
+    hint: `the ACTIVE GENERATE_IMAGE rows (startedAt) for a hung picture, then the image provider's key and quota; ${COMPOSE} logs --tail 200 worker`
+  },
+  {
+    key: "queue_compile",
+    label: "Compile lane backlog",
+    policy: READINESS_POLICY,
+    hint: `the ACTIVE COMPILE_EXPORT rows (startedAt) for a hung render; ${COMPOSE} logs --tail 200 worker`
+  },
+  {
+    // Advisory, like worker_background. A prep older than ten minutes exits unrun, so a backlog is never work owed.
+    key: "queue_background",
+    label: "Background lane backlog (composition prep; books still start without it)",
+    policy: READINESS_POLICY,
+    hint: `the ACTIVE PREPARE_COMPOSITION rows (startedAt) for a hung prep, then the text provider's key and quota; ${COMPOSE} logs --tail 200 worker`
   },
   {
     key: "spend_soft",
@@ -139,7 +194,15 @@ export const ALERT_CONDITIONS: readonly AlertCondition[] = [
     label: "Open child-safety or sexual-content reports",
     policy: SAFETY_REPORTS_POLICY,
     hint: "/admin/moderation in the console, child safety first: take the share down, or suspend the account from /admin/users, then settle the report"
-  }
+  },
+  ...PROVIDER_QUOTA_ACCOUNTS.map(
+    (account): AlertCondition => ({
+      key: providerQuotaConditionKey(account),
+      label: providerQuotaLabel(account),
+      policy: PROVIDER_QUOTA_POLICY,
+      hint: `the provider's billing page (add credit, or raise its spend or quota limit); which calls it refused are the ProviderCallLog rows with metadata.errorClass = provider_quota_exhausted and provider ${account}`
+    })
+  )
 ];
 
 /** A burst, not a bad book: one book's run fails once, a provider outage fails every one. */
@@ -189,6 +252,8 @@ export type AlertSources = {
   failedJobsSince(since: Date, limit: number): Promise<Array<{ type: string }>>;
   disk(): Promise<DiskSnapshot>;
   openSafetyReports(): Promise<SafetyReportCounts>;
+  /** Each provider spelling's last empty-account refusal and last answered call since a moment (`providerQuota.ts`). */
+  providerCallOutcomesSince(since: Date): Promise<ProviderCallOutcome[]>;
 };
 
 /**
@@ -201,16 +266,18 @@ export async function observeAlertConditions(
   previous: ReadonlyMap<string, AlertState>,
   now: Date
 ): Promise<Map<AlertConditionKey, AlertObservation>> {
-  const [readiness, spend, failed, disk, safety] = await Promise.allSettled([
+  const [readiness, spend, failed, disk, safety, providerCalls] = await Promise.allSettled([
     sources.readiness(),
     sources.spend(),
     sources.failedJobsSince(new Date(now.getTime() - FAILED_JOBS_WINDOW_MS), FAILED_JOBS_SCAN),
     sources.disk(),
-    sources.openSafetyReports()
+    sources.openSafetyReports(),
+    sources.providerCallOutcomesSince(new Date(now.getTime() - PROVIDER_QUOTA_WINDOW_MS))
   ]);
   const observations = new Map<AlertConditionKey, AlertObservation>();
 
-  for (const check of READINESS_CHECKS) {
+  // Every check the probe measured, the advisory ones included: an email is how those are told.
+  for (const check of MONITORED_CHECKS) {
     const result = readiness.status === "fulfilled" ? readiness.value.results[check] : null;
     observations.set(
       check,
@@ -230,6 +297,11 @@ export async function observeAlertConditions(
     disk.status === "fulfilled" ? diskObservation(disk.value, previous.get("disk")?.firing ?? false) : null
   );
   observations.set("safety_reports", safety.status === "fulfilled" ? safetyReportsObservation(safety.value) : null);
+  if (providerCalls.status === "fulfilled") {
+    for (const [key, observation] of providerQuotaObservations(providerCalls.value, previous)) observations.set(key, observation);
+  } else {
+    for (const account of PROVIDER_QUOTA_ACCOUNTS) observations.set(providerQuotaConditionKey(account), null);
+  }
   return observations;
 }
 

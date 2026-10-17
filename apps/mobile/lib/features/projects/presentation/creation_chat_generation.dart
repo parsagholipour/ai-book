@@ -312,6 +312,14 @@ class _GenerationProgressBubbleState
             trackColor: colors.surface,
             semanticLabel: 'Book generation progress',
           ),
+          if (working &&
+              isGenerating &&
+              status.generationProgress?.estimatedSecondsLeft != null) ...[
+            const SizedBox(height: 8),
+            TimeLeftNote(
+              secondsLeft: status.generationProgress?.estimatedSecondsLeft,
+            ),
+          ],
           if (steps.isNotEmpty) ...[
             const SizedBox(height: 10),
             _StageList(steps: steps),

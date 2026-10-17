@@ -114,7 +114,7 @@ describe("the toolkit form plan", () => {
     ]);
     const result = await planInstructionalForms({
       input, plan, ranges, requirements: ["A money snapshot worksheet", "A tax tracker", "A pricing worksheet"], exampleCast: "plan",
-      setting: { country: "United States", year: "2026" }, repair: false, textModel: model
+      setting: { country: "United States", year: "2026" }, textModel: model
     });
     const prompt = system(calls[0]!);
     expect(prompt).toContain("heading is the section's subheading");
@@ -145,7 +145,7 @@ describe("the toolkit form plan", () => {
         ]
       }
     ]);
-    const result = await planInstructionalForms({ input, plan, ranges, repair: false, textModel: model });
+    const result = await planInstructionalForms({ input, plan, ranges, textModel: model });
     const [first, second] = result.compositions;
     expect(first!.sections.map((entry) => entry.form)).toEqual(["situation", "tool", "script"]);
     expect(first!.sections.map((entry) => entry.share!)).toEqual([expect.closeTo(0.3, 6), expect.closeTo(0.6, 6), expect.closeTo(0.1, 6)]);
@@ -153,12 +153,12 @@ describe("the toolkit form plan", () => {
     expect(second!.sections.map((entry) => entry.heading)).toEqual(["The tracker", "The rule", "Onward"]);
   });
 
-  it("never rotates a deliverable away, and homes an uncovered requirement by code when no repair call runs", async () => {
+  it("never rotates a deliverable away, and homes an uncovered requirement by code (there is no repair call)", async () => {
     const same = [section("tool", "The bank", 0.5), section("tool", "The template", 0.3), section("tool", "The checklist", 0.2)];
     const { model, calls } = scripted([
       { chapters: [chapterReply(1, same), chapterReply(2, same), chapterReply(3, same)] }
     ]);
-    const result = await planInstructionalForms({ input, plan, ranges, requirements: ["A question bank", "A pricing worksheet"], repair: false, textModel: model });
+    const result = await planInstructionalForms({ input, plan, ranges, requirements: ["A question bank", "A pricing worksheet"], textModel: model });
     expect(calls).toHaveLength(1);
     for (const composition of result.compositions) {
       expect(composition.sections.every((entry) => PINNED_FORMS.has(entry.form))).toBe(true);
@@ -175,7 +175,7 @@ describe("the toolkit form plan", () => {
         runningCase: { name: "Someone else", situation: "A different case entirely.", figures: [{ label: "x", value: "1" }] }
       }
     ]);
-    const result = await planInstructionalForms({ input, plan, ranges, toolkit: stored, repair: false, textModel: model });
+    const result = await planInstructionalForms({ input, plan, ranges, toolkit: stored, textModel: model });
     expect(result.toolkit).toBe(stored);
     expect(user(calls[0]!).toolkit).toEqual(stored);
     expect(system(calls[0]!)).toContain("toolkit is what the book's earlier chapters already fixed");

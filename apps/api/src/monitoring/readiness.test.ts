@@ -1,10 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
-import { INTERACTIVE_JOB_QUEUE, JOB_LANES, LONG_JOB_QUEUE, workerHeartbeatKey, type WorkerHeartbeat } from "@book-maker/core";
 import {
+  BACKGROUND_JOB_QUEUE,
+  COMPILE_JOB_QUEUE,
+  IMAGE_JOB_QUEUE,
+  INTERACTIVE_JOB_QUEUE,
+  JOB_LANE_NAMES,
+  JOB_LANES,
+  LONG_JOB_QUEUE,
+  queueNameForLane,
+  workerHeartbeatKey,
+  type JobLane,
+  type WorkerHeartbeat
+} from "@book-maker/core";
+import {
+  ADVISORY_CHECKS,
   createReadinessProbe,
   failureReason,
+  MONITORED_CHECKS,
   publicReadiness,
   QUEUE_WAIT_THRESHOLDS_MS,
+  READINESS_CHECKS,
   readinessDeps,
   type ReadinessDeps
 } from "./readiness.js";
@@ -12,10 +27,10 @@ import {
 const NOW = Date.parse("2026-10-13T12:00:00.000Z");
 const MINUTE = 60_000;
 
-function beat(lane: "long" | "interactive", ageMs = 10_000): WorkerHeartbeat {
+function beat(lane: JobLane, ageMs = 10_000): WorkerHeartbeat {
   return {
     lane,
-    queue: lane === "long" ? LONG_JOB_QUEUE : INTERACTIVE_JOB_QUEUE,
+    queue: queueNameForLane(lane),
     pid: 1,
     host: "worker",
     startedAt: new Date(NOW - 60 * MINUTE).toISOString(),
@@ -25,14 +40,24 @@ function beat(lane: "long" | "interactive", ageMs = 10_000): WorkerHeartbeat {
   };
 }
 
+const everyBeat = (overrides: Partial<Record<JobLane, WorkerHeartbeat | null>> = {}) => ({
+  long: beat("long"),
+  interactive: beat("interactive"),
+  images: beat("images"),
+  compile: beat("compile"),
+  background: beat("background"),
+  ...overrides
+});
+const NOTHING_WAITING: Record<JobLane, Date | null> = { long: null, interactive: null, images: null, compile: null, background: null };
+
 function healthyDeps(overrides: Partial<ReadinessDeps> = {}): ReadinessDeps {
   return {
     pingDatabase: vi.fn(async () => undefined),
     pingRedis: vi.fn(async () => undefined),
     storageReady: vi.fn(async () => undefined),
     mailReady: vi.fn(async () => undefined),
-    readHeartbeats: vi.fn(async () => ({ long: beat("long"), interactive: beat("interactive") })),
-    oldestWaitingJobs: vi.fn(async () => ({ long: null, interactive: new Date(NOW - MINUTE) })),
+    readHeartbeats: vi.fn(async () => everyBeat()),
+    oldestWaitingJobs: vi.fn(async () => ({ ...NOTHING_WAITING, interactive: new Date(NOW - MINUTE) })),
     ...overrides
   };
 }
@@ -45,7 +70,20 @@ describe("the readiness report", () => {
     expect(report.ok).toBe(true);
     expect(publicReadiness(report)).toEqual({
       ok: true,
-      checks: { db: "ok", redis: "ok", storage: "ok", mail: "ok", worker_long: "ok", worker_interactive: "ok", queue_long: "ok", queue_interactive: "ok" }
+      checks: {
+        db: "ok",
+        redis: "ok",
+        storage: "ok",
+        mail: "ok",
+        worker_long: "ok",
+        worker_interactive: "ok",
+        worker_images: "ok",
+        worker_compile: "ok",
+        queue_long: "ok",
+        queue_interactive: "ok",
+        queue_images: "ok",
+        queue_compile: "ok"
+      }
     });
   });
 
@@ -64,21 +102,57 @@ describe("the readiness report", () => {
     expect(Object.keys(body)).toEqual(["ok", "checks"]);
   });
 
+  it("measures and reports a dead or backed-up background lane, but never fails readiness over it", async () => {
+    const report = await probeOf(
+      healthyDeps({
+        readHeartbeats: async () => everyBeat({ background: null }),
+        oldestWaitingJobs: async () => ({ ...NOTHING_WAITING, background: new Date(NOW - 16 * MINUTE) })
+      })
+    ).check();
+    expect(report.ok).toBe(true);
+    expect(report.results.worker_background).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("no heartbeat from the background lane")
+    });
+    expect(report.results.queue_background).toEqual({
+      ok: false,
+      reason: "the oldest waiting background-lane job has waited 16 min (limit 15 min)"
+    });
+    // The public body names only what it answers for.
+    const body = publicReadiness(report);
+    expect(body.ok).toBe(true);
+    expect(Object.keys(body.checks)).toEqual([...READINESS_CHECKS]);
+    expect(JSON.stringify(body)).not.toContain("background");
+  });
+
+  it("files every lane's pair of checks as readiness or advisory, exactly once", () => {
+    const laneChecks = JOB_LANE_NAMES.flatMap((lane) => [`worker_${lane}`, `queue_${lane}`]);
+    expect([...MONITORED_CHECKS].sort()).toEqual(["db", "redis", "storage", "mail", ...laneChecks].sort());
+    expect(new Set(MONITORED_CHECKS).size).toBe(MONITORED_CHECKS.length);
+    expect(ADVISORY_CHECKS).toEqual(["worker_background", "queue_background"]);
+  });
+
   it("fails a check that does not answer in time instead of waiting for it", async () => {
     const report = await probeOf(healthyDeps({ pingDatabase: () => new Promise<void>(() => undefined) })).check();
     expect(report.results.db).toEqual({ ok: false, reason: "timed out after 50 ms" });
   });
 
   it("fails a lane whose heartbeat expired or went stale, and only that lane", async () => {
-    const missing = await probeOf(healthyDeps({ readHeartbeats: async () => ({ long: null, interactive: beat("interactive") }) })).check();
+    const missing = await probeOf(healthyDeps({ readHeartbeats: async () => everyBeat({ long: null }) })).check();
     expect(missing.results.worker_long).toMatchObject({ ok: false, reason: expect.stringContaining("no heartbeat from the long lane") });
     expect(missing.results.worker_interactive).toEqual({ ok: true });
 
     const stale = await probeOf(
-      healthyDeps({ readHeartbeats: async () => ({ long: beat("long"), interactive: beat("interactive", 95_000) }) })
+      healthyDeps({ readHeartbeats: async () => everyBeat({ interactive: beat("interactive", 95_000) }) })
     ).check();
     expect(stale.results.worker_interactive).toMatchObject({ ok: false, reason: expect.stringContaining("95 s ago") });
     expect(stale.results.worker_long).toEqual({ ok: true });
+
+    // A worker of a release before the image lane beats on two lanes only: the pictures have no consumer.
+    const older = await probeOf(healthyDeps({ readHeartbeats: async () => everyBeat({ images: null, compile: null }) })).check();
+    expect(older.results.worker_images).toMatchObject({ ok: false, reason: expect.stringContaining("no heartbeat from the images lane") });
+    expect(older.results.worker_compile).toMatchObject({ ok: false });
+    expect(older.results.worker_long).toEqual({ ok: true });
   });
 
   it("marks what it could not measure as unmeasured when the cause is its own failing check", async () => {
@@ -99,10 +173,10 @@ describe("the readiness report", () => {
   });
 
   it("holds each lane's oldest waiting job to its own limit", async () => {
-    const at = (lane: "long" | "interactive", waited: number) =>
+    const at = (lane: JobLane, waited: number) =>
       probeOf(
         healthyDeps({
-          oldestWaitingJobs: async () => ({ long: null, interactive: null, [lane]: new Date(NOW - waited) })
+          oldestWaitingJobs: async () => ({ ...NOTHING_WAITING, [lane]: new Date(NOW - waited) })
         })
       ).check();
     expect((await at("interactive", QUEUE_WAIT_THRESHOLDS_MS.interactive - MINUTE)).results.queue_interactive.ok).toBe(true);
@@ -116,6 +190,15 @@ describe("the readiness report", () => {
       ok: false,
       reason: expect.stringContaining("3 h 5 min (limit 3 h)")
     });
+    expect((await at("images", 29 * MINUTE)).results.queue_images.ok).toBe(true);
+    expect((await at("images", 31 * MINUTE)).results.queue_images).toMatchObject({
+      ok: false,
+      reason: "the oldest waiting images-lane job has waited 31 min (limit 30 min)"
+    });
+    expect((await at("compile", 59 * MINUTE)).results.queue_compile.ok).toBe(true);
+    expect((await at("compile", 61 * MINUTE)).results.queue_compile).toMatchObject({ ok: false });
+    expect((await at("background", 14 * MINUTE)).results.queue_background.ok).toBe(true);
+    expect((await at("background", 16 * MINUTE)).results.queue_background).toMatchObject({ ok: false });
   });
 });
 
@@ -165,19 +248,30 @@ describe("failureReason", () => {
 });
 
 describe("readinessDeps", () => {
-  function fakeRedis(status = "ready", values: Array<string | null> = [null, null]) {
+  function fakeRedis(status = "ready", values: Array<string | null> = [null, null, null, null, null]) {
     return { status, ping: vi.fn(async () => "PONG"), mget: vi.fn(async (..._keys: string[]) => values) };
   }
-  function fakeDb(rows: { long?: Date | null; interactive?: Date | null; laned?: Array<{ type: string; payload: unknown; updatedAt: Date }> } = {}) {
+  function fakeDb(
+    rows: {
+      long?: Date | null;
+      interactive?: Date | null;
+      background?: Date | null;
+      laned?: Array<{ type: string; payload: unknown; updatedAt: Date }>;
+    } = {}
+  ) {
     const findFirst = vi.fn(async ({ where }: { where: { type: { in: string[] } } }) => {
-      const long = where.type.in.includes("GENERATE_BOOK");
-      const at = long ? rows.long : rows.interactive;
+      const at = where.type.in.includes("GENERATE_BOOK")
+        ? rows.long
+        : where.type.in.includes("PREPARE_COMPOSITION")
+          ? rows.background
+          : rows.interactive;
       return at ? { updatedAt: at } : null;
     });
-    return {
-      $queryRaw: vi.fn(async () => [{ "?column?": 1 }]),
-      generationJob: { findFirst, findMany: vi.fn(async () => rows.laned ?? []) }
-    };
+    // Oldest first and bounded, as Postgres answers the scan.
+    const findMany = vi.fn(async ({ where, take }: { where: { type: { in: string[] } }; take: number }) =>
+      (rows.laned ?? []).filter((row) => where.type.in.includes(row.type))
+        .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime()).slice(0, take));
+    return { $queryRaw: vi.fn(async () => [{ "?column?": 1 }]), generationJob: { findFirst, findMany } };
   }
 
   it("refuses to queue a PING behind a Redis that is not connected", async () => {
@@ -189,11 +283,23 @@ describe("readinessDeps", () => {
     expect(redis.mget).not.toHaveBeenCalled();
   });
 
-  it("reads both lanes' heartbeat keys in one MGET", async () => {
-    const redis = fakeRedis("ready", [JSON.stringify(beat("long")), null]);
+  it("reads every lane's heartbeat key in one MGET", async () => {
+    const redis = fakeRedis("ready", [JSON.stringify(beat("long")), null, JSON.stringify(beat("images")), null, JSON.stringify(beat("background"))]);
     const deps = readinessDeps({ db: fakeDb() as never, redis, storageReady: async () => undefined, mailReady: async () => undefined });
-    expect(await deps.readHeartbeats()).toEqual({ long: beat("long"), interactive: null });
-    expect(redis.mget).toHaveBeenCalledWith(workerHeartbeatKey(LONG_JOB_QUEUE), workerHeartbeatKey(INTERACTIVE_JOB_QUEUE));
+    expect(await deps.readHeartbeats()).toEqual({
+      long: beat("long"),
+      interactive: null,
+      images: beat("images"),
+      compile: null,
+      background: beat("background")
+    });
+    expect(redis.mget).toHaveBeenCalledWith(
+      workerHeartbeatKey(LONG_JOB_QUEUE),
+      workerHeartbeatKey(INTERACTIVE_JOB_QUEUE),
+      workerHeartbeatKey(IMAGE_JOB_QUEUE),
+      workerHeartbeatKey(COMPILE_JOB_QUEUE),
+      workerHeartbeatKey(BACKGROUND_JOB_QUEUE)
+    );
   });
 
   it("places a payload-laned waiting row in the lane its payload names", async () => {
@@ -204,15 +310,31 @@ describe("readinessDeps", () => {
       laned: [
         // An edit's recompile skips the final review: a reader is waiting on it.
         { type: "COMPILE_EXPORT", payload: { skipFinalReview: true }, updatedAt: old },
-        // A generation's own compile continues that book's long work.
-        { type: "COMPILE_EXPORT", payload: {}, updatedAt: new Date(NOW - 2 * MINUTE) }
+        // A generation's own compile waits in the compile lane, and its pictures in the image lane.
+        { type: "COMPILE_EXPORT", payload: {}, updatedAt: new Date(NOW - 2 * MINUTE) },
+        { type: "GENERATE_IMAGE", payload: { planId: "p", pageId: "x" }, updatedAt: new Date(NOW - 7 * MINUTE) }
       ]
     });
     const deps = readinessDeps({ db: db as never, redis: fakeRedis(), storageReady: async () => undefined, mailReady: async () => undefined });
-    expect(await deps.oldestWaitingJobs()).toEqual({ long: new Date(NOW - 5 * MINUTE), interactive: old });
+    expect(await deps.oldestWaitingJobs()).toEqual({
+      long: new Date(NOW - 5 * MINUTE),
+      interactive: old,
+      images: new Date(NOW - 7 * MINUTE),
+      compile: new Date(NOW - 2 * MINUTE),
+      background: null
+    });
     for (const call of db.generationJob.findFirst.mock.calls) {
       expect(call[0]).toMatchObject({ where: { status: "QUEUED" }, orderBy: { updatedAt: "asc" } });
     }
+  });
+
+  it("reads the background lane's oldest waiting prep apart from the interactive lane's", async () => {
+    const prep = new Date(NOW - 4 * MINUTE);
+    const db = fakeDb({ interactive: new Date(NOW - MINUTE), background: prep });
+    const deps = readinessDeps({ db: db as never, redis: fakeRedis(), storageReady: async () => undefined, mailReady: async () => undefined });
+    expect(await deps.oldestWaitingJobs()).toEqual({ ...NOTHING_WAITING, interactive: new Date(NOW - MINUTE), background: prep });
+    const background = db.generationJob.findFirst.mock.calls.find((call) => call[0].where.type.in.includes("PREPARE_COMPOSITION"));
+    expect(background?.[0].where.type.in).toEqual(["PREPARE_COMPOSITION"]);
   });
 
   it("counts a waiting whole-book edit against the long lane and a short edit against the interactive one", async () => {
@@ -225,7 +347,19 @@ describe("readinessDeps", () => {
       ]
     });
     const deps = readinessDeps({ db: db as never, redis: fakeRedis(), storageReady: async () => undefined, mailReady: async () => undefined });
-    expect(await deps.oldestWaitingJobs()).toEqual({ long: wholeBook, interactive: shortEdit });
+    expect(await deps.oldestWaitingJobs()).toEqual({ ...NOTHING_WAITING, long: wholeBook, interactive: shortEdit });
+  });
+
+  it("never lets another type's backlog fill the scan in front of the oldest waiting compile", async () => {
+    // 250 pictures waiting longer than the compile: one shared oldest-first scan
+    // of 200 rows held only pictures, and `queue_compile` read "nothing waiting".
+    const pictures = Array.from({ length: 250 }, (_, i) => ({
+      type: "GENERATE_IMAGE", payload: { planId: "p", pageId: `page-${i}` }, updatedAt: new Date(NOW - 90 * MINUTE + i)
+    }));
+    const compile = new Date(NOW - 70 * MINUTE);
+    const db = fakeDb({ laned: [...pictures, { type: "COMPILE_EXPORT", payload: {}, updatedAt: compile }] });
+    const deps = readinessDeps({ db: db as never, redis: fakeRedis(), storageReady: async () => undefined, mailReady: async () => undefined });
+    expect(await deps.oldestWaitingJobs()).toEqual({ ...NOTHING_WAITING, images: pictures[0]!.updatedAt, compile });
   });
 
   it("asks about every job type in exactly one of its reads", async () => {

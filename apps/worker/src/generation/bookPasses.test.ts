@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   chapterSetupsForPlan: vi.fn(),
   reviewWholeBookDraftPages: vi.fn(),
   persistKeeperStoryDelta: vi.fn(),
+  persistBookStoryDeltas: vi.fn(),
   storeEmbedding: vi.fn(),
   updateEntityStateFromPage: vi.fn(),
   qualityEnabled: vi.fn((_feature?: string): boolean => false),
@@ -79,6 +80,7 @@ vi.mock("./pageReview.js", () => ({ reviewAndSaveGeneratedPage: mocks.reviewAndS
 vi.mock("./qualityEnrichment.js", () => ({
   persistKeeperStoryDelta: mocks.persistKeeperStoryDelta
 }));
+vi.mock("./bookStoryDeltas.js", () => ({ persistBookStoryDeltas: mocks.persistBookStoryDeltas }));
 vi.mock("./qualitySettings.js", () => ({
   loadQualityContext: async () => ({
     settings: {},
@@ -129,7 +131,6 @@ type TestStrategy = {
   generateChapterDraft: ReturnType<typeof vi.fn>;
   generateBatchDraft: ReturnType<typeof vi.fn>;
   generateWholeBookDraft: ReturnType<typeof vi.fn>;
-  polishPageDraft: ReturnType<typeof vi.fn>;
   generatePageDraft: ReturnType<typeof vi.fn>;
   batchSize?: number;
   createChapterBriefs?: undefined;
@@ -141,7 +142,6 @@ const baseStrategy = (): TestStrategy => ({
   generateChapterDraft: vi.fn(),
   generateBatchDraft: vi.fn(),
   generateWholeBookDraft: vi.fn(),
-  polishPageDraft: vi.fn(),
   generatePageDraft: vi.fn()
 });
 
@@ -150,10 +150,7 @@ function baseOptions(strategy: ReturnType<typeof baseStrategy>) {
     projectId: "project-1",
     planId: "plan-1",
     // `temperature` is required on CreateProjectInput and defaulted to 0.8 by the
-    // schema, so every input a handler builds carries one. Omitting it here made
-    // this fixture NaN its way through the best-of ladder, whose zero-width-band
-    // guard then read the duplicate rungs as "this book asked for temperature 0"
-    // and skipped page 1's second polish — silently, and only in this suite.
+    // schema, so every input a handler builds carries one.
     input: { targetPages: 4, temperature: 0.8, mediaSettings: {} },
     plan: { title: "Book", chapters: [] },
     providers: { text: {}, embedding: {} },
@@ -321,35 +318,6 @@ describe("generateBookBatchWindow", () => {
         settledPageToReplace: expect.objectContaining({ index: 1, markdown: "Page 1 text." })
       })
     );
-  });
-
-  it("briefs the rest of a chapter from a repaired brief the save hands back", async () => {
-    // The batch pass reads its chapter setup per page, so an accepted brief
-    // repair on page 1 has to reach page 2 through the setup itself — the
-    // per-chapter brief is one object every page of that chapter is briefed
-    // from, and `reviewAndSaveGeneratedPage` answers with a replacement for it
-    // only for a page that kept a draft the repair briefed. The end-to-end
-    // property is `pageReviewChapterBriefCarry.test.ts`'s; this is the wiring.
-    const repaired = { chapterIndex: 1, pages: [{ pageIndex: 1, beat: "Fresh beat for page 1" }] };
-    const strategy = baseStrategy();
-    strategy.batchSize = 2;
-    strategy.generateBatchDraft.mockImplementation(async ({ pageStart, pageEnd }: { pageStart: number; pageEnd: number }) => ({
-      pages: Array.from({ length: pageEnd - pageStart + 1 }, (_, offset) => pageDraft(pageStart + offset))
-    }));
-    mocks.reviewAndSaveGeneratedPage.mockImplementation(async ({ draft }: { draft: { index: number } }) => ({
-      page: { index: draft.index, title: "T", markdown: "M", summary: "S" },
-      ...(draft.index === 1 ? { repairedChapterBrief: repaired } : {})
-    }));
-
-    await generateBookBatchWindow(baseOptions(strategy));
-
-    const briefFor = (index: number) =>
-      mocks.reviewAndSaveGeneratedPage.mock.calls
-        .map((call) => call[0] as { draft: { index: number }; chapterBrief: unknown })
-        .find((call) => call.draft.index === index)?.chapterBrief;
-    expect(briefFor(2)).toBe(repaired);
-    // And no further: page 3 is another chapter's, with its own brief.
-    expect(briefFor(3)).toBeUndefined();
   });
 
   it("drafts an omitted page individually instead of losing it", async () => {
@@ -561,7 +529,8 @@ describe("generateBookWholePass", () => {
         data: expect.objectContaining({ status: "GENERATING", storyState: expect.objectContaining({ promises: [] }) })
       })
     );
-    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledTimes(2);
+    // No story pass: a generated book pays for no story memory (E6, 2026-10-16).
+    expect(mocks.persistBookStoryDeltas).not.toHaveBeenCalled();
     // The whole-book pass never runs page jobs, so its embeddings were pure
     // write-only cost; the pass now skips them.
     expect(mocks.storeEmbedding).not.toHaveBeenCalled();
@@ -584,7 +553,9 @@ describe("generateBookWholePass", () => {
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
-  it("makes whole-pass pages terminal without buying images before requested final QA", async () => {
+  it("draws a whole-pass page's picture at publication whatever the retired final-review flag says", async () => {
+    // 2026-10-16: no compile review rewrites a per-page book off Quick Draft, and Quick Draft's
+    // screen redraws a page it repairs at finalization, so nothing waits for the compile any more.
     const { durablePages, strategy } = installPublicationState([
       { draft: { ...pageDraft(1), imagePrompt: "Rabbit with a lantern" }, revision: 1, qualityReport: { approved: true, score: 90 } }
     ]);
@@ -594,7 +565,7 @@ describe("generateBookWholePass", () => {
     await generateBookWholePass(options);
 
     expect(durablePages.get("row-1")).toMatchObject({ status: "COMPLETED", imagePrompt: "Rabbit with a lantern" });
-    expect(mocks.enqueueWorkerJob.mock.calls.filter(([job]) => job.type === "GENERATE_IMAGE")).toHaveLength(0);
+    expect(mocks.enqueueWorkerJob.mock.calls.filter(([job]) => job.type === "GENERATE_IMAGE")).toHaveLength(1);
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
@@ -645,9 +616,6 @@ describe("generateBookWholePass", () => {
 
     expect([...durablePages.values()].map((page) => page.status)).toEqual(["COMPLETED", "COMPLETED"]);
     expect(durableImageJobs).toEqual(new Set(["row-1", "row-2"]));
-    expect(mocks.enqueueWorkerJob.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.persistKeeperStoryDelta.mock.invocationCallOrder[0]!
-    );
     expect(mocks.persistAcceptedWholeBookTarget.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.enqueueWorkerJob.mock.invocationCallOrder[0]!
     );
@@ -664,7 +632,7 @@ describe("generateBookWholePass", () => {
 
     expect(durablePages.get("row-1")).toMatchObject({ status: "GENERATING", imagePrompt: "A fox" });
     expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
-    expect(mocks.persistKeeperStoryDelta).not.toHaveBeenCalled();
+    expect(mocks.persistBookStoryDeltas).not.toHaveBeenCalled();
     expect(mocks.ensureCharacterReferenceAssets).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
   });
@@ -687,7 +655,7 @@ describe("generateBookWholePass", () => {
     );
 
     expect(durablePages.get("row-1")).toMatchObject({ status: "GENERATING", index: 2, title: "Page 1" });
-    expect(mocks.persistKeeperStoryDelta).not.toHaveBeenCalled();
+    expect(mocks.persistBookStoryDeltas).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
   });
 

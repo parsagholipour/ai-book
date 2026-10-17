@@ -4,7 +4,6 @@ import type { FinalBookQa, ManuscriptQualityIssue } from "@book-maker/core";
 import { isStopOrAbortError } from "@book-maker/core";
 import { assertJobNotStopped } from "../runtime/jobLifecycle.js";
 import { ExportRepairSupersededError } from "./compileExportFence.js";
-import { runExportCheckpoint, type ExportChecks } from "./compileExportCheckpoint.js";
 import { repairFailure, repairFailureSchema, type RepairFailure } from "./compileRepairOutcome.js";
 
 type Page = { id: string; index: number; title: string; markdown: string; revision: number };
@@ -34,7 +33,6 @@ export type FinalizationState = {
   finalReviewStarted?: boolean;
   initialReview?: Review;
   finalReview?: Review;
-  exportChecks?: ExportChecks;
   updatedAt: string;
   lease?: { token: string; expiresAt: number };
   configuration: unknown;
@@ -194,12 +192,6 @@ export async function openCompileFinalization(options: {
   heartbeat.unref();
   return {
     get state() { return state; },
-    async exportCheck<T>(request: Pick<Parameters<typeof runExportCheckpoint<T>>[0], "slot" | "fingerprint" | "parse" | "compute" | "interrupted">): Promise<T> {
-      return runExportCheckpoint({ ...request, read: () => state.exportChecks,
-        mutate: (change) => mutate((next) => { next.exportChecks ??= {}; change(next.exportChecks); }, false),
-        assertActive: async () => { await assertJobNotStopped(options.generationJobId); await mutate(() => {}, false); }
-      });
-    },
     async assertLease(client?: { generationJob?: Prisma.TransactionClient["generationJob"] }) {
       if (!client) return mutate(() => {}, false);
       // The caller already locked Project in its publication transaction.

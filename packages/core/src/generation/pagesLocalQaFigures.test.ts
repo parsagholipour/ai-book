@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
-import { runLocalFinalQa } from "./pagesFinalLocalQa.js";
 import { reviewPageDraftLocally } from "./pagesLocalQa.js";
 
 /**
@@ -123,15 +122,6 @@ describe("figure blocks in the local checks", () => {
     });
     expect(report.checks.repetitionOk).toBe(true);
     expect(report.issues.join(" ")).not.toMatch(/repeats or substantially overlaps/);
-
-    const finalIssues = runLocalFinalQa(
-      { ...input, targetPages: 2 },
-      [
-        { ...previousPage, index: 1 },
-        { index: 2, title: "The North Gate", markdown: currentProse, summary: "The carts and their tolls." }
-      ]
-    );
-    expect(finalIssues.join(" ")).not.toMatch(/repeats or substantially overlaps/);
   });
 
   it("still rejects two pages whose prose is near-verbatim", () => {
@@ -152,15 +142,6 @@ describe("figure blocks in the local checks", () => {
     });
     expect(report.checks.repetitionOk).toBe(false);
     expect(report.issues.join(" ")).toMatch(/repeats or substantially overlaps the beat from page 2/);
-
-    const finalIssues = runLocalFinalQa(
-      { ...input, targetPages: 2 },
-      [
-        { index: 1, title: "The Mill Ledger", markdown: prose, summary: "The mill office and its winter lamp." },
-        { index: 2, title: "The North Gate", markdown: prose, summary: "The carts and their tolls." }
-      ]
-    );
-    expect(finalIssues.join(" ")).toMatch(/Page 2:.*repeats or substantially overlaps the beat from page 1/);
   });
 
   it("does not read a figure caption leaked into the summary as the final page's ending", () => {
@@ -232,15 +213,6 @@ describe("figure blocks in the local checks", () => {
     });
     expect(report.checks.repetitionOk).toBe(true);
     expect(report.issues.join(" ")).not.toMatch(/repeats or substantially overlaps/);
-
-    const finalIssues = runLocalFinalQa(
-      { ...input, targetPages: 2 },
-      [
-        { ...previousPage, index: 1 },
-        { index: 2, title: "The North Gate", markdown: currentProse, summary: leakedSummary }
-      ]
-    );
-    expect(finalIssues.join(" ")).not.toMatch(/repeats or substantially overlaps/);
   });
 
   it("does not read fence-free figure JSON leaked into the summary as the final page's ending", () => {
@@ -306,14 +278,5 @@ describe("figure blocks in the local checks", () => {
     });
     expect(report.checks.repetitionOk).toBe(true);
     expect(report.issues.join(" ")).not.toMatch(/repeats or substantially overlaps/);
-
-    const finalIssues = runLocalFinalQa(
-      { ...input, targetPages: 2 },
-      [
-        { ...previousPage, index: 1 },
-        { index: 2, title: "The North Gate", markdown: currentProse, summary: leakedSummary }
-      ]
-    );
-    expect(finalIssues.join(" ")).not.toMatch(/repeats or substantially overlaps/);
   });
 });

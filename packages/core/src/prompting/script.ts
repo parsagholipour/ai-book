@@ -194,6 +194,19 @@ export function scriptProfileForLanguage(language: string | null | undefined): S
 }
 
 /**
+ * The script a book in this language is written in, or undefined when this
+ * table does not know the language. {@link scriptProfileForLanguage} falls
+ * back to Latin for those, which is right for typesetting and wrong for
+ * deciding which letters do not belong (`generation/scriptLeaks.ts`).
+ */
+export function knownBookScript(language: string | null | undefined): BookScript | undefined {
+  if (isEnglishLanguage(language)) {
+    return "latin";
+  }
+  return languageTableEntry(SCRIPT_PROFILES, language)?.script;
+}
+
+/**
  * The stored language as a BCP-47 code, or "en" when it is a display label we
  * have no mapping for. The only producer of language codes in the codebase —
  * `<dc:language>`, `<html lang>` and `Intl.Segmenter` all read it.

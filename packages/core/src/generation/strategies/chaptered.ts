@@ -5,10 +5,8 @@ import {
   generateChapterBrief,
   generateImageBytes,
   generatePageDraft,
-  repairPageBrief,
   reviewPageDraft,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage
 } from "../pages.js";
 import { CHAPTERED_SEQUENTIAL_STRATEGY_ID } from "./ids.js";
@@ -25,9 +23,7 @@ export const chapteredBookGenerationStrategy = Object.freeze({
   generateChapterBrief,
   generatePageDraft,
   reviewPageDraft,
-  repairPageBrief,
   revisePageDraft,
-  runFinalBookQa,
   shouldIllustratePage,
   generateImageBytes,
   compileMarkdown: compileBookMarkdown,

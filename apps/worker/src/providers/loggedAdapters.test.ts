@@ -404,6 +404,9 @@ describe("LoggingTextModelAdapter live selection logging", () => {
     expect(providerCallRows()).toHaveLength(2);
   });
 
+  // A 503 earns the primary one fresh request before the hop — once per
+  // logical call, not once per pass of the network retry around the pair:
+  // primary, primary, fallback, then primary, fallback twice. Seven rows.
   it("keeps every primary/fallback pair separate when the logical call retries", async () => {
     vi.useFakeTimers();
     try {
@@ -418,9 +421,9 @@ describe("LoggingTextModelAdapter live selection logging", () => {
       await vi.runAllTimersAsync();
       await rejection;
 
-      expect(providerCallRows().filter((row) => row.provider === "gemini")).toHaveLength(3);
+      expect(providerCallRows().filter((row) => row.provider === "gemini")).toHaveLength(4);
       expect(providerCallRows().filter((row) => row.provider === "deepseek")).toHaveLength(3);
-      expect(providerCallRows()).toHaveLength(6);
+      expect(providerCallRows()).toHaveLength(7);
     } finally {
       vi.useRealTimers();
     }

@@ -23,6 +23,12 @@ import {
   type ProviderSet
 } from "@book-maker/core";
 import { imageGenerationMetadata, imageStorageMetadata } from "./bookHelpers.js";
+import {
+  castForCharacterReferenceDecision,
+  parseCharacterReferenceCastDecision,
+  recordCharacterReferenceCastDecision,
+  type CharacterReferenceCastDecisionOptions
+} from "./characterReferenceCastDecision.js";
 import { characterReferenceFileStems, characterReferenceNameKey } from "./characterReferenceFileNames.js";
 import {
   characterNameFromAssetMetadata,
@@ -58,6 +64,14 @@ export type CharacterReferenceRenderOptions = {
   providers: ProviderSet;
   strategy: BookGenerationStrategy;
   generationJobId?: string | undefined;
+  /**
+   * The short-book pass's whole-book draft, from which this call decides — once
+   * per plan version — which characters get a sheet at all
+   * (`characterReferenceCastDecision.ts`). Only that pass passes it; every
+   * other caller reads the stored decision, or keeps today's cast where none
+   * was made.
+   */
+  decideCastFromDraft?: CharacterReferenceCastDecisionOptions["pages"] | undefined;
 };
 
 export async function ensureCharacterReferenceAssets(
@@ -66,13 +80,25 @@ export async function ensureCharacterReferenceAssets(
   if (!shouldGenerateCharacterReferences(options.input, options.plan)) {
     return [];
   }
-  // Who this book draws sheets for — the whole cast only when pages are
-  // illustrated, and possibly nobody for a cover-only book. One reading for
-  // the fast check, the locked read and the render, so a set settled by one
-  // caller is settled for every other.
-  const cast = characterReferenceCast(options.input, options.plan);
-  if (cast.length === 0) {
+  // Who this book could draw sheets for — the whole cast only when pages are
+  // illustrated, and possibly nobody for a cover-only book. A short book's
+  // draft narrows it further, and that answer is stored on the plan version,
+  // so it is decided before anything is read: the fast check below and the
+  // locked read then see the same row every other caller will. Before the
+  // capability check too, because the cover job may draw on another model than
+  // the pages, and it has to find the same cast whichever of them takes sheets.
+  const planCast = characterReferenceCast(options.input, options.plan);
+  if (planCast.length === 0) {
     return [];
+  }
+  if (options.decideCastFromDraft) {
+    await recordCharacterReferenceCastDecision({
+      planId: options.planId,
+      input: options.input,
+      plan: options.plan,
+      strategy: options.strategy,
+      pages: options.decideCastFromDraft
+    });
   }
 
   const capabilities = imageAdapterCapabilities(options.providers.image);
@@ -94,12 +120,18 @@ export async function ensureCharacterReferenceAssets(
   // over-covers is one the sequential pair could reach too, since the assets
   // were read first either way. The copies inside `read` stay sequential for the
   // reason the commit's creates do — a transaction client runs one query at a
-  // time.
-  const [existing, refusals] = await Promise.all([
+  // time. The cast decision rides the refusals' query, so a page job reading it
+  // costs no third round trip.
+  const [existing, planRecord] = await Promise.all([
     currentCharacterReferences(options.projectId, options.planId),
-    settledCharacterReferenceRefusals(options.planId)
+    characterReferencePlanRecord(options.planId)
   ]);
-  if (characterReferenceSetIsSettled(existing, refusals, cast)) {
+  // One cast for the fast check, the locked read and the render, so a set
+  // settled by one caller is settled for every other. A decision only ever moves
+  // from NULL to an answer, once, so each read takes the cast from the row it
+  // read and the render draws the one the claim's read found.
+  let cast = castForCharacterReferenceDecision(planCast, planRecord.castDecision);
+  if (characterReferenceSetIsSettled(existing, planRecord.refusals, cast)) {
     return existing.map(toWorkerImageAsset);
   }
 
@@ -117,10 +149,11 @@ export async function ensureCharacterReferenceAssets(
     generationJobId: options.generationJobId,
     read: async (client) => {
       const assets = await currentCharacterReferences(options.projectId, options.planId, client);
-      const settledRefusals = await settledCharacterReferenceRefusals(options.planId, client);
+      const record = await characterReferencePlanRecord(options.planId, client);
+      cast = castForCharacterReferenceDecision(planCast, record.castDecision);
       return {
-        answer: { assets: assets.map(toWorkerImageAsset), refusals: settledRefusals },
-        settled: characterReferenceSetIsSettled(assets, settledRefusals, cast)
+        answer: { assets: assets.map(toWorkerImageAsset), refusals: record.refusals },
+        settled: characterReferenceSetIsSettled(assets, record.refusals, cast)
       };
     },
     render: () => renderCharacterReferenceSheets(options, cast),
@@ -171,15 +204,23 @@ async function currentCharacterReferences(
   return existing.filter((asset) => imageAssetPlanId(asset.metadata) === planId);
 }
 
-async function settledCharacterReferenceRefusals(
+/**
+ * What the plan version says about its sheets: who was refused, and — when its
+ * draft decided it — who is in the cast at all. One select for both, because
+ * every page job asks before it draws.
+ */
+async function characterReferencePlanRecord(
   planId: string,
   client: Pick<typeof prisma, "planVersion"> = prisma
-): Promise<CharacterReferenceRefusal[]> {
+): Promise<{ refusals: CharacterReferenceRefusal[]; castDecision: string[] | undefined }> {
   const planVersion = await client.planVersion.findUnique({
     where: { id: planId },
-    select: { characterReferenceRefusals: true }
+    select: { characterReferenceRefusals: true, characterReferenceCast: true }
   });
-  return parseCharacterReferenceRefusals(planVersion?.characterReferenceRefusals);
+  return {
+    refusals: parseCharacterReferenceRefusals(planVersion?.characterReferenceRefusals),
+    castDecision: parseCharacterReferenceCastDecision(planVersion?.characterReferenceCast)
+  };
 }
 
 /**

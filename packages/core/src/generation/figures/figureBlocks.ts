@@ -188,7 +188,7 @@ export function figureAndStandInFreeProse(markdown: string): string {
 /**
  * A per-page model draft as the pipeline may use it: `figureAndStandInFreeProse` over its
  * markdown, the same object when there was nothing to remove. Applied where
- * the draft is parsed (`generatePageDraft`, `polishPageDraft`,
+ * the draft is parsed (`generatePageDraft`,
  * `revisePageDraft`, the tools writer), so no review, audit or revision after
  * it ever reads a figure a page writer invented.
  */

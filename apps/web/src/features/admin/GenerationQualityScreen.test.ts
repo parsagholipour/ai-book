@@ -56,9 +56,9 @@ function mergeLikeServer(
 describe("featureRows", () => {
   it("keeps the written copy for a described feature", () => {
     const rows = featureRows(responseWith());
-    expect(rows.find((row) => row.id === "planCritic")).toEqual({
-      id: "planCritic",
-      label: "Plan critic",
+    expect(rows.find((row) => row.id === "writerTools")).toEqual({
+      id: "writerTools",
+      label: "Writer tools",
       summary: "One cheap call per book."
     });
   });
@@ -110,7 +110,7 @@ describe("quality form request boundary", () => {
     });
     const page = await browser.newPage();
     const loaded = responseWith("twelfthGate");
-    loaded.settings.planCritic = ["ultra", "premium", "glacial"];
+    loaded.settings.writerTools = ["ultra", "premium", "glacial"];
     type Reply = { status?: number; body: GenerationQuality | { error: string } };
     let pending:
       | { started: () => void; reply: Promise<Reply> }
@@ -157,7 +157,7 @@ describe("quality form request boundary", () => {
       // the concurrent workspace gate. Keep fast feedback for the interactions
       // below without turning that startup work into a three-second race.
       page.setDefaultTimeout(3_000);
-      const tiers = page.getByRole("group", { name: "Plan critic" });
+      const tiers = page.getByRole("group", { name: "Writer tools" });
       const premium = tiers.getByRole("checkbox", { name: "Premium" });
       const note = page.getByLabel("Change note");
       const save = page.getByRole("button", { name: "Save setting" });
@@ -186,7 +186,7 @@ describe("quality form request boundary", () => {
 
       const saved = responseWith();
       saved.version = 4;
-      saved.settings.planCritic = ["fast"];
+      saved.settings.writerTools = ["fast"];
       saved.note = "keep this draft";
       const acceptedSave = armMutation();
       await save.click();
@@ -217,7 +217,7 @@ describe("quality form request boundary", () => {
 
       const resetState = responseWith();
       resetState.version = 5;
-      resetState.settings.planCritic = ["balanced"];
+      resetState.settings.writerTools = ["balanced"];
       const acceptedReset = armMutation();
       await reset.click();
       await acceptedReset.started;
@@ -278,33 +278,33 @@ describe("qualitySaveClaim", () => {
   it("posts the moved feature alone, and no note, when nothing was typed", () => {
     const state = responseWith();
     const draft = draftOf(state);
-    draft.planCritic = ["ultra"];
+    draft.writerTools = ["ultra"];
 
     const claim = qualitySaveClaim(state.settings, draft, "", state.models, state.models);
 
     // Not the eleven-key map this used to send: every feature nobody touched is
     // absent, so the server's merge leaves it as whoever saved last stored it.
-    expect(Object.keys(claim ?? {})).toEqual(["planCritic"]);
-    expect(claim?.planCritic).toEqual(["ultra"]);
+    expect(Object.keys(claim ?? {})).toEqual(["writerTools"]);
+    expect(claim?.writerTools).toEqual(["ultra"]);
     expect(claim && "note" in claim).toBe(false);
   });
 
   it("claims an emptied feature, because `[]` is how a gate is switched off", () => {
     const state = responseWith();
     const draft = draftOf(state);
-    draft.planCritic = [];
+    draft.writerTools = [];
 
     const claim = qualitySaveClaim(state.settings, draft, "", state.models, state.models);
 
     // Presence, the way the server decides it — a truthiness test here would
     // drop the one claim an operator most needs to make.
-    expect(claim && "planCritic" in claim).toBe(true);
-    expect(claim?.planCritic).toEqual([]);
-    expect(Object.keys(claim ?? {})).toEqual(["planCritic"]);
+    expect(claim && "writerTools" in claim).toBe(true);
+    expect(claim?.writerTools).toEqual([]);
+    expect(Object.keys(claim ?? {})).toEqual(["writerTools"]);
   });
 
   it("names only this operator's feature, so a concurrent save survives", () => {
-    // Operator B's console loaded version 7. Operator A unchecked `planCritic`
+    // Operator B's console loaded version 7. Operator A unchecked `writerTools`
     // and stored version 8 while B was still looking at the form.
     const loadedByB = responseWith();
     loadedByB.settings.styleExcerpts = ["ultra", "premium"];
@@ -315,31 +315,31 @@ describe("qualitySaveClaim", () => {
 
     expect(Object.keys(claim ?? {})).toEqual(["styleExcerpts"]);
     expect(claim?.styleExcerpts).toEqual([]);
-    // B's body carries no `planCritic`, so the merge onto version 8 keeps A's.
-    // Sent as the whole map it would have carried planCritic at its version 7
+    // B's body carries no `writerTools`, so the merge onto version 8 keeps A's.
+    // Sent as the whole map it would have carried writerTools at its version 7
     // value and reverted A — the lost update the merge and its replay exist to
     // prevent, delivered by the one client they were built for.
-    const storedByA = { ...loadedByB.settings, planCritic: [] };
+    const storedByA = { ...loadedByB.settings, writerTools: [] };
     const merged = mergeLikeServer(storedByA, claim);
-    expect(merged.planCritic).toEqual([]);
+    expect(merged.writerTools).toEqual([]);
     expect(merged.styleExcerpts).toEqual([]);
   });
 
   it("posts the note beside the map when a box moved and a note explains it", () => {
     const state = responseWith();
     const draft = draftOf(state);
-    draft.planCritic = [];
+    draft.writerTools = [];
 
     const claim = qualitySaveClaim(state.settings, draft, "  turning the critic off  ", state.models, state.models);
 
-    expect(claim?.planCritic).toEqual([]);
+    expect(claim?.writerTools).toEqual([]);
     expect(claim?.note).toBe("turning the critic off");
   });
 
   it("counts a box toggled back as a change, the way the server does", () => {
     const state = responseWith();
     const draft = draftOf(state);
-    draft.planCritic = ["premium", "ultra"];
+    draft.writerTools = ["premium", "ultra"];
 
     expect(claimFrom(state, draft, "")).not.toBeNull();
   });
@@ -350,10 +350,10 @@ describe("qualitySaveClaim", () => {
     // Stored is ["ultra", "premium"]; re-checking Ultra appends it, so the list
     // moved and the server is told so — order and all, since it stores what it
     // is given rather than deciding what an equal list is.
-    draft.planCritic = ["premium", "ultra"];
+    draft.writerTools = ["premium", "ultra"];
 
     expect(claimFrom(state, draft, "")).toEqual({
-      planCritic: ["premium", "ultra"]
+      writerTools: ["premium", "ultra"]
     });
   });
 
@@ -362,9 +362,9 @@ describe("qualitySaveClaim", () => {
     const draft = draftOf(state);
     // Premium was already last, so unchecking it and checking it back rebuilds
     // the stored list exactly. Re-asserting it would revert whatever another
-    // operator stored for `planCritic`, and nothing here can tell this console's
+    // operator stored for `writerTools`, and nothing here can tell this console's
     // own no-op from a value two versions stale — so the gesture rides the note.
-    draft.planCritic = ["ultra", "premium"];
+    draft.writerTools = ["ultra", "premium"];
 
     expect(claimFrom(state, draft, "")).toBeNull();
     expect(claimFrom(state, draft, "  had another look  ")).toEqual({
@@ -387,7 +387,7 @@ describe("qualitySaveClaim", () => {
     // against the map this console originally loaded, the very next save would
     // name their change back out.
     const answered: GenerationQuality = { ...responseWith(), version: 9 };
-    answered.settings.planCritic = [];
+    answered.settings.writerTools = [];
     const draft = draftOf(answered);
 
     expect(claimFrom(answered, draft, "")).toBeNull();
@@ -482,7 +482,7 @@ describe("readQualityHead", () => {
     expect(readQualityHead({ ...response, settings: [] })).toBeNull();
     expect(readQualityHead({ ...response, features: {} })).toBeNull();
     expect(readQualityHead({ ...response, features: [null] })).toBeNull();
-    expect(readQualityHead({ ...response, features: [{ id: "planCritic" }] })).toBeNull();
+    expect(readQualityHead({ ...response, features: [{ id: "writerTools" }] })).toBeNull();
     expect(readQualityHead(null)).toBeNull();
     expect(readQualityHead("<html>502 Bad Gateway</html>")).toBeNull();
   });
@@ -501,17 +501,17 @@ describe("readQualityHead", () => {
   it("refuses a tier list that is not a list of tiers", () => {
     const response = responseWith();
 
-    expect(readQualityHead({ ...response, settings: { planCritic: "ultra" } })).toBeNull();
-    expect(readQualityHead({ ...response, settings: { planCritic: [7] } })).toBeNull();
+    expect(readQualityHead({ ...response, settings: { writerTools: "ultra" } })).toBeNull();
+    expect(readQualityHead({ ...response, settings: { writerTools: [7] } })).toBeNull();
   });
 
   it("keeps a tier this build has no name for, rather than filtering it out", () => {
     // Forward compatibility, the same bargain `featureRows` makes for an id with
     // no copy: filtering would quietly post a newer server's value back out the
     // next time this feature is claimed.
-    const head = readQualityHead({ ...responseWith(), settings: { planCritic: ["glacial"] } });
+    const head = readQualityHead({ ...responseWith(), settings: { writerTools: ["glacial"] } });
 
-    expect(head?.settings.planCritic).toEqual(["glacial"]);
+    expect(head?.settings.writerTools).toEqual(["glacial"]);
   });
 
   it("coerces the fields it only prints rather than losing a usable revision", () => {
@@ -545,20 +545,20 @@ describe("rebaseQualityDraft", () => {
 
   it("keeps the operator's boxes and takes every other gate from the stored revision", () => {
     const { loadedByB, draftOfB } = twoOperators();
-    const head: GenerationQuality["settings"] = { ...draftOf(loadedByB), planCritic: [] };
+    const head: GenerationQuality["settings"] = { ...draftOf(loadedByB), writerTools: [] };
 
     const rebased = rebaseQualityDraft(head, loadedByB.settings, draftOfB);
 
     expect(rebased.settings.styleExcerpts).toEqual([]);
-    expect(rebased.settings.planCritic).toEqual([]);
-    expect(rebased.movedUnderneath).toEqual(["planCritic"]);
+    expect(rebased.settings.writerTools).toEqual([]);
+    expect(rebased.movedUnderneath).toEqual(["writerTools"]);
     // Copied, never aliased: the rows are edited in place from here.
-    expect(rebased.settings.planCritic).not.toBe(head.planCritic);
+    expect(rebased.settings.writerTools).not.toBe(head.writerTools);
   });
 
   it("leaves the claim the refused save carried exactly where it was", () => {
     const { loadedByB, draftOfB } = twoOperators();
-    const head: GenerationQuality["settings"] = { ...draftOf(loadedByB), planCritic: [] };
+    const head: GenerationQuality["settings"] = { ...draftOf(loadedByB), writerTools: [] };
 
     // The point of rebasing rather than reloading: pressing Save again posts the
     // same partial body, which the server lays over A's revision — so both
@@ -567,7 +567,7 @@ describe("rebaseQualityDraft", () => {
     const rebased = rebaseQualityDraft(head, loadedByB.settings, draftOfB);
 
     expect(claimFrom({ settings: head, models: loadedByB.models }, rebased.settings, "")).toEqual(refused);
-    expect(mergeLikeServer(head, claimFrom({ settings: head, models: loadedByB.models }, rebased.settings, "")).planCritic).toEqual(
+    expect(mergeLikeServer(head, claimFrom({ settings: head, models: loadedByB.models }, rebased.settings, "")).writerTools).toEqual(
       []
     );
   });
@@ -626,12 +626,12 @@ describe("qualityConflictNotice", () => {
     const notice = qualityConflictNotice({
       version: 9,
       reloaded: true,
-      movedUnderneath: ["Plan critic"],
+      movedUnderneath: ["Writer tools"],
       stillClaiming: true
     });
 
     expect(notice).toContain("version 9");
-    expect(notice).toContain("They changed Plan critic.");
+    expect(notice).toContain("They changed Writer tools.");
     expect(notice).toContain("press Save setting");
   });
 
@@ -651,7 +651,7 @@ describe("qualityConflictNotice", () => {
     const notice = qualityConflictNotice({
       version: 9,
       reloaded: true,
-      movedUnderneath: ["Plan critic"],
+      movedUnderneath: ["Writer tools"],
       stillClaiming: false
     });
 
@@ -679,7 +679,7 @@ describe("qualityConflictNotice", () => {
     // the time this screen speaks: it has rebased the boxes the operator did not
     // touch and named the one button that finishes the job.
     const shapes = [
-      { version: 9, reloaded: true, movedUnderneath: ["Plan critic"], stillClaiming: true },
+      { version: 9, reloaded: true, movedUnderneath: ["Writer tools"], stillClaiming: true },
       { version: 9, reloaded: true, movedUnderneath: [], stillClaiming: false },
       { version: 8, reloaded: false, movedUnderneath: [], stillClaiming: true }
     ];
@@ -702,7 +702,7 @@ describe("recoverQualitySave", () => {
 
   /** Operator A got the number first, and unchecked a different gate with it. */
   function storedByA(loaded: GenerationQuality): GenerationQuality {
-    return { ...loaded, version: 8, settings: { ...draftOf(loaded), planCritic: [] } };
+    return { ...loaded, version: 8, settings: { ...draftOf(loaded), writerTools: [] } };
   }
 
   it("rebases the operator's boxes onto the winner's revision and keeps their claim", async () => {
@@ -724,13 +724,13 @@ describe("recoverQualitySave", () => {
     // Their unchecked box survived the refusal untouched...
     expect(recovery.draft.styleExcerpts).toEqual([]);
     // ...A's landed underneath it...
-    expect(recovery.draft.planCritic).toEqual([]);
+    expect(recovery.draft.writerTools).toEqual([]);
     expect(recovery.state.version).toBe(8);
     // ...and pressing Save now posts the identical partial body, which merges
     // onto version 8 rather than reverting it. That is the whole recovery.
     expect(claimFrom(recovery.state, recovery.draft, "", recovery.modelDraft)).toEqual(claim);
     expect(recovery.error).toContain("version 8");
-    expect(recovery.error).toContain("Plan critic");
+    expect(recovery.error).toContain("Writer tools");
     expect(recovery.error).toContain("press Save setting");
   });
 
@@ -825,7 +825,7 @@ describe("recoverQualitySave", () => {
   it("refuses a head whose tier list is not a list, rather than seating the wreckage", async () => {
     const { loaded, draft } = refusedSave();
     const head = storedByA(loaded);
-    const shredded = { ...head, settings: { ...head.settings, planCritic: "ultra" } };
+    const shredded = { ...head, settings: { ...head.settings, writerTools: "ultra" } };
 
     const recovery = await recoverQualitySave({
       error: conflictError(7),

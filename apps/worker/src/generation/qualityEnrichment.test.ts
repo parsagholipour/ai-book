@@ -4,9 +4,6 @@ import type {
   CreateProjectInput,
   PageDraft,
   PageQualityReport,
-  StoryDelta,
-  StoryExtractResult,
-  StoryState,
   TextModelAdapter
 } from "@book-maker/core";
 
@@ -14,8 +11,6 @@ const mocks = vi.hoisted(() => ({
   loadQualityContext: vi.fn(),
   loadProjectStoryState: vi.fn(),
   rebuildStoryStateFromPages: vi.fn(),
-  persistPageStoryDelta: vi.fn(),
-  extractStoryState: vi.fn(),
   verifyPageClaims: vi.fn(),
   auditPageStyle: vi.fn()
 }));
@@ -26,29 +21,23 @@ vi.mock("./qualitySettings.js", () => ({
 }));
 vi.mock("./storyStateStore.js", () => ({
   loadProjectStoryState: mocks.loadProjectStoryState,
-  rebuildStoryStateFromPages: mocks.rebuildStoryStateFromPages,
-  persistPageStoryDelta: mocks.persistPageStoryDelta
+  rebuildStoryStateFromPages: mocks.rebuildStoryStateFromPages
 }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   mocks.verifyPageClaims.mockImplementation(actual.verifyPageClaims);
   return {
     ...actual,
-    extractStoryState: mocks.extractStoryState,
     verifyPageClaims: mocks.verifyPageClaims,
     auditPageStyle: mocks.auditPageStyle
   };
 });
 
 import {
-  enrichPageQualityReport,
-  keeperStoryExtractForSave,
   mergeEntityAndStoryStateLines,
-  persistKeeperStoryDelta,
   revisedDraftStyleAuditor
 } from "./qualityEnrichment.js";
 import { pageQualityAdvisoryIssues } from "./pageQualityAdvisories.js";
-import { savedPictureBookReviewSchema } from "./shortPictureBookReviewCache.js";
 
 const TARGET_PAGES = 8;
 
@@ -66,16 +55,6 @@ const input: CreateProjectInput = {
     coverTemplate: "auto",
     finalReview: true,
     toneProfile: "neutral"
-  }
-};
-
-const factualInput: CreateProjectInput = {
-  ...input,
-  prompt: "A scientific history of vaccines with current evidence.",
-  category: "SCIENCE",
-  mediaSettings: {
-    ...input.mediaSettings,
-    toneProfile: "scholarly"
   }
 };
 
@@ -122,52 +101,6 @@ const approvedReport: PageQualityReport = {
   }
 };
 
-const openPromiseState: StoryState = {
-  promises: [
-    {
-      id: "p1",
-      text: "Find the seal",
-      status: "open",
-      openedAtPage: 1
-    }
-  ],
-  facts: [],
-  entities: {},
-  unanswered: []
-};
-
-const emptyDelta = (overrides: Partial<StoryDelta> = {}): StoryDelta => ({
-  promisesOpened: [],
-  promisesPaid: [],
-  promisesBroken: [],
-  factsAdded: [],
-  entities: {},
-  unansweredAdded: [],
-  unansweredResolved: [],
-  ...overrides
-});
-
-const extractPayingP1: StoryExtractResult = {
-  storyDelta: emptyDelta({ promisesPaid: ["p1"] }),
-  contradictions: []
-};
-
-function storyExtractEnabled() {
-  return {
-    settings: {},
-    tier: "balanced",
-    enabled: (feature: string) => feature === "storyExtractAudit"
-  };
-}
-
-function claimVerifierEnabled() {
-  return {
-    settings: {},
-    tier: "premium",
-    enabled: (feature: string) => feature === "claimVerifier"
-  };
-}
-
 function styleAuditorEnabled() {
   return {
     settings: {},
@@ -182,229 +115,6 @@ function draftWithFigureFence(): PageDraft {
     markdown: `Jack found the seal.\n\n${figureFence}\n\nHe closed the vault.`
   };
 }
-
-const figureJsonSummary = JSON.stringify({
-  kind: "bar",
-  title: "Carts by decade",
-  categories: ["1500", "1510"],
-  series: [{ name: "Carts", values: [120, 140] }],
-  source: "The ledger"
-});
-
-function expectFigureBlindExtract(extracted: { markdown: string; summary: string }, storedDraft: PageDraft) {
-  expect(extracted.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
-  expect(extracted.markdown).not.toContain("```figure");
-  expect(extracted.summary).not.toContain("```figure");
-  expect(extracted.summary).not.toContain('"kind"');
-  expect(extracted.summary).not.toContain('"categories"');
-  expect(extracted.summary).not.toContain('"series"');
-  expect(storedDraft.markdown).toContain("```figure");
-  expect(storedDraft.markdown).toContain('"kind":"bar"');
-}
-
-describe("enrichPageQualityReport claim grounding", () => {
-  it("records claim verification as not applicable for a story", async () => {
-    const generateJson = vi.fn();
-
-    const result = await enrichPageQualityReport({
-      input,
-      plan,
-      pageIndex: 1,
-      draft,
-      report: { ...approvedReport, groundedOk: false },
-      previousPages: [],
-      researchNotes: ["Archive note: A source-backed detail."],
-      textModel: { generateJson } as unknown as TextModelAdapter,
-      projectId: "project-1",
-      quality: claimVerifierEnabled(),
-      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-      styleExcerpts: []
-    });
-
-    expect(generateJson).not.toHaveBeenCalled();
-    expect(result.report).toMatchObject({
-      approved: true,
-      groundedOk: true,
-      groundingStatus: "not_applicable"
-    });
-  });
-
-  it("records missing evidence without calling the verifier or creating a rewrite reason", async () => {
-    const generateJson = vi.fn();
-
-    const result = await enrichPageQualityReport({
-      input: factualInput,
-      plan,
-      pageIndex: 1,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: [],
-      textModel: { generateJson } as unknown as TextModelAdapter,
-      projectId: "project-1",
-      quality: claimVerifierEnabled(),
-      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-      styleExcerpts: []
-    });
-
-    expect(generateJson).not.toHaveBeenCalled();
-    expect(result.report).toMatchObject({
-      approved: true,
-      groundedOk: true,
-      groundingStatus: "unverified_no_sources",
-      unsupportedClaims: [],
-      issues: [],
-      requiredRevisions: []
-    });
-  });
-
-  it("does not treat blank research notes as source-backed evidence", async () => {
-    const generateJson = vi.fn();
-
-    const result = await enrichPageQualityReport({
-      input: factualInput,
-      plan,
-      pageIndex: 1,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: ["   "],
-      textModel: { generateJson } as unknown as TextModelAdapter,
-      projectId: "project-1",
-      quality: claimVerifierEnabled(),
-      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-      styleExcerpts: []
-    });
-
-    expect(generateJson).not.toHaveBeenCalled();
-    expect(result.report.groundingStatus).toBe("unverified_no_sources");
-  });
-
-  it("keeps verifying factual pages when source-backed evidence is available", async () => {
-    const generateJson = vi.fn().mockResolvedValue({
-      data: { groundedOk: true, unsupportedClaims: [] },
-      text: "{}",
-      model: "test-model",
-      provider: "test"
-    });
-
-    const result = await enrichPageQualityReport({
-      input: factualInput,
-      plan,
-      pageIndex: 1,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: ["WHO vaccine history: Source-backed chronology."],
-      textModel: { generateJson } as unknown as TextModelAdapter,
-      projectId: "project-1",
-      quality: claimVerifierEnabled(),
-      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-      styleExcerpts: []
-    });
-
-    expect(generateJson).toHaveBeenCalledOnce();
-    expect(result.report).toMatchObject({
-      approved: true,
-      groundedOk: true,
-      groundingStatus: "verified",
-      unsupportedClaims: []
-    });
-  });
-
-  it("keeps rejecting unsupported claims when source-backed evidence is available", async () => {
-    const generateJson = vi.fn().mockResolvedValue({
-      data: { groundedOk: false, unsupportedClaims: ["The invented 94% result."] },
-      text: "{}",
-      model: "test-model",
-      provider: "test"
-    });
-
-    const result = await enrichPageQualityReport({
-      input: factualInput,
-      plan,
-      pageIndex: 1,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: ["WHO vaccine history: Source-backed chronology."],
-      textModel: { generateJson } as unknown as TextModelAdapter,
-      projectId: "project-1",
-      quality: claimVerifierEnabled(),
-      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-      styleExcerpts: []
-    });
-
-    expect(generateJson).toHaveBeenCalledOnce();
-    expect(result.report).toMatchObject({
-      approved: false,
-      groundedOk: false,
-      groundingStatus: "failed",
-      unsupportedClaims: ["The invented 94% result."]
-    });
-    expect(result.report.requiredRevisions).toContain("Ground or remove: The invented 94% result.");
-  });
-
-  it("records verifier outages as unavailable without rejecting the page", async () => {
-    const generateJson = vi.fn().mockRejectedValue(new Error("provider unavailable"));
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    const result = await enrichPageQualityReport({
-      input: factualInput,
-      plan,
-      pageIndex: 1,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: ["WHO vaccine history: Source-backed chronology."],
-      textModel: { generateJson } as unknown as TextModelAdapter,
-      projectId: "project-1",
-      quality: claimVerifierEnabled(),
-      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-      styleExcerpts: []
-    });
-    warn.mockRestore();
-
-    expect(generateJson).toHaveBeenCalledOnce();
-    expect(result.report).toMatchObject({
-      approved: true,
-      groundedOk: true,
-      groundingStatus: "unavailable",
-      unsupportedClaims: []
-    });
-  });
-
-  it("verifies claims from figure-free prose while the stored draft still has the fence", async () => {
-    mocks.verifyPageClaims.mockClear();
-    mocks.verifyPageClaims.mockResolvedValueOnce({ groundedOk: true, unsupportedClaims: [] });
-    const storedDraft = draftWithFigureFence();
-
-    await enrichPageQualityReport({
-      input: factualInput,
-      plan,
-      pageIndex: 1,
-      draft: storedDraft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: ["WHO vaccine history: Source-backed chronology."],
-      textModel: {} as TextModelAdapter,
-      projectId: "project-1",
-      quality: claimVerifierEnabled(),
-      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-      styleExcerpts: []
-    });
-
-    expect(mocks.verifyPageClaims).toHaveBeenCalledOnce();
-    expect(mocks.verifyPageClaims).toHaveBeenCalledWith(expect.objectContaining({
-      book: { category: factualInput.category, prompt: factualInput.prompt, premise: plan.premise }
-    }));
-    const verified = mocks.verifyPageClaims.mock.calls[0]![0] as { markdown: string };
-    expect(verified.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
-    expect(verified.markdown).not.toContain("```figure");
-    expect(storedDraft.markdown).toContain("```figure");
-    expect(storedDraft.markdown).toContain('"kind":"bar"');
-  });
-});
 
 describe("mergeEntityAndStoryStateLines", () => {
   it("keeps both entity-state and story-state lines", () => {
@@ -429,101 +139,6 @@ describe("mergeEntityAndStoryStateLines", () => {
   });
 });
 
-describe("enrichPageQualityReport unpaid promises", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadQualityContext.mockResolvedValue(storyExtractEnabled());
-    mocks.loadProjectStoryState.mockResolvedValue(openPromiseState);
-    mocks.rebuildStoryStateFromPages.mockResolvedValue(openPromiseState);
-  });
-
-  it("does not block the last page when this page's extract pays the open promise", async () => {
-    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
-
-    const result = await enrichPageQualityReport({
-      input,
-      plan,
-      pageIndex: TARGET_PAGES,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: [],
-      textModel: {} as TextModelAdapter,
-      projectId: "project-1",
-      styleExcerpts: []
-    });
-
-    expect(result.report.approved).toBe(true);
-    expect(result.report.issues.join(" ")).not.toMatch(/Unpaid promise/);
-    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
-  });
-
-  it("does not rewrite the last page solely because continuity extraction missed a payoff", async () => {
-    mocks.extractStoryState.mockResolvedValue({
-      storyDelta: emptyDelta(),
-      contradictions: []
-    });
-
-    const result = await enrichPageQualityReport({
-      input,
-      plan,
-      pageIndex: TARGET_PAGES,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: [],
-      textModel: {} as TextModelAdapter,
-      projectId: "project-1",
-      styleExcerpts: []
-    });
-
-    expect(result.report.approved).toBe(true);
-    expect(result.report.issues).not.toContain("Unpaid promise on the final page: Find the seal");
-  });
-
-  it("leaves cross-page payoff verification to the manuscript review", async () => {
-    mocks.extractStoryState.mockResolvedValue({
-      storyDelta: emptyDelta(),
-      contradictions: []
-    });
-    mocks.rebuildStoryStateFromPages.mockResolvedValue({
-      promises: [
-        {
-          id: "p1",
-          text: "Find the seal",
-          status: "paid",
-          openedAtPage: 1,
-          paidAtPage: 7
-        }
-      ],
-      facts: [],
-      entities: {},
-      unanswered: []
-    });
-
-    const result = await enrichPageQualityReport({
-      input,
-      plan,
-      pageIndex: TARGET_PAGES,
-      draft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: [],
-      textModel: {} as TextModelAdapter,
-      projectId: "project-1",
-      quality: storyExtractEnabled(),
-      storyState: openPromiseState,
-      styleExcerpts: []
-    });
-
-    expect(mocks.loadQualityContext).not.toHaveBeenCalled();
-    expect(mocks.loadProjectStoryState).not.toHaveBeenCalled();
-    expect(mocks.rebuildStoryStateFromPages).not.toHaveBeenCalled();
-    expect(result.report.approved).toBe(true);
-    expect(result.report.issues.join(" ")).not.toMatch(/Unpaid promise/);
-  });
-});
-
 describe("revisedDraftStyleAuditor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -539,7 +154,7 @@ describe("revisedDraftStyleAuditor", () => {
 
     expect(revisedDraftStyleAuditor({ ...base, styleExcerpts: [] })).toBeUndefined();
     expect(
-      revisedDraftStyleAuditor({ ...base, styleExcerpts: ["excerpt"], quality: storyExtractEnabled() })
+      revisedDraftStyleAuditor({ ...base, styleExcerpts: ["excerpt"], quality: { enabled: () => false } })
     ).toBeUndefined();
   });
 
@@ -647,55 +262,9 @@ describe("revisedDraftStyleAuditor", () => {
   });
 });
 
-describe("precomputed manuscript enrichment", () => {
-  it("keeps a continuity finding identity through a saved review, enrichment and export", async () => {
-    vi.clearAllMocks();
-    const message = "Jack's location changes without a transition.";
-    const cached = savedPictureBookReviewSchema.parse(JSON.parse(JSON.stringify({ pageIndex: 3, draftMarkdown: draft.markdown,
-      report: approvedReport, completedChecks: { pageModelReview: true, storyExtractAudit: true, styleAuditor: false }, styleAudit: null,
-      storyExtract: { ...extractPayingP1, contradictions: [message], findingIdsByContradiction: { [message]: "finding-location" } } })));
-    const result = await enrichPageQualityReport({ input, plan, pageIndex: 3, draft, report: cached.report,
-      previousPages: [], researchNotes: [], textModel: {} as TextModelAdapter, projectId: "project-1",
-      quality: { enabled: feature => feature === "storyExtractAudit" }, storyState: openPromiseState, styleExcerpts: [],
-      precomputed: { storyExtract: cached.storyExtract, styleAudit: null, manuscriptPages: [] } });
-    expect(pageQualityAdvisoryIssues([{ index: 3, qualityReport: result.report }])).toEqual([
-      expect.objectContaining({ provenance: expect.objectContaining({ findingId: "finding-location", verification: "unverified" }) })
-    ]);
-    expect(mocks.extractStoryState).not.toHaveBeenCalled();
-  });
-  it("reuses completed story and style checks without another provider call", async () => {
-    vi.clearAllMocks();
-    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
-    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
-    const result = await enrichPageQualityReport({ input, plan, pageIndex: 3, draft, report: approvedReport,
-      previousPages: [], researchNotes: [], textModel: {} as TextModelAdapter, projectId: "project-1",
-      quality: { enabled: (feature) => feature === "storyExtractAudit" || feature === "styleAuditor" },
-      storyState: openPromiseState, styleExcerpts: ["Opening voice."],
-      precomputed: { storyExtract: extractPayingP1, styleAudit: { styleOk: true, styleIssues: [] }, manuscriptPages: [] } });
-    expect(mocks.extractStoryState).not.toHaveBeenCalled();
-    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
-    expect(result.extract?.storyDelta.promisesPaid).toEqual(["p1"]);
-    expect(result.report).toMatchObject({ approved: true, stylePenalty: 0 });
-  });
-});
-
 describe("unavailable page quality checks", () => {
   const options = { input, plan, pageIndex: 3, draft, report: approvedReport, previousPages: [], researchNotes: [],
-    textModel: {} as TextModelAdapter, projectId: "project-1", storyState: openPromiseState, styleExcerpts: ["Opening voice."] };
-  it.each(["story_continuity", "style"] as const)("publishes an unverified %s warning without inventing a prose defect", async (check) => {
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const provider = check === "style" ? mocks.auditPageStyle : mocks.extractStoryState;
-      provider.mockRejectedValueOnce(new Error("Provider unavailable"));
-      const result = await enrichPageQualityReport({ ...options, quality: check === "style" ? styleAuditorEnabled() : storyExtractEnabled() });
-      expect(result.report.approved).toBe(true);
-      expect(result.report.requiredRevisions).toEqual([]);
-      expect(result.report).not.toHaveProperty("stylePenalty");
-      expect(pageQualityAdvisoryIssues([{ index: 3, qualityReport: result.report }])).toEqual([
-        expect.objectContaining({ code: check === "style" ? "STYLE_REVIEW_UNVERIFIED" : "STORY_CONTINUITY_UNVERIFIED", severity: "warning", affectedPageIndexes: [3], message: expect.stringContaining("unavailable") })
-      ]);
-    } finally { warning.mockRestore(); }
-  });
+    textModel: {} as TextModelAdapter, projectId: "project-1", styleExcerpts: ["Opening voice."] };
   it("publishes a revised style check failure as a warning without forcing another rewrite", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -709,191 +278,10 @@ describe("unavailable page quality checks", () => {
       ]);
     } finally { warning.mockRestore(); }
   });
-  it.each(["story", "style", "revisedStyle"])("propagates AbortError through %s checks", async (check) => {
+  it("propagates AbortError through the revised-draft style audit", async () => {
     const aborted = new DOMException("Cancelled", "AbortError");
-    (check === "story" ? mocks.extractStoryState : mocks.auditPageStyle).mockRejectedValueOnce(aborted);
-    const result = check === "revisedStyle"
-      ? revisedDraftStyleAuditor({ ...options, quality: styleAuditorEnabled() })!(3, draft, approvedReport)
-      : enrichPageQualityReport({ ...options, quality: check === "story" ? storyExtractEnabled() : styleAuditorEnabled() });
+    mocks.auditPageStyle.mockRejectedValueOnce(aborted);
+    const result = revisedDraftStyleAuditor({ ...options, quality: styleAuditorEnabled() })!(3, draft, approvedReport);
     await expect(result).rejects.toBe(aborted);
-  });
-});
-
-describe("keeperStoryExtractForSave", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
-  });
-
-  it("extracts story from figure-free prose while the stored draft still has the fence", async () => {
-    const storedDraft = draftWithFigureFence();
-
-    await keeperStoryExtractForSave({
-      projectId: "project-1",
-      pageIndex: 1,
-      draft: storedDraft,
-      textModel: {} as TextModelAdapter,
-      plan,
-      input,
-      previousExtract: null,
-      keeperWasRevised: true,
-      currentState: openPromiseState,
-      quality: storyExtractEnabled()
-    });
-
-    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
-    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
-    expectFigureBlindExtract(extracted, storedDraft);
-    expect(extracted.summary).toBe("Jack pays the promise.");
-    expect(storedDraft.summary).toBe("Jack pays the promise.");
-  });
-
-  it("derives extract summary from figure-free prose when the stored summary carries figure JSON", async () => {
-    const storedDraft: PageDraft = {
-      ...draftWithFigureFence(),
-      summary: figureJsonSummary
-    };
-
-    await keeperStoryExtractForSave({
-      projectId: "project-1",
-      pageIndex: 1,
-      draft: storedDraft,
-      textModel: {} as TextModelAdapter,
-      plan,
-      input,
-      previousExtract: null,
-      keeperWasRevised: true,
-      currentState: openPromiseState,
-      quality: storyExtractEnabled()
-    });
-
-    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
-    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
-    expectFigureBlindExtract(extracted, storedDraft);
-    expect(extracted.summary).toBe("Jack found the seal. He closed the vault.");
-    expect(storedDraft.summary).toBe(figureJsonSummary);
-  });
-});
-
-describe("enrichPageQualityReport story extract", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
-  });
-
-  it("extracts story from figure-free prose while the stored draft still has the fence", async () => {
-    const storedDraft = draftWithFigureFence();
-
-    await enrichPageQualityReport({
-      input,
-      plan,
-      pageIndex: 1,
-      draft: storedDraft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: [],
-      textModel: {} as TextModelAdapter,
-      projectId: "project-1",
-      quality: storyExtractEnabled(),
-      storyState: openPromiseState,
-      styleExcerpts: []
-    });
-
-    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
-    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
-    expectFigureBlindExtract(extracted, storedDraft);
-    expect(extracted.summary).toBe("Jack pays the promise.");
-    expect(storedDraft.summary).toBe("Jack pays the promise.");
-  });
-
-  it("derives extract summary from figure-free prose when the stored summary carries figure JSON", async () => {
-    const storedDraft: PageDraft = {
-      ...draftWithFigureFence(),
-      summary: figureJsonSummary
-    };
-
-    await enrichPageQualityReport({
-      input,
-      plan,
-      pageIndex: 1,
-      draft: storedDraft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: [],
-      textModel: {} as TextModelAdapter,
-      projectId: "project-1",
-      quality: storyExtractEnabled(),
-      storyState: openPromiseState,
-      styleExcerpts: []
-    });
-
-    expect(mocks.extractStoryState).toHaveBeenCalledOnce();
-    const extracted = mocks.extractStoryState.mock.calls[0]![0] as { markdown: string; summary: string };
-    expectFigureBlindExtract(extracted, storedDraft);
-    expect(extracted.summary).toBe("Jack found the seal. He closed the vault.");
-    expect(storedDraft.summary).toBe(figureJsonSummary);
-  });
-});
-
-describe("enrichPageQualityReport style auditor", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
-  });
-
-  it("audits figure-free prose while the stored draft still has the fence", async () => {
-    const storedDraft = draftWithFigureFence();
-
-    await enrichPageQualityReport({
-      input,
-      plan,
-      pageIndex: 1,
-      draft: storedDraft,
-      report: approvedReport,
-      previousPages: [],
-      researchNotes: [],
-      textModel: {} as TextModelAdapter,
-      projectId: "project-1",
-      quality: styleAuditorEnabled(),
-      storyState: openPromiseState,
-      styleExcerpts: ["Jack opened the vault in a quiet, close voice."]
-    });
-
-    expect(mocks.auditPageStyle).toHaveBeenCalledOnce();
-    const audited = mocks.auditPageStyle.mock.calls[0]![0] as { markdown: string };
-    expect(audited.markdown).toBe("Jack found the seal.\n\nHe closed the vault.");
-    expect(audited.markdown).not.toContain("```figure");
-    expect(storedDraft.markdown).toContain("```figure");
-    expect(storedDraft.markdown).toContain('"kind":"bar"');
-  });
-});
-
-describe("persistKeeperStoryDelta", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.loadQualityContext.mockResolvedValue(storyExtractEnabled());
-    mocks.persistPageStoryDelta.mockResolvedValue(openPromiseState);
-  });
-
-  it("does not reload quality when the caller already passed it", async () => {
-    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
-
-    await persistKeeperStoryDelta({
-      projectId: "project-1",
-      pageIndex: 1,
-      draft,
-      textModel: {} as TextModelAdapter,
-      plan,
-      input,
-      previousExtract: extractPayingP1,
-      keeperWasRevised: false,
-      currentState: openPromiseState,
-      quality: storyExtractEnabled()
-    });
-
-    expect(mocks.loadQualityContext).not.toHaveBeenCalled();
-    expect(mocks.persistPageStoryDelta).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "project-1", pageIndex: 1 })
-    );
   });
 });

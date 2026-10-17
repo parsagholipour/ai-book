@@ -7,14 +7,13 @@ import { openingContractForRange, type OpeningContractSource, type OpeningHookPa
  * ranking. It briefs nothing itself and makes no model call.
  *
  * It sits beside `pagesPageMap.ts` rather than inside it because the import
- * graph reads the wrong way round otherwise. Five producers state this
- * contract and only three of them live in that file: `critiquePageMap` and
- * `mergePageMapCriticPatch` (`pageMapCritic.ts`) run *after* the map is
- * finished and get the last word over it, so a vocabulary kept in the map
- * module made the later pass import the whole map generator — three model
- * calls, their schemas, their fallbacks and the chunking threshold — to reach
- * four sentences. Both the map and its critic now import this, and neither
- * imports the other.
+ * graph reads the wrong way round otherwise. Four producers state this
+ * contract and three of them live in that file; the fourth half,
+ * `mergePageMapCriticPatch` (`pageMapCritic.ts`), runs *after* the map is
+ * finished, so a vocabulary kept in the map module made the later pass import
+ * the whole map generator — three model calls, their schemas, their fallbacks
+ * and the chunking threshold — to reach four sentences. Both import this, and
+ * neither imports the other.
  *
  * The file-size budget is the same reason wearing different clothes. This block
  * was the last thing `pagesPageMap.ts` had room for under the 900-line ceiling,
@@ -31,20 +30,16 @@ import { openingContractForRange, type OpeningContractSource, type OpeningHookPa
  * only in the fallback it reached almost no real book — that runs solely when a
  * short book's model call comes back as unparseable JSON, and every book over
  * `CHUNKED_PAGE_MAP_THRESHOLD` pages is briefed a chapter at a time with no
- * fallback behind it at all. `repairPageBrief` is the fourth, and the only one
- * that is not an alternative to the others: it rewrites whichever brief they
- * wrote, so a page-1 brief that fails QA loses the contract entirely unless the
- * repair restates it — on the one page the contract exists for, and only after
- * the reader's opening has already been judged bad once.
+ * fallback behind it at all. (A fourth, `repairPageBrief`, rewrote whichever
+ * brief they wrote after page QA rejected it; it went with the per-page review
+ * chain on 2026-10-16.)
  *
- * The fifth is `critiquePageMap` / `mergePageMapCriticPatch` in
- * `pageMapCritic.ts`, and it gets the *last* word: `prepareChapterSetups` runs
- * it over the finished map before a single page is drafted, so a `beatPatch`
- * for page 1 replaces the very purpose, beat and endingPressure these rules
- * were stated to constrain — and its `missingEndingPressure` substitution is
- * our own deterministic sentence, not a model's. A contract restated a fifth
- * time in prose is a contract that drifts, so all five state it from the
- * constants in this module — and reach the rule text only through
+ * `mergePageMapCriticPatch` in `pageMapCritic.ts` applies a patch over the
+ * finished map — today only the beat-dedup rewrite's; the page-map critic that
+ * also wrote one was removed on 2026-10-16 (E5) — and its
+ * `missingEndingPressure` substitution is our own deterministic sentence, not a
+ * model's. A contract restated in prose at each of these is a contract that
+ * drifts, so all of them state it from the constants in this module — and reach the rule text only through
  * {@link firstPageBriefFieldsForRange}, this module's one entry point, which is
  * why those rules are module-private where the two pressures are not.
  */
@@ -187,10 +182,10 @@ export function firstPageBriefFieldsForRange(
  * **Module-private, because those answers may not come from outside.** A
  * producer handed a bare `openingHook` is a producer whose provenance gate lives
  * at its call site, which is precisely how the hook half went on reaching
- * imported manuscripts after the prompts were gated. `critiquePageMap`
- * (`pageMapCritic.ts`) was that producer — it took `plan.openingHook` and
- * `input.targetPages` as two loose values from the worker — and it now takes the
- * book, like the other four.
+ * imported manuscripts after the prompts were gated. The page-map critic was
+ * that producer — it took `plan.openingHook` and `input.targetPages` as two
+ * loose values from the worker — until it took the book like the others; it was
+ * removed on 2026-10-16 (E5).
  *
  * `lastPageIndex` is the book's own last page (`input.targetPages`), never the
  * highest index in the map being briefed: a map that came back short is the

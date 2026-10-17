@@ -3,14 +3,9 @@ import { resolveEditPromptContext } from "./editOperationContext.js";
 import { styleExcerptsForPage, toPriorPageContext } from "./bookHelpers.js";
 import { pageFigureRewrite, pageFigureRewriteForDraft } from "./composedFigures.js";
 import { prepareChapterSetups } from "./bookState.js";
-import {
-  prepareDeferredPageStoryContext,
-  type PreparedDeferredPageMemory
-} from "./deferredPageMemory.js";
-import { prepareEmbedding, strategyUsesSemanticMemory } from "./embeddingWrites.js";
+import { prepareDeferredPageMemory } from "./deferredPageMemory.js";
 import { reviewAndSaveGeneratedPage, revisePageDraftWithRestart } from "./pageReview.js";
 import { enqueueRevisionOwnedReplanIllustrations } from "./replanPageIllustrationDispatch.js";
-import { type QualityGateContext } from "./qualityEnrichment.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
   isReplanEditLeaseLostError,
@@ -45,30 +40,11 @@ import {
   type PageDraft,
   type PageQualityReport,
   type PriorPageContext,
-  type ProviderSet,
-  type StoryState
+  type ProviderSet
 } from "@book-maker/core";
 import { EDIT_ADHERENCE_FAILED, ReaderEditFailure } from "@book-maker/core/editFailure";
 import { Prisma, prisma } from "@book-maker/db";
 import { randomUUID } from "node:crypto";
-
-/**
- * One page's story extract, kept beside the exact draft and the exact incoming
- * story state it was asked about.
- *
- * The drafting loop already buys an extract per page — it is what advances
- * `inMemoryStoryState`, which briefs the next page — and the publication needs
- * the same extracts, in the same order, over the same states. Re-deriving them
- * was a second model call per page asking an identical question: a 40-page
- * replan spent 80 extracts on 40 pages of work. Reuse is decided by identity,
- * not by page number: a candidate an adherence-repair round replaced is a
- * different draft object, and every page after it is offered a different
- * incoming state, so both miss and are re-asked.
- */
-type ReplanPageStoryContext = Awaited<ReturnType<typeof prepareDeferredPageStoryContext>> & {
-  draft: PageDraft;
-  fromState: StoryState;
-};
 
 export async function generateReplannedBook(options: {
   projectId: string;
@@ -311,11 +287,11 @@ async function generateOwnedReplannedBook(options: {
   const quality = await loadQualityContext(options.input);
   const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const inMemoryContinuityNotes = [...continuityNotes];
-  const baseStoryState = seedStoryStateFromPromises(options.plan.promises ?? []);
-  let inMemoryStoryState = baseStoryState;
+  // A replan rebuilds the whole book, so its writers read the new plan's
+  // promises seeded as open, and nothing extracts story state since 2026-10-16 (E6).
+  const storyStateLines = formatStoryStateLines(seedStoryStateFromPromises(options.plan.promises ?? []));
   const researchByChapter = new Map<number, string[]>();
   const candidates = new Map<number, ReplanCandidate>();
-  const storyContexts = new Map<number, ReplanPageStoryContext>();
 
   for (let pageIndex = 1; pageIndex <= options.input.targetPages; pageIndex += 1) {
     await options.assertLease();
@@ -349,7 +325,7 @@ async function generateOwnedReplannedBook(options: {
       previousPages: previousPages.slice(-6),
       continuityNotes: pageContinuityNotes,
       researchNotes,
-      entityState: formatStoryStateLines(inMemoryStoryState),
+      entityState: storyStateLines,
       textModel: options.providers.text,
       ...(styleExcerpts.length ? { styleExcerpts } : {})
     });
@@ -370,19 +346,6 @@ async function generateOwnedReplannedBook(options: {
     });
     candidates.set(pageIndex, candidate);
     inMemoryContinuityNotes.push(...candidate.draft.continuityNotes);
-    const storyContext = await prepareDeferredPageStoryContext({
-      projectId: options.projectId,
-      input: options.input,
-      plan: options.plan,
-      providers: options.providers,
-      quality,
-      currentStoryState: inMemoryStoryState,
-      candidate
-    });
-    // Kept for the publication's own memory pass, which asks the same question
-    // of the same draft over the same state — see `ReplanPageStoryContext`.
-    storyContexts.set(pageIndex, { ...storyContext, draft: candidate.draft, fromState: inMemoryStoryState });
-    inMemoryStoryState = storyContext.nextStoryState;
   }
   await options.assertLease();
   await reportReplanDraftPage(
@@ -407,75 +370,14 @@ async function generateOwnedReplannedBook(options: {
     throw new ReaderEditFailure(EDIT_ADHERENCE_FAILED);
   }
 
-  const preparedMemory = await prepareReplanPageMemory({
-    projectId: options.projectId,
-    input: options.input,
-    plan: options.plan,
+  const preparedMemory = await prepareDeferredPageMemory({
     providers: options.providers,
     strategy: options.strategy,
-    quality,
-    initialStoryState: baseStoryState,
     candidates: [...candidates.values()],
-    storyContexts,
     assertOwnership: options.assertLease
   });
   await options.assertLease();
   return publishReplannedBook({ ...options, candidates, setups, preparedMemory, audit });
-}
-
-/**
- * The deferred page memory for the manuscript about to be published, reusing
- * the drafting loop's own extracts.
- *
- * Identical in shape to `prepareDeferredPageMemory` — extracts in page order,
- * each one seeing the state the earlier keepers accepted, one embedding per
- * page, and an ownership fence on both sides of the spend — with the drafting
- * loop's cache in front of the model call. A page whose draft or incoming state
- * has changed since it was drafted falls through to the same call the shared
- * helper would have made.
- */
-async function prepareReplanPageMemory(options: {
-  projectId: string;
-  input: CreateProjectInput;
-  plan: BookPlan;
-  providers: ProviderSet;
-  strategy: BookGenerationStrategy;
-  quality: QualityGateContext;
-  initialStoryState: StoryState;
-  candidates: readonly ReplanCandidate[];
-  storyContexts: ReadonlyMap<number, ReplanPageStoryContext>;
-  assertOwnership: () => Promise<void>;
-}): Promise<PreparedDeferredPageMemory[]> {
-  let currentState = options.initialStoryState;
-  const prepared: PreparedDeferredPageMemory[] = [];
-  for (const candidate of [...options.candidates].sort((left, right) => left.pageIndex - right.pageIndex)) {
-    await options.assertOwnership();
-    const cached = options.storyContexts.get(candidate.pageIndex);
-    const storyContext =
-      cached && cached.draft === candidate.draft && cached.fromState === currentState
-        ? cached
-        : await prepareDeferredPageStoryContext({
-            projectId: options.projectId,
-            input: options.input,
-            plan: options.plan,
-            providers: options.providers,
-            quality: options.quality,
-            currentStoryState: currentState,
-            candidate
-          });
-    currentState = storyContext.nextStoryState;
-    const preparedEmbedding = strategyUsesSemanticMemory(options.strategy)
-      ? await prepareEmbedding(candidate.draft.summary, options.providers.embedding)
-      : null;
-    await options.assertOwnership();
-    prepared.push({
-      pageIndex: candidate.pageIndex,
-      draft: candidate.draft,
-      preparedEmbedding,
-      storyExtract: storyContext.storyExtract
-    });
-  }
-  return prepared;
 }
 
 function resolveCandidateSourceProjectId(options: {
@@ -541,10 +443,7 @@ async function reviewReplanCandidate(options: {
     generationJobId: options.generationJobId,
     deferPublication: true,
     editInstruction: options.editInstruction,
-    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
-    maxCandidates: 1,
     assertOwnership: options.assertLease,
-    ...(rewrite.figures ? { figures: rewrite.figures } : {}),
     ...(options.sourcePage
       ? {
           settledPageToReplace: {
@@ -556,18 +455,6 @@ async function reviewReplanCandidate(options: {
   });
   if (!reviewed.candidate) {
     throw new Error(`Deferred replan review for page ${options.pageIndex} returned no candidate`);
-  }
-  // The same take the book passes make: one `ChapterSetup.brief` briefs every
-  // page of a chapter here too, so a page that bought a brief repair and kept a
-  // draft written to it has to tell the chapter's remaining pages what it now
-  // covers, or they are briefed to write around an assignment nothing
-  // delivered. `chapterId` is null through this path — the replacement chapter
-  // rows do not exist until publication — so `pendingBriefRepair` is always
-  // absent and this carried copy is the repair's only way out of the page's own
-  // loop. The publication writes these same setups' briefs into
-  // `Chapter.productionBrief`, which is what later drafting jobs read back.
-  if (reviewed.repairedChapterBrief) {
-    options.setup.brief = reviewed.repairedChapterBrief;
   }
   return {
     pageIndex: options.pageIndex,

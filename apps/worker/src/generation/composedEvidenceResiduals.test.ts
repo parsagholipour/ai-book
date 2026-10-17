@@ -5,7 +5,9 @@ import { arithmeticErrorIssues, storedEvidenceResiduals, unsupportedCaseClaimIss
 
 it("surfaces an unconfirmed computation as review required, without instructing a numeric replacement", () => {
   const quote = "Send six pumps might produce 5";
-  const productionBrief = { report: { arithmetic: { unresolved: [{ quote, reason: "Intent unconfirmed", reviewOnly: true }] } } };
+  // The stored reason carries the computation, which the compile redoes before it files anything.
+  const reason = "Check whether this statement uses the proposed calculation: 6 * 1 = 6, not 5. The intent check did not confirm the connection; do not automatically replace the number.";
+  const productionBrief = { report: { arithmetic: { unresolved: [{ quote, reason, reviewOnly: true }] } } };
   expect(arithmeticErrorIssues([{ index: 42, markdown: quote, chapter: { productionBrief } }])).toEqual([
     expect.objectContaining({ code: "ARITHMETIC_REVIEW_REQUIRED", severity: "error", affectedPageIndexes: [42],
       guidance: expect.stringContaining("before changing") })
