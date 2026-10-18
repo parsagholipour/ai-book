@@ -5,6 +5,18 @@ function productionConfig(env: NodeJS.ProcessEnv = {}) {
   return loadConfig({ NODE_ENV: "production", S3_BUCKET: "test-private-bucket", ...env });
 }
 
+describe("DEBUG_MODE", () => {
+  it("requires an explicit opt-in and keeps production mocks off", () => {
+    expect(productionConfig().DEBUG_MODE).toBe(false);
+    expect(productionConfig({ DEBUG_MODE: "false" }).DEBUG_MODE).toBe(false);
+    expect(productionConfig({ DEBUG_MODE: "true" })).toMatchObject({
+      DEBUG_MODE: true, NODE_ENV: "production", MOCK_AI: false,
+      MOCK_GOOGLE_PLAY_BILLING: false, MOCK_EMAIL: false, MOCK_PUSH: false
+    });
+    expect(() => productionConfig({ DEBUG_MODE: "typo" })).toThrow(/DEBUG_MODE must be true or false/);
+  });
+});
+
 describe("TRUST_PROXY_HOPS", () => {
   it("defaults to 0 when unset outside production", () => {
     expect(loadConfig({}).TRUST_PROXY_HOPS).toBe(0);

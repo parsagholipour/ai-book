@@ -89,9 +89,30 @@ scratch directories and share files through S3.
    confirm the subscription email AWS sends after the next apply, and point a free
    uptime monitor at `/api/ready`. See [Monitoring and alerts](#monitoring-and-alerts).
 
+## Debug deployment
+
+Set the GitHub **production** environment's **variable** `DEBUG_MODE` to `true`
+(Settings → Environments → production → Environment variables), then deploy.
+This lets the owner toggle it without replacing the `PRODUCTION_ENV` secret.
+When the variable is unset, `DEBUG_MODE=true` in `PRODUCTION_ENV` also works;
+the GitHub variable takes precedence when present. The default is `false`.
+
+Debug mode keeps `NODE_ENV=production`, real AI generation, provider-key checks,
+the console password requirement, and the public HTTPS origin check. Missing
+Google Play billing, RTDN and SMTP settings become startup warnings. Purchases,
+refund notifications, password resets and verification emails remain unavailable
+without their credentials; they are never mocked. Mail readiness still reports
+the missing SMTP transport.
+
+Email signup and Google sign-in that would create a new account return HTTP 403
+`SIGNUP_DISABLED`. Existing accounts can sign in, refresh sessions, and connect
+Google after proving their existing password. Google sign-in still needs its
+OAuth client ID. Set `DEBUG_MODE=false` and configure all required credentials
+before opening signup; apply either change with another deploy.
+
 ## Required settings
 
-In production (`NODE_ENV=production`) the API and the worker refuse to start while any of these is
+In normal production (`NODE_ENV=production`, `DEBUG_MODE=false`) the API and the worker refuse to start while any of these is
 missing or unusable, and print one error naming every gap and what breaks without it (never a
 value). The check is `packages/core/src/productionConfig.ts`; it runs at boot in both processes, so
 it covers the Dockerfile/Railway path as well as Compose.

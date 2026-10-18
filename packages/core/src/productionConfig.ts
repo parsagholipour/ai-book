@@ -179,7 +179,7 @@ function playServiceAccountProblem(config: AppConfig): ProductionConfigIssue | u
   };
 }
 
-function apiProblems(config: AppConfig): ProductionConfigIssue[] {
+function apiIntegrationProblems(config: AppConfig): ProductionConfigIssue[] {
   const problems: ProductionConfigIssue[] = [];
   // MOCK_GOOGLE_PLAY_BILLING is forced off outside development and test
   // (config.ts), so production has no way to skip the real verifier.
@@ -208,16 +208,6 @@ function apiProblems(config: AppConfig): ProductionConfigIssue[] {
     problems.push({
       variables: ["GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL"],
       message: `GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL is not set. ${rtdnConsequence}`
-    });
-  }
-  const password = webPasswordProblem(config.WEB_PASSWORD);
-  if (password) {
-    problems.push({
-      variables: ["WEB_PASSWORD"],
-      message:
-        `WEB_PASSWORD ${password}. Unset, every request to the operator console, /api/admin and ` +
-        "/docs is let in as the operator; weak, the password and the session cookie it signs are " +
-        `guessable. Use ${WEB_PASSWORD_MIN_LENGTH}+ random characters, e.g. openssl rand -hex 24.`
     });
   }
   const smtp = smtpUrlProblem(config.SMTP_URL);
@@ -264,8 +254,30 @@ function sharedProblems(config: AppConfig): ProductionConfigIssue[] {
  * provider keys; the API needs those and everything a reader's account touches.
  */
 export function productionConfigReport(config: AppConfig, role: ProductionProcess): ProductionConfigReport {
-  const problems = [...(role === "api" ? apiProblems(config) : []), ...sharedProblems(config)];
+  const problems: ProductionConfigIssue[] = [];
   const warnings: ProductionConfigIssue[] = [];
+  if (config.DEBUG_MODE) {
+    warnings.push({
+      variables: ["DEBUG_MODE"],
+      message:
+        "DEBUG_MODE is ON: new accounts are disabled. Missing Google Play, refund notification " +
+        "and SMTP settings only warn; those services remain unavailable until configured."
+    });
+  }
+  if (role === "api") {
+    (config.DEBUG_MODE ? warnings : problems).push(...apiIntegrationProblems(config));
+    const password = webPasswordProblem(config.WEB_PASSWORD);
+    if (password) {
+      problems.push({
+        variables: ["WEB_PASSWORD"],
+        message:
+          `WEB_PASSWORD ${password}. Unset, every request to the operator console, /api/admin and ` +
+          "/docs is let in as the operator; weak, the password and the session cookie it signs are " +
+          `guessable. Use ${WEB_PASSWORD_MIN_LENGTH}+ random characters, e.g. openssl rand -hex 24.`
+      });
+    }
+  }
+  problems.push(...sharedProblems(config));
   if (role === "api" && !config.GOOGLE_SIGN_IN_CLIENT_ID) {
     warnings.push({
       variables: ["GOOGLE_SIGN_IN_CLIENT_ID"],

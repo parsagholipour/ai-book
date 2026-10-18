@@ -1,11 +1,12 @@
 import type { FastifyPluginAsync } from "fastify";
+import { loadConfig } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import { createGoogleIdentityVerifier, type GoogleIdentityVerifier } from "./googleIdentity.js";
 import { hasCurrentLegalAcceptance, legalAcceptanceEvidence } from "./legalAcceptance.js";
 import {
   authErrorResponseSchema, authSessionResponseSchema, authSessionResponse,
-  ACCOUNT_DISABLED_MESSAGE, createMobileSession, isActiveUser, requestSessionContext, sendAuthError, verifyPassword
+  ACCOUNT_DISABLED_MESSAGE, createMobileSession, isActiveUser, requestSessionContext, sendAuthError, sendSignupDisabled, verifyPassword
 } from "./mobileAuth.js";
 import { passwordHashingErrorHandler } from "./passwordHashing.js";
 import { InMemoryRateLimiter, clientNetworkRateLimitKey, identityRateLimitKey, sendRateLimitError } from "./rateLimit.js";
@@ -22,6 +23,7 @@ const bodySchema = z.object({
 type Options = { verifier?: GoogleIdentityVerifier | null };
 
 export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastify, options) => {
+  const debugMode = loadConfig().DEBUG_MODE;
   const verifier = options.verifier === undefined ? createGoogleIdentityVerifier() : options.verifier;
   const limiter = new InMemoryRateLimiter({ maxAttempts: 20, windowMs: 15 * 60 * 1000 });
   const signupLimiter = new InMemoryRateLimiter({ maxAttempts: 5, windowMs: 15 * 60 * 1000 });
@@ -105,6 +107,7 @@ export const mobileGoogleAuthRoutes: FastifyPluginAsync<Options> = async (fastif
           user = existing;
         }
       } else {
+        if (debugMode) return sendSignupDisabled(reply);
         if (!parsed.data.termsAccepted || !parsed.data.ageGuardianAttested) {
           return sendAuthError(reply, 409, "GOOGLE_SIGNUP_REQUIRED", "Accept the Terms and Privacy Policy and confirm the age requirement to create your account.");
         }

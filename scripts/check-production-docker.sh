@@ -155,10 +155,32 @@ if [[ $applied == 0 || $applied != "$restored" ]]; then
   exit 1
 fi
 "${compose[@]}" exec -T postgres dropdb --username bookmaker bookmaker_restore_check
+# Rehearse the owner's closed debug deployment on the restart: the production
+# images boot without Play/mail credentials and refuse all new email accounts.
+cat >> "$smoke_dir/.env" <<'ENV'
+DEBUG_MODE=true
+GOOGLE_PLAY_PACKAGE_NAME=
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=
+GOOGLE_PLAY_RTDN_AUDIENCE=
+GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL=
+SMTP_URL=
+ENV
+"${compose[@]}" run --rm --no-deps api node --import tsx src/checkProductionConfig.ts
 "${compose[@]}" run --rm --no-deps migrate
 "${compose[@]}" up -d --force-recreate --no-deps --wait --wait-timeout 240 api worker web
 address=$("${compose[@]}" port web 80)
 curl --fail --silent --show-error "http://$address/api/health"
+"${compose[@]}" exec -T api node --input-type=module -e '
+  import assert from "node:assert/strict";
+  const response = await fetch("http://localhost:4001/api/mobile/auth/signup", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "debug-smoke@example.invalid", password: "smoke-test-password",
+      termsAccepted: true, ageGuardianAttested: true })
+  });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, "SIGNUP_DISABLED");
+  console.log("Debug deployment refuses new accounts.");
+'
 "${compose[@]}" exec -T api node --import tsx --input-type=module -e '
   import assert from "node:assert/strict";
   import { objectStore, objectKey } from "@book-maker/storage";

@@ -157,6 +157,7 @@ type RefreshedSession =
   | AuthFailure;
 
 export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = async (fastify, options) => {
+  const debugMode = loadConfig().DEBUG_MODE;
   const signUpLimiter = new InMemoryRateLimiter({
     ...DEFAULT_SIGN_UP_RATE_LIMIT,
     ...options.signUpRateLimit
@@ -180,6 +181,7 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
     "/api/mobile/auth/signup",
     { attachValidation: true, schema: signUpRouteSchema },
     async (request, reply) => {
+      if (debugMode) return sendSignupDisabled(reply);
       if (hasValidationError(request)) {
         return sendAuthError(reply, 400, "VALIDATION_ERROR", "Enter a valid email and a password with at least 8 characters.");
       }
@@ -383,6 +385,10 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
     return { user: { ...verified.user, legalAcceptanceRequired: !accepted } };
   });
 };
+
+export function sendSignupDisabled(reply: FastifyReply): FastifyReply {
+  return sendAuthError(reply, 403, "SIGNUP_DISABLED", "New accounts are temporarily unavailable. Please sign in with an existing account.");
+}
 
 export async function createMobileSession(
   userId: string,
@@ -804,6 +810,7 @@ const signUpRouteSchema = {
   response: {
     201: authSessionResponseSchema,
     400: authErrorResponseSchema,
+    403: authErrorResponseSchema,
     409: authErrorResponseSchema,
     429: authErrorResponseSchema
   }

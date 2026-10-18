@@ -215,6 +215,36 @@ describe("production configuration", () => {
   });
 });
 
+describe("debug deployment", () => {
+  const missingIntegrations = without(
+    "GOOGLE_PLAY_PACKAGE_NAME", "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
+    "GOOGLE_PLAY_RTDN_AUDIENCE", "GOOGLE_PLAY_RTDN_SERVICE_ACCOUNT_EMAIL", "SMTP_URL"
+  );
+
+  it("starts without Play and mail credentials only with explicit debug opt-in, and warns", () => {
+    const debug = config({ ...missingIntegrations, DEBUG_MODE: "true" });
+    const log = silentLog();
+    const report = enforceProductionConfig(debug, "api", log);
+    expect(report?.problems).toEqual([]);
+    expect(reported(report!.warnings)).toEqual(expect.arrayContaining([
+      ...Object.keys(missingIntegrations), "DEBUG_MODE"
+    ]));
+    expect(log.warn).toHaveBeenCalledWith(expect.objectContaining({ variables: ["DEBUG_MODE"] }));
+    assertNoSecret(JSON.stringify(report));
+    expect(() => enforceProductionConfig(config({ ...missingIntegrations, DEBUG_MODE: "false" }), "api", silentLog()))
+      .toThrow(ProductionConfigError);
+  });
+
+  it("still refuses an unprotected console, invalid public origin, or missing AI credentials", () => {
+    const report = productionConfigReport(config({
+      ...missingIntegrations, DEBUG_MODE: "true", WEB_PASSWORD: "",
+      PUBLIC_API_URL: "http://localhost:4001", DEEPSEEK_API_KEY: ""
+    }), "api");
+    expect(reported(report.problems).sort()).toEqual(["DEEPSEEK_API_KEY", "PUBLIC_API_URL", "WEB_PASSWORD"]);
+    expect(() => config({ DEBUG_MODE: "true", MOCK_AI: "true" })).toThrow(/MOCK_AI must be off in production/);
+  });
+});
+
 describe("the smoke test's switch", () => {
   const smoke = { MOCK_AI: "true", ALLOW_MOCK_AI_IN_PRODUCTION: "true" };
   const noProviders = without("DEEPSEEK_API_KEY", "DEEPINFRA_API_KEY", "GEMINI_API_KEY", "ALIBABA_API_KEY", "OPENAI_API_KEY");

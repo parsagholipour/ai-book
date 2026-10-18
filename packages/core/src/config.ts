@@ -59,6 +59,11 @@ function optionalTrimmed() {
 
 const envSchema = z.object({
   NODE_ENV: z.string().optional(),
+  /** Closed debug deployment: no new accounts; missing Play/SMTP settings only warn. */
+  DEBUG_MODE: z
+    .string()
+    .optional()
+    .transform((value) => booleanEnv("DEBUG_MODE")(value) ?? false),
   PORT: z.coerce.number().int().positive().optional(),
   RAILWAY_ENVIRONMENT: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),

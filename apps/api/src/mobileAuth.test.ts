@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { lookupSignupCountry } from "./signupCountry.js";
 vi.mock("./signupCountry.js", () => ({ lookupSignupCountry: vi.fn(async () => null) }));
 import {
@@ -248,6 +248,25 @@ describe("mobile auth routes", () => {
     mockMobileSessionCreate();
     vi.mocked(lookupSignupCountry).mockResolvedValue(null);
   });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("blocks email signup in debug mode before creating an account or session", async () => {
+    vi.stubEnv("DEBUG_MODE", "true");
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue(activeUser());
+    const app = await buildApp();
+    try {
+      const response = await signUp(app);
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.code).toBe("SIGNUP_DISABLED");
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+      expect(mockPrisma.mobileSession.create).not.toHaveBeenCalled();
+      expect(lookupSignupCountry).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
 
   it.each([false, true])("records server country and tolerates lookup failure (%s)", async (failLookup) => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
@@ -324,7 +343,8 @@ describe("mobile auth routes", () => {
     await app.close();
   });
 
-  it("signs in an existing user and returns fresh session tokens", async () => {
+  it.each(["false", "true"])("signs in an existing user with DEBUG_MODE=%s", async (debugMode) => {
+    vi.stubEnv("DEBUG_MODE", debugMode);
     const passwordHash = await hashPassword("CorrectPass123");
     mockPrisma.user.findUnique.mockResolvedValue({
       ...activeUser(),

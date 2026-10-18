@@ -41,6 +41,16 @@ describe("Google mobile authentication", () => {
   });
   afterEach(async () => {
     await Promise.all(apps.splice(0).map((instance) => instance.close()));
+    vi.unstubAllEnvs();
+  });
+
+  it.each([false, true])("blocks new Google accounts in debug mode, including signup consent=%s", async (consent) => {
+    vi.stubEnv("DEBUG_MODE", "true");
+    const response = await post(await app(), { termsAccepted: consent, ageGuardianAttested: consent });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe("SIGNUP_DISABLED");
+    expect(db.user.create).not.toHaveBeenCalled();
+    expect(db.mobileSession.create).not.toHaveBeenCalled();
   });
 
   it("refuses unconfigured sign-in and never creates an account", async () => {
@@ -86,7 +96,8 @@ describe("Google mobile authentication", () => {
     expect(JSON.stringify(db.mobileSession.create.mock.calls)).not.toContain(response.json().session.accessToken);
   });
 
-  it("signs in by immutable subject even after the Google email changes, without a second gift", async () => {
+  it.each(["false", "true"])("signs in an existing Google subject with DEBUG_MODE=%s after its email changes", async (debugMode) => {
+    vi.stubEnv("DEBUG_MODE", debugMode);
     verifier.mockResolvedValue({ ...identity, email: "changed@example.com" });
     db.user.findUnique.mockResolvedValueOnce(user);
     db.legalAcceptance.findFirst.mockResolvedValue(null);
@@ -122,7 +133,8 @@ describe("Google mobile authentication", () => {
     expect(db.mobileSession.create).not.toHaveBeenCalled();
   });
 
-  it("connects Google only after password proof and preserves the existing account", async () => {
+  it.each(["false", "true"])("connects Google to an existing account after password proof with DEBUG_MODE=%s", async (debugMode) => {
+    vi.stubEnv("DEBUG_MODE", debugMode);
     db.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
       ...user, googleSubject: null, passwordCredential: { passwordHash: await hashPassword("correct-password") }
     });

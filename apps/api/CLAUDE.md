@@ -78,6 +78,12 @@ Everything protected is cookie-only except `/api/mobile/*` and the two asset pre
 `allowsMobileBearer` in `src/requestAuth.ts` names that surface; `isOperatorOnlyPath` in
 `src/auth.ts` is literally its complement.
 
+`DEBUG_MODE=true` closes account creation at both writers: `mobileAuth.ts` refuses email
+signup before database access, and `mobileGoogleAuth.ts` refuses its new-user branch after
+identity verification and both existing-account lookups. Both answer 403 `SIGNUP_DISABLED`.
+Existing sign-in, refresh, and password-proven Google linking keep working. A new account
+creation path must honor the same switch; debug deployments may lack Play and SMTP credentials.
+
 - **Every auth decision reads the route the router matched, never `request.url`, and only the auth
   hook makes an operator.** `request.url` keeps its percent-encoding and find-my-way decodes it
   before matching, so the hook read `GET /%61pi/admin/users` as a path outside `/api/`, protected

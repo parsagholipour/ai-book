@@ -97,6 +97,7 @@ jobs:
       - name: Store runtime environment securely
         env:
           PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+          DEPLOY_DEBUG_MODE: ${{ vars.DEBUG_MODE }}
           ENV_PARAMETER: ${{ inputs.env_parameter }}
         run: |
           if [[ -z "$PRODUCTION_ENV" ]]; then
@@ -107,6 +108,15 @@ jobs:
           env_file=$(mktemp)
           trap 'rm -f "$env_file"' EXIT
           printf '%s\n' "$PRODUCTION_ENV" > "$env_file"
+          # An optional environment variable lets the owner toggle debug mode
+          # without replacing the runtime secret. When set, it takes precedence.
+          if [[ -n "$DEPLOY_DEBUG_MODE" ]]; then
+            case "$DEPLOY_DEBUG_MODE" in
+              true|false) ;;
+              *) echo "::error::DEBUG_MODE must be true or false."; exit 1 ;;
+            esac
+            printf '\nDEBUG_MODE=%s\n' "$DEPLOY_DEBUG_MODE" >> "$env_file"
+          fi
           aws ssm put-parameter --name "$ENV_PARAMETER" --type SecureString \
             --tier Intelligent-Tiering --overwrite --value "file://$env_file" > /dev/null
       - name: Deploy and wait for healthy containers

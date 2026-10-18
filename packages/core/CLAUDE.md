@@ -196,13 +196,18 @@ the new entry is empty enough to be worth adding.
   name the same keys. **The Quality tab's saved routing is a warning, not a refusal**
   (`routedProvidersWithoutCredentials`, logged by both processes at boot): a saved route survives
   its key's removal by design, and the console that moves it needs the API up. `MOCK_AI` waives the
-  keys because it calls no provider, and that is the only waiver: the CI smoke test sets dummy
-  Play, RTDN, SMTP and password values rather than an opt-out nobody could forget in production,
+  keys because it calls no provider: the CI smoke test first sets dummy
+  Play, RTDN, SMTP and password values to exercise normal production,
   and `ALLOW_MOCK_AI_IN_PRODUCTION` — its one switch — is logged as an error at every boot. The
   deploy runs the same check in the new image before it stops the old release
   (`apps/api/src/checkProductionConfig.ts`), so a gap is a failed deploy rather than an outage. A
   new must-have setting goes into `productionConfig.ts` with a test, the env example and the table
   in `docs/deployment.md`, and the smoke test's `.env` gets a dummy for it.
+  `DEBUG_MODE=true` is an explicit closed-deployment mode: Play/RTDN/SMTP problems become
+  warnings, while the password, public origin and provider checks still refuse startup. It
+  keeps production mocks off and blocks both email and Google account creation in the API.
+  The smoke test's restart exercises that mode with no integration credentials. The setting
+  and GitHub variable precedence are documented in `docs/deployment.md`, "Debug deployment".
 
 ## Voice calls
 
