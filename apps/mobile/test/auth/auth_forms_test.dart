@@ -73,6 +73,15 @@ void main() {
 
       expect(find.text('Could not sign in'), findsOneWidget);
       expect(find.text('Something went wrong. Try again.'), findsOneWidget);
+      // Close the active browser input before the form becomes read-only.
+      // Flutter web cannot update a detached semantics input's configuration.
+      final password = tester.widget<TextField>(
+        find.descendant(
+          of: find.widgetWithText(TextFormField, 'Password'),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(password.focusNode!.hasFocus, isFalse);
 
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Password'),

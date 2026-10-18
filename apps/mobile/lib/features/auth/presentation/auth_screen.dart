@@ -395,6 +395,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       AppHaptics.warning();
       return;
     }
+    // End editing before loading makes the fields read-only. On the web,
+    // changing a focused semantics input can update an already detached node.
+    FocusScope.of(context).unfocus();
     final notifier = ref.read(authControllerProvider.notifier);
     if (_isSignUp) {
       if (!_termsAccepted || !_ageGuardianAttested) {
