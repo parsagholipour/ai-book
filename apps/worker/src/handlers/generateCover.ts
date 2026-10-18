@@ -12,6 +12,7 @@ import { config } from "../runtime/config.js";
 import { advanceJobStep, cancelStaleGenerationJob, updateJobProgress } from "../runtime/jobLifecycle.js";
 import {
   bookPlanSchema,
+  bookSeriesFromMediaSettings,
   buildCoverArtworkPrompt,
   coverArtSourceFor,
   coverDesign,
@@ -99,11 +100,17 @@ export async function generateCover(job: GenerateImageJob) {
   const keptDesign = coverArtSource === "design" && isRevisionOwnedCoverPayload(job.data)
     ? await currentCoverDesign(projectId)
     : undefined;
+  // A series book wears its earlier book's design, so the covers read as one
+  // series: the artwork is the design's, the title typeset over it is this book's.
+  const seriesDesignId = coverArtSource === "design" && !keptDesign ? bookSeriesFromMediaSettings(input.mediaSettings)?.coverDesignId : undefined;
+  const seriesDesign = seriesDesignId ? coverDesign(seriesDesignId) : undefined;
   const designedCover = async (fallbackReason?: string): Promise<CoverArtworkResult> => {
     await updateJobProgress(generationJobId, { message: "Choosing a cover design" });
     const choice: { design: CoverDesign; selectedBy: string; reason?: string } = keptDesign
       ? { design: keptDesign, selectedBy: "kept" }
-      : await selectCoverDesign({
+      : seriesDesign
+        ? { design: seriesDesign, selectedBy: "series" }
+        : await selectCoverDesign({
           textModel: providers.text,
           input,
           plan,

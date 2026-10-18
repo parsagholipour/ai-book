@@ -464,6 +464,13 @@ code in that area, however obvious the rule looks.
 - **A module kept light enough to survive a mock has to be light in both directions.** → packages/core/CLAUDE.md + packages/db/CLAUDE.md
 - **The dependency is on the barrel too, and the barrel is the dangerous half.** → apps/web/CLAUDE.md
 
+### Book series
+
+- **A sequel is a copy of its earlier book made at Build; the chat stores only the reader's answer, and a link Build cannot read builds the book unlinked.** → apps/api/src/mobile/CLAUDE.md
+- **A continuation's writers get the earlier book's facts in every chapter and its ending only in the opening, never its text; the planner gets the record its mode allows, and an inspired book's has no plot.** → packages/core/src/generation/CLAUDE.md
+- **The earlier book's style and a returning character's look are held on the first plan; a revision keeps them unless the reader asks to change them.** → packages/core/src/generation/CLAUDE.md
+- **Answering is free and starts no AI work, so it asks neither the spend breaker nor a rate limiter; it moves the chat's revision and hands back the earlier book's format beside the turn.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/CLAUDE.md
+
 ### Compiling, rendering and exports
 
 - **The book is typeset against md-to-pdf's stylesheets, but nothing else of md-to-pdf's remains.** → packages/core/src/generation/CLAUDE.md

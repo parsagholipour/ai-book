@@ -33,6 +33,7 @@ import '../../features/notes/presentation/book_notes_screen.dart';
 import '../../features/notes/presentation/notes_location.dart';
 import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../features/sharing/data/pending_remix.dart';
+import '../../features/projects/domain/book_series.dart';
 import '../../features/sharing/domain/book_remix.dart';
 import '../../features/sharing/presentation/remix_location.dart';
 import '../../features/sharing/presentation/remix_screen.dart';
@@ -379,6 +380,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               resetToken: state.uri.queryParameters['r'],
               // Handed over by the remix screen once the format has arrived.
               remix: state.extra is BookRemix ? state.extra as BookRemix : null,
+              // Handed over by a finished book's "Write the next book".
+              seriesStart: state.extra is BookSeriesStart
+                  ? state.extra as BookSeriesStart
+                  : null,
             ),
           );
         },

@@ -1,3 +1,4 @@
+import 'book_series.dart';
 import 'creation_message_models.dart';
 import 'project_models.dart';
 
@@ -607,6 +608,7 @@ class MobileCreationSession {
     this.attachments = const [],
     this.createdProjectId,
     this.activeProjectId,
+    this.series,
   });
 
   final String draftId;
@@ -621,6 +623,9 @@ class MobileCreationSession {
 
   /// Every file uploaded into this chat (sent or still pending in composer).
   final List<MobileCreationAttachment> attachments;
+
+  /// The series offer or answer; null from a server that sends none.
+  final MobileCreationSeries? series;
   final DateTime updatedAt;
 
   factory MobileCreationSession.fromJson(Map<String, dynamic> json) {
@@ -656,6 +661,7 @@ class MobileCreationSession {
             ),
           )
           .toList(),
+      series: MobileCreationSeries.fromJson(json['series']),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
@@ -684,6 +690,7 @@ class MobileCreationSession {
       activeProjectId: activeProjectId ?? this.activeProjectId,
       outputs: outputs ?? this.outputs,
       attachments: attachments ?? this.attachments,
+      series: series,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }

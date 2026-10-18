@@ -140,6 +140,7 @@ export * from "./generation/chapterShape.js";
 export { countReadableWords } from "./generation/proseShape.js";
 export * from "./generation/characterReferences.js";
 export * from "./generation/libraryCharacters.js";
+export * from "./generation/bookSeries.js";
 export * from "./generation/libraryMentions.js";
 export * from "./generation/libraryCharacterImages.js";
 export * from "./generation/voiceCharacters.js";

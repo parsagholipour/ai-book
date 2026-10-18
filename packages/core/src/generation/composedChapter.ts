@@ -38,6 +38,7 @@ import { codeBlockRules } from "./codeBlockRules.js";
 import { exampleCastLines, exampleCastLinesForChapter, type ExampleCastMember } from "./exampleCast.js";
 import { TOOLKIT_FORMS } from "./chapterFormPalette.js";
 import { EXAMPLE_PEOPLE_RULE, TOOLKIT_LAST_CHAPTER_LINE, TOOLKIT_LAYOUT_RULE, TOOLKIT_QUOTATION_RULE, TOOLKIT_SHAPE_RULES, activeToolkit, toolkitPayload, toolkitWriterLines, type InstructionalToolkit } from "./instructionalBook.js";
+import { seriesWriterFields } from "./bookSeries.js";
 import { chapterFactLines, ESTABLISHED_FACTS_EDITOR_RULE, ESTABLISHED_FACTS_MAX_CHARACTERS, ESTABLISHED_FACTS_WRITER_RULE, type ChapterFact } from "./chapterFacts.js";
 import { figureComposeRules, figureEditRules, plannedFigures } from "./figures/figurePrompt.js";
 import { chapterStyleNotes } from "./planContract.js";
@@ -452,6 +453,13 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
   const budget = chapterWordBudget(options.input, pages, { figureWords: plannedFigures(options.composition).length * FIGURE_WORD_EQUIVALENT });
   const citation = citationContractFields(chapterResearchNotesForPrompt(options.researchNotes));
   const establishedFacts = establishedFactLinesFor(options);
+  // A continuation's earlier book: its facts in every chapter, its ending only
+  // in the chapter that opens the book. Absent for every other book, whose
+  // prompts are unchanged.
+  const series = seriesWriterFields(options.input, {
+    opening: options.chapterPageStart === 1,
+    mentionText: `${options.chapter.title} ${options.chapter.summary}`
+  });
   // The opening scene, when one was composed first, is printed ahead of what
   // this call writes, so the ask shrinks by its length.
   const remaining = remainingBudget(budget, options.material?.scene?.words ?? 0);
@@ -495,6 +503,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     // found the previous chapter's conclusion stranded under the next heading.
     "previousChapterTail is where the previous chapter stopped, already printed: this chapter opens on its own first section's material and neither resumes, summarises nor answers that paragraph. earlierChapters are digests of what the reader already knows, each with told: the cases, sources, scenes and people that chapter carried; anything in told may be named in passing and is never re-told, and its dates and figures are not repeated.",
     ...(establishedFacts.length > 0 ? [ESTABLISHED_FACTS_WRITER_RULE] : []),
+    ...series.rules,
     ...(options.contract === "creative" ? (toolkit ? [CREATIVE_CONTRACT_RULES[0]!, TOOLKIT_QUOTATION_RULE] : CREATIVE_CONTRACT_RULES) : [GROUNDED_FACTUALITY_RULE, ...citation.rules, CHAPTER_RESEARCH_CONTEXT_RULE]),
     // Research notes arrive as "title: summary" and a search hit's title is
     // often its bare domain, so a writer told to name only sources in the
@@ -539,6 +548,7 @@ export async function composeChapter(options: ComposeChapterOptions): Promise<Co
     continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
     ...(options.storyStateLines && options.storyStateLines.length > 0 ? { storyState: options.storyStateLines } : {}),
     ...(establishedFacts.length > 0 ? { establishedFacts } : {}),
+    ...series.payload,
     characters: characterPayload(options.plan),
     ...citation.payload,
     ...materialPayload({ ...options, history, practical: Boolean(toolkit) }),

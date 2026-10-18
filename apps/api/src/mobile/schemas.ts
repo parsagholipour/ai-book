@@ -11,7 +11,7 @@ import {
   resolveMobileImageSettings
 } from "../mobileCreation.js";
 import { type MobileBookType, type MobileLengthPreset, type MobileQualityPreset } from "./dto.js";
-import { PROJECT_PROMPT_MAX_LENGTH, type CreateProjectInput, type ModelTier, type ToneProfile } from "@book-maker/core";
+import { PROJECT_PROMPT_MAX_LENGTH, SERIES_CHOICE_MODES, type CreateProjectInput, type ModelTier, type ToneProfile } from "@book-maker/core";
 import { z } from "zod";
 
 /**
@@ -359,6 +359,25 @@ export const mobileChatListQuerySchema = z.object({
 });
 export const mobileChatListOpenApiQuery = toOpenApiRequestBody(mobileChatListQuerySchema);
 
+/** A finished book a new chat's book continues or is inspired by (`creationSeries.ts`). */
+export const mobileCreationSeriesLinkSchema = z
+  .object({
+    mode: z.enum(["continuation", "inspired"]),
+    projectId: z.string().trim().min(1).max(64)
+  })
+  .strict();
+
+/** The reader's answer to the series offer: a book and how it relates, or a story of its own. */
+export const mobileCreationSeriesChoiceBodySchema = z
+  .object({
+    mode: z.enum(SERIES_CHOICE_MODES),
+    // Required with continuation and inspired, refused with standalone; the
+    // route checks the pair so the OpenAPI copy stays a plain object.
+    projectId: z.string().trim().min(1).max(64).optional()
+  })
+  .strict();
+export const mobileCreationSeriesChoiceOpenApiBody = toOpenApiRequestBody(mobileCreationSeriesChoiceBodySchema);
+
 export const mobileCreationSessionStartBodySchema = z
   .object({
     message: z.string().trim().min(1).max(4000).optional(),
@@ -370,7 +389,9 @@ export const mobileCreationSessionStartBodySchema = z
     requestId: requestIdSchema.optional(),
     // The share whose "Make a book like this" opened this chat. Recorded as the
     // draft's origin for the share funnel; an unknown or stopped share is ignored.
-    remixSlug: z.string().trim().min(1).max(64).optional()
+    remixSlug: z.string().trim().min(1).max(64).optional(),
+    // "Write the next book" on a finished book: the chat starts already linked to it.
+    series: mobileCreationSeriesLinkSchema.optional()
   })
   .strict()
   .default({});

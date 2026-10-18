@@ -42,19 +42,24 @@ class BookRemix {
   /// remix go out as a guide. An `auto` or missing choice is therefore pinned
   /// to a concrete one of the same product type: the product types are exactly
   /// what the three branches below produce.
-  String get bookTypeChoice {
-    final choice = presets.bookTypeChoice.trim();
-    if (choice.isNotEmpty && choice != 'auto') {
-      return choice;
-    }
-    return switch (presets.bookType) {
-      'workbook' => 'workbook',
-      'short_story' => 'adult_story',
-      _ => 'practical_guide',
-    };
-  }
+  String get bookTypeChoice => concreteBookTypeChoice(presets);
 
   /// [presets] as the chat applies them: the concrete choice, the rest as sent.
   MobileCreationPresets get chatPresets =>
       presets.copyWith(bookTypeChoice: bookTypeChoice);
+}
+
+/// A format's book-type choice pinned to a concrete one — see
+/// [BookRemix.bookTypeChoice]. Shared with "Write the next book", which starts
+/// a chat from a book's format the same way a remix does.
+String concreteBookTypeChoice(MobileCreationPresets presets) {
+  final choice = presets.bookTypeChoice.trim();
+  if (choice.isNotEmpty && choice != 'auto') {
+    return choice;
+  }
+  return switch (presets.bookType) {
+    'workbook' => 'workbook',
+    'short_story' => 'adult_story',
+    _ => 'practical_guide',
+  };
 }

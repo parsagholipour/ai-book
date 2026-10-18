@@ -19,6 +19,7 @@ import {
   inputWithMobileSourceMaterial
 } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
+import { newlyTakenSeriesEndingFacts, withSeriesEndingFacts } from "../generation/seriesEndingFacts.js";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, editOperationIdFromJob } from "../runtime/jobLifecycle.js";
 import type { JobCompletion } from "../runtime/jobTypes.js";
@@ -28,7 +29,7 @@ import { claimPlanningCompletion } from "../runtime/planningCompletion.js";
 import { preparePlanningResearch, savePlanningResearch } from "./planningResearch.js";
 import { prepareCompositionDedupeKey, withoutPreparedFields } from "../generation/composedPrepRecord.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
-import { bookPlanSchema, createProviders, explicitLanguageRequest, isRecord, mediaSettingsRowWriteback, normalizeProjectLanguage, seedStoryStateFromPromises, type BookGenerationStrategy } from "@book-maker/core";
+import { bookPlanSchema, createProviders, explicitLanguageRequest, isRecord, mediaSettingsRowWriteback, mediaSettingsWithBookSeries, normalizeProjectLanguage, seedStoryStateFromPromises, type BookGenerationStrategy } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import type { PlanBookJob, RevisePlanJob } from "../runtime/jobPayloads.js";
 
@@ -39,11 +40,14 @@ import type { PlanBookJob, RevisePlanJob } from "../runtime/jobPayloads.js";
 export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
   const { projectId, inputSnapshot, generationJobId } = job.data;
   const project = await getProjectOrThrow(projectId);
-  const input = inputFromSnapshot(inputSnapshot) ?? inputFromProject(project);
-  const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input), input);
-  const quality = await loadQualityContext(input);
+  const storedInput = inputFromSnapshot(inputSnapshot) ?? inputFromProject(project);
+  const strategy = strategyForInput(storedInput);
+  const providers = createLoggedProviders(job, createProviders(config, storedInput), storedInput);
+  const quality = await loadQualityContext(storedInput);
   applyPlanThinkingBoost(providers.text, quality.enabled("planThinkingBoost"));
+  // A continuation reads its earlier book's last chapter once, before the plan
+  // and the plan version's snapshot, so both carry what that ending fixed.
+  const input = await withSeriesEndingFacts(storedInput, providers.text, projectId);
   const plan = await strategy.createPlan({
     // Planning sees pasted notes and uploaded-file digests; the stored
     // snapshot below stays clean so page generation input is unchanged.
@@ -87,11 +91,17 @@ export async function planBook(job: PlanBookJob): Promise<JobCompletion> {
       }
     });
 
+    // The ending's facts reach the row too, merged onto the live row's
+    // settings the way a revision's write-back is, so a rebuild of this book
+    // does not read the earlier book's last chapter again.
+    const seriesTaken = newlyTakenSeriesEndingFacts(storedInput, input);
+    const liveRow = seriesTaken ? await tx.project.findUnique({ where: { id: projectId }, select: { mediaSettings: true } }) : null;
     await tx.project.update({
       where: { id: projectId },
       data: {
         currentPlanId: planVersion.id, title: plan.title, status: "PLAN_READY",
-        storyState: seedStoryStateFromPromises(plan.promises ?? []) as Prisma.InputJsonValue
+        storyState: seedStoryStateFromPromises(plan.promises ?? []) as Prisma.InputJsonValue,
+        ...(seriesTaken ? { mediaSettings: mediaSettingsWithBookSeries(liveRow?.mediaSettings ?? {}, seriesTaken) as Prisma.InputJsonValue } : {})
       }
     });
 

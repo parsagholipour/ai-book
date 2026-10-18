@@ -24,6 +24,7 @@ import 'package:tomeza/features/notifications/data/push_messaging.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
+import 'package:tomeza/features/projects/domain/book_series.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/sharing/data/book_share_repository.dart';
@@ -292,6 +293,20 @@ class FakeCreationRepository
   }
 
   @override
+  Future<MobileCreationSeriesAnswer> chooseSeries({
+    required String draftId,
+    required BookSeriesMode mode,
+    String? projectId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<BookSeriesStart> loadNextBook(String projectId) async {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MobileCreationConversationResponse> startConversation({
     void Function(String text)? onAssistantText,
     String? message,
@@ -301,6 +316,7 @@ class FakeCreationRepository
     String? requestId,
     List<String>? mentionedCharacterIds,
     String? remixSlug,
+    PendingBookSeries? series,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }

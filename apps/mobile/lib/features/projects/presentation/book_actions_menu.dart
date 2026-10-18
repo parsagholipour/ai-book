@@ -6,9 +6,10 @@ import '../../billing/domain/billing_models.dart';
 import '../../studio/presentation/studio_location.dart';
 import '../../voice/presentation/character_cast_sheet.dart';
 import '../domain/project_models.dart';
+import 'next_book_card.dart';
 import 'project_export_actions.dart';
 
-enum _BookAction { write, chat, call, listen, open, share }
+enum _BookAction { write, chat, call, listen, nextBook, open, share }
 
 /// One row of the menu: what it does, and to which file.
 typedef _ExportChoice = ({_BookAction action, MobileExportAvailability export});
@@ -114,6 +115,26 @@ Future<void> showBookActionsMenu({
             ],
           ),
         ),
+      // A sequel needs the finished book it continues, and one a model wrote.
+      if ((project.status == 'complete' ||
+              project.status == 'review_required') &&
+          !project.isAuthorManuscript)
+        const PopupMenuItem<Object>(
+          value: _BookAction.nextBook,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.auto_stories_outlined),
+              SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  'Write the next book',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
       for (final export in exports)
         _bookActionItem(
           choice: (action: _BookAction.open, export: export),
@@ -152,6 +173,12 @@ Future<void> showBookActionsMenu({
   // Narration is priced on its own screen.
   if (action == _BookAction.listen) {
     context.push('/projects/${project.id}/listen');
+    return;
+  }
+
+  // A new chat that continues this book; nothing is sent until its first message.
+  if (action == _BookAction.nextBook) {
+    await startNextBook(context, ref, project.id);
     return;
   }
 
@@ -195,6 +222,7 @@ Future<void> showBookActionsMenu({
     case _BookAction.chat:
     case _BookAction.call:
     case _BookAction.listen:
+    case _BookAction.nextBook:
       // Handled above because none of them requires an export.
       return;
   }

@@ -157,6 +157,7 @@ reported as surviving, which is the escape a rollback-capable mock could not sim
 - [Writing Studio](#writing-studio)
 - [Book notes](#book-notes)
 - [Book sharing](#book-sharing)
+- [Book series](#book-series)
 - [Reporting AI output](#reporting-ai-output)
 
 ## Billing surfaces
@@ -2478,6 +2479,55 @@ spec and measurement in `.scratch/book-sharing/`.
   `install_attributed` (source, medium, the slug) to `POST /api/mobile/events`, and offers the remix
   once on its home screen (`apps/mobile/CLAUDE.md`, "Install attribution"). Every share link already
   out there carries those keys, so renaming either strands those installs; a new key is safe.
+
+## Book series
+
+A new book may continue one of the reader's finished books, or be a new story in its world
+(`creationSeries.ts`, `routes/creationSeries.ts`; the generation side is core `bookSeries.ts`).
+
+- **A sequel is a copy of its earlier book made at Build; the chat stores only the reader's
+  answer, and a link Build cannot read builds the book unlinked.** The answer is two columns on
+  the draft (`seriesMode`, `seriesSourceProjectId`, migration 000117), not payload keys, for the
+  `originShareId` reason: every turn rebuilds the payload. Neither is a foreign key. At Build,
+  `seriesSnapshotForDraft` reads the earlier book (its current plan, chapter facts, page text, page
+  design, designed cover) and `withBookSeries` writes the bounded snapshot to
+  `mediaSettings.mobile.series`, pins `storyPageDesign` on the row (the compile reads it there, and
+  a chat rebuild's copy carries it, since `mediaSettingsSchema` strips the key) and appends one
+  `Series:` line to the prompt. A source that is gone, unfinished, an author's book or whose plan
+  does not parse returns undefined and the book builds as if unlinked: the link is an enhancement
+  to a paid book, never a reason to refuse one. "Finished" is COMPLETE, REVIEW_REQUIRED or EDITING,
+  because only a finished book is edited and a recompile of the earlier book must not silently
+  unlink a sequel being built. The answer was given for the chat's first book, so a chat that has
+  already built (`createdProjectId`) builds any later book unlinked. Build's duplicate-request
+  fingerprint names the stored answer (`seriesLinkFingerprint`), never the copy: the copy is a live
+  read of another book, and it is skipped on a retry of a build that already succeeded, which must
+  still replay. Deleting the earlier book afterwards changes nothing.
+- **The offer is derived from the books' own character copies, so it costs one indexed query and
+  no model, and it is never stored.** `creationSeriesState` takes the library ids the active
+  thread's user messages tapped, and one raw query finds the reader's finished books whose
+  `mediaSettings.mobile.characters[].id` names one, the JSON test in SQL so no book's whole
+  `mediaSettings` (it carries the creation transcript) is shipped, and authors' books left out in
+  SQL too, ahead of the `LIMIT`, so a run of imports cannot crowd the generated books out (the
+  exact `isAuthorManuscript` test runs on the rows after). The linked book is always on offer,
+  mentioned or not: a "Write the next book" chat names no character, and Change must still have it. Every route that returns
+  a session goes through `serializeCreationSessionForUser`, which attaches it; a failed read is a
+  session with no offer, never a failed session. A built chat (`createdProjectId`) carries none,
+  and `PUT …/series` refuses it 409 `SERIES_LOCKED`. A linked book deleted since reads as no answer,
+  so the chat offers again rather than naming a book that is gone. Typed `@Name` mentions with no
+  chip do not raise the offer; tapped refs are the only ids the thread stores.
+- **Only a generated book can be continued.** An import's or a Studio book's plan is synthesized
+  from text no model wrote, and a sequel is planned from the plan, so `seriesSourceBook` (the one
+  check the answer, the `series` start and `GET …/next-book` all make) refuses an author's book
+  404 `SERIES_BOOK_NOT_FOUND`, and the offer leaves one out. Lifting this needs a plan worth
+  continuing from for those books.
+- **Answering is free and starts no AI work, so it asks neither the spend breaker nor a rate
+  limiter; it moves the chat's revision and hands back the earlier book's format beside the
+  turn.** The revision moves so a Build that read the draft before the answer is refused rather
+  than building from the old one. The session is serialized from the row the answer wrote, and no
+  `lastTurn` is written. A linked answer returns `seriesPresets` (`remixPresetsForProject`, the
+  remix's rule) as its own field, never merged into the turn's presets, because the app adopts it
+  only for the settings the reader has not chosen, which the turn's presets would overwrite
+  (`adoptSeriesFormat`, `apps/mobile`).
 
 ## Reporting AI output
 

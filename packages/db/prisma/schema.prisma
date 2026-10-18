@@ -1220,6 +1220,17 @@ model MobileCreationDraft {
   /// chat turn rebuilds the payload from scratch, and it is what the admin
   /// funnel counts. Not a foreign key: attribution must outlive the share.
   originShareId    String?
+  /// The finished book this chat's book is linked to as a series, read with
+  /// `seriesMode`. Columns rather than payload keys for the reason
+  /// `originShareId` is one: every chat turn rebuilds the payload from scratch.
+  /// Not a foreign key: Build copies what the new book needs from the earlier
+  /// one (`mediaSettings.mobile.series`), so a deleted earlier book only means
+  /// the link is skipped at Build.
+  seriesSourceProjectId String?
+  /// "continuation" | "inspired" | "standalone" (core `SERIES_CHOICE_MODES`):
+  /// the reader's answer, null while unasked. "standalone" is an answer that
+  /// links nothing, and stops the chat offering again.
+  seriesMode       String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'chat_session_page_fixture.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
+import 'package:tomeza/features/projects/domain/book_series.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'creation_chat_harness.dart';
@@ -89,6 +92,35 @@ class ScriptedCreationRepository
 
   /// The remix slug and presets each session-starting request carried.
   final startedRemixSlugs = <String?>[];
+
+  /// The series link each session start carried ("Write the next book").
+  final startedSeries = <PendingBookSeries?>[];
+
+  /// Every answer to the series offer, in order.
+  final seriesChoices =
+      <({String draftId, BookSeriesMode mode, String? projectId})>[];
+
+  /// The series state the scripted sessions carry, as the server sends it.
+  Map<String, dynamic>? sessionSeriesJson;
+
+  /// The linked book's format a linking answer hands back.
+  Map<String, dynamic> seriesFormatJson = const {
+    'bookType': 'short_story',
+    'bookTypeChoice': 'children_story',
+    'lengthPreset': 'short',
+    'qualityPreset': 'premium',
+    'coverEnabled': false,
+    'illustrationsEnabled': true,
+    'pageCountMode': 'custom',
+    'targetPages': 12,
+    'pageCountSource': 'settings',
+  };
+
+  /// Holds an answer in flight until completed, when set.
+  Completer<void>? seriesAnswerGate;
+
+  /// The presets each message after the first carried.
+  final sentPresets = <MobileCreationPresets?>[];
   final startedPresets = <MobileCreationPresets?>[];
   final editRequests = <String>[];
   final replyRequests = <String?>[];
@@ -250,6 +282,70 @@ class ScriptedCreationRepository
   }
 
   @override
+  Future<MobileCreationSeriesAnswer> chooseSeries({
+    required String draftId,
+    required BookSeriesMode mode,
+    String? projectId,
+  }) async {
+    seriesChoices.add((draftId: draftId, mode: mode, projectId: projectId));
+    await seriesAnswerGate?.future;
+    sessionSeriesJson = {
+      'books': (sessionSeriesJson?['books'] as List<dynamic>?) ?? const [],
+      'choice': {
+        'mode': mode.wire,
+        'projectId': projectId,
+        'title': projectId == null ? null : 'The Night Garden',
+      },
+    };
+    return MobileCreationSeriesAnswer.fromJson({
+      'session': {
+        'draftId': draftId,
+        'title': sentMessages.isEmpty ? 'New book' : sentMessages.last,
+        'status': 'ACTIVE',
+        'messages': [
+          {
+            'id': 'assistant-greeting',
+            'role': 'assistant',
+            'content': greeting,
+          },
+          if (sentMessages.isNotEmpty) ...[
+            {
+              'id': 'user-current',
+              'role': 'user',
+              'content': sentMessages.last,
+            },
+            {'id': 'assistant-reply', 'role': 'assistant', 'content': reply},
+          ],
+        ],
+        'createdProjectId': null,
+        'updatedAt': '2026-06-15T00:00:00.000Z',
+        'series': ?sessionSeriesJson,
+      },
+      'turn': turnJson(assistantMessage: reply, canBuild: true),
+      if (projectId != null) 'seriesPresets': seriesFormatJson,
+    });
+  }
+
+  @override
+  Future<BookSeriesStart> loadNextBook(String projectId) async {
+    return BookSeriesStart.fromJson({
+      'projectId': projectId,
+      'title': 'The Night Garden',
+      'presets': {
+        'bookType': 'short_story',
+        'bookTypeChoice': 'children_story',
+        'lengthPreset': 'short',
+        'qualityPreset': 'balanced',
+        'coverEnabled': true,
+        'illustrationsEnabled': true,
+        'pageCountMode': 'custom',
+        'targetPages': 12,
+        'pageCountSource': 'settings',
+      },
+    });
+  }
+
+  @override
   Future<MobileCreationConversationResponse> startConversation({
     void Function(String text)? onAssistantText,
     String? message,
@@ -259,8 +355,10 @@ class ScriptedCreationRepository
     String? requestId,
     List<String>? mentionedCharacterIds,
     String? remixSlug,
+    PendingBookSeries? series,
   }) async {
     startedRemixSlugs.add(remixSlug);
+    startedSeries.add(series);
     startedPresets.add(presets);
     if (message != null) {
       startedMessages.add(message);
@@ -321,6 +419,7 @@ class ScriptedCreationRepository
       _originalUserContent ??= sentMessages.isEmpty ? null : sentMessages.last;
     }
     sentMessages.add(message);
+    sentPresets.add(presets);
     replyRequests.add(replyToMessageId);
     sentAttachmentIds.add(attachmentIds ?? const <String>[]);
     return MobileCreationConversationResponse.fromJson({
@@ -365,6 +464,7 @@ class ScriptedCreationRepository
         ],
         'createdProjectId': null,
         'updatedAt': '2026-06-15T00:00:00.000Z',
+        'series': ?sessionSeriesJson,
       },
       'turn': turnJson(
         assistantMessage: reply,

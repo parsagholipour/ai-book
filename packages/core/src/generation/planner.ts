@@ -27,6 +27,7 @@ import { PLANNER_AUTHOR_STANCE_GUIDANCE } from "./authorStance.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { planLibraryCharacterGuidance, reconcilePlanLibraryCharacters } from "./planLibraryCharacters.js";
+import { bookSeriesFromMediaSettings, planSeriesGuidance, reconcilePlanSeries, withoutBookSeriesRecord } from "./bookSeries.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { REAL_PEOPLE_KEEP_THEIR_NAMES_RULE } from "./realPeople.js";
 import { maxComposedChapterPages } from "./composedChapter.js";
@@ -89,6 +90,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
   const researchNotes = await researchForPlan(options.input, template, fallback.researchQueries, options.research);
   const toneProfile = toneProfileFromMediaSettings(options.input.mediaSettings);
   const librarySnapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
+  const series = bookSeriesFromMediaSettings(options.input.mediaSettings);
 
   await options.onPhase?.("shape");
   if (options.forceFallback) {
@@ -98,9 +100,12 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     // this an @-mentioned character simply vanishes in development.
     return normalizePlanPageTargets(
       reconcilePlanLibraryCharacters(
-        ensurePlanStyleContract(
-          { ...fallback, researchNotes },
-          { input: options.input, toneProfile }
+        reconcilePlanSeries(
+          ensurePlanStyleContract(
+            { ...fallback, researchNotes },
+            { input: options.input, toneProfile }
+          ),
+          series
         ),
         librarySnapshots
       ),
@@ -181,7 +186,9 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             // recurring character include concrete visualRules" (which invented
             // the look), and the kids vocabulary rule (which simplifies an
             // unfamiliar name). The library rules must be the later half of
-            // every one of those pairs.
+            // every one of those pairs. The series record comes just before
+            // them: a saved character's own record outranks the earlier book's.
+            ...planSeriesGuidance(series),
             ...planLibraryCharacterGuidance(librarySnapshots)
           ].join(" ")
         },
@@ -189,7 +196,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
           role: "user",
           content: JSON.stringify(
             {
-              userInput: options.input,
+              userInput: withoutBookSeriesRecord(options.input),
               toneProfile,
               language: targetLanguagePayload(options.input.language),
               readingGuidance: kidsReadingGuidancePayload(options.input),
@@ -220,12 +227,15 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     });
     return normalizePlanPageTargets(
       reconcilePlanLibraryCharacters(
-        ensurePlanStyleContract(
-          {
-            ...plan,
-            questions: plan.questions.slice(0, 1)
-          },
-          { input: options.input, toneProfile }
+        reconcilePlanSeries(
+          ensurePlanStyleContract(
+            {
+              ...plan,
+              questions: plan.questions.slice(0, 1)
+            },
+            { input: options.input, toneProfile }
+          ),
+          series
         ),
         librarySnapshots
       ),
@@ -295,6 +305,11 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
   // library at all: "make it shorter" after approval was enough to rewrite the
   // reader's saved character out of their own book.
   const librarySnapshots = libraryCharactersFromMediaSettings(options.input?.mediaSettings);
+  // The same reason as the library: a revision re-decides the cast and the
+  // chapters wholesale, so a sequel's earlier book has to be in front of it too.
+  // It is told to keep the earlier book's style and looks, never held to them by
+  // code: a revision is the reader asking for a change.
+  const series = bookSeriesFromMediaSettings(options.input?.mediaSettings);
   // Questions are an explicit semantic decision on every revision. If the
   // model omits them, default to none instead of restoring legacy questions.
   const revisionSchema = bookPlanSchemaWithFallback({ ...options.currentPlan, questions: [] });
@@ -325,6 +340,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               ...(quick ? [] : PLANNER_STYLE_CONTRACT_GUIDANCE),
               // Last for the same reason as in initial planning: the rules it
               // has to outrank are all above it.
+              ...planSeriesGuidance(series, { revision: true }),
               ...planLibraryCharacterGuidance(librarySnapshots)
             ].join(" ")
         },

@@ -2,7 +2,8 @@ part of 'creation_chat_screen.dart';
 
 // Opening the conversation this screen was navigated to: a specific chat, the
 // one last active, or a fresh one — and a fresh one may start from a shared
-// book's format ("Make a book like this").
+// book's format ("Make a book like this") or as the next book of one of the
+// reader's own ("Write the next book").
 //
 // A remix is set up entirely on this side: the presets are applied and the
 // composer's first line is written, and nothing is sent. The reader finishes
@@ -25,6 +26,12 @@ mixin _CreationChatStart on ConsumerState<CreationChatScreen> {
           draftId: widget.draftId,
           force: force,
         );
+        final seriesStart = widget.seriesStart;
+        if (seriesStart != null && mounted) {
+          controller.applySeriesStart(seriesStart);
+          _startComposerWith('In the next book after “${seriesStart.title}”, ');
+          return;
+        }
         final remix = widget.remix;
         if (remix == null || !mounted) return;
         controller.applyRemix(remix);

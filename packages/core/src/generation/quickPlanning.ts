@@ -5,6 +5,7 @@ import { kidsReadingGuidanceLines } from "../prompting/readingLevel.js";
 import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/tone.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { planLibraryCharacterGuidance } from "./planLibraryCharacters.js";
+import { bookSeriesFromMediaSettings, planSeriesGuidance, withoutBookSeriesRecord } from "./bookSeries.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { REAL_PEOPLE_KEEP_THEIR_NAMES_RULE } from "./realPeople.js";
 
@@ -38,6 +39,7 @@ export function quickPlanMessages(input: CreateProjectInput, options: {
     ...targetLanguageGenerationGuidance(input.language),
     ...kidsReadingGuidanceLines(input),
     ...plannerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings)),
+    ...planSeriesGuidance(bookSeriesFromMediaSettings(input.mediaSettings)),
     ...planLibraryCharacterGuidance(libraryCharactersFromMediaSettings(input.mediaSettings))
-  ].join(" ") }, { role: "user", content: JSON.stringify({ userInput: input }) }];
+  ].join(" ") }, { role: "user", content: JSON.stringify({ userInput: withoutBookSeriesRecord(input) }) }];
 }

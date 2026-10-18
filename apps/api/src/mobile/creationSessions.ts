@@ -20,6 +20,8 @@ import {
   type MobileCreationOutputRecord,
   type MobileCreationSessionDto
 } from "./dto.js";
+import { creationSeriesState, type SeriesDraft } from "./creationSeries.js";
+import type { MobileCreationSessionWithSeriesDto } from "./creationSeriesDto.js";
 import { sendMobileError } from "./httpErrors.js";
 import { clipText, jsonRecord } from "./support.js";
 import { type CreationAttachment } from "@book-maker/core";
@@ -206,6 +208,24 @@ export function serializeCreationSession(
   };
 }
 
+/**
+ * The session DTO with its series state, which is one read of the owner's
+ * finished books. A failed read is a session with no offer, never a failed
+ * session: the offer is an enhancement to a chat the reader is in.
+ */
+export async function serializeCreationSessionForUser(
+  userId: string,
+  draft: Parameters<typeof serializeCreationSession>[0] & SeriesDraft,
+  messages: MobileCreationMessage[]
+): Promise<MobileCreationSessionWithSeriesDto> {
+  const session = serializeCreationSession(draft, messages);
+  const series = await creationSeriesState(userId, draft, messages).catch((error: unknown) => {
+    console.warn(`[series] offer read failed for draft ${draft.id}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  });
+  return { ...session, series };
+}
+
 export function creationTurnForStoredDraft(
   draft: { lastTurn?: unknown },
   payload: MobileCreationDraftPayload,
@@ -358,7 +378,7 @@ export async function sendCreationSessionConflict(
       code: "SESSION_CONFLICT",
       message: "This chat changed elsewhere. Your latest version has been reloaded."
     },
-    session: serializeCreationSession(current, creationTreeFromPayload(payload.data)),
+    session: await serializeCreationSessionForUser(userId, current, creationTreeFromPayload(payload.data)),
     turn: creationTurnForStoredDraft(current, payload.data, messages)
   });
 }

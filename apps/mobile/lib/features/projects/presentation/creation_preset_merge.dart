@@ -41,6 +41,37 @@ MobileCreationOptionalDetails mergeChatOptionalDetails(
   );
 }
 
+/// The earlier book's [format] on the settings the reader has not chosen,
+/// when they link this book to it: a sequel is usually the same kind of book,
+/// but a setting the reader picked themselves is theirs. The caller marks
+/// every setting chosen afterwards, as a remix does, so the next turn keeps
+/// what was adopted.
+MobileCreationPresets adoptSeriesFormat({
+  required MobileCreationPresets current,
+  required MobileCreationPresets format,
+  required bool bookTypeChosen,
+  required bool lengthChosen,
+  required bool finishChosen,
+  required bool coverChosen,
+  required bool illustrationsChosen,
+}) {
+  return current.copyWith(
+    bookType: bookTypeChosen ? null : format.bookType,
+    bookTypeChoice: bookTypeChosen ? null : format.bookTypeChoice,
+    lengthPreset: lengthChosen ? null : format.lengthPreset,
+    pageCountMode: lengthChosen ? null : format.pageCountMode,
+    targetPages: lengthChosen ? current.targetPages : format.targetPages,
+    pageCountSource: lengthChosen
+        ? current.pageCountSource
+        : format.pageCountSource,
+    qualityPreset: finishChosen ? null : format.qualityPreset,
+    coverEnabled: coverChosen ? null : format.coverEnabled,
+    illustrationsEnabled: illustrationsChosen
+        ? null
+        : format.illustrationsEnabled,
+  );
+}
+
 /// Keeps explicit Advanced-settings choices sticky while accepting real
 /// server-side changes made through the creation chat.
 MobileCreationPresets mergeStickyCreationPresets({

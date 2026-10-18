@@ -152,6 +152,31 @@ describe("generateCover", () => {
     expect(storedAsset()?.metadata).toMatchObject({ coverDesignId: "moonlit-sea", coverDesignSelectedBy: "kept", costUsd: 0 });
   });
 
+  // A series book wears its earlier book's design, so the covers read as one series.
+  it("reuses the earlier book's design for a book of its series, without asking the selector", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({
+      coverArtSource: "design",
+      mobile: { series: { version: 1, mode: "continuation", sourceProjectId: "book-1", sourceTitle: "Book One", seriesName: "Book One", bookNumber: 2, coverDesignId: "moonlit-sea" } }
+    }));
+
+    await generateCover(job());
+
+    expect(mocks.selectCoverDesign).not.toHaveBeenCalled();
+    expect(storedAsset()?.metadata).toMatchObject({ coverDesignId: "moonlit-sea", coverDesignSelectedBy: "series", costUsd: 0 });
+  });
+
+  it("asks the selector when the earlier book's design is no longer in the catalog", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({
+      coverArtSource: "design",
+      mobile: { series: { version: 1, mode: "inspired", sourceProjectId: "book-1", sourceTitle: "Book One", seriesName: "Book One", coverDesignId: "retired-design" } }
+    }));
+
+    await generateCover(job());
+
+    expect(mocks.selectCoverDesign).toHaveBeenCalled();
+    expect(storedAsset()?.metadata).toMatchObject({ coverDesignSelectedBy: "model" });
+  });
+
   it("chooses a design for a revision-owned first cover, and for any other job even when one exists", async () => {
     mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ coverArtSource: "design" }));
     const revisionOwned = {

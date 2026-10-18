@@ -32,6 +32,7 @@ import {
   type MobileProjectRecord
 } from "./dto.js";
 import { pageLimitRefusal, sendPageLimitExceeded } from "./bookPageLimit.js";
+import { seriesLinkFingerprint, seriesSnapshotForDraft, withBookSeries } from "./creationSeries.js";
 import { sendInsufficientCredits, sendMobileError } from "./httpErrors.js";
 import { aiWorkKindForTier, sendAiCapacityRefusal, speculativeWorkAllowed } from "./aiCapacity.js";
 import { ULTRA_TIER_UNAVAILABLE_MESSAGE, ultraTierRefused } from "./ultraTier.js";
@@ -315,7 +316,11 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       recommendation: selectedPresets
     };
 
-    const input = buildMobileCreateProjectInput({
+    // A series link is copied here, read live from the earlier book at this
+    // moment, for the reason the characters are: the new book stops depending
+    // on the earlier one from now on (`creationSeries.ts`).
+    const series = await seriesSnapshotForDraft(userId, draft);
+    const unlinkedInput = buildMobileCreateProjectInput({
       bookType: selectedPresets.bookType,
       bookTypeChoice: selectedPresets.bookTypeChoice,
       lengthPreset: selectedPresets.lengthPreset,
@@ -334,6 +339,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       creationPayload: finalPayload,
       advisor: finalAdvisor
     });
+    const input = withBookSeries(unlinkedInput, series);
     // Before planning is charged: a plan for a book this account may not have
     // written is spend for nothing. `input.targetPages` rather than the
     // resolved count, because a legacy draft that never resolved one still gets
@@ -354,7 +360,10 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       const started = await startGenerationAttempt({
         userId,
         commandKey: `mobile:creation-build:${draftId}:${buildRequestId}`,
-        requestFingerprint: fingerprintGenerationRequest({ draftId, buildRequestId, input }),
+        // The stored answer, never the copy: the copy is a live read of
+        // another book, and it is skipped on a retry of a build that already
+        // succeeded (the chat has built by then), which must still replay.
+        requestFingerprint: fingerprintGenerationRequest({ draftId, buildRequestId, input: unlinkedInput, ...seriesLinkFingerprint(draft) }),
         operation: "PLAN_GENERATION",
         quotedCredits: planQuote.credits,
         description: "Mobile plan generation",

@@ -407,6 +407,15 @@ at once:
 - **The checkout failure classes.** `PurchaseFailureReason` in
   `lib/features/billing/data/purchase_funnel_reporter.dart` spells `PURCHASE_FAILURE_REASONS` in
   `apps/api/src/productEventNames.ts`; the server refuses any other word.
+- **The series wire.** `BookSeriesMode` (`lib/features/projects/domain/book_series.dart`)
+  spells core's `SERIES_CHOICE_MODES` (`continuation`, `inspired`, `standalone`), which
+  `PUT …/creation-sessions/:id/series` and the start body's `series` accept; the session's
+  `series` is read by `MobileCreationSeries.fromJson`. An unknown mode reads as no answer, so a
+  newer server's mode reopens the offer rather than drawing a wrong one, and a server that sends
+  no `series` simply shows none. The answer's `seriesPresets` (`MobileCreationSeriesAnswer`) is
+  adopted only for the settings the reader has not chosen (`adoptSeriesFormat`), then every format
+  setting counts as chosen, as after a remix. An answer in flight is `isBusy`: it moves the
+  session's revision, so a message or a Build sent beside it would be refused as stale.
 - **The install referrer.** `parseInstallReferrer` reads what `playStoreUrl` in
   `apps/api/src/mobile/shares/sharePage.ts` writes (`utm_source=share&utm_content=<slug>`), checks
   the slug against `SHARE_SLUG_PATTERN`, and normalises each field to the server's

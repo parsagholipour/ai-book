@@ -16,6 +16,7 @@ import 'book_preview_section.dart';
 import 'book_stage.dart';
 import 'book_stage_cards.dart';
 import 'generation_progress_overview.dart';
+import 'next_book_card.dart';
 import 'plan_write_it_myself.dart';
 import 'project_export_panel.dart';
 
@@ -247,6 +248,15 @@ class BookScreenBody extends ConsumerWidget {
           key: const ValueKey('book-section-plan-summary'),
           plan: plan,
           onReport: onReportPlan == null ? null : () => onReportPlan!(plan),
+        ),
+
+      // A finished book the reader's own generation wrote can be continued:
+      // the same characters, world and look in a new chat. An author's own
+      // book is planned from text no model wrote, so the server refuses it.
+      if (finished && project != null && !authorManuscript)
+        NextBookCard(
+          key: const ValueKey('book-section-next-book'),
+          projectId: project.id,
         ),
 
       if (project != null && stage.hasManuscript)

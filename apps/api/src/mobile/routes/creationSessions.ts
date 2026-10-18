@@ -9,6 +9,7 @@ import { attachmentSourceRefs, hydrateSourceAttachments, submittedAttachments } 
 import { createSourceService } from "@book-maker/db";
 import { deleteCreationAttachmentDraftDir } from "../../attachmentStorage.js";
 import { registerMobileCreationAttachmentRoutes } from "./creationAttachments.js";
+import { registerMobileCreationSeriesRoutes } from "./creationSeries.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import {
   appendCreationMessage,
@@ -39,7 +40,7 @@ import {
   mobileCreationDraftOutputsInclude,
   persistedPresetsForTurn,
   sendCreationSessionConflict,
-  serializeCreationSession,
+  serializeCreationSessionForUser,
   updateCreationDraftCas,
   userTextFromMessages
 } from "../creationSessions.js";
@@ -69,6 +70,7 @@ import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { advisorSnapshotForStorage, createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuild.js";
+import { SERIES_BOOK_UNAVAILABLE_MESSAGE, seriesSourceBook } from "../creationSeries.js";
 import { pageLimitExceededError } from "../bookPageLimit.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
@@ -109,7 +111,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       const messages = conversationMessagesFromPayload(parsed.data);
       const turn = creationTurnForStoredDraft(draft, parsed.data, messages);
       return {
-        session: serializeCreationSession(draft, creationTreeFromPayload(parsed.data)),
+        session: await serializeCreationSessionForUser(auth.user.id, draft, creationTreeFromPayload(parsed.data)),
         turn
       } satisfies MobileCreationConversationResponseDto;
     }
@@ -138,7 +140,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       const messages = conversationMessagesFromPayload(parsed.data);
       const turn = creationTurnForStoredDraft(draft, parsed.data, messages);
       return {
-        session: serializeCreationSession(draft, creationTreeFromPayload(parsed.data)),
+        session: await serializeCreationSessionForUser(auth.user.id, draft, creationTreeFromPayload(parsed.data)),
         turn
       } satisfies MobileCreationConversationResponseDto;
     }
@@ -148,7 +150,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
     "/api/mobile/creation-sessions",
     {
       attachValidation: true,
-      schema: { tags: ["mobile"], body: mobileCreationSessionStartOpenApiBody, response: { 201: {}, 401: mobileAuthError } }
+      schema: { tags: ["mobile"], body: mobileCreationSessionStartOpenApiBody, response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError } }
     },
     withChatStreaming(async (request, reply, onAssistantText) => {
       const auth = await requireMobileAuth(request, reply);
@@ -170,11 +172,18 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
             await settleMessageUsage(auth.user.id, messageRequestKey("creation-start", parsedBody.data.requestId), true);
             const existingMessages = conversationMessagesFromPayload(existingPayload.data);
             return reply.code(201).send({
-              session: serializeCreationSession(existing, creationTreeFromPayload(existingPayload.data)),
+              session: await serializeCreationSessionForUser(auth.user.id, existing, creationTreeFromPayload(existingPayload.data)),
               turn: creationTurnForStoredDraft(existing, existingPayload.data, existingMessages)
             } satisfies MobileCreationConversationResponseDto);
           }
         }
+      }
+      // "Write the next book": refused before anything is spent, by the same
+      // check the offer's answer makes.
+      const seriesLink = parsedBody.data.series;
+      const seriesSource = seriesLink ? await seriesSourceBook(auth.user.id, seriesLink.projectId) : null;
+      if (seriesLink && !seriesSource) {
+        return sendMobileError(reply, 404, "SERIES_BOOK_NOT_FOUND", SERIES_BOOK_UNAVAILABLE_MESSAGE);
       }
       const greeting = greetingCreationTurn();
       const greetingMessages: MobileCreationMessage[] = [
@@ -270,6 +279,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           data: {
             ...(parsedBody.data.requestId ? { requestId: parsedBody.data.requestId } : {}),
             ...(originShareId ? { originShareId } : {}),
+            ...(seriesLink && seriesSource ? { seriesMode: seriesLink.mode, seriesSourceProjectId: seriesSource.id } : {}),
             userId: auth.user.id,
             status: "ACTIVE",
             payload: jsonInputValue(payload),
@@ -278,7 +288,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         }));
         reply.code(201);
         return {
-          session: serializeCreationSession(draft, messages),
+          session: await serializeCreationSessionForUser(auth.user.id, draft, messages),
           turn
         } satisfies MobileCreationConversationResponseDto;
       };
@@ -331,7 +341,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           await settleMessageUsage(auth.user.id, messageRequestKey(`creation:${id}`, parsedBody.data.requestId), true);
           const replayMessages = conversationMessagesFromPayload(parsedPayload.data);
           return {
-            session: serializeCreationSession(draft, creationTreeFromPayload(parsedPayload.data)),
+            session: await serializeCreationSessionForUser(auth.user.id, draft, creationTreeFromPayload(parsedPayload.data)),
             turn: creationTurnForStoredDraft(draft, parsedPayload.data, replayMessages)
           } satisfies MobileCreationConversationResponseDto;
         }
@@ -497,7 +507,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           return sendCreationSessionConflict(reply, auth.user.id, id);
         }
         return {
-          session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persisted.messages),
+          session: await serializeCreationSessionForUser(auth.user.id, { ...updated, outputs: draft.outputs }, persisted.messages),
           turn
         } satisfies MobileCreationConversationResponseDto;
       });
@@ -570,13 +580,14 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         return sendCreationSessionConflict(reply, auth.user.id, id);
       }
       return {
-        session: serializeCreationSession({ ...updated, outputs: draft.outputs }, switched),
+        session: await serializeCreationSessionForUser(auth.user.id, { ...updated, outputs: draft.outputs }, switched),
         turn
       } satisfies MobileCreationConversationResponseDto;
     }
   );
 
   await registerMobileCreationAttachmentRoutes(fastify, context);
+  registerMobileCreationSeriesRoutes(fastify);
 
   fastify.patch(
     "/api/mobile/creation-sessions/:id/archive",

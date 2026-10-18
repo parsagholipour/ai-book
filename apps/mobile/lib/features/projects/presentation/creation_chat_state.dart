@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../domain/book_series.dart';
 import '../domain/chat_reply_target.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
@@ -147,6 +148,9 @@ class CreationChatState {
     this.switchingBranchMessageId,
     this.replyTarget,
     this.remixSlug,
+    this.series,
+    this.pendingSeries,
+    this.seriesBusy = false,
   });
 
   final bool initializing;
@@ -210,6 +214,17 @@ class CreationChatState {
   /// so the draft records its origin; meaningless once there is a session.
   final String? remixSlug;
 
+  /// The session's series offer or answer (`creation_chat_series.dart`).
+  final MobileCreationSeries? series;
+
+  /// A series link chosen before there is a session — "Write the next book" —
+  /// sent with the request that starts it, like [remixSlug]; the session's own
+  /// [series] replaces it from then on.
+  final PendingBookSeries? pendingSeries;
+
+  /// An answer to the series offer is on its way to the server.
+  final bool seriesBusy;
+
   bool get hasSession => draftId != null;
 
   bool get switchingBranch => switchingBranchMessageId != null;
@@ -228,7 +243,9 @@ class CreationChatState {
   /// True from the Build tap until the plan is queued or the tap fails.
   bool get building => buildPhase != CreationBuildPhase.idle;
 
-  bool get isBusy => assistantTyping || building;
+  /// An answer to the series offer counts: it moves the session's revision,
+  /// so a message or a Build sent beside it would be refused as stale.
+  bool get isBusy => assistantTyping || building || seriesBusy;
 
   bool get canBuild => hasSession && readiness.canBuild && !isBusy;
 
@@ -273,6 +290,9 @@ class CreationChatState {
     Object? switchingBranchMessageId = _sentinel,
     Object? replyTarget = _sentinel,
     String? remixSlug,
+    Object? series = _sentinel,
+    Object? pendingSeries = _sentinel,
+    bool? seriesBusy,
   }) {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
@@ -324,6 +344,13 @@ class CreationChatState {
           ? this.replyTarget
           : replyTarget as ChatReplyTarget?,
       remixSlug: remixSlug ?? this.remixSlug,
+      series: series == _sentinel
+          ? this.series
+          : series as MobileCreationSeries?,
+      pendingSeries: pendingSeries == _sentinel
+          ? this.pendingSeries
+          : pendingSeries as PendingBookSeries?,
+      seriesBusy: seriesBusy ?? this.seriesBusy,
     );
   }
 

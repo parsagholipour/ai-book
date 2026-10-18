@@ -4,6 +4,7 @@ import '../../billing/data/billing_repository.dart';
 import '../../../shared/api/api_error.dart';
 import '../../sharing/domain/book_remix.dart';
 import '../data/creation_repository.dart';
+import '../domain/book_series.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 import 'chat_reply_quote.dart';
@@ -18,9 +19,10 @@ import 'pending_chat_sessions.dart';
 export 'creation_chat_state.dart';
 
 part 'creation_chat_controller_brief.dart';
+part 'creation_chat_controller_series.dart';
 
 class CreationChatController extends Notifier<CreationChatState>
-    with CreationChatBriefSetters {
+    with CreationChatBriefSetters, CreationChatSeriesActions {
   int _initRequestId = 0;
   int _messageRequestId = 0;
   int _nextOptimisticMessageId = 0;
@@ -32,7 +34,9 @@ class CreationChatController extends Notifier<CreationChatState>
   @override
   CreationChatState build() => const CreationChatState();
 
+  @override
   CreationRepository get _repository => ref.read(creationRepositoryProvider);
+  @override
   CreationConversationCache get _cache =>
       ref.read(creationConversationCacheProvider);
 
@@ -268,6 +272,7 @@ class CreationChatController extends Notifier<CreationChatState>
               mentionedCharacterIds: mentionedCharacterIds,
               requestId: serverRequestId,
               remixSlug: state.remixSlug,
+              series: state.pendingSeries,
             )
           : await _repository.sendConversationMessage(
               onAssistantText: onAssistantText,
@@ -468,6 +473,7 @@ class CreationChatController extends Notifier<CreationChatState>
                   : failed.mentionedCharacterIds,
               requestId: serverRequestId,
               remixSlug: state.remixSlug,
+              series: state.pendingSeries,
             )
           : await _repository.sendConversationMessage(
               onAssistantText: onAssistantText,
@@ -680,6 +686,7 @@ class CreationChatController extends Notifier<CreationChatState>
       final response = await _repository.startConversation(
         requestId: _newServerRequestId('session'),
         remixSlug: state.remixSlug,
+        series: state.pendingSeries,
       );
       cache.write(response);
       if (state.draftId == null) {
@@ -994,6 +1001,7 @@ class CreationChatController extends Notifier<CreationChatState>
     }
   }
 
+  @override
   void _applyConversation(
     MobileCreationConversationResponse response, {
     bool? initializing,
@@ -1073,6 +1081,9 @@ class CreationChatController extends Notifier<CreationChatState>
       language: applyDetectedLanguage ? detectedLanguage : null,
       pendingBuildRequest: allowBuildRequest && turn.buildRequested,
       initError: null,
+      // A session's own answer replaces a link chosen before it existed.
+      series: session == null ? state.series : session.series,
+      pendingSeries: session == null ? state.pendingSeries : null,
     );
     _lastSyncedPresets = turn.presets;
   }

@@ -1,5 +1,6 @@
 import type { ChatMessage } from "../adapters/types.js";
 import { buildContextPack } from "../context/contextPack.js";
+import { seriesWriterFields } from "./bookSeries.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload
@@ -118,6 +119,14 @@ export function pageDraftImagePromptGuidance(input: CreateProjectInput, pageInde
   ];
 }
 
+/** A continuation's earlier book, for the page writer: page 1 alone is shown how that book ended. */
+function pageSeriesFields(options: GeneratePageOptions) {
+  return seriesWriterFields(options.input, {
+    opening: options.pageIndex === 1,
+    mentionText: options.chapter ? `${options.chapter.title} ${options.chapter.summary}` : undefined
+  });
+}
+
 export function buildPageDraftSystemContent(
   options: GeneratePageOptions,
   extraSystemLines: string[] = []
@@ -172,6 +181,7 @@ export function buildPageDraftSystemContent(
     ...targetLanguageGenerationGuidance(options.input.language),
     ...writerToneRules(options.input),
     ...codeBlockRules(options.input, options.plan),
+    ...pageSeriesFields(options).rules,
     ...extraSystemLines
   ].join(" ");
 }
@@ -229,6 +239,7 @@ export function buildPageDraftUserPayload(options: GeneratePageOptions) {
       : options.pageBrief,
     ...citation.payload,
     pageScope: pageScopePayload(options),
+    ...pageSeriesFields(options).payload,
     characters: options.plan.characters,
     ...(pageGetsInteriorIllustration(options.input, options.pageIndex)
       ? { illustrationPlan: options.plan.illustrationPlan }

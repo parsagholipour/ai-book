@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../domain/book_series.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 
@@ -51,7 +52,19 @@ abstract interface class CreationRepository {
     List<String>? mentionedCharacterIds,
     String? requestId,
     String? remixSlug,
+    PendingBookSeries? series,
   });
+
+  /// Answers the series offer: link this chat's book to [projectId] as
+  /// [mode], or (standalone, no [projectId]) to nothing.
+  Future<MobileCreationSeriesAnswer> chooseSeries({
+    required String draftId,
+    required BookSeriesMode mode,
+    String? projectId,
+  });
+
+  /// A finished book's format, for a "Write the next book" chat to start from.
+  Future<BookSeriesStart> loadNextBook(String projectId);
 
   Future<MobileCreationConversationResponse> sendConversationMessage({
     void Function(String text)? onAssistantText,
@@ -256,10 +269,16 @@ class MobileCreationRepository implements CreationRepository {
     List<String>? mentionedCharacterIds,
     String? requestId,
     String? remixSlug,
+    PendingBookSeries? series,
   }) async {
     final data = await apiClient.postChatMap(
       '/api/mobile/creation-sessions',
       data: <String, dynamic>{
+        // A pre-session "separate story" is held so it can be changed back,
+        // and links nothing, so it is never sent.
+        'series': ?(series != null && series.mode.linksBook
+            ? series.toJson()
+            : null),
         'message': ?message,
         'presets': ?presets?.toJson(),
         'sourceNotes': ?sourceNotes,
@@ -310,6 +329,29 @@ class MobileCreationRepository implements CreationRepository {
       onAssistantText: onAssistantText,
     );
     return MobileCreationConversationResponse.fromJson(data);
+  }
+
+  @override
+  Future<MobileCreationSeriesAnswer> chooseSeries({
+    required String draftId,
+    required BookSeriesMode mode,
+    String? projectId,
+  }) async {
+    final response = await apiClient.putJson(
+      '/api/mobile/creation-sessions/$draftId/series',
+      data: <String, dynamic>{'mode': mode.wire, 'projectId': ?projectId},
+    );
+    return MobileCreationSeriesAnswer.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<BookSeriesStart> loadNextBook(String projectId) async {
+    final data = await apiClient.getMap(
+      '/api/mobile/projects/$projectId/next-book',
+    );
+    return BookSeriesStart.fromJson(data);
   }
 
   @override

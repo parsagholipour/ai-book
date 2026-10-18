@@ -46,6 +46,7 @@ import {
   normalizeProjectLanguage,
   parseBookMatter,
   planGenerationCreditCost,
+  storyPageDesignPreference,
   type ReplanSettings
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -392,6 +393,9 @@ export async function createReplanProjectCopy(options: {
   const settings = options.settings ?? {};
   const sourceMediaSettings = mediaSettingsWithReplanSettings(mediaSettingsSchema.parse(source.mediaSettings), settings);
   const mobileMetadata = jsonRecord(sourceMediaSettings.mobile);
+  // The schema strips a page design the reader chose or a series pinned, and
+  // a rebuild is the same book in the same dress.
+  const pageDesign = storyPageDesignPreference(source.mediaSettings);
   const copyMediaSettings = mediaSettingsSchema.parse({
     ...sourceMediaSettings,
     mobile: {
@@ -420,7 +424,7 @@ export async function createReplanProjectCopy(options: {
       complexity: source.complexity,
       temperature: source.temperature,
       language: targetLanguage ?? source.language,
-      mediaSettings: jsonInputValue(copyMediaSettings),
+      mediaSettings: jsonInputValue({ ...copyMediaSettings, ...(pageDesign ? { storyPageDesign: pageDesign } : {}) }),
       status: "EDITING",
       ...(source.templateId ? { templateId: source.templateId } : {})
     },

@@ -1,3 +1,4 @@
+import { seriesWriterFields } from "./bookSeries.js";
 import { pictureBookRequirementContract, WRITER_REQUIREMENT_SCOPE_GUIDANCE } from "./pictureBookRequirementContract.js";
 import { writerArtworkContext } from "./writerArtworkContext.js";
 import { PICTURE_BOOK_STORY_OBLIGATIONS, usesCompactPictureBookPlanning } from "./compactPictureBookPlanning.js";
@@ -245,6 +246,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
   // This pass always writes page 1, so it always owes page 1's opening contract
   // — including the hook the page map's first brief is written against.
   const opening = openingContractFields(options, "multiPageWriter", 1, options.input.targetPages);
+  const series = seriesWriterFields(options.input, { opening: true });
   const citation = citationContractFields(options.researchNotes);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-whole-book",
@@ -274,6 +276,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           "Every page must add distinct progression; do not repeat the same scene, explanation, decision, or emotional beat across pages.",
           ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
+          ...series.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input),
           ...codeBlockRules(options.input, options.plan)
@@ -311,6 +314,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
                 )
               : undefined,
             ...opening.payload,
+            ...series.payload,
             ...citation.payload,
             ...writerArtworkContext(options.input, options.plan),
             pageGuidance: {
@@ -338,6 +342,10 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
 export async function generateChapterDraft(options: GenerateChapterDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
   const opening = openingContractFields(options, "multiPageWriter", options.chapterPageStart, options.chapterPageEnd);
+  const series = seriesWriterFields(options.input, {
+    opening: options.chapterPageStart === 1,
+    mentionText: `${options.chapter.title} ${options.chapter.summary}`
+  });
   const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-chapter-draft",
@@ -359,6 +367,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
           ...READER_FACING_PAGE_BRIEF_RULES,
           ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
+          ...series.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input),
           ...codeBlockRules(options.input, options.plan)
@@ -384,6 +393,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
             chapter: options.chapter,
             chapterBrief: sanitizedChapterBriefForCitation(options.chapterBrief, options.researchNotes.slice(0, 18)),
             ...opening.payload,
+            ...series.payload,
             characters: options.plan.characters,
             ...writerArtworkContext(options.input, options.plan),
             pageRange: {
@@ -417,6 +427,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
 export async function generateBatchDraft(options: GenerateBatchDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.pageStart, options.pageEnd);
   const opening = openingContractFields(options, "multiPageWriter", options.pageStart, options.pageEnd);
+  const series = seriesWriterFields(options.input, { opening: options.pageStart === 1 });
   const citation = citationContractFields(options.researchNotes.slice(0, 18));
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-page-batch",
@@ -438,6 +449,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
           ...READER_FACING_PAGE_BRIEF_RULES,
           ...evidenceLedgerRules(options.input, options.plan, "writer"),
           ...opening.rules,
+          ...series.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input),
           ...codeBlockRules(options.input, options.plan)
@@ -469,6 +481,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
               sanitizePageBriefForCitationContract(page, options.researchNotes.slice(0, 18))
             ),
             ...opening.payload,
+            ...series.payload,
             previousPages: compactPriorPages(options.previousPages, 8, 900),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             ...citation.payload,

@@ -8,6 +8,7 @@ import 'package:tomeza/features/characters/domain/character_models.dart';
 import 'package:tomeza/features/projects/data/creation_prefs_store.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
+import 'package:tomeza/features/projects/domain/book_series.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/mention_chips_row.dart';
@@ -75,6 +76,7 @@ class MentionRecordingRepository extends ScriptedCreationRepository {
     String? requestId,
     List<String>? mentionedCharacterIds,
     String? remixSlug,
+    PendingBookSeries? series,
   }) {
     startedMentions.add(mentionedCharacterIds ?? const <String>[]);
     return super.startConversation(

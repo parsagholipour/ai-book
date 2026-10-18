@@ -23,7 +23,12 @@ const mocks = vi.hoisted(() => ({
   txPlanVersionUpdateMany: vi.fn(),
   txProjectUpdateMany: vi.fn(),
   enqueueWorkerJob: vi.fn(),
+  withSeriesEndingFacts: vi.fn(),
   strategy: { executionMode: "composed-chapters" as string }
+}));
+vi.mock("../generation/seriesEndingFacts.js", async () => ({
+  ...(await vi.importActual<typeof import("../generation/seriesEndingFacts.js")>("../generation/seriesEndingFacts.js")),
+  withSeriesEndingFacts: mocks.withSeriesEndingFacts
 }));
 vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorkerJob }));
 
@@ -151,6 +156,7 @@ function mockTransaction() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockTransaction();
+  mocks.withSeriesEndingFacts.mockImplementation(async (input: unknown) => input);
   mocks.txPlanVersionCreate.mockResolvedValue({ id: "plan-2" });
   mocks.txPlanVersionUpdateMany.mockResolvedValue({ count: 1 });
   mocks.txProjectUpdateMany.mockResolvedValue({ count: 1 });
@@ -541,6 +547,59 @@ describe("planBook", () => {
 
     await expect(planBook(planJob())).resolves.toBeDefined();
     consoleWarn.mockRestore();
+  });
+
+  describe("a sequel", () => {
+    const series = {
+      version: 1,
+      mode: "continuation",
+      sourceProjectId: "book-1",
+      sourceTitle: "The Night Garden",
+      seriesName: "The Night Garden",
+      premise: "Luna finds the lantern bridge.",
+      synopsis: ["Lost: Luna wanders off."],
+      characters: [],
+      locations: [],
+      continuityRules: [],
+      voiceGuide: [],
+      facts: [],
+      finalChapter: "Bram gave Luna the lantern."
+    };
+    const enriched = { ...series, finalChapter: undefined, endingFactsTaken: true, facts: [{ subject: "Luna", attribute: "carries", value: "the lantern" }] };
+    const sequelJob = () =>
+      ({
+        data: {
+          projectId: "project-1",
+          generationJobId: "gj-plan",
+          inputSnapshot: { ...inputSnapshot, mediaSettings: { ...inputSnapshot.mediaSettings, mobile: { series } } }
+        }
+      }) as unknown as Job;
+
+    it("plans from the ending's facts and writes them onto the live row", async () => {
+      mocks.withSeriesEndingFacts.mockImplementation(async (input: { mediaSettings: Record<string, unknown> }) => ({
+        ...input,
+        mediaSettings: { ...input.mediaSettings, mobile: { series: enriched } }
+      }));
+      mocks.prisma.project.findUnique.mockResolvedValue({
+        mediaSettings: { includeSources: true, storyPageDesign: "night", mobile: { characters: [{ id: "char-1" }], series } }
+      });
+
+      await planBook(sequelJob());
+
+      expect(mocks.createPlan.mock.calls[0]![0].input.mediaSettings.mobile.series).toMatchObject({ endingFactsTaken: true });
+      // Merged onto what the row holds, never the snapshot's settings over it.
+      expect(mocks.prisma.project.update.mock.calls[0]![0].data.mediaSettings).toEqual({
+        includeSources: true,
+        storyPageDesign: "night",
+        mobile: { characters: [{ id: "char-1" }], series: enriched }
+      });
+    });
+
+    it("writes nothing back when no facts were taken", async () => {
+      await planBook(sequelJob());
+
+      expect(mocks.prisma.project.update.mock.calls[0]![0].data).not.toHaveProperty("mediaSettings");
+    });
   });
 
   it("still propagates a user stop out of the embedding step", async () => {

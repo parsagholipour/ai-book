@@ -22,6 +22,7 @@ import 'package:tomeza/features/characters/presentation/character_profile_screen
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
+import 'package:tomeza/features/projects/domain/book_series.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
@@ -419,6 +420,20 @@ class _FakeCreationRepository
   }
 
   @override
+  Future<MobileCreationSeriesAnswer> chooseSeries({
+    required String draftId,
+    required BookSeriesMode mode,
+    String? projectId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<BookSeriesStart> loadNextBook(String projectId) async {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MobileCreationConversationResponse> startConversation({
     void Function(String text)? onAssistantText,
     String? message,
@@ -428,6 +443,7 @@ class _FakeCreationRepository
     String? requestId,
     List<String>? mentionedCharacterIds,
     String? remixSlug,
+    PendingBookSeries? series,
   }) async {
     return fakeCreationConversation(withSession: true);
   }

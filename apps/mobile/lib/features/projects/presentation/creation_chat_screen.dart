@@ -40,6 +40,7 @@ import '../../characters/domain/library_mentions.dart';
 import '../../characters/presentation/character_avatar.dart';
 import '../../characters/presentation/character_library_screen.dart';
 import '../../sharing/domain/book_remix.dart';
+import '../domain/book_series.dart';
 import '../../studio/presentation/start_writing_sheet.dart';
 import '../data/creation_prefs_store.dart';
 import '../data/project_snapshot_cache.dart';
@@ -111,6 +112,7 @@ part 'creation_chat_welcome.dart';
 part 'creation_chat_bubble_chrome.dart';
 part 'creation_chat_jump_latest.dart';
 part 'creation_chat_start.dart';
+part 'creation_chat_series.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({
@@ -119,6 +121,7 @@ class CreationChatScreen extends ConsumerStatefulWidget {
     this.draftId,
     this.resetToken,
     this.remix,
+    this.seriesStart,
   });
 
   final bool startFresh;
@@ -127,6 +130,10 @@ class CreationChatScreen extends ConsumerStatefulWidget {
   /// A shared book's format to start this new chat from ("Make a book like
   /// this"): its presets applied and the composer's first line written.
   final BookRemix? remix;
+
+  /// "Write the next book": a finished book this new chat continues, its
+  /// format applied and the link held until the first message is sent.
+  final BookSeriesStart? seriesStart;
 
   /// A per-navigation nonce carried from [newBookChatLocation]. `startFresh`
   /// and `draftId` alone are `true`/`null` on every "New book" tap, so
@@ -195,7 +202,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     if (oldWidget.startFresh == widget.startFresh &&
         oldWidget.draftId == widget.draftId &&
         oldWidget.resetToken == widget.resetToken &&
-        identical(oldWidget.remix, widget.remix)) {
+        identical(oldWidget.remix, widget.remix) &&
+        identical(oldWidget.seriesStart, widget.seriesStart)) {
       return;
     }
     _resetLocalConversationState();
@@ -611,6 +619,19 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       // registered, or silently de-registered — which is how a
                       // book came to invent its own version of a saved
                       // character with nothing on screen to warn anyone.
+                      // Before the book exists only: once it is built the
+                      // link is the book's, and the server stops sending it.
+                      if (!isInOutputStage)
+                        _SeriesStrip(
+                          // A chat of its own: an open Change or a picked
+                          // book is never carried into another chat.
+                          key: ValueKey('series-strip-${state.draftId}'),
+                          series: state.series,
+                          pending: state.pendingSeries,
+                          // A message or a Build in flight holds the answer
+                          // too: answering moves the session's revision.
+                          busy: state.isBusy,
+                        ),
                       MentionChipsRow(mentions: _attachedMentions),
                       // Above whichever footer is active: the same composer
                       // serves both stages, so one strip serves both too.

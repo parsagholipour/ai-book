@@ -353,6 +353,28 @@ describe("mobile project chat book replan", () => {
     await app.close();
   });
 
+  it("keeps the page design the source book wears on the rebuilt copy", async () => {
+    // The media-settings schema strips the key, and a series pins it there.
+    mockAccessTokens({ "token-a": "user-a" });
+    const source = projectRecord({
+      id: "project-1",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      currentPlan: approvedPlanRecord(),
+      pages: generatedPages()
+    });
+    mockPrisma.project.findFirst.mockResolvedValue({ ...source, mediaSettings: { ...(source.mediaSettings as object), storyPageDesign: "night" } });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-replan", projectId: "project-copy", type: "REPLAN_BOOK" }));
+    const app = await buildMobileApp();
+    for (const message of ["It's too much talking. I think we should make it 3 pages without illustrations", "apply it"]) {
+      const response = await app.inject({ method: "POST", url: "/api/mobile/projects/project-1/chat/messages", headers: bearer("token-a"), payload: { message } });
+      expect(response.statusCode).toBe(200);
+    }
+
+    expect(mockPrisma.project.create.mock.calls.at(-1)![0].data.mediaSettings).toMatchObject({ storyPageDesign: "night" });
+    await app.close();
+  });
+
   it("proposes a completed-book English language version as a new copy", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(

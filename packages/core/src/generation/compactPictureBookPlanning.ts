@@ -12,6 +12,7 @@ import { decodeGeneratedChapterBrief } from "./generatedChapterBriefAcceptance.j
 import { targetLanguageGenerationGuidance } from "../prompting/language.js";
 import { kidsReadingGuidanceLines } from "../prompting/readingLevel.js";
 import { planLibraryCharacterGuidance } from "./planLibraryCharacters.js";
+import { bookSeriesFromMediaSettings, planSeriesGuidance, withoutBookSeriesRecord } from "./bookSeries.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { REAL_PEOPLE_KEEP_THEIR_NAMES_RULE } from "./realPeople.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
@@ -70,8 +71,9 @@ export function compactPictureBookPlanMessages(input: CreateProjectInput, storyF
     "In continuityRules, record one compact arc contract per protagonist whose growth is requested: initial limitation -> difficult choice -> changed action, naming concrete story moments. Establish the limitation early enough to affect events; do not introduce and resolve it together near the ending. Show requested traits through choices and dialogue. Add compact prop-state and clue contracts when relevant: initial inventory -> transfers -> final state; observed comparison -> useful inference -> next action. Use these instead of generic reminders; stay within the existing plan budget.",
     FINAL_PAGE_OBLIGATION_GUIDANCE,
     ...PICTURE_BOOK_STORY_OBLIGATIONS, ...targetLanguageGenerationGuidance(input.language), ...kidsReadingGuidanceLines(input),
+    ...planSeriesGuidance(bookSeriesFromMediaSettings(input.mediaSettings)),
     ...planLibraryCharacterGuidance(libraryCharactersFromMediaSettings(input.mediaSettings))
-  ].join(" ") }, { role: "user" as const, content: JSON.stringify({ userInput: input }) }];
+  ].join(" ") }, { role: "user" as const, content: JSON.stringify({ userInput: withoutBookSeriesRecord(input) }) }];
 }
 
 type ChapterRange = { chapter: ChapterPlan; startPage: number; endPage: number };

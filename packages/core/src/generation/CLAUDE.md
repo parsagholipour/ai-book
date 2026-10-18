@@ -77,6 +77,7 @@ holds the event loop open and vitest will never exit.
 - [Export provenance and scratch files](#export-provenance-and-scratch-files)
 - [Chapter apparatus](#chapter-apparatus)
 - [Library characters](#library-characters)
+- [Book series](#book-series)
 - [Character reference selection](#character-reference-selection)
 
 ## Composed chapters
@@ -1832,6 +1833,48 @@ again before deleting. Cleanup is single-flight; shutdown stops it before closin
   **only**, and `revisePlanningPackage` serialized no `userInput` and no `mediaSettings` at all, so
   any "make it shorter" after approval re-decided the saved character against nothing. Arrays merge
   as atomic replacements, so whatever came back won.
+
+## Book series
+
+- **A continuation's writers get the earlier book's facts in every chapter and its ending only in
+  the opening, never its text; the planner gets the record its mode allows, and an inspired
+  book's has no plot.** `bookSeries.ts` reads the snapshot the API copied at Build
+  (`mediaSettings.mobile.series`). `planSeriesGuidance` puts the record inline in all four planner
+  prompts (create, quick, compact picture book, revise), just before the library rules so a saved
+  character's own record speaks last, and `userInput` drops the record (`withoutBookSeriesRecord`)
+  so it is not sent twice. For a continuation, a short book (≤ 9,000 characters) travels whole; a
+  longer one as its chapter synopsis, the ledger's facts and the last 2,400 characters. An
+  inspired book's record is the world — cast, places, rules, voice, style — and never what
+  happened: its synopsis is not even copied (`buildBookSeriesSnapshot`), because a planner shown
+  the plot of "a new story in its world" retells it. `seriesWriterFields` gives every writer of a continuation — composed chapter,
+  page, whole-book, chapter and batch — `previousBook.facts` (≤ 2,500 characters, under
+  `SERIES_WRITER_RULE`), and only the call that writes page 1 `previousBook.ending`. An inspired
+  book's writers get nothing beyond the plan and the prompt's `Series:` line. Every other book's
+  prompts are byte-identical. Unmeasured: handing writers earlier text inside one book lost on
+  taste (E7), so the ending is deliberately the only text a writer sees, and a blind measurement
+  of sequel openings and recap belongs before anything is added.
+- **The earlier book's style and a returning character's look are held on the first plan; a
+  revision keeps them unless the reader asks to change them.** `reconcilePlanSeries` sets
+  `illustrationPlan.globalStyle` to the earlier book's (recorded only when a model drew its
+  pictures) and a matching character's `visualRules` to the earlier book's, by folded exact name,
+  after the first plan's parse (`createPlanningPackage`, both paths), and runs before
+  `reconcilePlanLibraryCharacters`, so a library character's recorded appearance still wins.
+  `revisePlanningPackage` holds nothing: its guidance (`planSeriesGuidance(…, { revision: true })`)
+  tells the reviser to keep both "unless the user's message asks to change them", because a hold
+  after every parse reverted the one revision a reader asked for ("make the pictures watercolour",
+  "give Bram a red scarf").
+  Pixel continuity for a returning character who is not in the library is not carried: their sheet
+  is redrawn from the same words and style, never from the earlier book's sheet.
+- **The earlier book's last chapter is read once, by the plan job, because the ledger never takes
+  a book's last chapter.** E6b's continuation regressions were facts the ending had changed.
+  `withSeriesEndingFacts` (worker `generation/seriesEndingFacts.ts`) runs `extractChapterFacts`
+  over `finalChapter` before planning, appends the facts, drops the text and sets
+  `endingFactsTaken`, so the plan version's input snapshot carries them to every later job, and
+  the plan job merges the enriched record onto the book's row too (`newlyTakenSeriesEndingFacts`),
+  so a chat rebuild, which copies the row, does not pay to read that chapter again; a failed read
+  plans from the facts it has, and a stop travels. A designed cover reuses the earlier
+  book's design (`coverDesignSelectedBy: "series"`), and a design no longer in the catalog falls
+  back to the selector.
 
 ## Character reference selection
 
