@@ -1055,6 +1055,14 @@ Caddyfile with `caddy validate` without starting Caddy (so it never contacts
 Let's Encrypt), and removes only its own test volumes. `docker-compose.yml`
 remains the development stack and has no Caddy service.
 
+MinIO's public Quay and Docker Hub images are no longer anonymously pullable.
+Both development and CI build `deploy/minio/Dockerfile` from pinned official
+MinIO and `mc` source commits. GitHub Actions caches that build and loads it into
+the runner as `book-maker-minio:smoke`; the smoke test uses `MINIO_IMAGE` without
+pulling it. A standalone smoke test builds the image itself when `MINIO_IMAGE`
+is unset. No MinIO image is deployed to EC2, which uses AWS S3. See the upstream
+[source-build instructions](https://github.com/minio/minio#source-only-distribution).
+
 References: [SSM Run Command](https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html),
 [AMIs with SSM Agent](https://docs.aws.amazon.com/systems-manager/latest/userguide/ami-preinstalled-agent.html),
 and [Compose service readiness](https://docs.docker.com/compose/how-tos/startup-order/).

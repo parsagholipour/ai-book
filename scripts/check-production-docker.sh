@@ -7,6 +7,13 @@ set -euo pipefail
 export APP_IMAGE WEB_IMAGE
 export S3_BUCKET=book-maker-smoke S3_REGION=us-east-1
 repo_dir=$(cd "$(dirname "$0")/.." && pwd)
+# CI supplies its cached, locally loaded image. Standalone runs build the same
+# Dockerfile rather than relying on MinIO's withdrawn public registry images.
+if [[ -z "${MINIO_IMAGE:-}" ]]; then
+  MINIO_IMAGE=book-maker-minio:local
+  docker build --tag "$MINIO_IMAGE" "$repo_dir/deploy/minio"
+fi
+export MINIO_IMAGE
 smoke_dir=$(mktemp -d)
 project="book-maker-smoke-${GITHUB_RUN_ID:-$$}"
 # The Compose file mounts ./deploy/Caddyfile relative to the project directory.
@@ -40,7 +47,8 @@ ENV
 cat > "$smoke_dir/override.yml" <<'YAML'
 services:
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: ${MINIO_IMAGE:?Set MINIO_IMAGE}
+    pull_policy: never
     command: [server, /data]
     environment:
       MINIO_ROOT_USER: bookmaker
@@ -51,7 +59,8 @@ services:
       timeout: 5s
       retries: 30
   minio-init:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: ${MINIO_IMAGE:?Set MINIO_IMAGE}
+    pull_policy: never
     entrypoint: [/bin/sh, -ec]
     command:
       - |
