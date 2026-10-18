@@ -998,7 +998,10 @@ curl -s http://127.0.0.1/api/ready        # which readiness check is failing, if
 `images.env` contains image digests and the non-secret S3 bucket/region. Do not source the application `.env` as
 a shell script. If deployment fails before a `current` link exists, use the release
 directory printed in the SSM command. The GitHub job prints the SSM command ID and
-the final command output for diagnosis.
+the last 22 KB of the combined installer/deployment log for diagnosis. The full
+log remains in that release directory as `deployment.log`, readable only by
+root, so Docker pull progress cannot hide the final error behind SSM's output
+limits.
 
 ### Full root filesystem / SSM worker timeout
 

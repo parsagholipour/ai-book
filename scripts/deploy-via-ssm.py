@@ -19,6 +19,23 @@ def aws(*args):
     return json.loads(result.stdout)
 
 
+def deployment_command(release, encoded, args):
+    return "\n".join([
+        "set -eu", "umask 077", f"mkdir -p {shlex.quote(release)}",
+        f"cd {shlex.quote(release)}",
+        f"printf %s {shlex.quote(encoded)} | base64 -d | tar -xz",
+        # SSM keeps only the first 24 KB of stdout and 8 KB of stderr. Compose
+        # pull progress filled stderr and hid the deployment's actual failure.
+        # Keep the full private log on the host and return its tail on stdout.
+        "set +e", "(", "set -e",
+        "bash scripts/install-production-docker.sh",
+        "bash scripts/deploy-production.sh " + shlex.join(args),
+        ") > deployment.log 2>&1", "status=$?",
+        "printf 'Deployment log (last 22000 bytes; full log: %s/deployment.log):\\n' \"$PWD\"",
+        "tail -c 22000 deployment.log", 'exit "$status"',
+    ])
+
+
 def main():
     instance = os.environ["INSTANCE_ID"]
     # IAM attachment/SSM registration can lag the successful Terraform apply.
@@ -40,13 +57,7 @@ def main():
     release = "/opt/book-maker/releases/" + os.environ["RELEASE_ID"]
     args = [os.environ[name] for name in
             ["AWS_REGION", "ENV_PARAMETER", "APP_IMAGE", "WEB_IMAGE", "S3_BUCKET"]]
-    command = "\n".join([
-        "set -eu", "umask 077", f"mkdir -p {shlex.quote(release)}",
-        f"cd {shlex.quote(release)}",
-        f"printf %s {shlex.quote(encoded)} | base64 -d | tar -xz",
-        "bash scripts/install-production-docker.sh",
-        "bash scripts/deploy-production.sh " + shlex.join(args),
-    ])
+    command = deployment_command(release, encoded, args)
     result = aws("ssm", "send-command", "--instance-ids", instance,
                  "--document-name", "AWS-RunShellScript", "--timeout-seconds", "600",
                  "--parameters", json.dumps({"commands": [command], "executionTimeout": ["1800"]}))
