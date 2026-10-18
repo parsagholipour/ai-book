@@ -318,6 +318,9 @@ async function generateOwnedReplannedBook(options: {
       plan: options.plan,
       chapter: setup.chapter,
       chapterBrief: setup.brief,
+      // The prompt's pageScope lists only the neighbours' beats; without its own
+      // a page guesses one and restages a neighbour's (2026-10-18).
+      pageBrief: pageBriefFor(setup, pageIndex),
       pageIndex,
       editInstruction: options.editInstruction,
       ...(options.characterContext ? { characterContext: options.characterContext } : {}),
@@ -378,6 +381,10 @@ async function generateOwnedReplannedBook(options: {
   });
   await options.assertLease();
   return publishReplannedBook({ ...options, candidates, setups, preparedMemory, audit });
+}
+
+function pageBriefFor(setup: ChapterSetup, pageIndex: number) {
+  return setup.brief?.pages.find((brief) => brief.pageIndex === pageIndex);
 }
 
 function resolveCandidateSourceProjectId(options: {
@@ -538,6 +545,7 @@ async function repairReplanCandidates(options: {
           plan: options.plan,
           chapter: candidate.setup.chapter,
           chapterBrief: candidate.setup.brief,
+          pageBrief: pageBriefFor(candidate.setup, candidate.pageIndex),
           pageIndex: candidate.pageIndex,
           draft:
             rewrite.prose === candidate.draft.markdown

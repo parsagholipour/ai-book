@@ -469,4 +469,36 @@ describe("replanned book story state", () => {
     expect(briefed).toHaveLength(2);
     expect(briefed[1]).toEqual(briefed[0]);
   });
+
+  it("drafts and repairs each page against its own production beat", async () => {
+    // pageScope carries only the neighbours' beats, so a page drafted without
+    // its own guessed one and restaged a neighbour's: a 16-page picture book
+    // printed "The Moon's Silver Seat" twice and failed adherence (2026-10-18).
+    const beat = (pageIndex: number) => ({
+      pageIndex,
+      chapterIndex: 1,
+      purpose: `Purpose ${pageIndex}`,
+      beat: `Beat ${pageIndex}`,
+      requiredContinuity: [],
+      endingPressure: `Pressure ${pageIndex}`
+    });
+    mocks.prepareChapterSetups.mockResolvedValue([
+      { chapter: plan.chapters[0], startPage: 1, endPage: 2, brief: { pages: [beat(1), beat(2)] } }
+    ]);
+    mocks.reviewAppliedBookEdit.mockResolvedValueOnce({
+      satisfied: false,
+      confidence: 0.8,
+      missingRequirements: ["Page 2 repeats page 1."],
+      contradictions: [],
+      pageIndexesToRevise: [2]
+    });
+
+    await generateReplannedBook(options());
+
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(expect.objectContaining({ pageIndex: 1, pageBrief: beat(1) }));
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(expect.objectContaining({ pageIndex: 2, pageBrief: beat(2) }));
+    expect(mocks.revisePageDraftWithRestart).toHaveBeenCalledWith(
+      expect.objectContaining({ reviseOptions: expect.objectContaining({ pageIndex: 2, pageBrief: beat(2) }) })
+    );
+  });
 });
