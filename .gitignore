@@ -80,3 +80,5 @@ terraform.tfvars.json
 *.auto.tfvars
 *.auto.tfvars.json
 .env.production
+# Generated release bundle, copied into the web image by CI.
+/deploy/flutter-web/

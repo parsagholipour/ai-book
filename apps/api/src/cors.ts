@@ -17,13 +17,16 @@ export const CORS_OPTIONS = {
 } satisfies FastifyCorsOptions;
 
 /**
- * In production the console is served from the API's own origin through the
- * edge, and the app is not a browser, so no other origin needs credentialed
- * access. `origin: true` reflected any origin with the operator cookie allowed.
+ * The Flutter web app also loads absolute asset URLs published by the API.
+ * Allow its exact HTTPS origin; never reflect arbitrary browser origins.
  */
 export function corsOptionsFor(config: Pick<AppConfig, "NODE_ENV" | "PUBLIC_API_URL">): FastifyCorsOptions {
   if (config.NODE_ENV !== "production") {
     return CORS_OPTIONS;
   }
-  return { ...CORS_OPTIONS, origin: [new URL(config.PUBLIC_API_URL).origin] };
+  return {
+    ...CORS_OPTIONS,
+    origin: [new URL(config.PUBLIC_API_URL).origin, "https://app.tomeza.ravanix.app"],
+    exposedHeaders: ["X-Export-Provenance", "X-Export-Content-Digest", "X-Export-Content-Revision", "Retry-After"]
+  };
 }

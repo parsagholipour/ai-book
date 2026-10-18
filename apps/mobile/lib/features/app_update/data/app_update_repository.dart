@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_client.dart';
+import '../../../shared/storage/app_files.dart';
 import '../domain/app_update.dart';
 
 /// Never throws: a build the platform cannot name is one the server never gates.
@@ -127,11 +127,11 @@ class FileAppUpdatePromptStore implements AppUpdatePromptStore {
 
   Future<File> _file() async {
     final root = _resolved ??= await getApplicationDocumentsDirectory();
-    final directory = Directory('${root.path}/$directoryName');
+    final directory = appDirectory('${root.path}/$directoryName');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
-    return File('${directory.path}/$filename');
+    return appFile('${directory.path}/$filename');
   }
 }
 

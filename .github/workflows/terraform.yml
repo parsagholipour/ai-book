@@ -1,6 +1,6 @@
 # PR:  terraform fmt → validate → plan  (commented on the PR)
 # merge to master: terraform apply → build/smoke test Docker images → deploy to EC2
-#   (not for a push that changes only docs, the mobile app or Markdown; see paths-ignore)
+#   (not for a push that changes only docs or Markdown; see paths-ignore)
 #
 # Repo secrets required:
 #   AWS_ACCESS_KEY_ID
@@ -26,14 +26,13 @@ on:
   push:
     branches: [master]
     # Every deploy is a short outage (docs/deployment.md, "Release behavior"),
-    # and none of these reach an image or the infrastructure: the Dockerfile's
-    # .dockerignore drops docs/, apps/mobile/, .scratch/ and .claude/, and no
-    # deployed code reads a Markdown file. A push is skipped only when *every*
+    # and none of these reach an image or the infrastructure. Flutter sources
+    # are built separately and their web output is included in the web image.
+    # A push is skipped only when *every*
     # file it changes matches; one that also touches anything else applies and
     # deploys as before. Actions → Terraform → Run workflow deploys by hand.
     paths-ignore:
       - "docs/**"
-      - "apps/mobile/**"
       - ".scratch/**"
       - ".claude/**"
       - "**/*.md"

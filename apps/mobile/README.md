@@ -83,3 +83,21 @@ flutter build appbundle --release \
 ```
 
 A release build refuses to run without the upload key in `android/key.properties`; `flutter run --release` on a machine without it needs `-P allowDebugSigning=true`. Creating the key, building the Play bundle (`make mobile-build-release`) and Play App Signing are in [CLAUDE.md](CLAUDE.md), "Release signing".
+
+## Web deployment
+
+The web app runs at **https://app.tomeza.ravanix.app** on the existing AWS EC2
+stack. From the repository root, run `bash scripts/build-flutter-web.sh` to build
+and stage the production web bundle; CI does this before building the Nginx
+image. See [deployment](../../docs/deployment.md#flutter-web-app).
+
+Browser storage keeps small JSON preferences/drafts/markup; PDF and audio caches
+last for the current tab. Purchases and live voice calls require the Android
+app. Email sign-in and existing account credits/books work in the browser;
+Google sign-in and push notifications currently remain native-only.
+
+Run the browser storage regression suite with:
+
+```sh
+flutter test --platform chrome test/web/browser_storage_test.dart
+```

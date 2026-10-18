@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/storage/app_files.dart';
 import '../domain/project_models.dart';
 
 /// What the phone keeps so a reader with no connection can still find their
@@ -120,12 +120,12 @@ class FileOfflineLibraryStore implements OfflineLibraryStore {
   Future<Directory> _directory() async {
     final root =
         _override ?? (_resolved ??= await getApplicationDocumentsDirectory());
-    return Directory('${root.path}/$directoryName');
+    return appDirectory('${root.path}/$directoryName');
   }
 
   Future<File> _statusFile(String projectId) async {
     final directory = await _directory();
-    return File('${directory.path}/status/${_segment(projectId)}.json');
+    return appFile('${directory.path}/status/${_segment(projectId)}.json');
   }
 
   @override
@@ -139,7 +139,7 @@ class FileOfflineLibraryStore implements OfflineLibraryStore {
     try {
       final directory = await _directory();
       if (written != _epoch) return;
-      await _write(File('${directory.path}/$libraryFilename'), {
+      await _write(appFile('${directory.path}/$libraryFilename'), {
         'savedAt': DateTime.now().toUtc().toIso8601String(),
         'projects': [for (final book in books) book.payload],
       }, written);
@@ -152,7 +152,7 @@ class FileOfflineLibraryStore implements OfflineLibraryStore {
   Future<OfflineLibrary?> loadLibrary() async {
     try {
       final directory = await _directory();
-      final json = await _read(File('${directory.path}/$libraryFilename'));
+      final json = await _read(appFile('${directory.path}/$libraryFilename'));
       if (json == null) return null;
       final savedAt = DateTime.tryParse(json['savedAt'] as String? ?? '');
       final projects = json['projects'];
@@ -233,7 +233,7 @@ class FileOfflineLibraryStore implements OfflineLibraryStore {
   /// the previous copy rather than half of a new one.
   Future<void> _write(File file, Map<String, dynamic> json, int epoch) async {
     await file.parent.create(recursive: true);
-    final partial = File('${file.path}.part');
+    final partial = appFile('${file.path}.part');
     await partial.writeAsString(jsonEncode(json), flush: true);
     if (epoch != _epoch) {
       await partial.delete();

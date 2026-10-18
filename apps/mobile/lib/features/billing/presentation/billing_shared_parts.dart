@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
@@ -61,6 +62,14 @@ class BillingStorePricesNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return const AppInlineNotice(
+        tone: AppTone.info,
+        icon: Icons.phone_android,
+        title: 'Purchases are available in the Android app',
+        message: 'Sign in to Tomeza on Android to add credits or change your plan. Your credits and books work here too.',
+      );
+    }
     return AppInlineNotice(
       key: const ValueKey('billing-store-prices-notice'),
       tone: AppTone.warning,

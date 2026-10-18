@@ -5,8 +5,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
-import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
@@ -552,6 +552,7 @@ class DebugStoreBillingClient implements StoreBillingClient {
 }
 
 final storeBillingClientProvider = Provider<StoreBillingClient>((ref) {
+  if (kIsWeb) return const BrowserStoreBillingClient();
   final config = ref.watch(appConfigProvider);
   if (config.environment == AppEnvironment.local) {
     final client = DebugStoreBillingClient();
@@ -652,4 +653,28 @@ SubscriptionOfferDetailsWrapper? _offerDetails(GooglePlayProductDetails entry) {
   final offers = entry.productDetails.subscriptionOfferDetails;
   if (index == null || offers == null || index >= offers.length) return null;
   return offers[index];
+}
+
+/// Google Play has no browser checkout. Existing account credits still work.
+class BrowserStoreBillingClient implements StoreBillingClient {
+  const BrowserStoreBillingClient();
+  @override
+  Stream<List<StorePurchaseUpdate>> get purchaseUpdates => const Stream.empty();
+  @override
+  Future<bool> isAvailable() async => false;
+  @override
+  Future<StoreProductQueryResult> queryProducts(Set<String> productIds) async =>
+      StoreProductQueryResult(products: const [], notFoundIds: productIds.toList(),
+          error: 'Purchases are available in the Tomeza Android app.');
+  @override
+  Future<void> buyProduct(StoreProduct product, {required bool consumable,
+      required String purchaseAccountId, StoreSubscriptionCheckout? subscription}) async {
+    throw UnsupportedError('Purchases are available in the Tomeza Android app.');
+  }
+  @override
+  Future<void> restorePurchases() async {}
+  @override
+  Future<List<StorePurchaseUpdate>> queryOwnedPurchases() async => const [];
+  @override
+  Future<void> finishPurchase(StorePurchaseUpdate purchase, {required bool consumable}) async {}
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -31,7 +32,11 @@ abstract interface class AudiobookPlayer {
   int? get currentIndex;
 
   /// Replaces the queue. Only ever called with chapters that are downloaded.
-  Future<void> setQueue(List<AudiobookTrack> tracks, {int initialIndex, Duration initialPosition});
+  Future<void> setQueue(
+    List<AudiobookTrack> tracks, {
+    int initialIndex,
+    Duration initialPosition,
+  });
 
   /// Appends newly finished chapters without interrupting playback.
   Future<void> appendTracks(List<AudiobookTrack> tracks);
@@ -95,8 +100,9 @@ class JustAudioAudiobookPlayer implements AudiobookPlayer {
       .distinct();
 
   @override
-  Stream<void> get completedStream => _player.playerStateStream
-      .where((state) => state.processingState == ProcessingState.completed);
+  Stream<void> get completedStream => _player.playerStateStream.where(
+    (state) => state.processingState == ProcessingState.completed,
+  );
 
   @override
   bool get playing => _isPlaying(_player.playerState);
@@ -136,7 +142,9 @@ class JustAudioAudiobookPlayer implements AudiobookPlayer {
       return;
     }
     _tracks.addAll(tracks);
-    await _player.addAudioSources(tracks.map(_sourceFor).toList(growable: false));
+    await _player.addAudioSources(
+      tracks.map(_sourceFor).toList(growable: false),
+    );
   }
 
   @override
@@ -159,14 +167,14 @@ class JustAudioAudiobookPlayer implements AudiobookPlayer {
   /// `file://` URI because the media session fetches it without our auth
   /// headers.
   AudioSource _sourceFor(AudiobookTrack track) {
-    return AudioSource.file(
-      track.file.path,
+    return AudioSource.uri(
+      kIsWeb ? Uri.dataFromBytes(track.file.readAsBytesSync(), mimeType: 'audio/mpeg') : Uri.file(track.file.path),
       tag: MediaItem(
         id: track.id,
         title: track.chapterTitle,
         album: track.bookTitle,
         artist: 'Narrated by ${track.narratorName}',
-        artUri: track.artFile == null ? null : Uri.file(track.artFile!.path),
+        artUri: track.artFile == null ? null : (kIsWeb ? Uri.dataFromBytes(track.artFile!.readAsBytesSync(), mimeType: 'image/jpeg') : Uri.file(track.artFile!.path)),
       ),
     );
   }

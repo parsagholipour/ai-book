@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/storage/file_transfer.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
@@ -265,7 +266,7 @@ Future<bool> downloadProjectExport({
       ShareParams(
         title: file.filename,
         subject: file.filename,
-        files: [XFile(file.path, mimeType: export.contentType)],
+        files: [shareableFile(file.path, mimeType: export.contentType)],
         fileNameOverrides: [file.filename],
       ),
     );

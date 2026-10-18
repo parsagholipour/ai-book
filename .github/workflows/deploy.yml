@@ -37,6 +37,20 @@ jobs:
       web_image: ${{ inputs.web_repository }}@${{ steps.web.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - name: Build Flutter web app
+        run: bash scripts/build-flutter-web.sh
+      - name: Verify Flutter browser adapters
+        working-directory: apps/mobile
+        env:
+          CHROME_EXECUTABLE: /usr/bin/google-chrome
+        run: |
+          flutter analyze --no-pub
+          flutter test --no-pub --platform chrome test/web/browser_storage_test.dart test/api/streaming_browser_adapter_test.dart
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}

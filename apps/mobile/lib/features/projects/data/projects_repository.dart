@@ -2,15 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/api/export_provenance.dart';
 import '../../../shared/lifecycle/app_resume_signal.dart';
+import '../../../shared/storage/app_files.dart';
+import '../../../shared/storage/file_transfer.dart';
 import '../domain/project_models.dart';
 import 'export_repair_watch.dart';
 import 'offline_library_store.dart';
@@ -564,7 +566,7 @@ class MobileProjectsRepository implements ProjectsRepository {
       RegExp(r'[^A-Za-z0-9._-]+'),
       '-',
     );
-    final exportDirectory = Directory(
+    final exportDirectory = appDirectory(
       '${directory.path}/tomeza_exports/$safeProjectId',
     );
     if (!await exportDirectory.exists()) {
@@ -572,7 +574,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     }
     final filename = _safeLocalFilename(export.filename, export.format);
     final path = '${exportDirectory.path}/$filename';
-    final partial = File('$path.part');
+    final partial = appFile('$path.part');
     if (await partial.exists()) {
       await partial.delete();
     }
@@ -587,7 +589,7 @@ class MobileProjectsRepository implements ProjectsRepository {
         received: received,
         byteSize: byteSize,
       );
-      final existing = File(path);
+      final existing = appFile(path);
       if (await existing.exists()) {
         await existing.delete();
       }
@@ -611,6 +613,11 @@ class MobileProjectsRepository implements ProjectsRepository {
     required MobileExportAvailability export,
   }) async {
     final file = await downloadExport(projectId: projectId, export: export);
+    if (kIsWeb) {
+      await shareableFile(file.path, mimeType: export.contentType,
+          name: file.filename).saveTo(file.filename);
+      return ExportOpenOutcome.opened;
+    }
     final result = await OpenFilex.open(
       file.path,
       type: export.contentType,
@@ -623,7 +630,7 @@ class MobileProjectsRepository implements ProjectsRepository {
       ShareParams(
         title: file.filename,
         subject: file.filename,
-        files: [XFile(file.path, mimeType: export.contentType)],
+        files: [shareableFile(file.path, mimeType: export.contentType)],
         fileNameOverrides: [file.filename],
       ),
     );

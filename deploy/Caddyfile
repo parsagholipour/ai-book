@@ -16,7 +16,7 @@
 
 # Automatic HTTPS: certificate via HTTP-01 on :80 / TLS-ALPN-01 on :443, and
 # plain http://tomeza.ravanix.app redirects here.
-tomeza.ravanix.app {
+tomeza.ravanix.app, app.tomeza.ravanix.app {
 	# Browsers that have seen the site once never try plain HTTP for it again.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy web:80 {

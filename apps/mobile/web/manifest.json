@@ -1,35 +1,19 @@
 {
-    "name": "tomeza",
-    "short_name": "tomeza",
-    "start_url": ".",
-    "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
-    "prefer_related_applications": false,
-    "icons": [
-        {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        },
-        {
-            "src": "icons/Icon-maskable-192.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "maskable"
-        },
-        {
-            "src": "icons/Icon-maskable-512.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "maskable"
-        }
-    ]
+  "name": "Tomeza",
+  "short_name": "Tomeza",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F9F7F2",
+  "theme_color": "#405E45",
+  "description": "Create, read, and listen to your books with Tomeza.",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/Icon-512.png",
+      "sizes": "520x520",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }

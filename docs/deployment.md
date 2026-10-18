@@ -2,7 +2,7 @@
 
 Every push to `master` runs the Terraform workflow, applies infrastructure, then
 calls `deploy.yml` to build and deploy the **same commit**, unless every file the
-push changes is under `docs/`, `apps/mobile/`, `.scratch/` or `.claude/`, or is a
+push changes is under `docs/`, `.scratch/` or `.claude/`, or is a
 Markdown file (`paths-ignore`: none of those reach an image or the infrastructure,
 and every deploy is a short outage). A push that changes any other file deploys,
 whatever else it also changes. You can also run
@@ -15,11 +15,45 @@ target. The `web` target serves Vite's production build through Nginx and proxie
 `/api`, `/docs`, and generated assets to the API. Browser requests use the same
 origin, so no build-time API URL is needed. A `caddy` container is the only
 service with host ports: it owns 80 and 443 on the instance's Elastic IP,
-terminates TLS for **https://tomeza.ravanix.app** with a Let's Encrypt certificate,
+terminates TLS for **https://tomeza.ravanix.app** and
+**https://app.tomeza.ravanix.app** with Let's Encrypt certificates,
 and forwards to Nginx, which stays HTTP-only on the private Compose network
 alongside PostgreSQL/pgvector and Redis. Durable files live in a private S3 bucket
 provisioned by Terraform. API and worker containers have separate disposable
 scratch directories and share files through S3.
+
+## Flutter web app
+
+**https://app.tomeza.ravanix.app** serves the Flutter product from `apps/mobile`.
+It shares the existing EC2 instance, Elastic IP and Nginx image with the operator
+console; no additional AWS service is required. Nginx selects the frontend by
+hostname. The app hostname proxies `/api/mobile`, health checks and protected
+media to the API and returns 404 for operator API/docs routes. The original
+hostname still serves the operator console and public policy/share pages.
+
+CI installs Flutter **3.44.8**, runs `scripts/build-flutter-web.sh`, then copies
+its generated `deploy/flutter-web/` bundle into the `web` Docker target. Run that
+script before building the web image locally too. Flutter source changes now
+trigger the regular production workflow. Docker smoke tests check the Flutter
+entrypoint, deep links, API proxy and operator-route isolation before cutover.
+The build uses `APP_ENV=production` and the app hostname as `API_BASE_URL`; no
+secrets are compiled into it. Service-worker caching is disabled and static
+responses revalidate to avoid keeping an old client after deployment.
+
+Hetzner's `ravanix.app` zone contains **A `app.tomeza` → `52.58.5.181`, TTL 300**,
+the same Elastic IP as `tomeza`. Keep this record tied to Terraform's `elastic_ip`.
+Caddy issues and renews HTTPS certificates for both names. The API permits the
+exact app origin for absolute API-owned asset URLs and exposes export identity
+headers so the reader can still verify downloads across origins.
+
+Browser downloads use a tab-local file cache; small JSON preferences, reader
+markup and studio drafts persist in browser storage when its quota permits.
+PDF/audio bytes are fetched again after a reload. Email sign-in, creation,
+reading, audio playback and file sharing/downloads use the existing API. Google
+sign-in, Play purchases, push notifications and live voice calls remain native
+features; the browser explains that purchases and calls require the Android app.
+Existing account credits and books work on both platforms. Production's current
+`DEBUG_MODE` still determines whether new accounts may be created.
 
 ## One-time setup
 
@@ -186,7 +220,7 @@ Visitors reach EC2 directly; there is no load balancer, Route 53, ACM, or CDN.
 - **TLS on the instance.** The `caddy` service in
   [`docker-compose.production.yml`](../docker-compose.production.yml) runs
   [`deploy/Caddyfile`](../deploy/Caddyfile): automatic HTTPS for
-  `tomeza.ravanix.app` only, `http://` redirected to `https://`, and every request
+  both Tomeza hostnames, `http://` redirected to `https://`, and every request
   reverse-proxied to `web:80` with `Host`, `X-Real-IP`, `X-Forwarded-For`, and
   `X-Forwarded-Proto`. Nginx passes the edge's `X-Real-IP` and `X-Forwarded-Proto`
   on to the API. Request bodies up to 100 MB and the 600 s upstream read timeout

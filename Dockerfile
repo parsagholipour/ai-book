@@ -62,6 +62,8 @@ RUN pnpm build
 FROM nginx:stable-alpine AS web
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+# Built by scripts/build-flutter-web.sh before building this target.
+COPY deploy/flutter-web /usr/share/nginx/flutter
 
 # What the api, worker and migrate services load: their dependencies and their
 # workspace packages', without web's or anyone's devDependencies. tsx (every

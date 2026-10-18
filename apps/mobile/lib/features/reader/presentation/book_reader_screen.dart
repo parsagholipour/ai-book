@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/storage/app_files.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../projects/data/offline_library_store.dart';
@@ -310,6 +312,18 @@ typedef ReaderViewerBuilder =
 /// carries none, and two such downloads must still be different documents. The
 /// size and the moment it arrived stand in.
 PdfDocumentRef readerDocumentRef(CachedExport export) {
+  if (kIsWeb) {
+    return PdfDocumentRefData(
+      appFile(export.path).readAsBytesSync(),
+      sourceName: export.path,
+      key: PdfDocumentRefKey(export.path, [
+        export.revision,
+        export.digest,
+        export.byteSize,
+        export.downloadedAt,
+      ]),
+    );
+  }
   return PdfDocumentRefFile(
     export.path,
     key: PdfDocumentRefKey(export.path, [

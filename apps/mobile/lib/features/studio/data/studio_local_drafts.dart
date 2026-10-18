@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
+import '../../../shared/storage/app_files.dart';
 import '../domain/manuscript_models.dart';
 
 /// One chapter's text as this device last had it, kept on disk until the
@@ -101,7 +101,7 @@ class FileStudioLocalDrafts implements StudioLocalDrafts {
 
   Future<File> _file(String projectId, String chapterId) async {
     final root = await _root();
-    return File(
+    return appFile(
       '${root.path}/studio/${_safe(projectId)}/${_safe(chapterId)}.json',
     );
   }
@@ -129,7 +129,7 @@ class FileStudioLocalDrafts implements StudioLocalDrafts {
   Future<void> write(StudioLocalDraft draft) async {
     final file = await _file(draft.projectId, draft.chapterId);
     await file.parent.create(recursive: true);
-    final temp = File('${file.path}.tmp');
+    final temp = appFile('${file.path}.tmp');
     await temp.writeAsString(jsonEncode(draft.toJson()), flush: true);
     await temp.rename(file.path);
   }

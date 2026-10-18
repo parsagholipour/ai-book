@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
+
+import '../../../shared/storage/app_files.dart';
 
 /// Which accounts on this phone have been shown the first-book offer.
 ///
@@ -61,11 +62,11 @@ class FileFirstBookOfferStore implements FirstBookOfferStore {
   Future<File> _file() async {
     final root =
         _override ?? (_resolved ??= await getApplicationDocumentsDirectory());
-    final directory = Directory('${root.path}/$directoryName');
+    final directory = appDirectory('${root.path}/$directoryName');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
-    return File('${directory.path}/$_filename');
+    return appFile('${directory.path}/$_filename');
   }
 }
 

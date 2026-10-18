@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/storage/app_files.dart';
 import '../../projects/domain/project_models.dart';
 import '../domain/export_provenance.dart';
 import '../domain/reader_models.dart';
@@ -74,7 +75,7 @@ class ExportCache {
     MobilePdfPageNumbering? pageNumbering,
   }) async {
     final directory = await storage.projectDirectory(projectId);
-    final file = File('${directory.path}/${_filename(export)}');
+    final file = appFile('${directory.path}/${_filename(export)}');
     if (!await file.exists()) {
       return null;
     }
@@ -120,7 +121,7 @@ class ExportCache {
   }) async {
     try {
       final directory = await storage.projectDirectory(projectId);
-      final file = File('${directory.path}/${_filename(export)}');
+      final file = appFile('${directory.path}/${_filename(export)}');
       final manifest = await _storedManifest(directory, export);
       if (manifest == null || !await file.exists()) return null;
       final json = jsonDecode(await manifest.readAsString());
@@ -174,7 +175,7 @@ class ExportCache {
 
     final directory = await storage.projectDirectory(projectId);
     final path = '${directory.path}/${_filename(export)}';
-    final partial = File('$path.part');
+    final partial = appFile('$path.part');
     if (await partial.exists()) {
       await partial.delete();
     }
@@ -277,7 +278,7 @@ class ExportCache {
     final directory = await storage.projectDirectory(projectId);
     try {
       await _clearManifests(directory, export);
-      final file = File('${directory.path}/${_filename(export)}');
+      final file = appFile('${directory.path}/${_filename(export)}');
       if (await file.exists()) {
         await file.delete();
       }
@@ -323,7 +324,7 @@ class ExportCache {
     // Written under the current name even for an entry that was read from the
     // old one: [_storedManifest] prefers this file, and a download clears both.
     await _writeManifest(
-      _manifestFile(File(cached.path).parent, export),
+      _manifestFile(appFile(cached.path).parent, export),
       stamped,
     );
     // The stamp holds for this open whether or not it reached the disk. It is
@@ -342,7 +343,7 @@ class ExportCache {
   /// entry: the PDF that is still current would read back as a miss, and the
   /// stamp deciding whether its footer skips the cover would go with it.
   File _manifestFile(Directory directory, MobileExportAvailability export) =>
-      File('${directory.path}/${_filename(export)}.manifest.json');
+      appFile('${directory.path}/${_filename(export)}.manifest.json');
 
   /// The project-wide manifest older builds wrote, when [export] is the format
   /// it can be describing.
@@ -361,7 +362,7 @@ class ExportCache {
     if (export.format != _legacyManifestFormat) {
       return null;
     }
-    return File('${directory.path}/$_legacyManifestName');
+    return appFile('${directory.path}/$_legacyManifestName');
   }
 
   /// The stored manifest for [export], preferring the per-format name.

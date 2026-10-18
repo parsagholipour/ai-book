@@ -2,22 +2,28 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/config/app_config.dart';
-import '../../features/auth/domain/auth_models.dart';
 import '../../features/app_update/domain/app_update.dart';
+import '../../features/auth/domain/auth_models.dart';
 import '../../features/auth/domain/legal_gate.dart';
 import '../../features/auth/presentation/auth_controller.dart';
+import '../storage/file_transfer.dart';
 import 'api_error.dart';
 import 'auth_token_store.dart';
+import 'downloaded_file.dart';
+import 'streaming_browser_adapter.dart';
+
+export 'downloaded_file.dart';
 
 part 'chat_stream.dart';
 
 final dioProvider = Provider<Dio>((ref) {
   final config = ref.watch(appConfigProvider);
   final build = ref.watch(appBuildProvider);
-  return Dio(
+  final dio = Dio(
     BaseOptions(
       baseUrl: config.apiBaseUrl.toString(),
       connectTimeout: const Duration(seconds: 12),
@@ -27,6 +33,11 @@ final dioProvider = Provider<Dio>((ref) {
       headers: {'Accept': 'application/json', ...?build?.headers},
     ),
   );
+  if (kIsWeb) {
+    dio.httpClientAdapter = StreamingBrowserAdapter(dio.httpClientAdapter);
+  }
+  ref.onDispose(dio.close);
+  return dio;
 });
 
 final apiClientProvider = Provider<ApiClient>((ref) {
@@ -87,34 +98,6 @@ const _sessionEndingCodes = {'SESSION_REVOKED', 'ACCOUNT_DISABLED'};
 /// would misreport a slow-but-healthy model reply as a network error.
 const llmReceiveTimeout = Duration(seconds: 120);
 
-/// What the server said about the bytes a download just wrote.
-///
-/// Only the headers, and only because one download needs them: a compiled
-/// export is served from a URL that every compile of the book publishes over,
-/// so the response — not the request, and not a status read taken before it —
-/// is the only thing that can say which compile answered. See
-/// `ExportProvenance`.
-class DownloadedFile {
-  const DownloadedFile({required this.headers});
-
-  /// Response headers, names lower-cased, first value only.
-  final Map<String, String> headers;
-
-  String? header(String name) => headers[name.toLowerCase()];
-
-  /// The length the response declared, or null when it declared none.
-  int? get contentLength => int.tryParse(header('content-length') ?? '');
-
-  static DownloadedFile fromResponse(Response<dynamic> response) {
-    return DownloadedFile(
-      headers: {
-        for (final entry in response.headers.map.entries)
-          if (entry.value.isNotEmpty)
-            entry.key.toLowerCase(): entry.value.first,
-      },
-    );
-  }
-}
 
 class ApiClient {
   ApiClient({
@@ -437,7 +420,8 @@ class ApiClient {
       return DownloadedFile.fromResponse(
         await _withSession(
           generation,
-          () => dio.download(
+          () => downloadToFile(
+            dio,
             path,
             savePath,
             options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
@@ -451,7 +435,8 @@ class ApiClient {
         final tokens = await _refreshForSession(generation);
         return DownloadedFile.fromResponse(
           await _mapped(
-            () => dio.download(
+            () => downloadToFile(
+              dio,
               path,
               savePath,
               options: Options(

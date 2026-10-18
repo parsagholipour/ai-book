@@ -1,14 +1,14 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/storage/app_files.dart';
+import '../../../shared/storage/file_transfer.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../../../shared/ui/local_file_image.dart';
 
 /// Fullscreen photo preview with pinch-zoom and a close control.
 Future<void> showChatImagePreview({
@@ -66,7 +66,7 @@ Future<void> openChatAttachment({
       ShareParams(
         title: name,
         subject: name,
-        files: [XFile(path, mimeType: mimeType, name: name)],
+        files: [shareableFile(path, mimeType: mimeType, name: name)],
         fileNameOverrides: [name],
       ),
     );
@@ -81,7 +81,7 @@ Future<String?> _resolveAttachmentPath({
   String? localPath,
   String? remoteUrl,
 }) async {
-  if (localPath != null && File(localPath).existsSync()) {
+  if (localPath != null && appFile(localPath).existsSync()) {
     return localPath;
   }
   final url = remoteUrl;
@@ -165,9 +165,9 @@ class _ChatImagePreviewPage extends StatelessWidget {
 
   Widget _image() {
     final path = localPath;
-    if (path != null && File(path).existsSync()) {
-      return Image.file(
-        File(path),
+    if (path != null && appFile(path).existsSync()) {
+      return Image(
+        image: localFileImage(path),
         fit: BoxFit.contain,
         semanticLabel: semanticLabel,
         errorBuilder: (_, _, _) => _remoteOrError(),

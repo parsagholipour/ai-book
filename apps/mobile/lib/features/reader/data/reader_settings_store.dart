@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../../../shared/storage/app_files.dart';
 import '../domain/reader_settings.dart';
 import 'reader_storage.dart';
 
@@ -39,6 +40,6 @@ class ReaderSettingsStore {
 
   Future<File> _file() async {
     final directory = await storage.rootDirectory();
-    return File('${directory.path}/$_filename');
+    return appFile('${directory.path}/$_filename');
   }
 }

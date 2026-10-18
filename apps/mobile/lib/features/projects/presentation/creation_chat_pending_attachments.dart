@@ -198,9 +198,9 @@ class _PendingAttachmentChip extends ConsumerWidget {
     final remoteUrl = attachment.attachment?.url;
     if (attachment.isPhoto &&
         localPath != null &&
-        File(localPath).existsSync()) {
-      picture = Image.file(
-        File(localPath),
+        appFile(localPath).existsSync()) {
+      picture = Image(
+        image: localFileImage(localPath),
         width: size,
         height: size,
         fit: BoxFit.cover,

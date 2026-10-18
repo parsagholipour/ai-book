@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../../../shared/storage/app_files.dart';
 import '../domain/reader_models.dart';
 import 'reader_storage.dart';
 
@@ -39,13 +40,13 @@ class ReaderStateStore {
   /// bookmark the reader made, not just the page they were on.
   Future<void> save(String projectId, ReaderState state) async {
     final file = await _file(projectId);
-    final partial = File('${file.path}.part');
+    final partial = appFile('${file.path}.part');
     await partial.writeAsString(jsonEncode(state.toJson()), flush: true);
     await partial.rename(file.path);
   }
 
   Future<File> _file(String projectId) async {
     final directory = await storage.projectDirectory(projectId);
-    return File('${directory.path}/$_filename');
+    return appFile('${directory.path}/$_filename');
   }
 }

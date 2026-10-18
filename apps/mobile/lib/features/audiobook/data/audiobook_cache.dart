@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../../../shared/storage/app_files.dart';
 import '../domain/audiobook_models.dart';
 
 /// Where audiobook files live on the device, and how they get there.
@@ -43,7 +43,7 @@ class AudiobookCache {
     String audiobookId,
   ) async {
     final root = await _root();
-    final directory = Directory(
+    final directory = appDirectory(
       '${root.path}/$directoryName/${safeSegment(projectId)}/${safeSegment(audiobookId)}',
     );
     if (!await directory.exists()) {
@@ -59,7 +59,7 @@ class AudiobookCache {
   /// across app launches and temporary network loss.
   Future<File> ensureNarratorSample(NarratorVoice voice) async {
     final root = await _root();
-    final directory = Directory('${root.path}/$directoryName/samples');
+    final directory = appDirectory('${root.path}/$directoryName/samples');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
@@ -67,7 +67,7 @@ class AudiobookCache {
     final cacheKey = version == null || version.isEmpty
         ? safeSegment(voice.voice)
         : '${safeSegment(voice.voice)}-v${safeSegment(version)}';
-    final file = File('${directory.path}/$cacheKey.mp3');
+    final file = appFile('${directory.path}/$cacheKey.mp3');
     if (await file.exists() && await file.length() > 0) {
       return file;
     }
@@ -92,7 +92,7 @@ class AudiobookCache {
     }
     final directory = await audiobookDirectory(projectId, audiobookId);
     final version = _renderVersion(url);
-    final file = File(
+    final file = appFile(
       '${directory.path}/chapter-${chapter.index}-v${safeSegment(version)}.mp3',
     );
     final expected = chapter.byteSize;
@@ -109,7 +109,7 @@ class AudiobookCache {
     await _pruneChapterVersions(
       directory: directory,
       chapterIndex: chapter.index,
-      keepName: file.path.split(Platform.pathSeparator).last,
+      keepName: file.path.split(appPathSeparator).last,
       suffix: '.mp3',
     );
     return file;
@@ -127,7 +127,7 @@ class AudiobookCache {
     }
     final directory = await audiobookDirectory(projectId, audiobookId);
     final version = _renderVersion(url);
-    final file = File(
+    final file = appFile(
       '${directory.path}/chapter-${chapter.index}-v${safeSegment(version)}.timeline.json',
     );
 
@@ -141,7 +141,7 @@ class AudiobookCache {
       await _pruneChapterVersions(
         directory: directory,
         chapterIndex: chapter.index,
-        keepName: file.path.split(Platform.pathSeparator).last,
+        keepName: file.path.split(appPathSeparator).last,
         suffix: '.timeline.json',
       );
       return timeline;
@@ -156,7 +156,7 @@ class AudiobookCache {
       await _pruneChapterVersions(
         directory: directory,
         chapterIndex: chapter.index,
-        keepName: file.path.split(Platform.pathSeparator).last,
+        keepName: file.path.split(appPathSeparator).last,
         suffix: '.timeline.json',
       );
       return timeline;
@@ -180,7 +180,7 @@ class AudiobookCache {
       if (entry is! File) {
         continue;
       }
-      final name = entry.path.split(Platform.pathSeparator).last;
+      final name = entry.path.split(appPathSeparator).last;
       final isChapterVersion =
           name == legacyName ||
           (name.startsWith(versionedPrefix) && name.endsWith(suffix));
@@ -212,7 +212,7 @@ class AudiobookCache {
     final name = version == null || version.isEmpty
         ? 'cover.img'
         : 'cover-v${safeSegment(version)}.img';
-    final file = File('${directory.path}/$name');
+    final file = appFile('${directory.path}/$name');
     if (await file.exists()) {
       return file;
     }
@@ -224,7 +224,7 @@ class AudiobookCache {
     }
     try {
       await for (final entry in directory.list()) {
-        final other = entry.path.split(Platform.pathSeparator).last;
+        final other = entry.path.split(appPathSeparator).last;
         final isCover =
             other == 'cover.img' ||
             (other.startsWith('cover-v') && other.endsWith('.img'));
@@ -246,7 +246,7 @@ class AudiobookCache {
   /// so [pruneOtherAudiobooks] keeps it and [clearProject] takes it.
   Future<File> _manifestFile(String projectId) async {
     final root = await _root();
-    return File(
+    return appFile(
       '${root.path}/$directoryName/${safeSegment(projectId)}/manifest.json',
     );
   }
@@ -259,7 +259,7 @@ class AudiobookCache {
     try {
       final file = await _manifestFile(audiobook.projectId);
       await file.parent.create(recursive: true);
-      final partial = File('${file.path}.part');
+      final partial = appFile('${file.path}.part');
       await partial.writeAsString(jsonEncode(payload), flush: true);
       await partial.rename(file.path);
     } catch (_) {
@@ -295,10 +295,10 @@ class AudiobookCache {
     try {
       final directory = await audiobookDirectory(projectId, audiobookId);
       final base = '${directory.path}/chapter-${chapter.index}';
-      final audio = File(
+      final audio = appFile(
         '$base-v${safeSegment(_renderVersion(audioUrl))}.mp3',
       );
-      final timings = File(
+      final timings = appFile(
         '$base-v${safeSegment(_renderVersion(timelineUrl))}.timeline.json',
       );
       if (!await audio.exists() || !await timings.exists()) return null;
@@ -319,7 +319,7 @@ class AudiobookCache {
     String keepAudiobookId,
   ) async {
     final root = await _root();
-    final projectDir = Directory(
+    final projectDir = appDirectory(
       '${root.path}/$directoryName/${safeSegment(projectId)}',
     );
     if (!await projectDir.exists()) {
@@ -327,7 +327,7 @@ class AudiobookCache {
     }
     await for (final entry in projectDir.list()) {
       if (entry is Directory &&
-          entry.path.split('/').last != safeSegment(keepAudiobookId)) {
+          entry.path.split(appPathSeparator).last != safeSegment(keepAudiobookId)) {
         await entry.delete(recursive: true).catchError((_) => entry);
       }
     }
@@ -335,7 +335,7 @@ class AudiobookCache {
 
   Future<void> clearProject(String projectId) async {
     final root = await _root();
-    final directory = Directory(
+    final directory = appDirectory(
       '${root.path}/$directoryName/${safeSegment(projectId)}',
     );
     if (await directory.exists()) {
@@ -351,7 +351,7 @@ class AudiobookCache {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final partial = File('${destination.path}.part');
+    final partial = appFile('${destination.path}.part');
     if (await partial.exists()) {
       await partial.delete();
     }

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
@@ -114,6 +114,14 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     if (state.isLive ||
         state.phase == VoiceCallPhase.ringing ||
         state.phase == VoiceCallPhase.preparing) {
+      return;
+    }
+    if (kIsWeb) {
+      state = VoiceCallState(
+        character: character,
+        phase: VoiceCallPhase.failed,
+        error: 'Voice calls are available in the Tomeza Android app.',
+      );
       return;
     }
     _resetForNewCall();

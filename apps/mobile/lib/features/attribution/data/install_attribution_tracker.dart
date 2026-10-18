@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/storage/app_files.dart';
 import '../domain/install_attribution.dart';
 import 'install_referrer_source.dart';
 
@@ -204,11 +204,11 @@ class FileInstallAttributionStore implements InstallAttributionStore {
   Future<File> _file() async {
     final root =
         _override ?? (_resolved ??= await getApplicationDocumentsDirectory());
-    final directory = Directory('${root.path}/$directoryName');
+    final directory = appDirectory('${root.path}/$directoryName');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
-    return File('${directory.path}/$filename');
+    return appFile('${directory.path}/$filename');
   }
 }
 

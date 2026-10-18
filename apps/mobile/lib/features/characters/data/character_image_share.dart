@@ -1,7 +1,8 @@
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../../../shared/storage/app_files.dart';
+import '../../../shared/storage/file_transfer.dart';
 
 /// Downloads one retained picture and hands it to the system share sheet.
 ///
@@ -18,6 +19,6 @@ Future<void> shareCharacterImage({
   final path = '${directory.path}/tomeza_character_$imageId.jpg';
   await apiClient.downloadFile(url, path);
   await SharePlus.instance.share(
-    ShareParams(files: [XFile(path, mimeType: 'image/jpeg')]),
+    ShareParams(files: [shareableFile(path, mimeType: 'image/jpeg')]),
   );
 }

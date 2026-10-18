@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 
+import '../../../shared/storage/app_files.dart';
 import 'audiobook_cache.dart';
 
 /// How far into a book a listener got, and which narration they got there in.
@@ -117,7 +117,7 @@ class AudiobookProgressStore {
   ) async {
     final file = await _file(projectId);
     await file.parent.create(recursive: true);
-    final partial = File('${file.path}.part');
+    final partial = appFile('${file.path}.part');
     await partial.writeAsString(jsonEncode(position.toJson()), flush: true);
     await partial.rename(file.path);
   }
@@ -132,7 +132,7 @@ class AudiobookProgressStore {
 
   Future<File> _file(String projectId) async {
     final root = await _root();
-    return File(
+    return appFile(
       '${root.path}/${AudiobookCache.directoryName}'
       '/${AudiobookCache.safeSegment(projectId)}/$_filename',
     );

@@ -2,13 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../../../shared/storage/app_files.dart';
+import '../../../shared/storage/file_transfer.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/motion.dart';
@@ -52,9 +54,9 @@ final sampleBookFileProvider = FutureProvider.autoDispose<String>((ref) async {
 /// refusal is an ordinary failure, so the screen offers its retry.
 Future<String> downloadSampleBook(Dio dio, Directory directory) async {
   final path = '${directory.path}/tomeza-sample-book.pdf';
-  final part = File('$path.part');
+  final part = appFile('$path.part');
   try {
-    await dio.download('/api/mobile/sample-book', part.path);
+    await downloadToFile(dio, '/api/mobile/sample-book', part.path);
     if (!await fileHasPdfHeader(part)) {
       throw const FormatException('The sample book is not a PDF.');
     }
@@ -202,10 +204,16 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
                     context,
                     // The sample is one fixed file that is never recompiled
                     // under the reader; only "Download again" replaces it.
-                    PdfDocumentRefFile(
-                      path,
-                      key: PdfDocumentRefKey(path, [_download]),
-                    ),
+                    kIsWeb
+                        ? PdfDocumentRefData(
+                            appFile(path).readAsBytesSync(),
+                            sourceName: path,
+                            key: PdfDocumentRefKey(path, [_download]),
+                          )
+                        : PdfDocumentRefFile(
+                            path,
+                            key: PdfDocumentRefKey(path, [_download]),
+                          ),
                     _controller,
                     _paramsFor(colors.surfaceContainerHigh),
                     1,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../../../shared/storage/app_files.dart';
 import '../domain/reader_annotation.dart';
 import 'reader_storage.dart';
 
@@ -66,13 +67,13 @@ class ReaderAnnotationStore {
     // Written through a temporary file: markup is the one thing in the reader's
     // storage the user made themselves, and a process killed mid-write would
     // otherwise leave a truncated file that parses as "no markup at all".
-    final partial = File('${file.path}.part');
+    final partial = appFile('${file.path}.part');
     await partial.writeAsString(payload, flush: true);
     await partial.rename(file.path);
   }
 
   Future<File> _file(String projectId) async {
     final directory = await storage.projectDirectory(projectId);
-    return File('${directory.path}/$_filename');
+    return appFile('${directory.path}/$_filename');
   }
 }

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/storage/app_files.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../data/reader_storage.dart';
@@ -68,7 +69,7 @@ class FileReaderCoachStore implements ReaderCoachStore {
 
   Future<File> _file() async {
     final directory = await storage.rootDirectory();
-    return File('${directory.path}/$_filename');
+    return appFile('${directory.path}/$_filename');
   }
 }
 

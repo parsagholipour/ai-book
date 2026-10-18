@@ -724,14 +724,14 @@ class _MessageAttachmentChip extends ConsumerWidget {
       return _documentChip(context, ref);
     }
     final path = thumbnailPath;
-    if (path != null && File(path).existsSync()) {
+    if (path != null && appFile(path).existsSync()) {
       return _tappablePhoto(
         context,
         ref,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(10),
-          child: Image.file(
-            File(path),
+          child: Image(
+        image: localFileImage(path),
             width: 120,
             height: 120,
             fit: BoxFit.cover,
@@ -811,7 +811,7 @@ class _MessageAttachmentChip extends ConsumerWidget {
 
   Widget _documentChip(BuildContext context, WidgetRef ref) {
     final canOpen =
-        (thumbnailPath != null && File(thumbnailPath!).existsSync()) ||
+        (thumbnailPath != null && appFile(thumbnailPath!).existsSync()) ||
         remoteUrl != null;
     return Semantics(
       button: canOpen,

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../../../shared/storage/app_files.dart';
 
 /// Where the reader keeps per-book files on the device.
 ///
@@ -36,7 +36,7 @@ class ReaderStorage {
   /// one book — preferences that follow the reader between titles.
   Future<Directory> rootDirectory() async {
     final root = await _root();
-    final directory = Directory('${root.path}/$directoryName');
+    final directory = appDirectory('${root.path}/$directoryName');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
@@ -46,7 +46,7 @@ class ReaderStorage {
   /// The directory holding one project's reader files, created if absent.
   Future<Directory> projectDirectory(String projectId) async {
     final root = await _root();
-    final directory = Directory(
+    final directory = appDirectory(
       '${root.path}/$directoryName/${safeSegment(projectId)}',
     );
     if (!await directory.exists()) {
@@ -58,7 +58,7 @@ class ReaderStorage {
   /// Removes every reader file for a project. Used when a book is deleted.
   Future<void> clearProject(String projectId) async {
     final root = await _root();
-    final directory = Directory(
+    final directory = appDirectory(
       '${root.path}/$directoryName/${safeSegment(projectId)}',
     );
     if (await directory.exists()) {

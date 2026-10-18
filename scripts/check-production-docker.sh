@@ -116,6 +116,16 @@ fi
 address=$("${compose[@]}" port web 80)
 curl --fail --silent --show-error "http://$address/api/health"
 curl --fail --silent --show-error "http://$address/projects" | grep -q '<div id="root">'
+# Both frontends ship together, selected by Host, including Flutter deep links.
+curl --fail --silent --show-error -H 'Host: app.tomeza.ravanix.app' \
+  "http://$address/books" | grep -q 'flutter_bootstrap.js'
+curl --fail --silent --show-error -H 'Host: app.tomeza.ravanix.app' \
+  "http://$address/flutter_bootstrap.js" --output /dev/null
+curl --fail --silent --show-error -H 'Host: app.tomeza.ravanix.app' \
+  "http://$address/api/health" --output /dev/null
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  -H 'Host: app.tomeza.ravanix.app' "http://$address/api/admin/users")" = 404
+
 # Separate container filesystems must share only private S3 objects.
 "${compose[@]}" exec -T worker node --import tsx --input-type=module -e '
   import { objectStore, objectKey } from "@book-maker/storage";
