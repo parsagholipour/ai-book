@@ -129,6 +129,14 @@ class ManuscriptChapterSummary {
       title.trim().isEmpty ? 'Untitled chapter' : title.trim();
 }
 
+/// "Chapter 3" on the third chapter: the name a chapter is given before its
+/// author names it, which says nothing the label does not. A new chapter is
+/// named by count, not place, so "Chapter 4" inserted second is not one.
+bool isPlaceholderChapterTitle(String title, int position) => RegExp(
+  '^chapter\\s+$position\$',
+  caseSensitive: false,
+).hasMatch(title.trim());
+
 /// The book's version of a chapter, captured when the book changed underneath
 /// (an edit made in the book chat) while this chapter held unpublished edits.
 class ManuscriptChapterConflict {

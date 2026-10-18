@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../../projects/domain/chat_text_direction.dart';
+import '../domain/manuscript_models.dart' show isPlaceholderChapterTitle;
 import 'chapter_conflict_card.dart';
 import 'studio_ai_picture_card.dart';
 import 'studio_ai_tools_sheet.dart' show StudioSelectionTool;
@@ -163,7 +164,10 @@ class _EditorBody extends StatelessWidget {
           child: ColoredBox(
             color: colors.surface,
             child: SingleChildScrollView(
-              key: const PageStorageKey('studio-editor-scroll'),
+              // One remembered offset per chapter: a shared one opened the
+              // next chapter at the depth the last one was left at, which
+              // after "Next chapter" is its end.
+              key: PageStorageKey('studio-editor-scroll-${session.chapterId}'),
               padding: EdgeInsets.fromLTRB(gutter, AppSpacing.lg, gutter, 0),
               child: Center(
                 child: ConstrainedBox(
@@ -468,15 +472,6 @@ class _StudioTextFieldState extends State<StudioTextField> {
     );
   }
 }
-
-/// "Chapter 3" on the third chapter: the name a chapter is given before its
-/// author names it, which says nothing the label does not. A new chapter is
-/// named by count, not place, so "Chapter 4" inserted second is not one.
-@visibleForTesting
-bool isPlaceholderChapterTitle(String title, int position) => RegExp(
-  '^chapter\\s+$position\$',
-  caseSensitive: false,
-).hasMatch(title.trim());
 
 class _ChapterHeading extends StatelessWidget {
   const _ChapterHeading({

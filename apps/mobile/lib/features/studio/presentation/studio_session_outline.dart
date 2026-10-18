@@ -46,6 +46,14 @@ extension StudioSessionOutline on StudioSession {
   /// button never leaves the author guessing where it went.
   String get addChapterLabel => 'Add $chapterNoun ${chapterCount + 1}';
 
+  /// The chapter after the open one in the outline, or null on the last.
+  ManuscriptChapterSummary? get nextChapter {
+    final chapters = _manuscript?.chapters ?? const [];
+    final index = chapters.indexWhere((chapter) => chapter.id == chapterId);
+    if (index < 0 || index + 1 >= chapters.length) return null;
+    return chapters[index + 1];
+  }
+
   /// Puts the cursor in a new chapter's title with its "Chapter 4" selected,
   /// once the editor has built the field.
   void _nameAfterFrame(StudioDocument document) {

@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tomeza/features/studio/data/studio_local_drafts.dart';
 import 'package:tomeza/features/studio/domain/manuscript_models.dart';
-import 'package:tomeza/features/studio/presentation/studio_editor.dart';
 
 import '../../support/fake_studio_repository.dart';
 import 'studio_test_harness.dart';
