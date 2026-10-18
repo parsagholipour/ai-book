@@ -52,25 +52,56 @@ export type StoryPageDesign = {
   headingInk: string;
   /** One entry per sheet, cycled: the card's fill and the accent its shapes use. */
   sheets: ReadonlyArray<{ fill: string; accent: string }>;
-  /** Background layers over the fill, drawn with `var(--story-accent)`. */
+  /** Background layers over the fill, drawn with `var(--story-accent)`, each sized to its shape (`layer`). */
   shapes: readonly string[];
   /** The `::after` ornament under the prose. */
   ornament: string;
 };
 
 const mix = (share: number, colour = "var(--story-accent)") => `color-mix(in srgb, ${colour} ${share}%, transparent)`;
+const mm = (value: number) => `${Number(value.toFixed(3))}mm`;
+/**
+ * One shape as a background layer no bigger than the shape.
+ *
+ * Every shape used to be a gradient the size of the whole card, which is what
+ * made a designed sheet slow to *read*: Chrome prints a gradient that fades to
+ * transparent as a soft mask drawn by a PostScript function, and PDFium runs
+ * that function for every pixel the layer covers. A night-sky sheet's thirteen
+ * card-sized layers took 7.4 s to draw at a phone reader's width, natively and
+ * in the web build alike, so each sheet from the cover on opened white
+ * (2026-10-18). Sized to its shape, a layer costs the few millimetres it paints.
+ *
+ * The box's own `anchor` point (percentages of the box) lands on `x`% `y`% of
+ * the card — where the card-sized gradient put the shape — because a background
+ * position of p% lines up the box's p% with the card's p%, and the offset moves
+ * that from p% of the box to the anchor. The card still clips what overhangs.
+ */
+const layer = (image: string, x: number, y: number, widthMm: number, heightMm: number, anchor = { x: 50, y: 50 }) => {
+  const position = (at: number, from: number, sizeMm: number) => {
+    const shift = ((at - from) / 100) * sizeMm;
+    return shift === 0 ? `${at}%` : `calc(${at}% ${shift < 0 ? "-" : "+"} ${mm(Math.abs(shift))})`;
+  };
+  return `${image} ${position(x, anchor.x, widthMm)} ${position(y, anchor.y, heightMm)} / ${mm(widthMm)} ${mm(heightMm)} no-repeat`;
+};
 /** A filled circle. */
 const dot = (x: number, y: number, radiusMm: number, colour: string) =>
-  `radial-gradient(circle at ${x}% ${y}%, ${colour} 0 ${radiusMm}mm, transparent ${radiusMm + 0.3}mm)`;
+  layer(`radial-gradient(circle, ${colour} 0 ${radiusMm}mm, transparent ${radiusMm + 0.3}mm)`, x, y, 2 * (radiusMm + 0.3), 2 * (radiusMm + 0.3));
 /** A bubble: a thin ring. */
 const ring = (x: number, y: number, radiusMm: number, colour: string) =>
-  `radial-gradient(circle at ${x}% ${y}%, transparent 0 ${radiusMm - 0.6}mm, ${colour} ${radiusMm - 0.5}mm ${radiusMm}mm, transparent ${radiusMm + 0.3}mm)`;
+  layer(
+    `radial-gradient(circle, transparent 0 ${radiusMm - 0.6}mm, ${colour} ${radiusMm - 0.5}mm ${radiusMm}mm, transparent ${radiusMm + 0.3}mm)`,
+    x, y, 2 * (radiusMm + 0.3), 2 * (radiusMm + 0.3)
+  );
 /** A rolling hill or wave: the top of a wide ellipse rising from below the card. */
 const hill = (x: number, widthMm: number, heightMm: number, colour: string) =>
-  `radial-gradient(ellipse ${widthMm}mm ${heightMm}mm at ${x}% 100%, ${colour} 0 99%, transparent 100%)`;
+  layer(`radial-gradient(ellipse ${widthMm}mm ${heightMm}mm at 50% 100%, ${colour} 0 99%, transparent 100%)`,
+    x, 100, 2 * widthMm, heightMm, { x: 50, y: 100 });
 /** A soft glow, for a sun or a moon. */
 const glow = (x: number, y: number, radiusMm: number, colour: string) =>
-  `radial-gradient(circle at ${x}% ${y}%, ${colour} 0 ${radiusMm}mm, ${mix(35, colour)} ${radiusMm + 1.5}mm, transparent ${radiusMm + 5}mm)`;
+  layer(
+    `radial-gradient(circle, ${colour} 0 ${radiusMm}mm, ${mix(35, colour)} ${radiusMm + 1.5}mm, transparent ${radiusMm + 5}mm)`,
+    x, y, 2 * (radiusMm + 5), 2 * (radiusMm + 5)
+  );
 const dots = (colour: string) =>
   `radial-gradient(circle, ${colour} 0 1.3mm, transparent 1.5mm) 0 50% / 5.33mm 3.2mm repeat-x`;
 const stars = (colour: string): string[] =>
@@ -194,7 +225,10 @@ const DESIGNS: Record<StoryPageDesignId, StoryPageDesign> = {
       { fill: "#fffaf0", accent: "#ef8a1c" }
     ],
     shapes: [
-      `radial-gradient(circle at 100% 0%, transparent 0 22mm, #ff6b6b 22mm 25mm, #ffaa4d 25mm 28mm, #ffd94d 28mm 31mm, #6fd18f 31mm 34mm, #5ab0ff 34mm 37mm, #a37bff 37mm 40mm, transparent 40mm)`,
+      layer(
+        `radial-gradient(circle at 100% 0%, transparent 0 22mm, #ff6b6b 22mm 25mm, #ffaa4d 25mm 28mm, #ffd94d 28mm 31mm, #6fd18f 31mm 34mm, #5ab0ff 34mm 37mm, #a37bff 37mm 40mm, transparent 40mm)`,
+        100, 0, 40, 40, { x: 100, y: 0 }
+      ),
       dot(9, 92, 2.4, mix(45)),
       dot(15, 95, 1.4, mix(35)),
       dot(6, 86, 1.1, mix(30))
@@ -217,7 +251,7 @@ const DESIGNS: Record<StoryPageDesignId, StoryPageDesign> = {
       { fill: "linear-gradient(160deg, #1d1238, #3a1a55)", accent: "#ff8fc7" }
     ],
     shapes: [
-      `radial-gradient(ellipse 17mm 3.6mm at 84% 13%, transparent 0 62%, ${mix(85)} 64% 74%, transparent 76%)`,
+      layer(`radial-gradient(ellipse 17mm 3.6mm, transparent 0 62%, ${mix(85)} 64% 74%, transparent 76%)`, 84, 13, 34, 7.2),
       dot(84, 13, 7, "var(--story-accent)"),
       dot(12, 88, 4.5, mix(55, "#a7b8ff")),
       ...stars("rgba(255, 255, 255, 0.8)")

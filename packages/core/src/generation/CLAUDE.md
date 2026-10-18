@@ -1270,6 +1270,16 @@ holds the event loop open and vitest will never exit.
   each whole rule string twice once produced invalid CSS that silently dropped every size. **No margin box may name a face only the cards use**: the faces are
   `font-display: block` and loaded on use, so a Nunito footer on an illustrated children's book —
   where no card uses it — printed invisibly.
+- **A design's shape is a background layer the size of the shape, because the reader pays for
+  every pixel a layer covers.** Chrome prints a gradient that fades to transparent as a soft mask
+  drawn by a PostScript-function shading, and PDFium runs that function per pixel per layer. With
+  every shape a card-sized gradient, a sheet took PDFium 2.2–7.9 s to draw at reader width
+  (night sky 7.4 s, thirteen layers), natively and in the web build alike, so every designed sheet
+  opened white in the app (2026-10-18). `layer` (`storyPageDesigns.ts`) sizes each shape to its own
+  box and puts the box's anchor where the card-sized gradient centred the shape: 16–118 ms a sheet,
+  and a 150 dpi diff of every design moved only edge pixels, by Chrome's whole-pixel snap of the
+  box. `storyPageDesigns.test.ts` refuses a shape without its own size. A book compiled before this
+  keeps its slow sheets until it recompiles.
 - **The coverless title sheet is capped at exactly one page, and it clips from the tail.**
   `@page pdf-title` carries `counter-reset: page 0` like the cover, and it resets on *every* sheet it
   names — so a title page that fragmented left two unnumbered sheets where `printedPageOffset`

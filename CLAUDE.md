@@ -499,6 +499,7 @@ code in that area, however obvious the rule looks.
 - **Every face a family is assembled from declares one weight range, or Chrome never falls back across its packages.** → packages/core/src/generation/CLAUDE.md
 - **A text-only story sheet is sized to its paragraphs and centred on its sheet, and it wears the design the reader chose — or, for a children's book, the one its own words point to.** → packages/core/src/generation/CLAUDE.md
 - **The coverless title sheet is capped at exactly one page, and it clips from the tail.** → packages/core/src/generation/CLAUDE.md
+- **A design's shape is a background layer the size of the shape, because the reader pays for every pixel a layer covers.** → packages/core/src/generation/CLAUDE.md
 - **Every renumber parks before it lands, because neither unique index is deferrable.** → packages/db/CLAUDE.md
 - **A page renumber carries the page map with it; only a sheet that would lose its page clears it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
 - **A moved page's old chapter rides the same stamp as its old index.** → apps/worker/src/generation/CLAUDE.md

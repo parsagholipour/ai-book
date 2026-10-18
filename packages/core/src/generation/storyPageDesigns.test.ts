@@ -272,4 +272,18 @@ describe("the design catalog", () => {
     }
     expect(allStoryPageDesigns().map((design) => design.id)).toEqual([...STORY_PAGE_DESIGN_IDS]);
   });
+
+  // A card-sized layer that fades to transparent is a soft mask PDFium draws
+  // pixel by pixel through a PostScript function: thirteen of them held a
+  // night-sky sheet white for 7.4 s in the reader. Each layer is its shape's
+  // size, and no shape is as big as a card in both directions.
+  it("sizes every shape layer to its shape, never to the card", () => {
+    for (const design of allStoryPageDesigns()) {
+      for (const shape of design.shapes) {
+        const size = shape.match(/ \/ ([\d.]+)mm ([\d.]+)mm no-repeat$/);
+        expect(size, `${design.id}: ${shape}`).not.toBeNull();
+        expect(Math.min(Number(size![1]), Number(size![2])), `${design.id}: ${shape}`).toBeLessThan(60);
+      }
+    }
+  });
 });
