@@ -16,6 +16,9 @@ BUCKET = "book-maker-assets-test"
 APP_IMAGE = "123456789012.dkr.ecr.eu-central-1.amazonaws.com/book-maker/app@sha256:new"
 WEB_IMAGE = "123456789012.dkr.ecr.eu-central-1.amazonaws.com/book-maker/web@sha256:new"
 DUMP = "PGDMP-whole-database"
+# What the stubbed `aws ssm get-parameter` writes into the release's .env.
+RUNNING_ENV = "POSTGRES_PASSWORD=test\n"
+COMPOSE = "name: book-maker\n"
 STUBS = r'''
 record() { echo "$*" >> "$TEST_CALLS"; }
 flock() { :; }
@@ -81,11 +84,15 @@ docker() {
       return 0
       ;;
   esac
-  record "compose $*"
+  case "$*" in
+    "up -d --no-deps --wait --wait-timeout 120 web") record "compose $* with $WEB_IMAGE" ;;
+    *) record "compose $*" ;;
+  esac
   case "$*" in
     "run --rm --no-deps api"*) [[ -z ${TEST_PREFLIGHT_FAILS:-} ]] ;;
     "run --rm --no-deps migrate") [[ -z ${TEST_MIGRATE_FAILS:-} ]] ;;
     "up -d --no-deps --wait --wait-timeout 240 api worker web") [[ -z ${TEST_NEW_RELEASE_UNHEALTHY:-} ]] ;;
+    "up -d --no-deps --wait --wait-timeout 120 web") [[ -z ${TEST_NEW_WEB_UNHEALTHY:-} || $WEB_IMAGE != *@sha256:new ]] ;;
     *) return 0 ;;
   esac
 }
@@ -93,7 +100,10 @@ docker() {
 
 
 class DeployProductionTests(unittest.TestCase):
-    def deploy(self, **overrides):
+    def deploy(self, *, running_app="old-app", running_env=None, running_compose=COMPOSE,
+               unsettled=False, **overrides):
+        """Deploy over a running release ("old") that ran `running_app` beside the
+        .env and compose file given (None: that file is absent)."""
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             root = directory / "opt"
@@ -101,8 +111,15 @@ class DeployProductionTests(unittest.TestCase):
             new = root / "releases" / "new"
             old.mkdir(parents=True)
             new.mkdir(parents=True)
-            (old / "images.env").write_text("APP_IMAGE=old-app\nWEB_IMAGE=old-web\n")
+            (old / "images.env").write_text(f"APP_IMAGE={running_app}\nWEB_IMAGE=old-web\n")
+            if running_env is not None:
+                (old / ".env").write_text(running_env)
+            if running_compose is not None:
+                (old / "docker-compose.production.yml").write_text(running_compose)
+            (new / "docker-compose.production.yml").write_text(COMPOSE)
             (root / "current").symlink_to(old)
+            if unsettled:
+                (root / "cutover-incomplete").touch()
             s3 = directory / "s3"
             s3.mkdir()
             stubs = directory / "stubs.sh"
@@ -131,6 +148,8 @@ class DeployProductionTests(unittest.TestCase):
                 "calls": calls.read_text().splitlines() if calls.exists() else [],
                 "objects": objects,
                 "current": os.readlink(root / "current"),
+                "previous": os.readlink(root / "previous") if (root / "previous").is_symlink() else None,
+                "unsettled": (root / "cutover-incomplete").exists(),
                 "dump_note": (new / "database-dump").read_text() if (new / "database-dump").exists() else None,
                 "new": str(new),
                 "old": str(old),
@@ -165,6 +184,7 @@ class DeployProductionTests(unittest.TestCase):
         self.assertEqual(body, DUMP)
         self.assertEqual(run["dump_note"], f"s3://{BUCKET}/{key}\n")
         self.assertEqual(run["current"], run["new"])
+        self.assertFalse(run["unsettled"])
         self.assertFalse(any(call.startswith("docker start") for call in calls), calls)
 
     def test_a_refused_preflight_stops_nothing(self):
@@ -208,6 +228,8 @@ class DeployProductionTests(unittest.TestCase):
         self.assertIn(f"s3://{BUCKET}/{key}", run["result"].stderr)
         self.assertIn("Restoring the database before a release", run["result"].stderr)
         self.assertEqual(run["current"], run["old"])
+        # The API and worker are stopped, so the next release may not trust them.
+        self.assertTrue(run["unsettled"])
 
     def test_an_unhealthy_new_release_is_not_rolled_back_onto_a_migrated_schema(self):
         run = self.deploy(TEST_NEW_RELEASE_UNHEALTHY="1")
@@ -215,6 +237,63 @@ class DeployProductionTests(unittest.TestCase):
         self.assertFalse(any(call.startswith("docker start") for call in run["calls"]), run["calls"])
         self.assertIn("left stopped", run["result"].stderr)
         self.assertEqual(run["current"], run["old"])
+
+
+    # The running release ran this app image beside this .env and compose file.
+    WEB_ONLY = {"running_app": APP_IMAGE, "running_env": RUNNING_ENV}
+
+    def test_a_release_that_changes_only_web_replaces_web_alone(self):
+        run = self.deploy(**self.WEB_ONLY)
+        self.assertEqual(run["result"].returncode, 0, run["result"].stderr)
+        calls = run["calls"]
+        order = [
+            self.index(calls, "compose run --rm --no-deps api node"),
+            self.index(calls, f"compose up -d --no-deps --wait --wait-timeout 120 web with {WEB_IMAGE}"),
+            self.index(calls, "compose up -d --no-deps --wait --wait-timeout 120 caddy"),
+            self.index(calls, "curl "),
+        ]
+        self.assertEqual(order, sorted(order), calls)
+        for skipped in ("compose stop", "compose up -d --wait --wait-timeout 180 postgres redis",
+                        "compose exec pg_dump", "compose run --rm --no-deps migrate",
+                        "compose up -d --no-deps --wait --wait-timeout 240", "docker start"):
+            self.assertFalse(any(call.startswith(skipped) for call in calls), (skipped, calls))
+        self.assertEqual(run["objects"], {})
+        self.assertIsNone(run["dump_note"])
+        self.assertEqual(run["current"], run["new"])
+        self.assertEqual(run["previous"], run["old"])
+
+    def test_anything_the_running_release_cannot_vouch_for_takes_the_full_cutover(self):
+        cases = {
+            "a new app image": {"running_app": "old-app"},
+            "a changed environment": {"running_env": "POSTGRES_PASSWORD=old\n"},
+            "no recorded environment": {"running_env": None},
+            "a changed compose file": {"running_compose": "name: book-maker\nservices: {}\n"},
+            "no recorded compose file": {"running_compose": None},
+            "a stopped API": {"TEST_RUNNING": "worker web"},
+            "a stopped worker": {"TEST_RUNNING": "api web"},
+            "a cutover that failed partway": {"unsettled": True},
+        }
+        for name, change in cases.items():
+            with self.subTest(name):
+                run = self.deploy(**{**self.WEB_ONLY, **change})
+                self.assertEqual(run["result"].returncode, 0, run["result"].stderr)
+                self.index(run["calls"], "compose stop worker")
+                self.index(run["calls"], "compose run --rm --no-deps migrate")
+                self.index(run["calls"], "compose up -d --no-deps --wait --wait-timeout 240 api worker web")
+                self.assertFalse(run["unsettled"])
+
+    def test_a_failed_web_only_release_puts_the_running_web_back(self):
+        run = self.deploy(**self.WEB_ONLY, TEST_NEW_WEB_UNHEALTHY="1")
+        self.assertNotEqual(run["result"].returncode, 0)
+        web = [call for call in run["calls"] if call.startswith("compose up -d --no-deps --wait --wait-timeout 120 web")]
+        self.assertEqual(web, [
+            f"compose up -d --no-deps --wait --wait-timeout 120 web with {WEB_IMAGE}",
+            "compose up -d --no-deps --wait --wait-timeout 120 web with old-web",
+        ])
+        self.assertFalse(any(call.startswith(("compose stop", "docker start")) for call in run["calls"]), run["calls"])
+        self.assertIn("Starting the running release's web again", run["result"].stderr)
+        self.assertEqual(run["current"], run["old"])
+        self.assertFalse(run["unsettled"])
 
 
 if __name__ == "__main__":

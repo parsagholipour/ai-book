@@ -616,6 +616,7 @@ code in that area, however obvious the rule looks.
 - **The host keeps the current and previous release's images by name; `docker image prune` would delete the rollback.** → scripts/CLAUDE.md
 - **Postgres and Redis are the last things the kernel may kill, and every Node process knows its heap ceiling.** → scripts/CLAUDE.md
 - **The worker drains while the API still serves, so a deploy's outage is the API's stop, the dump, the migration and the start.** → scripts/CLAUDE.md
+- **A release that changes only the web image replaces web alone, so an unchanged app image is reused, never rebuilt.** → scripts/CLAUDE.md
 - **Nothing is migrated until the database it changes is in S3.** → scripts/CLAUDE.md
 - **The worker's healthcheck counts only its own container's heartbeat, because a lane's key outlives the worker that wrote it.** → scripts/CLAUDE.md
 - **A deleted or overwritten object stays recoverable for 30 days, and no longer.** → scripts/CLAUDE.md

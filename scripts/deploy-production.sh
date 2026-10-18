@@ -14,7 +14,8 @@ export AWS_PAGER=""
 
 # Where a failure leaves the host, read by on_exit: `preflight` touches nothing
 # running, `stopping` has stopped the running release but changed no schema,
-# `migrating` and `starting` may have, and `live` is the new release serving.
+# `migrating` and `starting` may have, `web` has replaced web alone, and `live`
+# is the new release serving.
 phase=preflight
 
 # Prevent overlapping remote commands even if a GitHub run is cancelled.
@@ -29,7 +30,13 @@ root=${BOOK_MAKER_ROOT:-/opt/book-maker}
 # audio and attachments). storage.tf expires it after 30 days.
 dump_prefix=db-backups
 database_dump=""
+running_services=()
 stopped_services=()
+# Present from the moment a full cutover stops anything until a release is live.
+# A web-only release trusts the running API and worker to be `current`'s, and a
+# cutover that failed partway may have left them stopped, or started from images
+# `current` does not name.
+cutover_marker=$root/cutover-incomplete
 
 # One disk holds the OS, every Docker image, and the PostgreSQL and Redis
 # volumes. A pull that fills it fails halfway, and Postgres panics on its next
@@ -144,6 +151,33 @@ restart_stopped_release() {
   done
 }
 
+# A release whose app image, runtime environment and compose file are all the
+# running release's differs only in the web image (the Flutter app, the console's
+# static files, nginx's configuration), so it replaces web alone while the API
+# and worker keep serving: no drain, no dump and no migration, because the schema
+# is the app image's. Anything the running release cannot vouch for takes the
+# full cutover instead.
+web_only_release() {
+  local running=$root/current
+  [[ ! -e $cutover_marker ]] || return 1
+  [[ -f $running/images.env && -f $running/.env && -f $running/docker-compose.production.yml ]] || return 1
+  [[ "$(sed -n -E 's/^APP_IMAGE=//p' "$running/images.env")" == "$APP_IMAGE" ]] || return 1
+  cmp -s .env "$running/.env" || return 1
+  cmp -s docker-compose.production.yml "$running/docker-compose.production.yml" || return 1
+  [[ " ${running_services[*]} " == *" api "* && " ${running_services[*]} " == *" worker "* ]]
+}
+
+# Puts the running release's web image back after a failed web-only release.
+# Nothing else was touched, and the compose file and environment are the running
+# release's, so what comes back is the web the API and worker were serving behind.
+restore_running_web() {
+  local image
+  image=$(sed -n -E 's/^WEB_IMAGE=//p' "$root/current/images.env")
+  [[ -n $image ]] || return 1
+  echo "The new web did not pass its checks. Starting the running release's web again." >&2
+  WEB_IMAGE=$image "${compose[@]}" up -d --no-deps --wait --wait-timeout 120 web
+}
+
 on_exit() {
   local status=$?
   docker logout "$registry" >/dev/null 2>&1 || true
@@ -157,6 +191,9 @@ on_exit() {
         echo "the schema may have changed, and the older images cannot be started on it blind." >&2
         echo "Fix forward and rerun the workflow, or restore ${database_dump:-the dump} and start the" >&2
         echo "running release (docs/deployment.md, \"Restoring the database before a release\")." >&2
+        ;;
+      web)
+        restore_running_web || echo "Could not start the running release's web again." >&2
         ;;
     esac
   fi
@@ -192,41 +229,52 @@ require_free_gib "$cutover_floor_gib" "stop the running release after the pull"
 # put back exactly this.
 for service in api worker web; do
   if [[ -n $("${compose[@]}" ps --quiet --status running "$service") ]]; then
-    stopped_services+=("$service")
+    running_services+=("$service")
   fi
 done
 
-phase=stopping
-# The worker drains first, alone, while the API and web keep serving: it gets
-# up to its stop_grace_period (5 minutes) to finish its jobs and keeps beating
-# while it does, and work the API queues meanwhile waits in Redis for the new
-# worker. The outage starts only after it, with the API's stop. Caddy keeps
-# running throughout: it answers 502 while web is down, keeps TLS up and its
-# certificates, and re-resolves web:80 when the new container appears.
-"${compose[@]}" stop worker
-"${compose[@]}" stop api web
-# After the drain and the API's stop, not before: a changed postgres or redis
-# definition (a new pgvector image under its moving tag, a memory setting)
-# recreates that container, which would cut the connections of whatever still
-# used it. Unchanged, this is a no-op; on a new host it starts them.
-"${compose[@]}" up -d --wait --wait-timeout 180 postgres redis
-# A migration that adds enum values the running images cannot read has no way
-# back but a restore, so nothing is migrated until the database it changes is
-# in S3. Taken with every writer stopped, the dump is exactly the state the
-# migration starts from. A failed dump restarts the running release (on_exit).
-dump_database
-printf '%s\n' "$database_dump" > database-dump
-phase=migrating
-# A failed migration leaves the applications stopped and fails the deployment;
-# it must never be ignored.
-"${compose[@]}" run --rm --no-deps migrate
-phase=starting
-"${compose[@]}" up -d --no-deps --wait --wait-timeout 240 api worker web
+if web_only_release; then
+  echo "The app image, environment and compose file are the running release's: replacing web alone."
+  phase=web
+  # The recreate costs the seconds between the old nginx stopping and the new one
+  # answering; Caddy answers 502 meanwhile, as it does during a full cutover.
+  "${compose[@]}" up -d --no-deps --wait --wait-timeout 120 web
+else
+  stopped_services=("${running_services[@]}")
+  : > "$cutover_marker"
+  phase=stopping
+  # The worker drains first, alone, while the API and web keep serving: it gets
+  # up to its stop_grace_period (5 minutes) to finish its jobs and keeps beating
+  # while it does, and work the API queues meanwhile waits in Redis for the new
+  # worker. The outage starts only after it, with the API's stop. Caddy keeps
+  # running throughout: it answers 502 while web is down, keeps TLS up and its
+  # certificates, and re-resolves web:80 when the new container appears.
+  "${compose[@]}" stop worker
+  "${compose[@]}" stop api web
+  # After the drain and the API's stop, not before: a changed postgres or redis
+  # definition (a new pgvector image under its moving tag, a memory setting)
+  # recreates that container, which would cut the connections of whatever still
+  # used it. Unchanged, this is a no-op; on a new host it starts them.
+  "${compose[@]}" up -d --wait --wait-timeout 180 postgres redis
+  # A migration that adds enum values the running images cannot read has no way
+  # back but a restore, so nothing is migrated until the database it changes is
+  # in S3. Taken with every writer stopped, the dump is exactly the state the
+  # migration starts from. A failed dump restarts the running release (on_exit).
+  dump_database
+  printf '%s\n' "$database_dump" > database-dump
+  phase=migrating
+  # A failed migration leaves the applications stopped and fails the deployment;
+  # it must never be ignored.
+  "${compose[@]}" run --rm --no-deps migrate
+  phase=starting
+  "${compose[@]}" up -d --no-deps --wait --wait-timeout 240 api worker web
+fi
 # Recreated after web is healthy so a new edge never waits on an absent upstream.
 "${compose[@]}" up -d --no-deps --wait --wait-timeout 120 caddy
 # Through the published edge: Caddy -> Nginx -> API.
 curl --fail --silent --show-error http://127.0.0.1/api/health
 phase=live
+rm -f "$cutover_marker"
 
 # Only mark a release current after every service passes its checks. The
 # release it replaces becomes `previous`, the rollback whose images stay on the

@@ -1,6 +1,9 @@
 # PR:  terraform fmt → validate → plan  (commented on the PR)
 # merge to master: terraform apply → build/smoke test Docker images → deploy to EC2
 #   (not for a push that changes only docs or Markdown; see paths-ignore)
+#   An image whose sources are unchanged is reused rather than rebuilt, and a
+#   release whose app image is the running one replaces web alone: no outage
+#   for the API and worker (docs/deployment.md, "Release behavior").
 #
 # Repo secrets required:
 #   AWS_ACCESS_KEY_ID
@@ -10,6 +13,11 @@ name: Terraform
 
 on:
   workflow_dispatch:
+    inputs:
+      rebuild:
+        description: Rebuild every image, even from unchanged sources (picks up a new base image; restarts the API and worker)
+        type: boolean
+        default: false
   pull_request:
     paths:
       - "*.tf"
@@ -25,12 +33,13 @@ on:
       - ".github/workflows/terraform.yml"
   push:
     branches: [master]
-    # Every deploy is a short outage (docs/deployment.md, "Release behavior"),
+    # A full deploy is a short outage (docs/deployment.md, "Release behavior"),
     # and none of these reach an image or the infrastructure. Flutter sources
-    # are built separately and their web output is included in the web image.
-    # A push is skipped only when *every*
-    # file it changes matches; one that also touches anything else applies and
-    # deploys as before. Actions → Terraform → Run workflow deploys by hand.
+    # do: their web build is in the web image, so a push that changes only
+    # apps/mobile deploys, replacing web alone. A push is skipped only when
+    # *every* file it changes matches; one that also touches anything else
+    # applies and deploys as before. Actions → Terraform → Run workflow deploys
+    # by hand.
     paths-ignore:
       - "docs/**"
       - ".scratch/**"
@@ -192,4 +201,5 @@ jobs:
       web_repository: ${{ needs.apply.outputs.web_repository }}
       env_parameter: ${{ needs.apply.outputs.env_parameter }}
       assets_bucket: ${{ needs.apply.outputs.assets_bucket }}
+      rebuild: ${{ inputs.rebuild == true }}
     secrets: inherit

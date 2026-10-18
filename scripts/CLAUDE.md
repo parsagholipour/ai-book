@@ -180,9 +180,32 @@ a push (launch review H1). Now `stop worker` runs alone first: the worker keeps 
 drains (`apps/worker/CLAUDE.md`, "Liveness"), so `/api/ready` and the alert sweep stay quiet, and
 work the API queues meanwhile waits in Redis for the new worker. Only then `stop api web`. The
 preflight (`checkProductionConfig`) and the disk guard still run before anything stops. Pushes
-that change only `docs/`, `apps/mobile/`, `.scratch/`, `.claude/` or Markdown no longer deploy at
-all (`paths-ignore` in `.github/workflows/terraform.yml`; a push is skipped only when every file
-it changes matches).
+that change only `docs/`, `.scratch/`, `.claude/` or Markdown do not deploy at all (`paths-ignore`
+in `.github/workflows/terraform.yml`; a push is skipped only when every file it changes matches).
+`apps/mobile/` was on that list until the Flutter web build moved into the web image (2026-10-18);
+a push that changes only it now deploys without the cutover, below.
+
+**A release that changes only the web image replaces web alone, so an unchanged app image is reused, never rebuilt.**
+When the Flutter web build went into the web image, every `apps/mobile` push started taking the
+full cutover above, outage and worker drain included, to swap static files in nginx. Now
+`web_only_release` in `deploy-production.sh` takes the short path when the incoming app image
+digest, `.env` and compose file are byte-identical to `current`'s, the API and worker are running,
+and `$root/cutover-incomplete` is absent: `up -d --no-deps web`, then Caddy and the edge check, with
+`phase=web`, whose failure puts the running release's `WEB_IMAGE` back (nothing else changed, so
+that is safe where a full cutover's failure is not). The marker is written before a full cutover
+stops anything and removed only once a release is live, because a cutover that failed partway can
+leave the API and worker stopped or running images `current` does not name, and the short path
+would trust them. The `.env` test is what makes a `PRODUCTION_ENV` or `DEBUG_MODE` change on an
+unchanged commit restart the API and worker. The digest test only works because CI never rebuilds
+an unchanged app: buildx attaches fresh provenance to every build, so even a fully cached rebuild
+has a new digest and would take the full cutover every time. `deploy.yml` hashes `git ls-files -s`
+of every tracked file but `apps/mobile`, `docs`, `.scratch` and `.claude`, tags each app build
+`src-<key>-<run>-<attempt>` (ECR tags are immutable, so a forced rebuild cannot reuse the bare key)
+and deploys the newest image carrying the key instead of building. What it hashes is
+deliberately more than the image reads, never less: a path wrongly left out would deploy a stale
+API and worker with no error anywhere. The Flutter build is cached the same way by
+`apps/mobile` and `scripts/build-flutter-web.sh`, and saved only after analysis and the browser
+tests pass. The `rebuild` input on the Terraform workflow's manual run skips both lookups.
 
 **Nothing is migrated until the database it changes is in S3.** A migration that adds enum values
 the running images cannot read (`000075`–`000102` do) has no rollback but a restore, and until
@@ -196,8 +219,8 @@ deploy stopped, exactly as they were (`docker start` on their ids, no image or c
 decision), with nothing migrated. A failed migration or an unhealthy new release is **not**
 rolled back: the schema may have changed, so the script leaves the applications stopped and prints
 the dump's URI, and `docs/deployment.md`, "Restoring the database before a release", is the way
-back. `on_exit` reads `phase` (`preflight`, `stopping`, `migrating`, `starting`, `live`) to tell
-those apart; a new step between the stop and `migrate` belongs to `stopping`. The instance role
+back. `on_exit` reads `phase` (`preflight`, `stopping`, `migrating`, `starting`, `web`, `live`) to
+tell those apart; a new step between the stop and `migrate` belongs to `stopping`. The instance role
 already writes the bucket; `storage.tf`'s `expire-database-dumps` rule expires the prefix after 30
 days. CI's smoke test (`check-production-docker.sh`) restores a dump with the same flags into a
 scratch database on every release, so the restore is rehearsed against the real schema.

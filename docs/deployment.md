@@ -4,9 +4,13 @@ Every push to `master` runs the Terraform workflow, applies infrastructure, then
 calls `deploy.yml` to build and deploy the **same commit**, unless every file the
 push changes is under `docs/`, `.scratch/` or `.claude/`, or is a
 Markdown file (`paths-ignore`: none of those reach an image or the infrastructure,
-and every deploy is a short outage). A push that changes any other file deploys,
-whatever else it also changes. You can also run
-**Actions → Terraform → Run workflow** on `master`. Pull requests only plan
+and a full deploy is a short outage). A push that changes any other file deploys,
+whatever else it also changes, but only what its changes reach is rebuilt and
+restarted: a push that changes only the Flutter app or nginx replaces the `web`
+container alone, with no outage for the API and worker (see
+[Release behavior](#release-behavior)). You can also run
+**Actions → Terraform → Run workflow** on `master`; its **rebuild** box builds
+every image even from unchanged sources. Pull requests only plan
 infrastructure and never deploy. GitHub serializes the full apply/deploy workflow;
 it does not cancel an active production deployment when another commit arrives.
 
@@ -33,8 +37,10 @@ hostname still serves the operator console and public policy/share pages.
 
 CI installs Flutter **3.44.8**, runs `scripts/build-flutter-web.sh`, then copies
 its generated `deploy/flutter-web/` bundle into the `web` Docker target. Run that
-script before building the web image locally too. Flutter source changes now
-trigger the regular production workflow. Docker smoke tests check the Flutter
+script before building the web image locally too. Flutter source changes
+trigger the regular production workflow and deploy as a web-only release. A push
+that leaves `apps/mobile` unchanged restores the last build of the same sources
+from the Actions cache instead of installing Flutter. Docker smoke tests check the Flutter
 entrypoint, deep links, API proxy and operator-route isolation before cutover.
 The build uses `APP_ENV=production` and the app hostname as `API_BASE_URL`; no
 secrets are compiled into it. Service-worker caching is disabled and static
@@ -319,6 +325,20 @@ The workflow does not replace a server to shrink its disk.
 
 - GitHub builds on its runner, pushes uniquely tagged images to ECR, and deploys
   immutable image digests. No compilation takes place on the small EC2 instance.
+- **Unchanged sources are not rebuilt.** The workflow hashes the git blobs each
+  build can read. The Flutter web build is keyed by `apps/mobile` and
+  `scripts/build-flutter-web.sh` and cached in GitHub Actions once it passes
+  analysis and the browser tests. The app image is keyed by every tracked file but
+  `apps/mobile/`, `docs/`, `.scratch/` and `.claude/` (the paths `.dockerignore`
+  drops), and each build is tagged `src-<key>-<run>` in ECR. When an image with the
+  same key exists, its digest is deployed again rather than rebuilt: a rebuild
+  would get a new digest even from a full Docker cache, and a new app digest is
+  what makes the deploy restart the API and worker. The web image is always built,
+  from the Docker cache. A key is the exact sources, so a
+  deploy that failed or was superseded never hides a change from the next one.
+  **Run workflow → rebuild** skips both lookups; use it to pick up a new
+  `node:22-bookworm-slim` when the app's sources have not changed, since that
+  otherwise arrives with the next server change.
 - Before touching EC2, the workflow smoke-tests both images with mock providers,
   a fresh database, migrations, seed data, API/web/worker readiness, and private
   object storage through MinIO. It also recreates the app containers to check that
@@ -334,8 +354,21 @@ The workflow does not replace a server to shrink its disk.
 - Runtime secrets are written to SSM as a `SecureString` using the account's
   default SSM KMS key. Only non-secret scripts and image references enter the SSM
   command. The host retrieves the environment into a root-only `.env` file.
+- **A release that changes only the web image replaces web alone.** After the pull
+  and preflight, when the release's app image digest, `.env` and
+  `docker-compose.production.yml` are all identical to `current`'s, the API and
+  worker are running, and no earlier cutover failed partway, the deploy recreates
+  `web` and nothing else: no drain, no dump and no migration, since the schema
+  belongs to the app image. Then Caddy, the health check through the edge, and the
+  `current`/`previous` bookkeeping, as below. A web that does not pass its checks
+  is replaced by the running release's web again, and the deploy fails. Anything
+  else takes the full cutover, including a changed `PRODUCTION_ENV` or `DEBUG_MODE`
+  on an otherwise unchanged commit. A full cutover writes
+  `/opt/book-maker/cutover-incomplete` before it stops anything and removes it
+  once the release is live, so after one that failed (even one that put the old
+  release back) the next deploy is full too.
 - A host lock prevents overlapping deployment commands. Images are pulled and the
-  preflight runs while the running release serves. Then the cutover, in this order:
+  preflight runs while the running release serves. Then the full cutover, in this order:
   1. **The worker drains alone** (`stop worker`, up to its five-minute
      `stop_grace_period`) while the API and web keep serving. It keeps writing its
      heartbeat while it drains, and work the API queues meanwhile waits in Redis

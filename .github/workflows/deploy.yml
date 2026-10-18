@@ -18,6 +18,14 @@ on:
       assets_bucket:
         required: true
         type: string
+      # Build every image instead of reusing one built from the same sources. A
+      # new app image takes the full cutover on EC2, so this also restarts the
+      # API and worker; use it to pick up a new base image when the app's sources
+      # have not changed.
+      rebuild:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,6 +33,7 @@ permissions:
 env:
   AWS_REGION: eu-central-1
   AWS_PAGER: ""
+  FLUTTER_VERSION: '3.44.8'
 
 jobs:
   build:
@@ -33,30 +42,86 @@ jobs:
     timeout-minutes: 40
     environment: production
     outputs:
-      app_image: ${{ inputs.app_repository }}@${{ steps.app.outputs.digest }}
+      app_image: ${{ inputs.app_repository }}@${{ steps.app.outputs.digest || steps.app-source.outputs.digest }}
       web_image: ${{ inputs.web_repository }}@${{ steps.web.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      # Each build is keyed by the git blobs it can read, so a key names the
+      # exact sources, whatever the last deploy did or whether it failed.
+      - name: Hash the sources of the Flutter web build and the app image
+        id: sources
+        run: |
+          set -euo pipefail
+          flutter=$(git ls-files -s -- apps/mobile scripts/build-flutter-web.sh | sha256sum | cut -c1-64)
+          # Every tracked file but the paths .dockerignore drops from the build
+          # context. Wider than the app image reads (a deploy/ or *.tf change
+          # rebuilds it), never narrower: a file this missed would ship a stale
+          # API and worker.
+          app=$(git ls-files -s -- . ':(exclude)apps/mobile' ':(exclude)docs' ':(exclude).scratch' ':(exclude).claude' \
+            | sha256sum | cut -c1-64)
+          echo "flutter_key=flutter-web-$FLUTTER_VERSION-$flutter" >> "$GITHUB_OUTPUT"
+          echo "app_key=src-$app" >> "$GITHUB_OUTPUT"
+      - name: Reuse the Flutter web build of these sources
+        id: flutter-cache
+        if: ${{ !inputs.rebuild }}
+        uses: actions/cache/restore@v4
         with:
-          flutter-version: '3.44.8'
+          path: deploy/flutter-web
+          key: ${{ steps.sources.outputs.flutter_key }}
+      - uses: subosito/flutter-action@v2
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
       - name: Build Flutter web app
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-flutter-web.sh
       - name: Verify Flutter browser adapters
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
         working-directory: apps/mobile
         env:
           CHROME_EXECUTABLE: /usr/bin/google-chrome
         run: |
           flutter analyze --no-pub
           flutter test --no-pub --platform chrome test/web/browser_storage_test.dart test/api/streaming_browser_adapter_test.dart
+      # Saved once it has passed analysis and the browser tests, not at the end
+      # of the job: a server change that fails the smoke test leaves a good build.
+      - name: Save the Flutter web build
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: deploy/flutter-web
+          key: ${{ steps.sources.outputs.flutter_key }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       - uses: aws-actions/amazon-ecr-login@v2
+      # An app image whose digest is the running release's lets the deploy
+      # replace web alone (scripts/deploy-production.sh), so an unchanged app is
+      # never rebuilt: a rebuild has a new digest even from a full cache, because
+      # buildx attaches fresh provenance. Tags are immutable, so each build is
+      # tagged src-<key>-<run> and the newest one wins.
+      - name: Look for an app image built from these sources
+        id: app-source
+        if: ${{ !inputs.rebuild }}
+        env:
+          REPOSITORY: ${{ inputs.app_repository }}
+          KEY: ${{ steps.sources.outputs.app_key }}
+        run: |
+          set -euo pipefail
+          if ! digest=$(aws ecr describe-images --repository-name "${REPOSITORY#*/}" --filter tagStatus=TAGGED \
+            --query "sort_by(imageDetails[?imageTags[?starts_with(@, '$KEY-')]], &imagePushedAt)[-1].imageDigest" \
+            --output text); then
+            echo "::warning::Could not list the app images; building one."
+            exit 0
+          fi
+          if [[ $digest == sha256:* ]]; then
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "Reusing $REPOSITORY@$digest, built from the same sources." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: docker/setup-buildx-action@v3
       - name: Build smoke-test object storage
         uses: docker/build-push-action@v6
@@ -68,13 +133,16 @@ jobs:
           cache-to: type=gha,mode=max,scope=book-maker-minio
       - name: Build and publish API/worker image
         id: app
+        if: steps.app-source.outputs.digest == ''
         uses: docker/build-push-action@v6
         with:
           context: .
           target: app
           platforms: linux/amd64
           push: true
-          tags: ${{ inputs.app_repository }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          tags: |
+            ${{ inputs.app_repository }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+            ${{ inputs.app_repository }}:${{ steps.sources.outputs.app_key }}-${{ github.run_id }}-${{ github.run_attempt }}
           cache-from: type=gha,scope=book-maker-app
           cache-to: type=gha,mode=max,scope=book-maker-app
       - name: Build and publish web image
@@ -86,12 +154,14 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ inputs.web_repository }}:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          cache-from: type=gha,scope=book-maker-app
+          cache-from: |
+            type=gha,scope=book-maker-app
+            type=gha,scope=book-maker-web
           cache-to: type=gha,mode=max,scope=book-maker-web
       - name: Smoke test production containers
         env:
           MINIO_IMAGE: book-maker-minio:smoke
-          APP_IMAGE: ${{ inputs.app_repository }}@${{ steps.app.outputs.digest }}
+          APP_IMAGE: ${{ inputs.app_repository }}@${{ steps.app.outputs.digest || steps.app-source.outputs.digest }}
           WEB_IMAGE: ${{ inputs.web_repository }}@${{ steps.web.outputs.digest }}
         run: bash scripts/check-production-docker.sh
 
