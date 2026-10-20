@@ -109,6 +109,12 @@ Anything that launches Chromium must go through the shared browser pool and must
   `putIfAbsent`, so nothing stored is overwritten. Run it inside the api container (the host has no
   object-store credentials), and check `df` first: MinIO refuses writes under ~1% free, and the
   dry run prints the bytes an `--apply` adds.
+- `comp-plan.ts` — gives a reader a paid plan for free (`--email`, `--tier creator|pro|max`,
+  `--note`), or takes it back (`--revoke`). The comp is a plan entitlement with
+  `source: "operator_comp"` and no purchase record; each month's allowance is granted lazily on the
+  reader's first request of that month, counted from the day it was given, so nothing re-runs
+  monthly. Refuses an account that already holds a Google Play plan. See
+  `packages/db/src/operatorPlanComps.ts`.
 - `check_alibaba_credentials.py` — standalone Python probe; redacts secrets.
 
 ## Production deploy

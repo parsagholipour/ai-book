@@ -13,6 +13,7 @@
  */
 import {
   PLAN_ENTITLEMENT_TYPES,
+  PLAN_TIER_ORDER,
   type PlanTier,
   creditPricing,
   highestPlanTier,
@@ -36,6 +37,7 @@ import { activeCreditPricingVersion } from "./creditPricing.ts";
 import { ensureWelcomeCreditsTx } from "./welcomeCredits.ts";
 import { retireFreePlanCreditsTx } from "./freePlanCredits.ts";
 import { planDebtSettlementTx, recordPlanDebtSettlementTx } from "./planDebt.ts";
+import { addMonths } from "./subscriptionAllowance.ts";
 
 /** Monthly usage counters. See `UsageCounter` in the schema. */
 export const ILLUSTRATED_BOOK_COUNTER = "illustrated_books";
@@ -143,7 +145,9 @@ export async function ensureCurrentPlanPeriodTx(
     return settled;
   }
   if ((await resolvePlanTierTx(tx, userId, now)) !== "free") {
-    return settled;
+    // A store plan's next month comes from its verification or the renewal
+    // sweep. A comp has neither, so its next month is granted here.
+    return ensureOperatorCompMonthTx(tx, userId, settled, now);
   }
 
   const period = calendarPeriodBounds(now);
@@ -165,6 +169,87 @@ export async function ensureCurrentPlanPeriodTx(
 
 export async function ensureCurrentPlanPeriod(userId: string, now: Date = new Date()): Promise<PlanAccountRow> {
   return runSerializable((tx) => ensureCurrentPlanPeriodTx(tx, userId, now));
+}
+
+/** `UserEntitlement.source` of a plan an operator gave away (`operatorPlanComps.ts`). */
+export const OPERATOR_COMP_SOURCE = "operator_comp";
+
+/** The monthly product whose catalog allowance a comped tier grants each month. */
+export const OPERATOR_COMP_SKU_BY_TIER: Record<Exclude<PlanTier, "free">, string> = {
+  creator: "tomeza.creator_monthly",
+  pro: "tomeza.pro_monthly",
+  max: "tomeza.max_monthly"
+};
+
+/**
+ * Put the account on the month of its operator comp that `now` falls in.
+ *
+ * A comp is a plan entitlement with no store order behind it, so neither a
+ * verification nor the renewal sweep grants its months. This does, lazily, the
+ * way welcome credits are: `ensureCurrentPlanPeriodTx` calls it once the last
+ * month has run out, and `grantOperatorPlanComp` calls it for the first. Months
+ * are counted from the entitlement's `startsAt` and each is one
+ * `PLAN_ALLOWANCE_GRANT` keyed on (entitlement, month) — valued at nothing by
+ * the dashboard, like every allowance nobody paid for — so concurrent reads
+ * grant it once and the month's unused credits lapse at the next one.
+ *
+ * A store plan held beside the comp owns the pool: while one is active this
+ * grants nothing, and the store's own grants reset the pool as they always do.
+ */
+export async function ensureOperatorCompMonthTx(
+  tx: BillingTx,
+  userId: string,
+  account: PlanAccountRow,
+  now: Date
+): Promise<PlanAccountRow> {
+  const plans = await tx.userEntitlement.findMany({
+    where: { ...activeEntitlementWhere(userId, now), type: { in: PLAN_ENTITLEMENT_TYPES } },
+    select: { id: true, type: true, source: true, startsAt: true }
+  });
+  if (plans.some((plan) => plan.source !== OPERATOR_COMP_SOURCE)) {
+    return account;
+  }
+  // `grantOperatorPlanComp` keeps one comp live; the highest tier wins anyway.
+  const comp = plans
+    .map((plan) => ({ ...plan, tier: planTierForEntitlementType(plan.type) }))
+    .sort((a, b) => PLAN_TIER_ORDER.indexOf(b.tier) - PLAN_TIER_ORDER.indexOf(a.tier))[0];
+  if (!comp || comp.tier === "free") {
+    return account;
+  }
+  const tier = comp.tier;
+  const product = await tx.productCatalog.findUnique({
+    where: { sku: OPERATOR_COMP_SKU_BY_TIER[tier] },
+    select: { creditAmount: true, title: true }
+  });
+  if (!product) {
+    return account;
+  }
+
+  const month = operatorCompMonthIndex(comp.startsAt, now);
+  const applied = await applyPlanPeriodTx(tx, {
+    userId,
+    account,
+    period: {
+      key: `comp:${comp.id}:${month}`,
+      start: addMonths(comp.startsAt, month),
+      end: addMonths(comp.startsAt, month + 1)
+    },
+    allowance: product.creditAmount,
+    operation: "PLAN_ALLOWANCE_GRANT",
+    idempotencyKey: `operator-comp:${comp.id}:month:${month}`,
+    description: `${product.title} plan credits (complimentary)`,
+    metadata: { planTier: tier, operatorCompEntitlementId: comp.id, allowanceMonth: month }
+  });
+  return applied.account;
+}
+
+/** Whole months from `startsAt` to `now`: 0 in the comp's first month. */
+function operatorCompMonthIndex(startsAt: Date, now: Date): number {
+  let month = (now.getUTCFullYear() - startsAt.getUTCFullYear()) * 12 + now.getUTCMonth() - startsAt.getUTCMonth();
+  if (addMonths(startsAt, month) > now) {
+    month -= 1;
+  }
+  return Math.max(0, month);
 }
 
 /**

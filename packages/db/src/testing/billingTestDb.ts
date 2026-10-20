@@ -789,7 +789,7 @@ export function createBillingTestDb() {
           creditsCost: data.creditsCost,
           relatedLedgerEntryId: data.relatedLedgerEntryId ?? null,
           purchaseRecordId: data.purchaseRecordId ?? null,
-          startsAt: new Date("2026-06-15T12:00:00.000Z"),
+          startsAt: data.startsAt ?? new Date("2026-06-15T12:00:00.000Z"),
           expiresAt: data.expiresAt ?? null,
           metadata: data.metadata
         };

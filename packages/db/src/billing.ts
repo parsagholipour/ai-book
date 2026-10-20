@@ -12,6 +12,7 @@
  *   billingEntitlements.ts  the durable unlocks credits buy
  *   billingSubscriptions.ts Google Play purchases and subscription state
  *   planPeriods.ts          allowances and quotas
+ *   operatorPlanComps.ts    a plan an operator gives away
  *   welcomeCredits.ts       one-time welcome grant
  */
 export {
@@ -88,6 +89,14 @@ export {
 } from "./billingSubscriptions.ts";
 
 export { recordGooglePlayRefund, type GooglePlayRefundNotice } from "./googlePlayRefunds.ts";
+
+export {
+  type OperatorCompTier,
+  type OperatorPlanCompGrant,
+  OperatorPlanCompError,
+  grantOperatorPlanComp,
+  revokeOperatorPlanComp
+} from "./operatorPlanComps.ts";
 
 export {
   GenerationAttemptConflictError,
