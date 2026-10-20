@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderBase;
 
+import '../../../shared/lifecycle/app_resume_signal.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
 import '../data/creation_repository.dart';
+import '../data/projects_repository.dart';
 import '../domain/creation_models.dart';
 import 'book_shelf.dart';
 import 'chat_drawer_chrome.dart';
@@ -26,12 +31,39 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
   final _scroll = ScrollController();
   var _searchOpen = false;
 
+  StreamSubscription<void>? _resumes;
+
   @override
   void initState() {
     super.initState();
     _searchFocus.addListener(_focusChanged);
     _scroll.addListener(_loadNearEnd);
+    // The chats and the balance are cached for the life of the app (the
+    // home screen keeps billing watched), so without this the drawer showed
+    // whatever the first read said: chats started on another phone and every
+    // credit spent or granted since never appeared. Each opening mounts a new
+    // drawer, so each opening asks again, behind what is already painted —
+    // the shelf does the same for the books. After the first frame, because
+    // invalidating mid-build marks the ProviderScope dirty.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refresh();
+    });
+    // And again on the way back from the background, for a drawer left open.
+    _resumes = ref
+        .read(appResumesProvider)
+        .listen((_) => _refresh(books: true));
   }
+
+  void _refresh({bool books = false}) {
+    if (_cached(chatSessionsProvider)) ref.invalidate(chatSessionsProvider);
+    if (_cached(billingProvider)) ref.invalidate(billingProvider);
+    if (books && _cached(projectsProvider)) ref.invalidate(projectsProvider);
+  }
+
+  /// Held and settled. A provider nobody holds reads fresh when it is next
+  /// watched, and a first read still in flight has nothing stale to replace.
+  bool _cached(ProviderBase<AsyncValue<Object?>> provider) =>
+      ref.exists(provider) && !ref.read(provider).isLoading;
 
   void _focusChanged() {
     // Leaving an empty field without a query is leaving search, so the box
@@ -75,6 +107,7 @@ class _ChatHistoryDrawerState extends ConsumerState<ChatHistoryDrawer> {
 
   @override
   void dispose() {
+    _resumes?.cancel();
     _searchFocus.removeListener(_focusChanged);
     _searchFocus.dispose();
     _search.dispose();
