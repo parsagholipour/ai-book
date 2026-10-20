@@ -125,8 +125,9 @@ export function TermsPage() {
         </p>
         <p>
           Credits are a limited contractual right to use eligible Service features; they are not money, transferable
-          property, or redeemable for cash. Purchased credits do not expire unless law requires otherwise. Plan
-          allowances reset at the stated period and do not accumulate.
+          property, or redeemable for cash. Purchased credits do not expire while the Service operates, unless law
+          requires otherwise. Plan allowances reset at the stated period and do not accumulate. If we discontinue the
+          Service, all credits end on the date it ends, as section 10 explains.
         </p>
         <p>
           Welcome credits are an optional, one-time promotional gift. Availability and amounts may vary by signup
@@ -249,12 +250,36 @@ export function TermsPage() {
         </p>
       </Section>
 
-      <Section title="10. Service availability and changes">
+      <Section title="10. Service availability, changes, and discontinuation">
         <p>
           We may add, change, suspend, or discontinue features, models, providers, credit pricing, limits, or the
           Service. We will give notice where required by law. AI and infrastructure providers may be unavailable,
           and generation timing and results vary. You should export important work rather than rely on the Service as
           your only copy.
+        </p>
+        <h3>If we discontinue the Service</h3>
+        <p>
+          If we decide to shut down the Service permanently, we will give at least 60 days&apos; notice by email to
+          the address on your account and in the app or on our website. The notice will state the date the Service
+          ends (the <q>end date</q>). From the notice, we will stop selling credits and new subscriptions and will
+          cancel subscription renewals through Google Play, so no renewal charges you for time after the end date.
+          Until the end date, you can keep using your credits and download your books as usual.
+        </p>
+        <p>
+          Credits left unused on the end date, whether purchased, granted with a plan, or given as a welcome or
+          promotional gift, expire on that date. They have no cash value and are not refunded or exchanged, and
+          subscription fees already paid are not refunded for time after the end date, except where mandatory law
+          requires otherwise. It is your responsibility to use your credits and download your books before the end
+          date. Once we have given that notice, Ravanix is not liable for unused credits, or for content or access
+          you lose, when the Service ends.
+        </p>
+        <p>
+          We may give shorter notice only where 60 days is not reasonably possible: for example, where continuing
+          would be unlawful, a court or regulator requires us to stop, a provider the Service depends on stops
+          serving us, or a serious security threat or other event beyond our reasonable control occurs. We will then
+          give as much notice as we reasonably can, and the rest of this section still applies. After the end date,
+          you will no longer be able to sign in or download your books, and we will delete accounts and content
+          except the limited records described in section 6 of the <Link to="/privacy">Privacy Policy</Link>.
         </p>
       </Section>
 

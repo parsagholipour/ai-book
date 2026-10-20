@@ -9,9 +9,9 @@
  * `@book-maker/core/legal` subpath, so this module must stay import-free
  * (scripts/check-core-subpaths.mjs).
  */
-export const CURRENT_TERMS_VERSION = "2026-10-13";
+export const CURRENT_TERMS_VERSION = "2026-10-20";
 export const CURRENT_PRIVACY_VERSION = "2026-10-13";
-export const LEGAL_EFFECTIVE_DATE = "2026-10-13";
+export const LEGAL_EFFECTIVE_DATE = "2026-10-20";
 
 export const LEGAL_COMPANY_NAME = "Ravanix Technologies L.L.C-FZ";
 export const LEGAL_COMPANY_ADDRESS =

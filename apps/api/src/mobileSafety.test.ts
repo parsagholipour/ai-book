@@ -107,16 +107,16 @@ describe("mobile safety routes", () => {
 
     expect(metadata.statusCode).toBe(200);
     expect(metadata.json().legal).toMatchObject({
-      termsVersion: "2026-10-13",
+      termsVersion: "2026-10-20",
       privacyVersion: "2026-10-13",
-      effectiveDate: "2026-10-13",
+      effectiveDate: "2026-10-20",
       companyName: "Ravanix Technologies L.L.C-FZ"
     });
     expect(acceptance.statusCode).toBe(200);
     expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "user-a",
-        termsVersion: "2026-10-13",
+        termsVersion: "2026-10-20",
         privacyVersion: "2026-10-13",
         termsAttested: true,
         ageGuardianAttested: false,
@@ -170,7 +170,7 @@ describe("mobile safety routes", () => {
     expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "user-a",
-        termsVersion: "2026-10-13",
+        termsVersion: "2026-10-20",
         privacyVersion: "2026-10-13",
         termsAttested: true,
         ageGuardianAttested: true,

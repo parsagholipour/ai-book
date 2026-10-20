@@ -30,6 +30,23 @@ describe("legal pages", () => {
     expect(markup).not.toMatch(/export unlock|unlock the (?:PDF|EPUB|download)/i);
   });
 
+  it("promises 60 days' notice before a shutdown, and says unused credits end with the Service", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <TermsPage />
+      </MemoryRouter>
+    );
+
+    expect(markup).toContain("If we discontinue the Service");
+    expect(markup).toContain("at least 60 days&#x27; notice");
+    expect(markup).toContain("we will stop selling credits and new subscriptions");
+    expect(markup).toContain("Credits left unused on the end date");
+    expect(markup).toContain("Ravanix is not liable for unused credits");
+    // Section 3's no-expiry line must not read as surviving a shutdown.
+    expect(markup).toContain("Purchased credits do not expire while the Service operates");
+    expect(markup).not.toContain("Purchased credits do not expire unless law requires otherwise");
+  });
+
   it("names the Google SDKs the app uses and says the voice relay keeps no audio", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>

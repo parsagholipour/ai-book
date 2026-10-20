@@ -316,7 +316,7 @@ describe("mobile auth routes", () => {
         email: "Reader@Example.COM",
         password: "CorrectPass123",
         displayName: "Reader",
-        termsVersion: "2026-10-13",
+        termsVersion: "2026-10-20",
         privacyVersion: "2026-10-13",
         termsAccepted: true,
         ageGuardianAttested: true
@@ -331,7 +331,7 @@ describe("mobile auth routes", () => {
     expect(body.session.refreshToken).toMatch(/^bma_rt_/);
     expect(createCall.data.passwordCredential.create.passwordHash).not.toContain("CorrectPass123");
     expect(createCall.data.legalAcceptances.create).toMatchObject({
-      termsVersion: "2026-10-13",
+      termsVersion: "2026-10-20",
       privacyVersion: "2026-10-13",
       termsAttested: true,
       ageGuardianAttested: true,
@@ -409,7 +409,7 @@ describe("mobile auth routes", () => {
 
     expect(response.statusCode).toBe(201);
     expect(createCall.data.legalAcceptances.create).toMatchObject({
-      termsVersion: "2026-10-13",
+      termsVersion: "2026-10-20",
       privacyVersion: "2026-10-13",
       termsAttested: true,
       ageGuardianAttested: true,
@@ -716,7 +716,7 @@ async function signUp(app: FastifyInstance, options: { email?: string; remoteAdd
     payload: {
       email: options.email ?? "reader@example.com",
       password: "CorrectPass123",
-      termsVersion: "2026-10-13",
+      termsVersion: "2026-10-20",
       privacyVersion: "2026-10-13",
       termsAccepted: true,
       ageGuardianAttested: true
